@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import CopySkillModal from '@/components/CopySkillModal.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import { HARNESSES } from '@/data/mock'
+import { library, loadLibrary, skillEntry } from '@/stores/library'
 import {
   hub,
   openDrawer,
@@ -18,6 +19,92 @@ const route = useRoute()
 const name = computed(() => String(route.params.name || ''))
 const skill = computed(() => skillByName(name.value))
 const detail = computed(() => skillDetail(name.value))
+
+/* A real skill comes from the harness scan, not the sample library. The
+   harness query disambiguates two harnesses that carry the same name. */
+const scanned = computed(() => {
+  const wanted = name.value.toLowerCase()
+  const matches = library.items.filter((item) => item.name.toLowerCase() === wanted)
+  const harness = String(route.query.harness || '')
+  if (harness) {
+    const exact = matches.find((item) => item.harness === harness)
+    if (exact) return exact
+  }
+  return matches[0] || null
+})
+
+const realEntry = ref(null)
+const realLoading = ref(false)
+const realError = ref('')
+const realTab = ref('overview')
+const realFileIndex = ref(0)
+let entryToken = 0
+
+const realFiles = computed(() => realEntry.value?.files || [])
+const realCurrentFile = computed(() => realFiles.value[realFileIndex.value] || null)
+const realDescription = computed(() => scanned.value?.description || '')
+const realVersion = computed(() => scanned.value?.version || '')
+const realTabs = computed(() => {
+  const list = [{ id: 'overview', label: 'Overview' }]
+  if (realEntry.value?.md) list.push({ id: 'md', label: 'SKILL.md' })
+  if (realFiles.value.length) list.push({ id: 'files', label: 'Files', count: realFiles.value.length })
+  return list
+})
+const realUpdated = computed(() => {
+  if (!scanned.value?.updatedAt) return '—'
+  const date = new Date(scanned.value.updatedAt)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+})
+
+async function loadRealEntry() {
+  if (skill.value) {
+    realEntry.value = null
+    return
+  }
+  if (!library.loaded) await loadLibrary()
+  const target = scanned.value
+  if (!target) {
+    realEntry.value = null
+    return
+  }
+  if (
+    realEntry.value &&
+    realEntry.value.harness === target.harness &&
+    realEntry.value.name === target.name
+  ) {
+    return
+  }
+
+  const token = ++entryToken
+  realLoading.value = true
+  realError.value = ''
+  try {
+    const data = await skillEntry(target.harness, target.name)
+    if (token !== entryToken) return
+    realEntry.value = data
+  } catch (error) {
+    if (token !== entryToken) return
+    realEntry.value = null
+    realError.value = error?.message || 'Could not read the skill directory.'
+  } finally {
+    if (token === entryToken) realLoading.value = false
+  }
+}
+
+function copyRealMd() {
+  const text = realEntry.value?.md || ''
+  if (!navigator.clipboard?.writeText) {
+    toast('Copy blocked by the browser')
+    return
+  }
+  navigator.clipboard.writeText(text).then(
+    () => toast('SKILL.md copied'),
+    () => toast('Copy blocked by the browser'),
+  )
+}
+
+onMounted(loadRealEntry)
 
 const coverage = computed(() => skillCoverage(name.value))
 const usedBy = computed(() => skillOwners(name.value))
@@ -47,11 +134,14 @@ const currentFile = computed(() => detail.value?.files[fileIndex.value] || null)
 const copyOf = computed(() => detail.value?.md || '')
 
 /* a new skill is a new page: tabs and file selection start over */
-watch(name, () => {
+watch([name, () => route.query.harness], () => {
   tab.value = 'overview'
   fileIndex.value = 0
   copyOpen.value = false
   copyPreset.value = null
+  realTab.value = 'overview'
+  realFileIndex.value = 0
+  loadRealEntry()
 })
 
 function selectTab(id) {
@@ -98,7 +188,158 @@ const versionLabel = (row) => {
 
 <template>
   <div class="view">
-    <template v-if="skill">
+    <template v-if="!skill && scanned">
+      <header class="sk-head">
+        <div>
+          <p class="eyebrow">Skill <span class="sep">·</span> {{ scanned.harnessLabel }}</p>
+          <div class="sk-title">
+            <h1>{{ scanned.name }}</h1>
+            <span v-if="realVersion" class="vtag">{{ realVersion }}</span>
+            <span class="tag">{{ scanned.harnessLabel }}</span>
+          </div>
+          <p class="sk-path">{{ scanned.path }}</p>
+          <p class="lede">
+            {{ realDescription || 'Installed skill. Its frontmatter has no description.' }}
+          </p>
+        </div>
+      </header>
+
+      <div class="meta-strip">
+        <div>
+          <span class="k">Harness</span>
+          <span class="v">{{ scanned.harnessLabel }}</span>
+        </div>
+        <div>
+          <span class="k">Version</span>
+          <span class="v mono">{{ realVersion || 'not recorded' }}</span>
+        </div>
+        <div>
+          <span class="k">Files</span>
+          <span class="v">{{ scanned.files }} · {{ scanned.size }}</span>
+        </div>
+        <div>
+          <span class="k">Updated</span>
+          <span class="v">{{ realUpdated }}</span>
+        </div>
+        <div>
+          <span class="k">Entry</span>
+          <span class="v mono">{{ scanned.entry }}</span>
+        </div>
+      </div>
+
+      <div class="sk-tabs" role="tablist" aria-label="Skill sections">
+        <button
+          v-for="t in realTabs"
+          :key="t.id"
+          role="tab"
+          :aria-selected="realTab === t.id ? 'true' : 'false'"
+          :tabindex="realTab === t.id ? 0 : -1"
+          @click="realTab = t.id"
+        >
+          {{ t.label }}<span v-if="t.count" class="n">{{ t.count }}</span>
+        </button>
+      </div>
+
+      <section v-show="realTab === 'overview'" class="panel" role="tabpanel">
+        <div class="ov">
+          <div>
+            <div class="blk">
+              <h2>What it does <span class="k">— from SKILL.md</span></h2>
+              <p>
+                {{ realDescription || 'No description in the skill frontmatter. Read the entry file for the full instructions.' }}
+              </p>
+            </div>
+
+            <div class="blk">
+              <h2>Installed here <span class="k">— local directory</span></h2>
+              <p>
+                This is the copy {{ scanned.harnessLabel }} loads when it runs. It is read in
+                place; the harness does not copy it anywhere.
+              </p>
+              <pre class="code">{{ scanned.path }}</pre>
+              <p v-if="realLoading" class="tnote"><span>Reading SKILL.md…</span></p>
+              <p v-else-if="realError" class="tnote"><span>{{ realError }}</span></p>
+            </div>
+          </div>
+
+          <aside>
+            <div class="skill-card">
+              <h3>Manifest</h3>
+              <dl class="kv">
+                <dt>Entry</dt><dd>{{ scanned.entry }}</dd>
+                <dt>Files</dt><dd>{{ scanned.files }} · {{ scanned.size }}</dd>
+                <dt>License</dt><dd>{{ scanned.license || 'not recorded' }}</dd>
+                <dt>Path</dt><dd>{{ scanned.path }}</dd>
+              </dl>
+            </div>
+            <div class="skill-card">
+              <h3>Runtime</h3>
+              <dl class="kv">
+                <dt>Requires</dt><dd>{{ scanned.runtime || 'not recorded' }}</dd>
+                <dt>Harness</dt><dd>{{ scanned.harnessLabel }}</dd>
+              </dl>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section v-if="realEntry?.md && realTab === 'md'" class="panel" role="tabpanel">
+        <div class="doc">
+          <div class="doc-head">
+            <span class="fn">SKILL.md <span>{{ scanned.size }}</span></span>
+            <button class="btn btn-sm" type="button" @click="copyRealMd">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                <rect x="2.2" y="2.2" width="8.4" height="8.4" rx="1.6" />
+                <path d="M5.6 13.8h7.1a1 1 0 001-1V5.6" />
+              </svg>
+              Copy
+            </button>
+          </div>
+          <pre>{{ realEntry.md }}</pre>
+        </div>
+      </section>
+
+      <section v-if="realFiles.length && realTab === 'files'" class="panel" role="tabpanel">
+        <div class="files">
+          <div class="flist" role="group" aria-label="Skill files">
+            <button
+              v-for="(f, i) in realFiles"
+              :key="f.name"
+              class="frow"
+              type="button"
+              :aria-current="i === realFileIndex ? 'true' : 'false'"
+              :title="f.name"
+              @click="realFileIndex = i"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+                <path d="M3.6 1.9h5.2l3.6 3.6v8.6H3.6z" />
+                <path d="M8.6 1.9v3.8h3.8" />
+              </svg>
+              <span class="fn">{{ f.name }}</span>
+              <span class="fs">{{ f.size }}</span>
+            </button>
+          </div>
+          <div class="fprev">
+            <div class="fh">
+              <span>{{ realCurrentFile?.name }}</span>
+              <span>{{ realCurrentFile?.size }}</span>
+            </div>
+            <pre>{{ realCurrentFile?.body ?? 'No text preview for this file.' }}</pre>
+          </div>
+        </div>
+        <p class="tnote">
+          <span>{{ realFiles.length }} files · {{ scanned.size }}</span>
+          <span>read from {{ scanned.path }}</span>
+        </p>
+      </section>
+
+      <p class="page-foot">
+        <span>{{ scanned.name }}{{ realVersion ? ` ${realVersion}` : '' }} · {{ scanned.harnessLabel }}</span>
+        <span>local library · {{ library.count }} skills on {{ library.hostname || 'this machine' }}</span>
+      </p>
+    </template>
+
+    <template v-else-if="skill">
       <header class="sk-head">
         <div>
           <p class="eyebrow">Skill <span class="sep">·</span> Library</p>
@@ -406,6 +647,13 @@ const versionLabel = (row) => {
         @close="copyOpen = false"
       />
     </template>
+
+    <div v-else-if="!library.loaded" class="empty-note">
+      <b>{{ library.error || 'Reading the skill library…' }}</b>
+      <button v-if="library.error" class="btn btn-sm" type="button" @click="loadRealEntry()">
+        Try again
+      </button>
+    </div>
 
     <div v-else class="empty-note">
       <b>No skill called “{{ name }}” in this library.</b>

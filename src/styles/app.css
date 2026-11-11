@@ -588,21 +588,56 @@ main {
   flex-direction: column;
   gap: 8px;
 }
-.sync {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+.account {
+  position: relative;
 }
-.sync i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ok);
+.acct-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 70;
+  display: none;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  box-shadow: 0 12px 30px -10px rgba(10, 10, 10, 0.28), 0 2px 6px -2px rgba(10, 10, 10, 0.07);
+}
+.account[data-open='1'] .acct-menu {
+  display: block;
+}
+.acct-head {
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.acct-nm {
+  display: block;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.acct-em {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-menu .pickopt svg {
+  width: 13px;
+  height: 13px;
   flex: none;
+  opacity: 0.65;
+}
+.acct-signout {
+  color: var(--danger);
+}
+.acct-signout svg {
+  opacity: 0.8;
 }
 .user {
   display: flex;
@@ -1343,6 +1378,10 @@ kbd {
   align-items: center;
   gap: 6px;
 }
+.machine-icon {
+  flex: none;
+  color: var(--muted);
+}
 .state {
   display: inline-flex;
   align-items: center;
@@ -1367,6 +1406,47 @@ kbd {
 .state[data-s='sleep'] i {
   background: var(--muted);
   opacity: 0.5;
+}
+.state[data-s='ok'] i {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 18%, transparent);
+}
+.state[data-s='fail'] i {
+  background: var(--danger);
+}
+.state[data-s='testing'] i {
+  background: var(--accent);
+  animation: probe-pulse 0.9s ease-in-out infinite;
+}
+@keyframes probe-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* a probed host is tinted, not decorated: green only after ssh answers */
+.machine[data-probe='ok'],
+.mcard[data-probe='ok'] {
+  border-color: color-mix(in oklab, var(--ok) 52%, var(--border));
+  background: color-mix(in oklab, var(--ok) 7%, var(--surface));
+}
+.machine[data-probe='fail'],
+.mcard[data-probe='fail'] {
+  border-color: color-mix(in oklab, var(--danger) 34%, var(--border));
+}
+.machine[data-probe='testing'],
+.mcard[data-probe='testing'] {
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+}
+.machine-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
 }
 .machine .spec {
   font-size: 12px;
@@ -1649,12 +1729,50 @@ kbd {
   border-color: var(--border-strong);
   background: var(--surface);
 }
+.card2 .card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.card2 .card-top .tag {
+  flex: none;
+}
 .card2 h3 {
   font-family: var(--font);
   font-size: 13.5px;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0 0 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.card2 h3 .skill-icon {
+  flex: none;
+  color: var(--muted);
+}
+.tag.tag-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+}
+.tag.tag-icon .harness-icon {
+  width: 12px;
+  height: 12px;
+}
+.card2 .desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 7px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .card2 .p {
   font-family: var(--mono);
@@ -1674,6 +1792,15 @@ kbd {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--muted);
+}
+.card2 .foot span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card2 .foot span:last-child {
+  text-align: right;
+  flex: none;
 }
 .dots {
   display: flex;
@@ -1702,6 +1829,33 @@ kbd {
   display: flex;
   flex-direction: column;
 }
+.mcard-btn {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.mcard-btn:hover {
+  border-color: var(--border-strong);
+}
+.mcard-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.mcard .probe-msg {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 .mcard .top {
   display: flex;
   align-items: flex-start;
@@ -1722,6 +1876,9 @@ kbd {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+.mcard h3 .machine-icon {
+  color: var(--muted);
 }
 .mcard h3 .tag {
   flex: none;
@@ -2275,6 +2432,62 @@ kbd {
 .fld:last-child {
   margin-bottom: 0;
 }
+.acct-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.acct-input:hover {
+  border-color: var(--muted);
+}
+.acct-input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.acct-input:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.acct-sep {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.acct-sep small {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.acct-error {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, #fff);
+  border-radius: var(--r-sm);
+}
 .fld .lbl {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -2550,7 +2763,31 @@ select:focus-visible {
   gap: 6px;
   margin-top: 11px;
 }
+.lib-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.lib-bar .hints {
+  margin-top: 0;
+}
+.lib-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hint-n {
+  opacity: 0.65;
+}
 .hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid var(--border);
   background: var(--bg);
   border-radius: 100px;
@@ -2560,6 +2797,13 @@ select:focus-visible {
   color: var(--muted);
   cursor: pointer;
   transition: color 0.14s ease, border-color 0.14s ease;
+}
+.hint .harness-icon {
+  flex: none;
+  opacity: 0.62;
+}
+.hint[aria-pressed='true'] .harness-icon {
+  opacity: 1;
 }
 .hint:hover {
   color: var(--ink);
@@ -2655,9 +2899,6 @@ select:focus-visible {
     flex-direction: row;
     align-items: center;
     gap: 10px;
-  }
-  .sync {
-    display: none;
   }
   .view {
     padding: 22px 16px 60px;

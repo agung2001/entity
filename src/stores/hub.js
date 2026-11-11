@@ -33,8 +33,18 @@ const CREDENTIALS_KEY = 'entity.credentials'
 export const DEFAULT_ADMIN = { username: 'admin', password: '123456' }
 /* sha256('123456') — the seed is compared as a hash, never as plain text */
 const DEFAULT_ADMIN_HASH = '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92'
+const DEFAULT_EMAIL = 'admin@studio-mac'
 
 const clone = (v) => JSON.parse(JSON.stringify(v))
+
+function storeCredentials(record) {
+  try {
+    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(record))
+  } catch {
+    /* the change still holds for this run */
+  }
+  return record
+}
 
 async function hashPassword(password) {
   const bytes = new TextEncoder().encode(String(password))
@@ -46,22 +56,24 @@ async function hashPassword(password) {
 export function credentials() {
   try {
     const raw = JSON.parse(localStorage.getItem(CREDENTIALS_KEY) || 'null')
-    if (raw && typeof raw.username === 'string' && typeof raw.hash === 'string') return raw
+    if (raw && typeof raw.username === 'string' && typeof raw.hash === 'string') {
+      /* records written before the account menu shipped have no email */
+      if (typeof raw.email !== 'string') {
+        raw.email = `${raw.username}@studio-mac`
+        storeCredentials(raw)
+      }
+      return raw
+    }
   } catch {
     /* unreadable record — reseed below */
   }
-  const seeded = {
+  return storeCredentials({
     username: DEFAULT_ADMIN.username,
+    email: DEFAULT_EMAIL,
     hash: DEFAULT_ADMIN_HASH,
     mustChange: true,
     updatedAt: null,
-  }
-  try {
-    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(seeded))
-  } catch {
-    /* still valid for this run */
-  }
-  return seeded
+  })
 }
 
 export async function verifyCredentials(handle, password) {
@@ -73,24 +85,68 @@ export async function verifyCredentials(handle, password) {
   if ((await hashPassword(password)) !== record.hash) {
     return { ok: false, message: 'That password does not match.' }
   }
-  return { ok: true, username: record.username, mustChange: Boolean(record.mustChange) }
+  return {
+    ok: true,
+    username: record.username,
+    email: record.email,
+    mustChange: Boolean(record.mustChange),
+  }
 }
 
 /** Stores the new hash and clears the must-change flag for this account. */
 export async function setPassword(password) {
   const record = credentials()
-  const next = {
-    username: record.username,
+  return storeCredentials({
+    ...record,
     hash: await hashPassword(password),
     mustChange: false,
     updatedAt: new Date().toISOString(),
-  }
-  try {
-    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(next))
-  } catch {
-    /* the change still holds for this run */
+  })
+}
+
+/** Updates the handle and email; the password hash travels untouched. */
+export function updateAccount({ username, email }) {
+  const handle = String(username || '').trim()
+  if (!handle) throw new Error('A username is required.')
+  const record = credentials()
+  const next = storeCredentials({
+    ...record,
+    username: handle,
+    email: String(email || '').trim(),
+    updatedAt: new Date().toISOString(),
+  })
+  if (hub.session) {
+    const session = { ...hub.session, user: next.username, email: next.email }
+    hub.session = session
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    } catch {
+      /* the session still holds for this run */
+    }
   }
   return next
+}
+
+/** Verifies the current password before replacing it. */
+export async function changePassword(current, nextPassword) {
+  const record = credentials()
+  if (!current) return { ok: false, message: 'Enter the current password.' }
+  if ((await hashPassword(current)) !== record.hash) {
+    return { ok: false, message: 'That password does not match the current one.' }
+  }
+  if (String(nextPassword).length < 6) {
+    return { ok: false, message: 'Use at least 6 characters.' }
+  }
+  if (nextPassword === DEFAULT_ADMIN.password) {
+    return { ok: false, message: 'That is the password this hub shipped with — choose a different one.' }
+  }
+  const updated = storeCredentials({
+    ...record,
+    hash: await hashPassword(nextPassword),
+    mustChange: false,
+    updatedAt: new Date().toISOString(),
+  })
+  return { ok: true, record: updated }
 }
 
 function readSession() {
@@ -99,7 +155,10 @@ function readSession() {
     if (!raw || !raw.user) return null
     /* one account per hub: a session for another handle came from the old
        credentials model and is dropped */
-    return raw.user.toLowerCase() === credentials().username.toLowerCase() ? raw : null
+    const record = credentials()
+    if (raw.user.toLowerCase() !== record.username.toLowerCase()) return null
+    if (typeof raw.email !== 'string' || !raw.email) raw.email = record.email || ''
+    return raw
   } catch {
     return null
   }
@@ -141,6 +200,7 @@ export const hub = reactive({
     doneTitle: '',
   },
   palette: { open: false, query: '', active: 0 },
+  account: { open: false },
   toast: { open: false, message: '' },
 
   /* --- consoles ------------------------------------------------------ */
@@ -215,8 +275,8 @@ export function toast(message) {
 }
 
 /* ── session ──────────────────────────────────────────────────────── */
-export function signIn(user = credentials().username) {
-  const session = { user, at: new Date().toISOString() }
+export function signIn(user = credentials().username, email = credentials().email) {
+  const session = { user, email, at: new Date().toISOString() }
   hub.session = session
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -257,6 +317,15 @@ export function openDrawer(agentId, tab = 'overview') {
 
 export function closeDrawer() {
   hub.drawer.open = false
+}
+
+/* ── account settings ─────────────────────────────────────────────── */
+export function openAccount() {
+  hub.account.open = true
+}
+
+export function closeAccount() {
+  hub.account.open = false
 }
 
 /* ── move / relocate ──────────────────────────────────────────────── */

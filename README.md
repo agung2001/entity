@@ -41,6 +41,7 @@ assume a port.
 electron/
   main.cjs            main process: window, lifecycle, IPC handlers
   preload.cjs         contextBridge — the only surface exposed to the renderer
+  local-data.cjs      ~/.ssh/config parser, ssh probes, harness skill scanner
 scripts/
   dev-desktop.mjs     runs Vite programmatically, then launches Electron
 src/
@@ -54,27 +55,34 @@ src/
     OverviewView.vue  ask console, machines, entities, activity
     ChatView.vue      history + thread + context picks
     EntitiesView.vue  the agents table, filterable by state
-    SkillsView.vue    one library, copied per machine
+    SkillsView.vue    the local skill library, filterable by harness
     SkillDetailView.vue  overview / SKILL.md / files / runs
-    MachinesView.vue  the fleet
+    MachinesView.vue  the fleet from ~/.ssh/config
     ActivityView.vue  every copy, sync and restart
   components/
     EntityMark.vue    the animated voxel character
+    HarnessIcon.vue   brand marks for the skill filter pills
+    MachineIcon.vue   the server glyph on machine cards
+    SkillIcon.vue     the medal glyph on skill cards
     MarkPicker.vue    mood + colour, opened from the drawer
-    AppRail.vue       brand, workspace switcher, nav, user
+    AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
     AskConsole / MessageList / SlashComposer
     PickMenu.vue      the quiet text trigger used for filter axes
     EntityDrawer.vue  details, skills, ENTITY.md, Relocate
     MoveAgentModal.vue
+    AccountModal.vue  username, email and password
     CopySkillModal.vue
     CommandPalette.vue
     ToastHost.vue
   composables/
     entityMark.js     the mark's renderer + one shared rAF loop
     useDesktop.js     wrapper over the preload bridge
+    localBridge.js    Electron IPC, or the Vite dev endpoints in a browser
   stores/
     hub.js            session, workspace data, consoles, drawers, actions
+    fleet.js          ssh hosts from ~/.ssh/config + per-host probe state
+    library.js        skill directories read from each harness
   data/
     mock.js           the sample workspace (agents, machines, skills, seeds)
   styles/
@@ -83,7 +91,8 @@ src/
     skill.css         the skill detail page
   assets/fonts/geist.woff2
 index.html            renderer HTML + CSP
-vite.config.js        `base: './'` so the build loads over `file://`
+vite.config.js        `base: './'` so the build loads over `file://`; mounts
+                      the local-data endpoints for dev and preview
 ```
 
 ## Routes
@@ -103,20 +112,42 @@ history mode has no server to resolve a path on reload.
 | `#/activity` | Activity |
 
 A session in `localStorage['entity.session']` skips the sign-in screen; the rail
-user button signs out. `⌘K` / `Ctrl-K` opens the jump palette; `Esc` closes the
-topmost overlay.
+user button opens account settings (username, email and password) with Sign out
+underneath. `⌘K` / `Ctrl-K` opens the jump palette; `Esc` closes the topmost
+overlay.
 
 ## Data
 
-Everything on screen is a **sample workspace** held in `src/data/mock.js` and
-mutated in place by `src/stores/hub.js`. Copying a skill, relocating an agent
-and sending a console message update that state for the session; nothing is
-written to disk except the session, the selected workspace and the mark's
-mood/colour.
+Agents, chat and coverage rows are a **sample workspace** held in
+`src/data/mock.js` and mutated in place by `src/stores/hub.js`. Copying a skill,
+relocating an agent and sending a console message update that state for the
+session.
 
-The mock-ups leave several behaviours unspecified (where the data really comes
-from, whether transfers run over ssh, what the console dispatches to). Those
-questions, and the assumption each one currently makes, live in
+Two views read this machine instead of the sample workspace:
+
+- **Machines** — every `Host` block in `~/.ssh/config` (on Windows,
+  `%USERPROFILE%\.ssh\config`), with `Include` files resolved and wildcard-only
+  hosts skipped. Clicking a card runs the local `ssh` client with
+  `BatchMode=yes` and a 5 s connect timeout; the card turns green only when that
+  probe succeeds. `StrictHostKeyChecking=accept-new` means a first contact can
+  add the host key to `known_hosts`. Nothing about a host leaves the machine.
+- **Skills** — the skill directories each harness owns on this machine:
+  `~/.pi/agent/skills`, `~/.claude/skills`, `~/.config/opencode/skills`,
+  `~/.codex/skills`, `~/.gemini/antigravity/skills`, `~/.gemini/skills` (plus
+  `~/.opencode/skills` and `~/.antigravity/skills` when present). Each directory
+  with a `SKILL.md`, or a standalone `.md` file, becomes one item per harness, so
+  the same skill can appear under several filters. The detail page reads the
+  entry file and a bounded file list in place.
+
+The parser and scanner live in `electron/local-data.cjs`. Electron reaches them
+over IPC (`ssh:hosts`, `ssh:probe`, `skills:scan`, `skills:read`); the Vite dev
+and preview servers mount the same reads under `/__entity/*` for browser-only
+work. A static deploy has no route for those endpoints, so the views show an
+empty state rather than sample machines.
+
+The mock-ups leave other behaviours unspecified (whether the sample transfers
+really run over ssh, what the console dispatches to). Those questions, and the
+assumption each one currently makes, live in
 `reports/unclear/hub-mockup-questions.md`. `reports/` is gitignored.
 
 ## Talking to the main process

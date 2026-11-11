@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
+const localData = require('./local-data.cjs')
 
 // Set by `npm run dev:desktop`; empty when running a built app.
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL
@@ -65,6 +66,16 @@ app.whenReady().then(() => {
     platform: process.platform,
     arch: process.arch,
   }))
+
+  /* Local machine data. The renderer never gets a path or a shell — it asks for
+     the parsed ssh config, a probe of one known alias, and the skill libraries. */
+  ipcMain.handle('ssh:hosts', () => localData.readSshHosts())
+  ipcMain.handle('ssh:probe', (_event, alias) => localData.probeSshHost(String(alias || '')))
+  ipcMain.handle('skills:scan', () => localData.scanSkillLibrary())
+  ipcMain.handle('skills:read', (_event, payload) => {
+    const { harness, name } = payload || {}
+    return localData.readSkillEntry(String(harness || ''), String(name || ''))
+  })
 
   createWindow()
 

@@ -282,7 +282,6 @@ function backToSignIn() {
       </section>
 
       <p class="meta">
-        <span class="ok">ssh reachable</span>
         <span class="copyright">© {{ year }} Agung Sundoro</span>
       </p>
     </div>

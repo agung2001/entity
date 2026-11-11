@@ -1,19 +1,66 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
-import { hub, initials, signOut } from '@/stores/hub'
+import { fleet, loadFleet } from '@/stores/fleet'
+import { library, loadLibrary } from '@/stores/library'
+import { hub, initials, openAccount, signOut } from '@/stores/hub'
 
 const route = useRoute()
 const router = useRouter()
+
+const accountOpen = ref(false)
+const accountRoot = ref(null)
+
+onMounted(() => {
+  loadFleet()
+  loadLibrary()
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKey)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKey)
+})
+
+function toggleAccount() {
+  accountOpen.value = !accountOpen.value
+}
+
+function onDocumentClick(event) {
+  if (!accountOpen.value || accountRoot.value?.contains(event.target)) return
+  accountOpen.value = false
+}
+
+function onDocumentKey(event) {
+  if (event.key === 'Escape') accountOpen.value = false
+}
+
+function openSettings() {
+  accountOpen.value = false
+  openAccount()
+}
 
 const NAV = [
   { to: '/', view: 'overview', label: 'Overview', icon: 'grid' },
   { to: '/chat', view: 'chat', label: 'Chat', icon: 'chat' },
   { to: '/entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
-  { to: '/skills', view: 'skills', label: 'Skills', icon: 'star', count: () => hub.skills.length },
-  { to: '/machines', view: 'machines', label: 'Machines', icon: 'screen', count: () => hub.machines.length },
+  {
+    to: '/skills',
+    view: 'skills',
+    label: 'Skills',
+    icon: 'star',
+    count: () => (library.loaded ? library.count : hub.skills.length),
+  },
+  {
+    to: '/machines',
+    view: 'machines',
+    label: 'Machines',
+    icon: 'screen',
+    count: () => (fleet.loaded ? fleet.hosts.length : hub.machines.length),
+  },
   { to: '/activity', view: 'activity', label: 'Activity', icon: 'pulse' },
 ]
 
@@ -31,13 +78,11 @@ const displayName = computed(() => {
       .join(' ') || user.value
   )
 })
-const handle = computed(() => {
-  const local = user.value.split('@')[0]
-  return `${local}@studio-mac`
-})
+const accountEmail = computed(() => hub.session?.email || `${user.value.split('@')[0]}@studio-mac`)
 const avatar = computed(() => initials(displayName.value) || 'as')
 
 function leave() {
+  accountOpen.value = false
   signOut()
   router.push({ name: 'login' })
 }
@@ -91,14 +136,45 @@ function leave() {
     </nav>
 
     <div class="rail-foot">
-      <div class="sync"><i></i> ssh reachable · {{ hub.machines.length }} machines</div>
-      <button class="user" type="button" title="Sign out" @click="leave">
-        <span class="avatar">{{ avatar }}</span>
-        <span class="who">
-          {{ displayName }}
-          <span>{{ handle }}</span>
-        </span>
-      </button>
+      <div ref="accountRoot" class="account" :data-open="accountOpen ? '1' : '0'">
+        <div class="acct-menu" role="menu" aria-label="Account">
+          <div class="acct-head">
+            <span class="acct-nm">{{ displayName }}</span>
+            <span class="acct-em">{{ accountEmail }}</span>
+          </div>
+          <button class="pickopt" type="button" role="menuitem" @click="openSettings">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+              <circle cx="8" cy="8" r="2.2" />
+              <path
+                d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1"
+              />
+            </svg>
+            Account settings
+          </button>
+          <button class="pickopt acct-signout" type="button" role="menuitem" @click="leave">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M6 2.5H3.5A1.5 1.5 0 002 4v8a1.5 1.5 0 001.5 1.5H6" />
+              <path d="M10.5 5l3 3-3 3M6.8 8h6.7" />
+            </svg>
+            Sign out
+          </button>
+        </div>
+
+        <button
+          class="user"
+          type="button"
+          title="Account"
+          aria-haspopup="menu"
+          :aria-expanded="accountOpen ? 'true' : 'false'"
+          @click="toggleAccount"
+        >
+          <span class="avatar">{{ avatar }}</span>
+          <span class="who">
+            {{ displayName }}
+            <span>{{ accountEmail }}</span>
+          </span>
+        </button>
+      </div>
     </div>
   </aside>
 </template>

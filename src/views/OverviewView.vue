@@ -1,31 +1,42 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AskConsole from '@/components/AskConsole.vue'
 import EntityMark from '@/components/EntityMark.vue'
-import { hub, openDrawer, strandedSkillCount, toast, workspaceById } from '@/stores/hub'
+import MachineIcon from '@/components/MachineIcon.vue'
+import { fleet, loadFleet, probeState } from '@/stores/fleet'
+import { hub, openDrawer, strandedSkillCount, workspaceById } from '@/stores/hub'
 
 const router = useRouter()
+
+onMounted(loadFleet)
 
 const workspace = computed(() => workspaceById(hub.workspace).label)
 const live = computed(() => hub.agents.filter((a) => a.status === 'running').length)
 const stranded = computed(() => strandedSkillCount())
-const online = computed(() => hub.machines.filter((m) => m.state === 'online').length)
-const asleep = computed(() => hub.machines.filter((m) => m.state === 'sleep').length)
+const hostCount = computed(() => (fleet.loaded ? fleet.hosts.length : hub.machines.length))
 
 const agentsOn = (machineId) => hub.agents.filter((a) => a.machines.includes(machineId)).length
 
 const dotState = (status) => ({ running: 'live', idle: 'idle', sleep: 'sleep' })[status] || 'idle'
+
+const hostState = (alias) => {
+  const state = probeState(alias).state
+  return state === 'ok' || state === 'fail' || state === 'testing' ? state : 'idle'
+}
+const hostLabel = (alias) => {
+  const state = hostState(alias)
+  if (state === 'ok') return 'reachable'
+  if (state === 'fail') return 'unreachable'
+  if (state === 'testing') return 'testing'
+  return 'in config'
+}
 
 function openFromKeyboard(e, id) {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
     openDrawer(id)
   }
-}
-
-function addAgent() {
-  toast('Agent import opens a folder picker')
 }
 </script>
 
@@ -36,13 +47,10 @@ function addAgent() {
         <p class="eyebrow">Workspace · {{ workspace }}</p>
         <h1>Overview</h1>
         <p class="lede">
-          {{ hub.agents.length }} agents across {{ hub.machines.length }} machines,
+          {{ hub.agents.length }} entities across {{ hostCount }} machines,
           {{ live }} running now. {{ stranded }} skills are installed on a single
-          machine — move an agent to carry them across.
+          machine — move an entity to carry them across.
         </p>
-      </div>
-      <div class="head-actions">
-        <button class="btn" @click="addAgent">Add agent</button>
       </div>
     </div>
 
@@ -50,27 +58,39 @@ function addAgent() {
 
     <div class="sec-head">
       <h2>Machines</h2>
-      <span class="meta">{{ online }} online · {{ asleep }} asleep</span>
+      <span class="meta">
+        {{ fleet.hosts.length > 6 ? `showing 6 of ${fleet.hosts.length}` : `${fleet.hosts.length} hosts` }}
+        · {{ fleet.displayPath }}
+      </span>
     </div>
     <div class="machines">
       <button
-        v-for="m in hub.machines"
+        v-for="m in fleet.hosts.slice(0, 6)"
         :key="m.id"
         class="machine"
+        type="button"
+        :data-probe="hostState(m.alias)"
         @click="router.push('/machines')"
       >
         <div class="row1">
-          <span class="nm">{{ m.label }}</span>
-          <span class="state" :data-s="m.state === 'online' ? 'live' : 'sleep'">
-            <i></i>{{ m.state === 'online' ? 'online' : 'asleep' }}
+          <span class="nm"><MachineIcon :size="12" />{{ m.label }}</span>
+          <span class="state" :data-s="hostState(m.alias)">
+            <i></i>{{ hostLabel(m.alias) }}
           </span>
         </div>
-        <p class="spec">{{ m.desc }}</p>
+        <p class="spec">{{ m.spec }}</p>
         <div class="foot">
-          <span>{{ agentsOn(m.id) }} agent{{ agentsOn(m.id) === 1 ? '' : 's' }}</span>
-          <span v-if="m.thisMachine" class="tag">this machine</span>
+          <span>{{ m.source }}</span>
+          <span>{{ agentsOn(m.alias) }} {{ agentsOn(m.alias) === 1 ? 'entity' : 'entities' }}</span>
         </div>
       </button>
+      <p v-if="fleet.loading && !fleet.loaded" class="machine-note">
+        Reading {{ fleet.displayPath }}…
+      </p>
+      <p v-else-if="fleet.error" class="machine-note">{{ fleet.error }}</p>
+      <p v-else-if="!fleet.hosts.length" class="machine-note">
+        No hosts in {{ fleet.displayPath }}.
+      </p>
     </div>
 
     <div class="sec-head">
@@ -79,7 +99,7 @@ function addAgent() {
     </div>
     <div class="tbl">
       <div class="tr th">
-        <span>Agent</span><span>State</span><span class="col-machines">Machines</span>
+        <span>Entity</span><span>State</span><span class="col-machines">Machines</span>
         <span class="col-skills">Skills</span><span class="col-last">Last run</span>
       </div>
       <div

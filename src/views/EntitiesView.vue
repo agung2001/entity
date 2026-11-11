@@ -26,14 +26,14 @@ function openFromKeyboard(e, id) {
     <div class="page-head">
       <div>
         <p class="eyebrow">Workspace · sundoro</p>
-        <h1>Agents</h1>
+        <h1>Entities</h1>
         <p class="lede">
-          Every agent entity knows about, wherever it runs. Open one to read its ENTITY.md or
+          Every entity this hub knows about, wherever it runs. Open one to read its ENTITY.md or
           move it.
         </p>
       </div>
       <div class="head-actions">
-        <button class="btn" @click="toast('Agent import opens a folder picker')">Add agent</button>
+        <button class="btn" @click="toast('Entity import opens a folder picker')">Add entity</button>
       </div>
     </div>
 
@@ -51,7 +51,7 @@ function openFromKeyboard(e, id) {
 
     <div class="tbl">
       <div class="tr th">
-        <span>Agent</span><span>State</span><span class="col-machines">Machines</span>
+        <span>Entity</span><span>State</span><span class="col-machines">Machines</span>
         <span class="col-skills">Skills</span><span class="col-last">Last run</span>
       </div>
       <div

@@ -46,7 +46,7 @@
   margin: 11px 0 0;
   font-size: 14px;
   color: var(--ink-2);
-  max-width: 60ch;
+  max-width: none;
 }
 .sk-actions {
   flex: none;
@@ -103,6 +103,7 @@
   border-bottom: 1px solid var(--border);
   margin-bottom: 26px;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .sk-tabs button {
   background: none;

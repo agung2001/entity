@@ -1,6 +1,8 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { fleet, loadFleet } from '@/stores/fleet'
+import { library, loadLibrary } from '@/stores/library'
 import { hub, initials, openDrawer } from '@/stores/hub'
 
 /**
@@ -10,12 +12,32 @@ import { hub, initials, openDrawer } from '@/stores/hub'
 const router = useRouter()
 const input = ref(null)
 
+onMounted(() => {
+  loadFleet()
+  loadLibrary()
+})
+
 const items = computed(() => {
   const q = hub.palette.query.trim().toLowerCase()
+  const hosts = fleet.loaded ? fleet.hosts : hub.machines
+  const skills = library.loaded ? library.items : hub.skills
   const list = [
-    ...hub.machines.map((m) => ({ kind: 'machine', id: m.id, label: m.label, act: () => router.push('/machines') })),
-    ...hub.skills.map((s) => ({ kind: 'skill', id: s.name, label: s.name, act: () => router.push('/skills') })),
-    ...hub.agents.map((a) => ({ kind: 'agent', id: a.id, label: a.name, act: () => openDrawer(a.id) })),
+    ...hosts.map((m) => ({
+      kind: 'machine',
+      id: m.id || m.alias,
+      label: m.label || m.name,
+      act: () => router.push('/machines'),
+    })),
+    ...skills.map((s) => ({
+      kind: 'skill',
+      id: s.id || s.name,
+      label: s.name,
+      act: () =>
+        s.harness
+          ? router.push({ name: 'skill', params: { name: s.name }, query: { harness: s.harness } })
+          : router.push('/skills'),
+    })),
+    ...hub.agents.map((a) => ({ kind: 'entity', id: a.id, label: a.name, act: () => openDrawer(a.id) })),
   ]
   return list.filter((i) => i.label.toLowerCase().includes(q))
 })
@@ -72,7 +94,7 @@ function onKey(e) {
       <input
         ref="input"
         :value="hub.palette.query"
-        placeholder="Jump to an agent, skill or machine…"
+        placeholder="Jump to an entity, skill or machine…"
         autocomplete="off"
         spellcheck="false"
         @input="hub.palette.query = $event.target.value; onInput()"

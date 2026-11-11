@@ -31,7 +31,7 @@ function start() {
     :data-open="hub.move.open ? '1' : '0'"
     role="dialog"
     aria-modal="true"
-    aria-label="Move agent"
+    aria-label="Move entity"
   >
     <template v-if="agent">
       <div class="mo-head">
@@ -67,7 +67,7 @@ function start() {
             >
               <i>✓</i>{{ s }}
             </button>
-            <span v-if="!agent.skills.length" class="mnote">No skills attached to this agent.</span>
+            <span v-if="!agent.skills.length" class="mnote">No skills attached to this entity.</span>
           </div>
         </div>
 

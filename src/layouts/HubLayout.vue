@@ -3,11 +3,12 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
+import AccountModal from '@/components/AccountModal.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import EntityDrawer from '@/components/EntityDrawer.vue'
 import MoveAgentModal from '@/components/MoveAgentModal.vue'
 import ToastHost from '@/components/ToastHost.vue'
-import { closeDrawer, closeMove, hub } from '@/stores/hub'
+import { closeAccount, closeDrawer, closeMove, hub } from '@/stores/hub'
 
 const route = useRoute()
 
@@ -24,7 +25,9 @@ const crumbs = computed(() =>
     : null,
 )
 
-const overlayOpen = computed(() => hub.drawer.open || hub.move.open || hub.palette.open)
+const overlayOpen = computed(
+  () => hub.drawer.open || hub.move.open || hub.palette.open || hub.account.open,
+)
 
 function openPalette() {
   hub.palette.open = true
@@ -36,6 +39,7 @@ function openPalette() {
 function onScrim() {
   if (hub.palette.open) hub.palette.open = false
   else if (hub.move.open) closeMove()
+  else if (hub.account.open) closeAccount()
   else closeDrawer()
 }
 
@@ -48,6 +52,7 @@ function onKey(e) {
   if (e.key !== 'Escape') return
   if (hub.palette.open) hub.palette.open = false
   else if (hub.move.open) closeMove()
+  else if (hub.account.open) closeAccount()
   else if (hub.drawer.open) closeDrawer()
 }
 
@@ -84,6 +89,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
     <div class="scrim" :data-open="overlayOpen ? '1' : '0'" @click="onScrim"></div>
     <EntityDrawer />
     <MoveAgentModal />
+    <AccountModal />
     <CommandPalette />
     <ToastHost />
   </div>

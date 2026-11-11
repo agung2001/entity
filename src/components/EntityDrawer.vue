@@ -124,7 +124,7 @@ function toMove() {
 
         <template v-else>
           <pre class="md">{{ entityMd(agent) }}</pre>
-          <p class="dr-note">copied to every machine this agent runs on</p>
+          <p class="dr-note">copied to every machine this entity runs on</p>
         </template>
       </div>
 

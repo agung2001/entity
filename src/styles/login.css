@@ -289,14 +289,6 @@
   align-items: center;
   gap: 6px;
 }
-.auth .meta .ok::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
 .auth .meta .copyright {
   color: var(--ink-2);
   text-transform: none;

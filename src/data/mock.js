@@ -11,6 +11,8 @@ export const HARNESSES = [
   { id: 'codex', label: 'Codex CLI' },
   { id: 'opencode', label: 'opencode' },
   { id: 'pi', label: 'pi' },
+  { id: 'antigravity', label: 'Antigravity' },
+  { id: 'gemini', label: 'Gemini CLI' },
 ]
 
 export const BUILTIN_CMDS = [
