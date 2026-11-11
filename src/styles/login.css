@@ -1,0 +1,340 @@
+/* ── auth screen ─────────────────────────────────────────────────
+   One card, one character, one hairline of status underneath. The mark is the
+   thing that bounces; the form stays still so a failed sign-in never shifts
+   the layout. */
+
+.auth {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 52px 24px 56px;
+  position: relative;
+  font-size: 15px;
+  line-height: 1.55;
+  overflow: auto;
+}
+/* a single warm wash, printed faintly behind the form */
+.auth::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 60% at 50% -10%,
+    color-mix(in oklab, var(--accent-soft) 55%, transparent),
+    transparent 62%
+  );
+  opacity: 0.85;
+  mask-image: linear-gradient(to bottom, #000, transparent 78%);
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 78%);
+}
+.auth .stack {
+  position: relative;
+  width: 100%;
+  max-width: 404px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.auth .bouncer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 22px;
+}
+.mark.mark-lg {
+  width: 78px;
+  height: 78px;
+}
+
+.auth-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 34px 30px 26px;
+}
+.auth-card .kicker {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.auth-card h1 {
+  font-family: var(--font);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.032em;
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+.auth-card .sub {
+  margin: 0 0 26px;
+  font-size: 14.5px;
+  color: var(--ink-2);
+  max-width: 34ch;
+}
+
+.auth .field {
+  margin-bottom: 14px;
+}
+.auth .field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.auth .control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.auth input[type='text'],
+.auth input[type='email'],
+.auth input[type='password'] {
+  width: 100%;
+  height: 46px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+.auth input::placeholder {
+  color: color-mix(in oklab, var(--muted) 82%, #fff);
+}
+.auth input:hover {
+  border-color: var(--muted);
+}
+.auth input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.auth input:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.auth .control.has-toggle input {
+  padding-right: 64px;
+}
+.auth .toggle {
+  position: absolute;
+  right: 5px;
+  height: 36px;
+  min-width: 52px;
+  padding: 0 9px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.auth .toggle:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.auth .toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* reserved error slot: never reflows the card */
+.auth .slot {
+  min-height: 30px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 0 0;
+}
+.auth .slot .msg {
+  display: none;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, #fff);
+  border-radius: var(--r-sm);
+  padding: 7px 9px;
+  width: 100%;
+  margin: 0;
+}
+.auth .slot[data-on='1'] .msg {
+  display: flex;
+}
+.auth .slot .msg::before {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+  margin-top: 6px;
+}
+
+.auth .btn-primary {
+  width: 100%;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid color-mix(in oklab, var(--accent) 78%, #000);
+  border-radius: var(--r);
+  background: var(--accent);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+.auth .btn-primary:hover {
+  background: color-mix(in oklch, var(--accent) 90%, #000);
+}
+.auth .btn-primary:active {
+  transform: translateY(1px);
+}
+.auth .btn-primary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.auth .btn-primary[disabled] {
+  cursor: progress;
+  background: color-mix(in oklab, var(--accent) 62%, #fff);
+  border-color: color-mix(in oklab, var(--accent) 50%, #fff);
+  color: color-mix(in oklab, var(--ink) 62%, #fff);
+}
+.auth .spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.6px solid color-mix(in oklab, var(--ink) 26%, transparent);
+  border-top-color: var(--ink);
+  animation: spin 0.62s linear infinite;
+}
+.auth .btn-primary[data-busy='0'] .spinner {
+  display: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.auth .alt {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.auth .alt button {
+  background: none;
+  border: 0;
+  padding: 8px 4px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: 0;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.auth .alt button:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.auth .alt button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.auth .meta {
+  margin: 22px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.auth .meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.auth .meta .ok::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.auth .meta .copyright {
+  color: var(--ink-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* short viewports: pin to the top so the hop never leaves the screen */
+@media (max-height: 720px) {
+  .auth {
+    align-items: start;
+    padding-top: 36px;
+  }
+  .auth .bouncer {
+    margin-bottom: 16px;
+  }
+  .mark.mark-lg {
+    width: 62px;
+    height: 62px;
+  }
+}
+@media (max-width: 520px) {
+  .auth {
+    padding: 40px 18px 44px;
+  }
+  .auth-card {
+    padding: 28px 20px 22px;
+  }
+  .auth-card h1 {
+    font-size: 23px;
+  }
+  .auth .meta {
+    font-size: 10px;
+  }
+  .mark.mark-lg {
+    width: 64px;
+    height: 64px;
+  }
+  .auth .bouncer {
+    margin-bottom: 20px;
+  }
+}
