@@ -66,3 +66,42 @@ test('a thread keeps attached artifacts through a read', () => {
   assert.equal(thread.messages[1].artifacts[0].id, 'shots/login.png')
   assert.equal(thread.messages[1].artifacts[0].kind, 'image')
 })
+
+test('an older unanswered turn still finds the artifact saved after it', () => {
+  const second = workspaces.create({ label: 'artifact-backfill' })
+  const folder = workspaces.open(second.id)
+  const shots = path.join(folder.path, 'artifacts', 'shots')
+  fs.mkdirSync(shots, { recursive: true })
+  const image = path.join(shots, 'page.png')
+  fs.writeFileSync(image, Buffer.from('not really a png'))
+
+  const asked = new Date(Date.now() - 120_000)
+  const saved = new Date(Date.now() - 90_000)
+  const askedAgain = new Date(Date.now() - 30_000)
+  fs.utimesSync(image, saved, saved)
+
+  const chatsDir = path.join(folder.path, 'chats')
+  fs.mkdirSync(chatsDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(chatsDir, 't_backfill.json'),
+    JSON.stringify({
+      schema: 1,
+      id: 't_backfill',
+      entity: 'inbox-triage',
+      machine: 'local',
+      harness: 'pi',
+      createdAt: asked.toISOString(),
+      updatedAt: askedAgain.toISOString(),
+      messages: [
+        { who: 'me', text: 'take a screenshot', at: asked.toISOString() },
+        { who: 'me', text: 'are you there?', at: askedAgain.toISOString() },
+      ],
+    }),
+    'utf8',
+  )
+
+  const thread = chats.read({ workspace: second.id, id: 't_backfill' })
+  assert.equal(thread.messages[0].artifacts?.length, 1)
+  assert.equal(thread.messages[0].artifacts[0].id, 'shots/page.png')
+  assert.equal(thread.messages[1].artifacts, undefined)
+})

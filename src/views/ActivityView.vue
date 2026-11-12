@@ -313,7 +313,7 @@ async function copyResume(session) {
             <EntityMark :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
           </span>
           <span class="jrn-act">
-            <b>{{ thread.title || snippet(thread.preview) || 'New thread' }}</b>
+            <b>{{ thread.title || snippet(thread.preview) || 'New chat' }}</b>
             <template v-if="thread.queries">
               · {{ thread.queries }} {{ thread.queries === 1 ? 'query' : 'queries' }}
             </template>

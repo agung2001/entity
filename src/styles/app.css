@@ -38,8 +38,30 @@
     sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
   --rail: 228px;
+  --rail-bg: #f7f5ef;
 
   color-scheme: light;
+}
+
+/* A warm dark surface, not a blue-black developer theme. The mark, accent and
+   semantic colours stay recognisably the same; only the paper changes. */
+:root[data-theme='dark'] {
+  --bg: #151411;
+  --surface: #1d1b17;
+  --surface-2: #27241e;
+  --ink: #f2eee4;
+  --ink-2: #c7c2b6;
+  --muted: #948d80;
+  --border: #33302a;
+  --border-strong: #4c463c;
+  --accent: #f8b956;
+  --accent-soft: #3a2e17;
+  --accent-ink: #ffd88a;
+  --danger: oklch(70% 0.17 27);
+  --danger-soft: #331b18;
+  --ok: oklch(70% 0.13 152);
+  --rail-bg: #191813;
+  color-scheme: dark;
 }
 
 *,
@@ -588,7 +610,7 @@ main {
   flex-direction: column;
   padding: 18px 14px 14px;
   height: 100%;
-  background: var(--bg);
+  background: var(--rail-bg);
   transition: width 0.16s ease, padding 0.16s ease;
 }
 /* macOS `hiddenInset` puts the traffic lights over this corner. */
@@ -618,7 +640,8 @@ main {
 }
 
 /* the rail folds to its icons; the toggle keeps the same slot in both states */
-.rail-toggle {
+.rail-toggle,
+.theme-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -634,11 +657,13 @@ main {
   cursor: pointer;
   transition: background 0.14s ease, color 0.14s ease;
 }
-.rail-toggle:hover {
+.rail-toggle:hover,
+.theme-toggle:hover {
   background: var(--surface);
   color: var(--ink);
 }
-.rail-toggle svg {
+.rail-toggle svg,
+.theme-toggle svg {
   width: 14px;
   height: 14px;
   flex: none;
@@ -669,6 +694,8 @@ main {
   .rail[data-collapsed='1'] .wordmark,
   .rail[data-collapsed='1'] .rail-toggle .lbl,
   .rail[data-collapsed='1'] .rail-toggle .rail-kbd,
+  .rail[data-collapsed='1'] .theme-toggle .lbl,
+  .rail[data-collapsed='1'] .theme-toggle .rail-kbd,
   .rail[data-collapsed='1'] .ws,
   .rail[data-collapsed='1'] .nav-label,
   .rail[data-collapsed='1'] .nav .lbl,
@@ -1008,9 +1035,7 @@ main {
   border-bottom: 1px solid var(--border);
   position: relative;
   z-index: 30;
-  background: color-mix(in oklab, var(--bg) 88%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--bg);
 }
 .crumbs {
   display: flex;
@@ -1214,12 +1239,23 @@ kbd {
 .btn-ink {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--bg);
 }
 .btn-ink:hover {
-  background: #232323;
-  border-color: #232323;
-  color: #fff;
+  background: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  color: var(--bg);
+}
+.btn-kbd {
+  margin-left: 2px;
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 1.25;
+  opacity: 0.55;
 }
 .btn-ghost {
   background: none;
@@ -1598,15 +1634,15 @@ kbd {
   border: 1px solid var(--ink);
   border-radius: var(--r);
   background: var(--ink);
-  color: #fff;
+  color: var(--bg);
   font-family: var(--font);
   font-size: 12.5px;
   font-weight: 500;
   transition: background 0.14s ease, border-color 0.14s ease;
 }
 .go:hover {
-  background: #232323;
-  border-color: #232323;
+  background: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
 }
 .go:active {
   transform: translateY(1px);
@@ -1741,7 +1777,7 @@ kbd {
 .msg[data-who='me'] {
   align-self: flex-end;
   background: var(--ink);
-  color: #fff;
+  color: var(--bg);
 }
 .chips {
   display: flex;
@@ -1769,7 +1805,7 @@ kbd {
 }
 .stat-card:hover {
   border-color: var(--border-strong);
-  background: #fff;
+  background: var(--bg);
 }
 .stat-k {
   font-family: var(--mono);
@@ -1828,7 +1864,7 @@ kbd {
 }
 .machine:hover {
   border-color: var(--border-strong);
-  background: #fff;
+  background: var(--bg);
 }
 .machine .row1 {
   display: flex;
@@ -2106,7 +2142,7 @@ kbd {
   align-items: baseline;
   gap: 12px;
   padding: 7px 0;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, #fff);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, var(--bg));
   font-size: 12.8px;
 }
 .log li:last-child {
@@ -2819,9 +2855,7 @@ kbd {
   height: 52px;
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklab, var(--bg) 88%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--bg);
 }
 .cbar h1 {
   font-family: var(--font);
@@ -2864,6 +2898,7 @@ kbd {
   overflow: visible;
   display: flex;
   flex-direction: column;
+  height: 100%;
   padding: 0;
   border-right: 1px solid var(--border);
 }
@@ -2871,7 +2906,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 50px;
+  height: 58px;
   margin: 0 14px;
   padding: 0;
   flex: none;
@@ -2917,18 +2952,18 @@ kbd {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
-  padding: 0 9px;
-  margin: 0 14px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  height: 42px;
+  padding: 0 14px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   flex: none;
 }
 .hsearch:focus-within {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  background: var(--bg);
+  background: var(--surface);
+  border-bottom-color: var(--border-strong);
 }
 .hsearch svg {
   width: 12px;
@@ -3014,6 +3049,9 @@ kbd {
   align-items: start;
   gap: 10px;
   width: 100%;
+  /* a long history should not pay layout/paint for rows nobody is looking at */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 74px;
   padding: 12px 14px;
   background: none;
   border: 0;
@@ -3335,9 +3373,7 @@ kbd {
   pointer-events: auto;
   width: min(760px, 100%);
   padding: 10px 10px 9px;
-  background: color-mix(in oklab, var(--bg) 94%, transparent);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+  background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(10, 10, 10, 0.1), 0 2px 6px rgba(10, 10, 10, 0.04);
@@ -3372,6 +3408,77 @@ kbd {
   padding: 0;
   flex-wrap: nowrap;
   white-space: nowrap;
+}
+.cp-picks .compose-help {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cp-picks .compose-help:hover,
+.cp-picks .compose-help[aria-expanded='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--ink);
+}
+.compose-help svg {
+  width: 13px;
+  height: 13px;
+}
+.composer-help {
+  width: min(430px, 94vw);
+}
+.help-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.help-list > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.help-list > div:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.help-list dt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+.help-list dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+.help-list dd b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.help-list dd span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.pickbtn .ch-lock,
+.pickwrap[data-locked='1'] .pickbtn .ch-lock {
+  width: 9px;
+  height: 9px;
+  opacity: 0.58;
 }
 
 /* ── modal ────────────────────────────────────────────────────── */
@@ -3485,7 +3592,7 @@ kbd {
   line-height: 1.45;
   color: var(--danger);
   background: var(--danger-soft);
-  border: 1px solid color-mix(in oklab, var(--danger) 22%, #fff);
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--bg));
   border-radius: var(--r-sm);
 }
 
@@ -3769,12 +3876,12 @@ select:focus-visible {
   font-size: 7px;
   color: transparent;
   flex: none;
-  background: #fff;
+  background: var(--bg);
 }
 .pick[aria-pressed='true'] i {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--bg);
 }
 .progress {
   height: 4px;
@@ -3972,7 +4079,7 @@ select:focus-visible {
   bottom: 26px;
   transform: translate(-50%, 10px);
   background: var(--ink);
-  color: #fff;
+  color: var(--bg);
   border-radius: 100px;
   padding: 9px 15px;
   font-family: var(--mono);
@@ -4130,6 +4237,16 @@ select:focus-visible {
     display: none;
   }
   .rail-toggle {
+    display: none;
+  }
+  .theme-toggle {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+  .theme-toggle .lbl,
+  .theme-toggle .rail-kbd {
     display: none;
   }
   .nav {
@@ -4503,7 +4620,7 @@ label.pick[data-on='1'] i,
 label.pick:has(input:checked) i {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--bg);
 }
 label.pick[data-locked='1'] {
   cursor: default;
@@ -5411,6 +5528,27 @@ label.pick:has(input:focus-visible) {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+.msg-artifacts--sys {
+  align-self: center;
+  justify-content: center;
+  width: min(80%, 440px);
+  margin-top: -2px;
+}
+.msg-artifacts--turn {
+  max-width: 80%;
+  margin-top: -2px;
+}
+.msg-artifacts--turn[data-who='agent'] {
+  align-self: flex-start;
+  margin-left: 36px;
+}
+.msg-artifacts--turn[data-who='me'] {
+  align-self: flex-end;
+  margin-right: 36px;
+}
+.msg-artifacts--turn .msg-attach {
+  max-width: min(440px, 100%);
 }
 .msg-attach {
   margin: 0;
@@ -6856,12 +6994,12 @@ label.pick:has(input:focus-visible) {
 .td-foot-actions .td-done {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--bg);
 }
 .td-foot-actions .td-done:hover {
-  background: #232323;
-  border-color: #232323;
-  color: #fff;
+  background: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  color: var(--bg);
 }
 .td-empty {
   flex: 1;

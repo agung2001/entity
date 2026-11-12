@@ -49,6 +49,7 @@ const editing = ref('')
 const editTitle = ref('')
 const confirming = ref('')
 const transcriptOpen = ref(false)
+const helpOpen = ref(false)
 const live = ref(null)
 const menuItem = ref(null)
 const menuPos = ref({ top: 0, left: 0 })
@@ -76,6 +77,13 @@ const transcriptShortcut = isDesktop
   : isMac
     ? '⌥⇧E'
     : 'Alt+Shift+E'
+const newChatShortcut = isDesktop
+  ? isMac
+    ? '⌘N'
+    : 'Ctrl+N'
+  : isMac
+    ? '⌥⇧N'
+    : 'Alt+Shift+N'
 
 const HISTORY_KEY = 'entity.chat.history'
 try {
@@ -152,7 +160,7 @@ watch(
 
 const threadTitle = computed(() => {
   const t = thread.value
-  if (!t) return 'New thread'
+  if (!t) return 'New chat'
   if (t.title) return t.title
   const asked = (t.messages || []).find((message) => message.who === 'me')
   return asked ? snippet(asked.text) : `Thread with ${agent.value?.name || 'entity'}`
@@ -176,7 +184,7 @@ const canTranscript = computed(() => Boolean(live.value || latestTrace.value))
 
 const threadLabel = (summary) =>
   summary.title ||
-  (summary.queries ? snippet(summary.preview) : `New thread · ${summary.entity}`)
+  (summary.queries ? snippet(summary.preview) : `New chat · ${summary.entity}`)
 
 const lastAsked = (summary) => (summary.queries ? snippet(summary.preview) : 'No question yet')
 const threadQueries = (summary) => summary.queries || 0
@@ -196,11 +204,28 @@ function onChatKey(event) {
     menuItem.value = null
     return
   }
-  const primary = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
-  const alternate = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
-  if (!primary && !alternate) return
+  if (event.key === 'Escape' && helpOpen.value) {
+    helpOpen.value = false
+    return
+  }
   const key = event.key.toLowerCase()
   const code = event.code
+  const shiftPrimary = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
+  const alternate = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
+  const barePrimary = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+
+  /* Cmd/Ctrl+N belongs to the browser shell, so only the desktop build claims
+     it; the dev server exposes the same action as Option/Alt+Shift+N. */
+  if (
+    ((isDesktop && barePrimary) || shiftPrimary || alternate) &&
+    (key === 'n' || code === 'KeyN')
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    startThread()
+    return
+  }
+  if (!shiftPrimary && !alternate) return
   if (key === 'b' || code === 'KeyB') {
     event.preventDefault()
     event.stopPropagation()
@@ -488,6 +513,7 @@ watch(
   () => {
     live.value = null
     transcriptOpen.value = false
+    helpOpen.value = false
     menuItem.value = null
   },
 )
@@ -523,7 +549,8 @@ watch(
         <p class="sub">Every thread in this workspace, pinned to the entity, machine and harness it started on.</p>
         <div class="right">
           <button class="btn btn-ink" :disabled="!hub.agents.length" @click="startThread">
-            New thread
+            New chat
+            <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
           </button>
         </div>
       </header>
@@ -534,30 +561,6 @@ watch(
             <h2>History</h2>
             <kbd class="panel-kbd">{{ historyShortcut }}</kbd>
             <span class="n">{{ historyNote }}</span>
-          </div>
-
-          <div class="hsearch">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.6" />
-              <path d="M10.5 10.5L14 14" />
-            </svg>
-            <input
-              v-model="search"
-              type="text"
-              placeholder="Search threads by title"
-              autocomplete="off"
-              spellcheck="false"
-              aria-label="Search threads by title"
-            />
-            <button
-              v-if="search"
-              class="hclear"
-              type="button"
-              aria-label="Clear search"
-              @click="search = ''"
-            >
-              ×
-            </button>
           </div>
 
           <div class="cfilt" role="group" aria-label="Filter history">
@@ -587,6 +590,30 @@ watch(
               :model-value="hub.chat.filters.harness"
               @update:model-value="setChatFilter('harness', $event)"
             />
+          </div>
+
+          <div class="hsearch">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.6" />
+              <path d="M10.5 10.5L14 14" />
+            </svg>
+            <input
+              v-model="search"
+              type="text"
+              placeholder="Search threads by title"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search threads by title"
+            />
+            <button
+              v-if="search"
+              class="hclear"
+              type="button"
+              aria-label="Clear search"
+              @click="search = ''"
+            >
+              ×
+            </button>
           </div>
 
           <div class="hlist" role="group" aria-label="History" @scroll="menuItem = null">
@@ -669,7 +696,7 @@ watch(
                 search
                   ? 'Try a different title, entity or preview.'
                   : hub.chat.summaries.length
-                    ? 'Nothing has started with this combination yet. Clear a filter, or start a new thread.'
+                    ? 'Nothing has started with this combination yet. Clear a filter, or start a new chat.'
                     : 'No conversation has started in this workspace yet. Open an entity and send the first message.'
               }}
             </div>
@@ -772,6 +799,21 @@ watch(
                   :disabled="contextLocked"
                   @update:model-value="setThreadContext('harness', $event)"
                 />
+                <button
+                  class="compose-help"
+                  type="button"
+                  title="Composer help"
+                  aria-label="Composer help"
+                  aria-haspopup="dialog"
+                  :aria-expanded="helpOpen ? 'true' : 'false'"
+                  @click="helpOpen = true"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6" />
+                    <path d="M6.2 6.1a1.9 1.9 0 113.2 1.4c-.6.5-1.4.8-1.4 1.8" stroke-linecap="round" />
+                    <circle cx="8" cy="11.5" r="0.7" fill="currentColor" stroke="none" />
+                  </svg>
+                </button>
               </div>
               <div class="cp-compose">
                 <SlashComposer
@@ -781,11 +823,6 @@ watch(
                   @send="send"
                 />
               </div>
-              <p class="cp-foot">
-                <kbd>/</kbd> commands <span aria-hidden="true">·</span>
-                <kbd>tab</kbd> complete <span aria-hidden="true">·</span>
-                <kbd>enter</kbd> send
-              </p>
             </div>
           </div>
         </section>
@@ -795,7 +832,8 @@ watch(
             <b>No thread open.</b>
             <span>Start one to talk to an entity on this machine through its harness.</span>
             <button class="btn btn-ink" type="button" :disabled="!hub.agents.length" @click="startThread">
-              New thread
+              New chat
+              <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
             </button>
           </div>
         </section>
@@ -837,6 +875,54 @@ watch(
           </svg>
           {{ confirming === menuItem.id ? 'Click again to delete' : 'Delete thread' }}
         </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div class="scrim" :data-open="helpOpen ? '1' : '0'" @click="helpOpen = false"></div>
+      <div
+        class="modal modal-narrow composer-help"
+        :data-open="helpOpen ? '1' : '0'"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Composer help"
+      >
+        <div class="mo-head">
+          <h2>Composer help</h2>
+          <p>Type a message, or use these keys in the chat composer.</p>
+          <button class="x mo-x" aria-label="Close" @click="helpOpen = false">
+            <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
+          </button>
+        </div>
+        <div class="mo-body">
+          <dl class="help-list">
+            <div>
+              <dt><kbd>/</kbd></dt>
+              <dd><b>Skills and commands</b><span>Open the menu, then pick a skill or built-in command.</span></dd>
+            </div>
+            <div>
+              <dt><kbd>↑</kbd><kbd>↓</kbd></dt>
+              <dd><b>Move through the menu</b><span>Choose the command you want.</span></dd>
+            </div>
+            <div>
+              <dt><kbd>tab</kbd></dt>
+              <dd><b>Complete</b><span>Insert the highlighted command.</span></dd>
+            </div>
+            <div>
+              <dt><kbd>enter</kbd></dt>
+              <dd><b>Send</b><span>Send the message to the entity.</span></dd>
+            </div>
+            <div>
+              <dt><kbd>esc</kbd></dt>
+              <dd><b>Close the menu</b><span>Stay in the composer without choosing anything.</span></dd>
+            </div>
+          </dl>
+        </div>
+        <div class="mo-foot">
+          <button class="btn" type="button" @click="helpOpen = false">Got it</button>
+        </div>
       </div>
     </Teleport>
 

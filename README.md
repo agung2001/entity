@@ -216,9 +216,11 @@ The harness is told that workspace artifacts live in `<ws>/artifacts`, that a
 screenshot belongs there rather than `/tmp`, and that a saved file should be
 referenced as `artifact://<relative-path>`. The chat renders that reference as an
 image or a download card, and also attaches any file written to the artifact
-shelf during the turn even when the answer never names it. An absolute
-`/artifacts/…` path resolves through the same read RPC. `#/artifacts` remains the
-shelf for browsing, uploading, searching, filtering and removing those files.
+shelf during the turn even when the answer never names it. A failed turn keeps
+the files it managed to save, and older threads without artifact metadata are
+matched to their request windows when they are read. An absolute `/artifacts/…`
+path resolves through the same read RPC. `#/artifacts` remains the shelf for
+browsing, uploading, searching, filtering and removing those files.
 
 ## Layout
 
@@ -344,9 +346,11 @@ history mode has no server to resolve a path on reload.
 | `#/account` | Account profile and MCP server management |
 
 The rail keeps Overview, Chat, Entities, Artifacts and Activity in the main
-list. Skills, MCP and Machines sit behind an **Advanced** disclosure (remembered
-per window) so the everyday surface is not a glossary; the section opens
-automatically when a deep link lands on one of those pages.
+list. Skills, MCP and Machines sit behind an **Advanced** disclosure — open by
+default, remembered per window — so the everyday surface is not a glossary; the
+section opens automatically when a deep link lands on one of those pages. The
+rail also owns the light/dark switch (`⌘⇧L` in the desktop app, `⌥⇧L` in a
+browser). New chat is `⌘N` in the desktop app and `⌥⇧N` in a browser.
 
 Workspace settings are a page (`#/workspace`), not a modal: General and Members
 are separate tabs for the name, the directory id and the member roster. Managing

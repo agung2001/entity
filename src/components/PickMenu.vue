@@ -53,7 +53,7 @@ const display = computed(() => {
 })
 
 const countLabel = computed(() =>
-  props.count != null && props.modelValue !== 'all' ? `(${props.count} plugins)` : '',
+  props.count != null && props.modelValue !== 'all' ? `(${props.count} skills)` : '',
 )
 
 function toggle() {
@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
       :disabled="disabled"
       :title="disabled ? 'This thread has started — its context is locked' : `${head}`"
       :aria-label="`${head}: ${current ? current.label : 'all'}${
-        count != null && modelValue !== 'all' ? `, ${count} plugins` : ''
+        count != null && modelValue !== 'all' ? `, ${count} skills` : ''
       }${disabled ? ', locked' : ''}`"
       @click="toggle"
       @keydown="onTriggerKey"
@@ -153,7 +153,11 @@ onBeforeUnmount(() => {
       <MachineIcon v-else-if="icons === 'machine'" :size="12" />
       <span class="nm">{{ display }}</span>
       <span v-if="countLabel" class="ct">{{ countLabel }}</span>
-      <svg class="ch" viewBox="0 0 10 10" aria-hidden="true">
+      <svg v-if="disabled" class="ch ch-lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <rect x="3.6" y="7" width="8.8" height="6.2" rx="1.4" />
+        <path d="M5.6 7V5.3a2.4 2.4 0 014.8 0V7" />
+      </svg>
+      <svg v-else class="ch" viewBox="0 0 10 10" aria-hidden="true">
         <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
       </svg>
     </button>

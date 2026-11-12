@@ -364,6 +364,10 @@ const reduced =
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const marks = []
+/* `mini` marks are too small to read a blink or a gaze, and a history list can
+   mount hundreds of them. They are painted once and left out of the frame loop;
+   only the marks where motion is legible animate. */
+const statics = []
 let seq = 0
 let seed = 20241111
 let raf = 0
@@ -376,6 +380,7 @@ const rnd = () => {
 /** Paint every live mark from its own record — one write per mark, no re-render. */
 export function syncMarkBadges() {
   for (const p of marks) applyMark(p.el, p.mark)
+  for (const p of statics) applyMark(p.el, p.mark)
 }
 
 /**
@@ -563,6 +568,11 @@ export function hydrateMark(
   }
   applyMark(el, mark)
 
+  if (mini && !hop) {
+    statics.push({ el, mark })
+    return
+  }
+
   const idx = seq++
   marks.push({
     el,
@@ -595,4 +605,6 @@ export function hydrateMark(
 export function releaseMark(el) {
   const i = marks.findIndex((p) => p.el === el)
   if (i > -1) marks.splice(i, 1)
+  const j = statics.findIndex((p) => p.el === el)
+  if (j > -1) statics.splice(j, 1)
 }

@@ -28,6 +28,9 @@ const emit = defineEmits(['chip', 'retry'])
 const box = ref(null)
 const saving = ref('')
 const appliedFocus = ref('')
+/* A collapsed trace is a label, not a mounted DOM tree. Long tool transcripts
+   were being rendered for every message even while their folds were shut. */
+const openTraces = ref(new Set())
 
 /* The bubble belongs to the signed-in account; the entity owns the reply. */
 const accountEmail = computed(() => hub.session?.email || credentials().email || '')
@@ -155,6 +158,22 @@ function elapsed(message) {
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`
 }
 
+function traceKey(message, index) {
+  return message.id || `msg-${message.at || index}`
+}
+
+function traceOpen(message, index) {
+  return openTraces.value.has(traceKey(message, index))
+}
+
+function onTraceToggle(message, index, event) {
+  const key = traceKey(message, index)
+  const next = new Set(openTraces.value)
+  if (event.target.open) next.add(key)
+  else next.delete(key)
+  openTraces.value = next
+}
+
 function hasTrace(message) {
   return Boolean(
     message?.steps?.some((step) =>
@@ -189,24 +208,30 @@ function traceSummary(message) {
       aria-label="Conversation with entity"
     >
     <template v-for="(m, i) in messages" :key="m.id || i">
-      <div
-        v-if="m.who === 'sys'"
-        :id="`chat-msg-${i}`"
-        class="ask-sys"
-        :data-error="m.error ? '1' : '0'"
-        :data-thread-anchor="i"
-      >
-        <span>{{ m.text }}</span>
-        <button
-          v-if="m.error"
-          class="ask-retry"
-          type="button"
-          :disabled="hub.chat.sending"
-          @click="emit('retry', m)"
+      <template v-if="m.who === 'sys'">
+        <div
+          :id="`chat-msg-${i}`"
+          class="ask-sys"
+          :data-error="m.error ? '1' : '0'"
+          :data-thread-anchor="i"
         >
-          {{ hub.chat.sending ? 'Retrying…' : 'Retry' }}
-        </button>
-      </div>
+          <span>{{ m.text }}</span>
+          <button
+            v-if="m.error"
+            class="ask-retry"
+            type="button"
+            :disabled="hub.chat.sending"
+            @click="emit('retry', m)"
+          >
+            {{ hub.chat.sending ? 'Retrying…' : 'Retry' }}
+          </button>
+        </div>
+        <ChatArtifacts
+          v-if="m.artifacts?.length"
+          class="msg-artifacts--sys"
+          :items="m.artifacts"
+        />
+      </template>
       <div
         v-else
         :id="`chat-msg-${i}`"
@@ -217,17 +242,27 @@ function traceSummary(message) {
         :style="m.who === 'me' && userAvatar ? { '--msg-avatar': 'url(' + userAvatar + ')' } : null"
       >
         <MessageBody :text="m.text" />
-        <ChatArtifacts v-if="m.artifacts?.length" :items="m.artifacts" />
         <EntityMark v-if="m.who === 'agent'" mini :entity="entityName" class="msg-avatar" />
       </div>
-      <details v-if="hasTrace(m)" class="msg-trace" :data-who="m.who">
+      <ChatArtifacts
+        v-if="m.who !== 'sys' && m.artifacts?.length"
+        class="msg-artifacts--turn"
+        :data-who="m.who"
+        :items="m.artifacts"
+      />
+      <details
+        v-if="hasTrace(m)"
+        class="msg-trace"
+        :data-who="m.who"
+        @toggle="onTraceToggle(m, i, $event)"
+      >
         <summary class="msg-trace-head">
           <svg class="trace-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
             <path d="M6 3.5L10.5 8 6 12.5" />
           </svg>
           <span>{{ traceSummary(m) }}</span>
         </summary>
-        <div class="msg-trace-body">
+        <div v-if="traceOpen(m, i)" class="msg-trace-body">
           <TraceTimeline :steps="m.steps" :execution="m.execution" compact />
         </div>
       </details>

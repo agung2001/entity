@@ -197,7 +197,7 @@ function openFromKeyboard(e, id) {
         >
           <time>{{ ago(t.updatedAt) }}</time>
           <span class="who"><EntityMark mini :entity="t.entity" />{{ t.entity }}</span>
-          <span class="what"><b>{{ t.title || snippet(t.preview) || 'New thread' }}</b></span>
+          <span class="what"><b>{{ t.title || snippet(t.preview) || 'New chat' }}</b></span>
           <span class="where">
             <MachineIcon :size="10" />{{ machineLabel(t.machine) }}
             <span aria-hidden="true">·</span>

@@ -13,7 +13,7 @@ import {
   signIn,
   verifyCredentials,
 } from '@/stores/hub'
-import { claimActiveWorkspaceOwner, loadWorkspaces, workspaces } from '@/stores/workspaces'
+import { claimActiveWorkspaceOwner, loadWorkspaceList, workspaces } from '@/stores/workspaces'
 
 /**
  * One account per hub, tied to the first workspace creator. A hub with no
@@ -83,7 +83,7 @@ onMounted(async () => {
   /* Both reads are independent; doing them in sequence made a cold sign-in
      wait for one round trip after another. */
   const [, status] = await Promise.all([
-    workspaces.loaded ? Promise.resolve() : loadWorkspaces().catch(() => {}),
+    workspaces.loaded ? Promise.resolve() : loadWorkspaceList().catch(() => {}),
     loadAccount({ force: true }),
   ])
   if (status.exists) {

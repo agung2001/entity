@@ -60,9 +60,9 @@ export async function loadScope(id) {
   workspaces.skills = skills
   workspaces.mcp = mcp
 
-  await loadEntities(id)
-  await loadRuns(id)
-  await loadArtifacts(id)
+  /* These read independent files. Sequential awaits made a workspace switch
+     pay three round trips back-to-back. */
+  await Promise.all([loadEntities(id), loadRuns(id), loadArtifacts(id)])
 
   applyScope({
     agents: hub.agents,
@@ -151,6 +151,17 @@ export async function claimActiveWorkspaceOwner(owner) {
   } catch {
     return null
   }
+}
+
+/**
+ * Read only the workspace list. The sign-in screen needs labels and owners, not
+ * the entities, run logs and artifact walk of the workspace it is about to open.
+ * `loaded` stays false so the hub still performs its full scope load after login.
+ */
+export async function loadWorkspaceList() {
+  const items = await call('workspace.list')
+  workspaces.items = items
+  return items
 }
 
 /**

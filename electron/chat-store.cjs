@@ -284,7 +284,8 @@ function list({ workspace }) {
 
 function read({ workspace, id }) {
   const record = workspaces.open(workspace)
-  return readThread(record, id)
+  const thread = readThread(record, id)
+  return thread ? attachArtifactsByTurn(thread) : null
 }
 
 function checkEntity(workspace, name) {
@@ -399,20 +400,96 @@ function artifactRefs(text) {
   return ids
 }
 
+function artifactSummary(item) {
+  return {
+    id: item.id,
+    name: item.name,
+    kind: item.kind,
+    mime: item.mime,
+    size: item.size,
+    modifiedAt: item.modifiedAt,
+  }
+}
+
 /** A screenshot is part of the answer even when the harness never names it. */
 function turnArtifacts(workspace, sinceMs, answer) {
   const linked = artifactRefs(answer)
   return artifacts
     .recent({ workspace, since: sinceMs, limit: 16 })
     .filter((item) => !linked.has(item.id))
-    .map((item) => ({
-      id: item.id,
-      name: item.name,
-      kind: item.kind,
-      mime: item.mime,
-      size: item.size,
-      modifiedAt: item.modifiedAt,
-    }))
+    .map(artifactSummary)
+}
+
+function timeOf(value) {
+  const ms = Date.parse(String(value || ''))
+  return Number.isFinite(ms) ? ms : 0
+}
+
+/**
+ * Older threads were written before turns carried artifact metadata. Match the
+ * shelf against the request windows instead of making the person hunt for a
+ * screenshot they already see in the transcript.
+ *
+ * A turn owns the time from its question until the next question. A successful
+ * answer caps the window at its own end (plus a few seconds for the final
+ * write); an error or an unanswered request keeps the whole window, because the
+ * harness may have saved the file before it failed or while the person retried.
+ */
+function attachArtifactsByTurn(thread) {
+  const requests = thread.messages
+    .map((message, index) => ({ message, index }))
+    .filter((entry) => entry.message.who === 'me')
+  if (!requests.length) return thread
+
+  let shelf = []
+  try {
+    shelf = artifacts.list({ workspace: thread.workspace }).items || []
+  } catch {
+    return thread
+  }
+  if (!shelf.length) return thread
+
+  const claimed = new Set()
+  for (const message of thread.messages) {
+    for (const artifact of message.artifacts || []) claimed.add(artifact.id)
+  }
+  const available = shelf
+    .map((item) => ({ ...artifactSummary(item), ms: timeOf(item.modifiedAt) }))
+    .filter((item) => item.ms > 0 && !claimed.has(item.id))
+
+  for (let r = 0; r < requests.length; r += 1) {
+    const { message: request, index } = requests[r]
+    const next = requests[r + 1] || null
+    const start = timeOf(request.at)
+    const nextStart = next ? timeOf(next.message.at) : Infinity
+
+    let turn = null
+    for (let i = index + 1; i < (next ? next.index : thread.messages.length); i += 1) {
+      const candidate = thread.messages[i]
+      if (candidate.who === 'agent' || candidate.who === 'sys') {
+        turn = candidate
+        break
+      }
+    }
+
+    let end = nextStart
+    if (turn?.who === 'agent') {
+      const ended = timeOf(turn.execution?.endedAt)
+      if (ended >= start) end = Math.min(end, ended + 5000)
+    }
+
+    const found = available.filter((item) => item.ms >= start && item.ms < end)
+    if (!found.length) continue
+
+    const target = turn || request
+    target.artifacts = [...(target.artifacts || []), ...found.map(({ ms, ...item }) => item)]
+    for (const item of found) {
+      claimed.add(item.id)
+      const at = available.findIndex((entry) => entry.id === item.id)
+      if (at >= 0) available.splice(at, 1)
+    }
+  }
+  return thread
 }
 
 function promptFor(messages) {
@@ -733,7 +810,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
     flushStep()
 
     const at = now()
-    const createdArtifacts = run.ok ? turnArtifacts(record.id, turnStartedMs, run.answer) : []
+    const createdArtifacts = turnArtifacts(record.id, turnStartedMs, run.answer)
     const execution = { ...run.execution, id: messageId, harness: thread.harness }
     turnMessage = run.ok
       ? {
@@ -753,6 +830,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
           error: true,
           steps: run.steps,
           execution,
+          ...(createdArtifacts.length ? { artifacts: createdArtifacts } : {}),
         }
     thread.messages.push(turnMessage)
   } catch (error) {
