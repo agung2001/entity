@@ -49,8 +49,11 @@ assume a port.
 ## Where data lives
 
 ```
+~/.entity/auth.json                 account identity + scrypt verifier + encrypted password
+~/.entity/auth.key                  AES-256 fallback key, mode 0600 (when safeStorage is unavailable)
 ~/.entity/workspaces/<id>/          one workspace = one directory
-  workspace.json                   { schema, id, label, kind, createdAt, mcpStrict, members }
+  workspace.json                   { schema, id, label, kind, createdAt, mcpStrict, context }
+  members.json                     { schema, workspace, owner, members: [{ name, email, role }] }
   entities/<name>.md               frontmatter = config, body = instructions
   skills/<name>                    symlink into a harness skill library
   mcp.json                         { schema, servers: { name: { command | url, args, env } } }
@@ -59,6 +62,8 @@ assume a port.
   chats/<threadId>.json            one conversation per file
   artifacts/<path>                 documents, screenshots and other deliverables
   runs/<runId>.jsonl               append-only run log
+  audit.jsonl                      one line per agent-initiated write
+  .bin/entity                      launcher for the CLI, regenerated per run
 ```
 
 `~/.entity/harnesses.json` holds the optional machine-wide binary path overrides (`{ "paths": { "claude": "/opt/.../claude" } }`).
@@ -115,6 +120,45 @@ prompt itself always goes in on **stdin**; `cwd` is the entity's `dir`. `skills:
 and `mcp:` names that do not resolve are reported as `problems[]` on the entity —
 the file stays readable, the run is still allowed.
 
+### An entity can change itself
+
+The file above is not read-only to the agent it defines. Every run gets
+`ENTITY_CLI_PATH` and a short brief, so it can list entities, read one, rewrite
+its **body**, change another entity's config, add an MCP server to the workspace
+pool, attach a skill, or set the workspace-wide context:
+
+```bash
+"$ENTITY_CLI_PATH" entity list
+"$ENTITY_CLI_PATH" entity get py-agent --output json
+"$ENTITY_CLI_PATH" entity set-instructions py-agent --body-stdin
+"$ENTITY_CLI_PATH" mcp add github --command npx --args -y,server-github
+"$ENTITY_CLI_PATH" workspace set-context --context-stdin
+```
+
+Four things make that safe to hand out:
+
+- **One writer.** `electron/platform-core.cjs` owns every verb; `cli.cjs` is a
+transport over it and touches no paths. A future MCP adapter would be a second
+transport, not a second implementation.
+- **Containment, on the resolved path.** A name is matched against the entity
+  filename grammar *and* the resulting real path is checked to be inside the
+  workspace. Another workspace is unreachable, by name or by `..`.
+- **Optimistic concurrency.** `set-instructions` takes the `stamp` from the
+  preceding `get` (`--if-unchanged`) and refuses a write that would clobber a
+  person editing the same file in `$EDITOR`.
+- **An audit line.** Every mutation appends to `<ws>/audit.jsonl`; `entity audit`
+  reads it back. A change outlives the run that made it, so the row is the only
+  thing that can explain it later.
+
+`env` on an MCP server is a list of variable **names** — `mcp.json` never holds a
+value, and no verb returns one. Set the variable in the environment the app runs
+in.
+
+A write changes the file; the window notices without a reload because
+`workspace-watch.cjs` watches `entities/`, `skills/`, `workspace.json` and
+`mcp.json` and drops one `workspace-changed` event per workspace per quiet
+period. Run logs are deliberately excluded — they are appended every 50 ms.
+
 ### Skills are called, not just declared
 
 `skills:` on an entity is a declaration; it changes nothing about what the
@@ -158,7 +202,12 @@ copy. The chat header opens the full transcript; each answer also carries an
 inline, collapsible process fold. The transcript dialog itself is a detail view:
 turn tabs, a two-lane wall-clock timeline, a step outline and one expanded step.
 Old messages without a transcript simply do not show one. Each answer also has
-copy, share and "save as artifact" actions.
+copy, share and "save as artifact" actions. A failed turn carries a **Retry**
+button that re-runs the same question without adding a second copy of it. Every
+message — question or answer — has copy/share; share is a deep link
+(`?thread=…&msg=…`) that opens the thread and scrolls to that row. A right-edge
+outline draws one tick per message, follows the reading position, and opens a
+jump card on hover or focus.
 
 ### Artifacts in chat
 
@@ -174,21 +223,30 @@ electron/
   main.cjs            main process: window, lifecycle, IPC entry points
   preload.cjs         contextBridge — `call()` + `onRunEvent()`, nothing else
   rpc.cjs             the one call table (workspace / entity / run / machine / skill)
-  workspace-store.cjs workspace dirs: create (atomic), list, update, machines, skills, mcp
+  auth-store.cjs      ~/.entity/auth.json: scrypt verifier + encrypted password
+  workspace-store.cjs workspace dirs: create (atomic), list, update, machines, skills, mcp, members
   entity-store.cjs    entities/*.md read/write/scaffold + problems[]
   chat-store.cjs      threads under <ws>/chats, one harness turn per send
   chat-transcript.cjs JSONL stream → thinking / text / tool steps for a chat turn
   session-store.cjs   each harness's own session store, scoped by entity cwd
   mcp-store.cjs       MCP config discovery across ~/.claude.json, ~/.codex, ~/.pi, …
+  mcp-tools.cjs       opens a server's JSON-RPC handshake and asks for tools/list
   artifact-store.cjs  <ws>/artifacts: list, read, upload, saveText, remove, prompt brief
   harness-store.cjs   installed CLI paths, ~/.entity/harnesses.json, detected model hints
   skill-ref.cjs       /workspace:<name> and /<harness>:<name> → `use this skill <path>`
   runner-local.cjs    spawn a harness, stream events, append the run log
+  platform-core.cjs   the agent-facing verbs: the only writer an agent can reach
+  platform-brief.cjs  what every run is told (brief + workspace context) and env
+  platform-audit.cjs  <ws>/audit.jsonl — one line per agent-initiated write
+  workspace-watch.cjs fs.watch over workspaces → "a file changed, re-read it"
+  cli.cjs             the `entity` CLI; a transport over platform-core, no fs
   frontmatter.cjs     the flat frontmatter parser shared by entities and skills
   seed.cjs            the optional sample entities + their descriptions/defaults
   local-data.cjs      ~/.ssh/config parser, ssh probes, harness skill scanner
 scripts/
   dev-desktop.mjs     runs Vite programmatically, then launches Electron
+bin/
+  entity              the same CLI for a terminal, a hook or CI
 src/
   main.js             renderer entry
   router.js           hash history; guard order: session → workspace → route
@@ -204,6 +262,7 @@ src/
     EntityDetailView.vue  entity page: editable harness/model, harness paths, Markdown instructions
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
     McpView.vue       workspace MCP pool + global harness MCP config (attach to pool)
+    AccountView.vue   profile + password, and the MCP servers this workspace can use
     ArtifactsView.vue  workspace artifact shelf: upload, remove, search, extension filter, sort
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
@@ -219,7 +278,9 @@ src/
     AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
     MessageList / MessageBody / SlashComposer
+    ThreadMinimap.vue  right-edge message outline and jump card
     ModelInput.vue     free-text model field with detected suggestions
+    McpAccountPanel.vue  enable/disable MCP servers, entity opt-ins and tool lists
     MarkdownEditor.vue Write/Review Markdown editor with a sanitized preview
     HarnessPaths.vue   machine-wide executable overrides for the five harnesses
     ArtifactThumb.vue  lazy image thumbnail for the artifact grid
@@ -276,12 +337,32 @@ history mode has no server to resolve a path on reload.
 | `#/activity` | Activity (journal + harness sessions) |
 | `#/workspaces` | Manage workspaces (add, export/import, delete, settings) |
 | `#/workspace` | Workspace settings (general + members) |
+| `#/account` | Account profile and MCP server management |
 
 Workspace settings are a page (`#/workspace`), not a modal: General and Members
 are separate tabs for the name, the directory id and the member roster. Managing
 workspaces is its own page (`#/workspaces`): add, export/import one JSON bundle,
-choose settings, or delete. MCP has its own page (`#/mcp`), and workspace
-artifacts have one too (`#/artifacts`); entities, skills and machines keep theirs.
+choose settings, or delete. MCP has its own page (`#/mcp`), and Account has a
+second MCP tab that can enable/disable a server for this workspace and list the
+tools it exposes. Workspace artifacts have their own page (`#/artifacts`);
+entities, skills and machines keep theirs.
+
+One account belongs to a hub, and the first workspace creator owns it. The
+renderer no longer keeps credentials: `~/.entity/auth.json` holds the public
+identity, a scrypt password verifier and a password encrypted with Electron
+`safeStorage` (or a local AES-256 key when the browser dev server cannot reach
+the keychain). The login placeholder is deliberately generic; it never reveals
+the saved email. The old localStorage credential is imported once into
+`auth.json` and removed. Each workspace writes its binding in
+`~/.entity/workspaces/<id>/members.json`, with the owner always a member.
+
+With no account and no workspace yet, sign-in bootstraps that email as the
+owner; the documented default password is `123456`. Once an account is
+registered — or a workspace exists and records its owner — the bootstrap path
+is closed. Profile images come from Gravatar, with an identicon fallback. The
+sign-in screen is a light-mode Area 51 pixel scene — stepped mesas, a hovering
+saucer, a slow searchlight and rising dust — while keeping the same warm yellow
+accent as the mark.
 
 The guard runs in order: **session → workspace → route**. After sign-in, if
 `~/.entity/workspaces/` holds no readable `workspace.json`, the router sends the
@@ -311,6 +392,10 @@ Add a feature by adding a handler to the call table — **not** by inventing a n
 channel per feature, and never by handing the renderer a path or a shell string.
 The renderer never touches `fs`; main validates names (`[a-z0-9-]+`), resolves
 `dir` and only then spawns.
+
+The verbs an agent can call live in `platform-core.cjs` and are reachable from
+the window through `platform.verbs` / `platform.call`, so a UI for them would not
+need a second implementation. `cli.cjs` wraps the same table for a process.
 
 Keep `contextIsolation: true` / `nodeIntegration: false` / `sandbox: true` (the
 defaults in this scaffold), and never expose `ipcRenderer` itself.
@@ -346,8 +431,13 @@ global config, and the UI says so instead of implying enforcement.
 - Prompts go to the harness on stdin, never through a shell (`shell: false`).
   `harness` is one of five known ids; `dir` must exist and is resolved in main;
   entity and workspace names are `[a-z0-9-]+`, so no path escapes.
+- A run can write its own files, so the CLI is a trust boundary too: every verb
+  re-checks containment on the **resolved** path, `set-instructions` refuses a
+  write that raced an outside edit, and every mutation is logged to
+  `audit.jsonl`. It cannot reach another workspace, the ssh config, or a key.
 - MCP `env` entries are variable **names**; values resolve from the environment
-  at run time and are never written into `mcp.json`.
+  at run time and are never written into `mcp.json`. Tool discovery returns only
+  tool names, descriptions and schemas; it never returns env values.
 - Chat transcripts contain model thinking and tool output. They live only in the
   workspace's own thread JSON and are never sent anywhere by the hub.
 - External links open in the OS browser; in-app navigation away from the app
@@ -369,6 +459,11 @@ packaged app renders a blank window.
   MCP is enforced for claude only (see above).
 - Remote placement and ssh deploy are not implemented; a directory in Finder is
   still the honest interface for a workspace that needs to be moved by hand.
+- The agent-facing surface is a CLI, not MCP. `platform-core.cjs` is designed as
+  the seam a stdio MCP server would sit on (same verbs, named args), but it is
+  not built: six tool schemas cost every run of every agent, and every harness
+  here can already run a shell. Add it when a harness that cannot appears.
+- `audit.jsonl` is written and readable (`entity audit`) but has no window yet.
 - Export carries entities, chats, artifacts, copied skills and the MCP pool.
   Copied private keys, generated ssh config and run logs are deliberately left out.
 - A workspace's `machines/CONFIG` holds absolute `IdentityFile` paths, so moving

@@ -255,11 +255,19 @@ async function reveal() {
             <h2>Source file</h2>
             <span class="mnote">frontmatter + instructions</span>
           </div>
-          <p class="lbl">Path</p>
-          <pre class="code">{{ agent.displayPath }}</pre>
+          <div class="source-label-row">
+            <span class="lbl">Full instructions</span>
+            <span class="source-path mono" :title="agent.displayPath">{{ agent.displayPath }}</span>
+          </div>
+          <MarkdownEditor
+            v-model="form.instructions"
+            :rows="instructionRows"
+            :disabled="saving"
+            placeholder="Write the entity instructions in Markdown…"
+          />
           <p class="dr-note">
-            The body below is the full file content the harness receives as a system
-            prompt (claude, pi) or as prompt text (codex, opencode, gemini).
+            The body above is the full file content the harness receives as a system prompt
+            (claude, pi) or as prompt text (codex, opencode, gemini).
           </p>
           <p v-if="agent.mcp.length" class="dr-note">
             {{
@@ -268,13 +276,6 @@ async function reveal() {
                 : `MCP applies to claude conversations; ${agent.harness} ignores the list.`
             }}
           </p>
-          <span class="lbl">Full instructions</span>
-          <MarkdownEditor
-            v-model="form.instructions"
-            :rows="instructionRows"
-            :disabled="saving"
-            placeholder="Write the entity instructions in Markdown…"
-          />
           <div class="acct-actions">
             <span v-if="dirty" class="mnote">Unsaved changes</span>
             <button class="btn btn-ink" type="button" :disabled="saving || !dirty" @click="save">

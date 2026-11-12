@@ -21,6 +21,7 @@ const skillRef = require('./skill-ref.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
+const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 
 /* a generous cap: the renderer only paints the newest turns, but the file is
@@ -176,6 +177,12 @@ function previewOf(thread) {
   return spoken ? spoken.text.replace(/\s+/g, ' ').trim().slice(0, 180) : ''
 }
 
+/** A thread title is the opening question until someone renames it. */
+function titleOf(thread) {
+  const asked = thread.messages.find((message) => message.who === 'me' && !message.error)
+  return asked ? asked.text.replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+}
+
 function summarise(thread) {
   const queries = thread.messages.filter((message) => message.who === 'me').length
   const replies = thread.messages.filter((message) => message.who === 'agent').length
@@ -185,7 +192,7 @@ function summarise(thread) {
     machine: thread.machine,
     harness: thread.harness,
     model: thread.model || '',
-    title: thread.title,
+    title: thread.title || titleOf(thread),
     pinned: Boolean(thread.pinned),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
@@ -397,9 +404,22 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
     }
 
     const model = thread.model || (thread.harness === entity.harness ? entity.model : '')
+    /* The workspace record carries the context that applies to every entity in
+       it. A chat turn is the same agent with the same file, so it must be told
+       the same things a run is — including how to reach the `entity` CLI. */
+    let record = null
+    try {
+      record = workspaces.open(thread.workspace)
+    } catch {
+      record = null
+    }
     let spec
     try {
-      const instructions = `${entity.instructions.trim()}\n\n${artifacts.brief(thread.workspace)}`
+      const instructions = platform.compose({
+        record,
+        entity,
+        extra: artifacts.brief(thread.workspace),
+      })
       spec = chatInvocation(thread.harness, instructions, prompt, model)
       spec.cmd = harnesses.binary(thread.harness) || spec.cmd
     } catch (error) {
@@ -429,7 +449,7 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
     try {
       child = spawn(spec.cmd, spec.argv, {
         cwd: dir,
-        env: process.env,
+        env: { ...process.env, ...platform.env({ record, entity }) },
         shell: false,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -522,13 +542,14 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
   })
 }
 
-async function send({ workspace, id, text, emit = () => {} }) {
+async function send({ workspace, id, text, emit = () => {}, retry = false }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread) throw new Error('That thread no longer exists.')
 
+  const retryTurn = Boolean(retry)
   const message = String(text || '').trim()
-  if (!message) throw new Error('Write a message first.')
+  if (!retryTurn && !message) throw new Error('Write a message first.')
   if (thread.machine !== 'local') {
     throw new Error(
       `This thread is pinned to ${thread.machine}. Remote chat is not wired yet — pick local for a new thread.`,
@@ -538,17 +559,30 @@ async function send({ workspace, id, text, emit = () => {} }) {
 
   const entity = checkEntity(workspace, thread.entity)
 
-  /* `/workspace:<skill>` or `/<harness>:<skill>` becomes
-     `use this skill <path>` — resolved before anything is written, so a typo
-     leaves no half-turn in the transcript */
-  const applied = skillRef.rewrite(record, message)
-
-  thread.messages.push({
-    who: 'me',
-    text: message,
-    at: now(),
-    ...(applied.ref ? { sent: applied.text } : {}),
-  })
+  if (retryTurn) {
+    const last = thread.messages[thread.messages.length - 1]
+    if (!last || last.who !== 'sys' || !last.error) {
+      throw new Error('Only a failed turn can be retried.')
+    }
+    if (!thread.messages.some((entry) => entry.who === 'me')) {
+      throw new Error('There is no question to retry.')
+    }
+    /* The failed row is replaced by the new answer. Keeping it would make the
+       transcript claim two answers to one question. */
+    thread.messages.pop()
+  } else {
+    if (!thread.title) thread.title = titleOf({ messages: [{ who: 'me', text: message }] })
+    /* `/workspace:<skill>` or `/<harness>:<skill>` becomes
+       `use this skill <path>` — resolved before anything is written, so a typo
+       leaves no half-turn in the transcript */
+    const applied = skillRef.rewrite(record, message)
+    thread.messages.push({
+      who: 'me',
+      text: message,
+      at: now(),
+      ...(applied.ref ? { sent: applied.text } : {}),
+    })
+  }
   thread.updatedAt = now()
   writeThread(record, thread)
 

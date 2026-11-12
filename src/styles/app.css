@@ -3235,10 +3235,53 @@ kbd {
   margin-top: auto;
 }
 .c-thread .msg {
+  position: relative;
   max-width: 80%;
   font-size: 12.7px;
   line-height: 1.6;
   padding: 9px 11px;
+}
+/* the account bubble carries the signed-in gravatar; the reply carries the
+   entity mark, animation and mood sticker */
+.c-thread .msg[data-who='me'] {
+  margin-right: 36px;
+}
+.c-thread .msg[data-who='me'][data-avatar='1']::after {
+  content: '';
+  position: absolute;
+  right: -35px;
+  bottom: 0;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--msg-avatar) center / cover no-repeat, var(--surface-2);
+  box-shadow: 0 1px 4px rgba(10, 10, 10, 0.14);
+}
+.c-thread .msg[data-who='agent'] {
+  margin-left: 36px;
+}
+.c-thread .msg > .msg-avatar {
+  position: absolute;
+  left: -36px;
+  bottom: 0;
+  width: 27px;
+  height: 27px;
+}
+.c-thread .msg .mark--xs .mood {
+  display: grid;
+  right: -5px;
+  bottom: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  font-size: 9px;
+  border-width: 1px;
+  box-shadow: 0 1px 3px rgba(10, 10, 10, 0.16);
+}
+.c-thread .msg-trace[data-who='agent'],
+.c-thread .msg-foot {
+  margin-left: 36px;
 }
 .cp-compose {
   position: relative;
@@ -3433,6 +3476,24 @@ kbd {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+}
+.acct-profile-head {
+  align-items: flex-start;
+}
+.acct-id {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.acct-avatar {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  object-fit: cover;
 }
 .acct-card-head h2,
 .role-card h2 {
@@ -5557,6 +5618,25 @@ label.pick:has(input:focus-visible) {
   font-size: 10px;
 }
 
+.source-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 14px 0 6px;
+}
+.source-label-row .lbl {
+  margin: 0;
+}
+.source-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  color: var(--muted);
+  text-align: right;
+}
 .entity-source > .lbl {
   display: block;
   margin: 14px 0 6px;
@@ -5750,7 +5830,6 @@ label.pick:has(input:focus-visible) {
 /* ── harness path overrides ───────────────────────────────────── */
 .harness-paths {
   margin: 4px 0 2px;
-  border-top: 1px solid var(--border);
   padding-top: 10px;
 }
 .harness-paths > summary {
@@ -6077,6 +6156,13 @@ label.pick:has(input:focus-visible) {
 .cp-entity {
   color: var(--ink-2);
   font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.cp-entity:hover {
+  color: var(--ink);
+  border-bottom-color: var(--border-strong);
 }
 .modal-transcript.td {
   width: min(1180px, 96vw);
@@ -6703,5 +6789,452 @@ label.pick:has(input:focus-visible) {
   }
   .td-hint {
     display: none;
+  }
+}
+
+/* ── account MCP tab ───────────────────────────────────────────── */
+.avatar-img {
+  padding: 0;
+  overflow: hidden;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.mcp-acct {
+  max-width: 900px;
+}
+.mcp-acct-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.mcp-acct-head h2 {
+  margin: 0 0 4px;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.mcp-acct-head .meta {
+  flex: none;
+  padding-top: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mcp-acct-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mcp-acct-row {
+  padding: 13px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.mcp-acct-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.mcp-acct-top b {
+  font-size: 12.8px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.mcp-acct-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 62px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.mcp-acct-state i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.mcp-acct-row[data-on='1'] .mcp-acct-state {
+  color: var(--accent-ink);
+}
+.mcp-acct-row[data-on='1'] .mcp-acct-state i {
+  background: var(--accent-ink);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.mcp-acct-src {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mcp-toggle {
+  margin-left: auto;
+  width: 31px;
+  height: 18px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.mcp-toggle-knob {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.14s ease, background 0.14s ease;
+}
+.mcp-toggle[aria-checked='true'] {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 65%, #000);
+}
+.mcp-toggle[aria-checked='true'] .mcp-toggle-knob {
+  background: #1b1b1b;
+  transform: translateX(13px);
+}
+.mcp-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.mcp-acct-cmd {
+  margin: 6px 0 0 71px;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  word-break: break-all;
+}
+.mcp-acct-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0 71px;
+  min-height: 17px;
+}
+.mcp-acct-ents {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.mcp-ent {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+.mcp-acct-none {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.mcp-acct-tools {
+  margin: 9px 0 0 71px;
+}
+.mcp-tools-count {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mcp-tools {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.mcp-tools li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.mcp-tools b {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.mcp-tools span {
+  min-width: 0;
+  color: var(--muted);
+}
+.mcp-tools-error {
+  display: block;
+  margin-top: 5px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+.mcp-link {
+  margin-left: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .mcp-acct-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mcp-acct-cmd,
+  .mcp-acct-meta,
+  .mcp-acct-tools {
+    margin-left: 0;
+  }
+  .mcp-acct-state {
+    width: auto;
+  }
+}
+.mcp-tools-fold {
+  margin-top: 2px;
+}
+.mcp-tools-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.mcp-tools-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.mcp-tools-fold > summary::before {
+  content: '›';
+  display: inline-block;
+  width: 9px;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.mcp-tools-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+/* ── chat message minimap ───────────────────────────────────────── */
+.thread-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.thread-shell > .c-thread {
+  width: 100%;
+}
+.c-thread .ask-sys[data-error='1'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 80%;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--danger-soft) 48%, transparent);
+  color: var(--danger);
+  text-align: left;
+}
+.ask-retry {
+  flex: none;
+  height: 21px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--border));
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ask-retry:hover {
+  border-color: var(--danger);
+}
+.ask-retry:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.c-thread .msg-foot[data-who='me'] {
+  align-self: flex-end;
+  margin-left: 0;
+  margin-right: 36px;
+}
+
+.thread-minimap {
+  position: absolute;
+  z-index: 32;
+  top: 46px;
+  bottom: 174px;
+  right: 14px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.tm-rail {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  width: 20px;
+  max-height: 100%;
+  overflow: hidden;
+}
+.tm-tick {
+  width: 20px;
+  height: 7px;
+  min-height: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 1 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.tm-tick > span {
+  display: block;
+  width: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--muted) 42%, transparent);
+  transition: width 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.tm-tick[data-kind='me'] > span {
+  width: 13px;
+  background: color-mix(in oklab, var(--ink-2) 48%, transparent);
+}
+.tm-tick[data-kind='sys'] > span {
+  background: color-mix(in oklab, var(--danger) 60%, transparent);
+}
+.tm-tick:hover > span,
+.tm-tick:focus-visible > span {
+  width: 19px;
+  background: var(--ink);
+}
+.tm-tick[data-on='1'] > span {
+  width: 15px;
+  background: var(--accent-ink);
+}
+.tm-tick[data-preview='1'] > span {
+  width: 19px;
+  background: var(--accent-ink);
+}
+.tm-card {
+  pointer-events: auto;
+  position: absolute;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 268px;
+  max-height: min(68%, 440px);
+  padding: 5px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 16px 34px rgba(10, 10, 10, 0.16), 0 2px 7px rgba(10, 10, 10, 0.05);
+}
+.tm-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tm-card li button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-card li button:hover,
+.tm-card li button[data-active='1'] {
+  background: var(--surface-2);
+}
+.tm-role {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tm-card li[data-kind='me'] .tm-role {
+  color: var(--accent-ink);
+}
+.tm-card li[data-kind='sys'] .tm-role {
+  color: var(--danger);
+}
+.tm-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.38;
+  color: var(--ink-2);
+}
+@media (max-width: 760px) {
+  .thread-minimap {
+    display: none;
+  }
+  .c-thread .msg[data-who='me'] {
+    margin-right: 30px;
+  }
+  .c-thread .msg[data-who='agent'] {
+    margin-left: 30px;
+  }
+  .c-thread .msg[data-who='me'][data-avatar='1']::after {
+    right: -31px;
+    width: 24px;
+    height: 24px;
+  }
+  .c-thread .msg > .msg-avatar {
+    left: -31px;
+    width: 24px;
+    height: 24px;
+  }
+  .c-thread .msg-trace[data-who='agent'],
+  .c-thread .msg-foot,
+  .c-thread .msg-foot[data-who='me'] {
+    margin-left: 30px;
+    margin-right: 30px;
   }
 }

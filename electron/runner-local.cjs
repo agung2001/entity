@@ -14,6 +14,7 @@ const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
+const platform = require('./platform-brief.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
 const COALESCE_MS = 50
@@ -332,7 +333,15 @@ function createRunner({ emit = () => {} } = {}) {
       run.mcpFile = written.file
     }
 
-    const instructions = `${entity.instructions.trim()}\n\n${artifacts.brief(workspace)}`
+    /* Two compositions, one source. `platform.compose` owns the precedence —
+       platform brief, workspace context, then this entity's own body — so a
+       chat turn and a run cannot tell the same agent different things. The
+       artifact shelf is scope furniture and goes last. */
+    const instructions = platform.compose({
+      record,
+      entity,
+      extra: artifacts.brief(workspace),
+    })
     const spec = invocation(
       entity.harness,
       instructions,
@@ -369,7 +378,7 @@ function createRunner({ emit = () => {} } = {}) {
     try {
       child = spawn(spec.cmd, spec.argv, {
         cwd: dir,
-        env: process.env,
+        env: { ...process.env, ...platform.env({ record, entity }) },
         shell: false,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],

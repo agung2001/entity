@@ -1,15 +1,16 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import McpAccountPanel from '@/components/McpAccountPanel.vue'
 import {
   changePassword,
   credentials,
-  DEFAULT_ADMIN,
   ROLES,
   roleById,
   toast,
   updateAccount,
 } from '@/stores/hub'
+import { displayNameFrom, gravatarUrl } from '@/lib/gravatar'
 
 /**
  * Account is a page, not a modal. The handle and email identify this hub; the
@@ -18,6 +19,7 @@ import {
  */
 const router = useRouter()
 const record = credentials()
+const tab = ref('profile')
 
 const username = ref(record.username)
 const email = ref(record.email || '')
@@ -28,6 +30,10 @@ const error = ref('')
 const busy = ref(false)
 
 const role = computed(() => roleById(record.role))
+const displayName = computed(() =>
+  displayNameFrom(username.value || email.value, username.value || 'Account'),
+)
+const avatarUrl = computed(() => gravatarUrl(email.value || record.email, 112))
 
 function cancel() {
   router.push('/')
@@ -67,10 +73,6 @@ async function save() {
       error.value = 'The new password needs at least 6 characters.'
       return
     }
-    if (newPassword.value === DEFAULT_ADMIN.password) {
-      error.value = 'That is the password this hub shipped with — choose a different one.'
-      return
-    }
     if (confirmPassword.value !== newPassword.value) {
       error.value = 'The two new passwords do not match.'
       return
@@ -87,7 +89,7 @@ async function save() {
         return
       }
     }
-    updateAccount({ username: handle, email: mail })
+    await updateAccount({ username: handle, email: mail })
     currentPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
@@ -113,10 +115,33 @@ async function save() {
       </div>
     </div>
 
-    <div class="acct-page">
+    <div class="sk-tabs" role="tablist" aria-label="Account scope">
+      <button
+        role="tab"
+        :aria-selected="tab === 'profile' ? 'true' : 'false'"
+        @click="tab = 'profile'"
+      >
+        Profile
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'mcp' ? 'true' : 'false'"
+        @click="tab = 'mcp'"
+      >
+        MCP
+      </button>
+    </div>
+
+    <div v-if="tab === 'profile'" class="acct-page">
       <form class="acct-card" @submit.prevent="save">
-        <div class="acct-card-head">
-          <h2>Profile</h2>
+        <div class="acct-card-head acct-profile-head">
+          <div class="acct-id">
+            <img v-if="avatarUrl" class="acct-avatar" :src="avatarUrl" alt="" />
+            <div>
+              <h2>Profile</h2>
+              <p class="mnote">{{ displayName }} · {{ email || 'no email yet' }}</p>
+            </div>
+          </div>
           <span class="role-badge">{{ role.label }}</span>
         </div>
 
@@ -219,5 +244,7 @@ async function save() {
         </ul>
       </aside>
     </div>
+
+    <McpAccountPanel v-else />
   </div>
 </template>

@@ -134,7 +134,8 @@ async function submit() {
       <h1>Create a workspace</h1>
       <p class="sub">
         A workspace is a folder: its entities, skills, machines and run history live
-        in <code class="mono">~/.entity/workspaces/{{ slug || '…' }}</code>.
+        in <code class="mono">~/.entity/workspaces/{{ slug || '…' }}</code>. The signed-in
+        account becomes its owner.
       </p>
     </header>
 

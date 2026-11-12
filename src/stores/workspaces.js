@@ -8,7 +8,7 @@
  */
 import { computed, reactive } from 'vue'
 import { call } from '@/composables/localBridge'
-import { applyLibrary, applyScope, hub, toast } from '@/stores/hub'
+import { applyLibrary, applyScope, credentials, hub, toast } from '@/stores/hub'
 import { loadEntities } from '@/stores/entities'
 import { loadRuns, resetRuns, runs } from '@/stores/runs'
 import { loadArtifacts, resetArtifacts } from '@/stores/artifacts'
@@ -23,7 +23,7 @@ export const workspaces = reactive({
   active: '',
   machines: [],
   skills: [],
-  mcp: { schema: 1, servers: {}, names: [], strict: true, path: '' },
+  mcp: { schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true, path: '' },
   /** the machine-wide skill libraries, for the "attach" lists */
   library: null,
   hosts: [],
@@ -53,7 +53,7 @@ export async function loadScope(id) {
   const [machines, skills, mcp] = await Promise.all([
     call('workspace.machines', { id }).catch(() => []),
     call('workspace.skills', { id }).catch(() => []),
-    call('workspace.mcp', { id }).catch(() => ({ schema: 1, servers: {}, names: [], strict: true })),
+    call('workspace.mcp', { id }).catch(() => ({ schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true })),
   ])
 
   workspaces.machines = machines
@@ -118,7 +118,19 @@ export async function removeWorkspace(id) {
 }
 
 export async function openWorkspace(id) {
-  const record = await call('workspace.open', { id })
+  let record = await call('workspace.open', { id })
+  /* a workspace from an older build (or an import without an owner) gets the
+     account that opens it recorded as the owner. A recorded owner is immutable. */
+  if (!record.owner?.email && hub.session?.email) {
+    try {
+      record = await call('workspace.claimOwner', {
+        id: record.id,
+        owner: { name: hub.session.user, email: hub.session.email },
+      })
+    } catch {
+      /* an owner backfill is useful, not required to open the workspace */
+    }
+  }
   workspaces.active = record.id
   workspaces.error = ''
   persist(record.id)
@@ -129,6 +141,16 @@ export async function openWorkspace(id) {
 
   await loadScope(record.id)
   return record
+}
+
+/** Record the signed-in account as owner of an unowned active workspace. */
+export async function claimActiveWorkspaceOwner(owner) {
+  if (!workspaces.active || !owner?.email) return null
+  try {
+    return await call('workspace.claimOwner', { id: workspaces.active, owner })
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -237,7 +259,20 @@ export async function createWorkspace({
   workspaces.creating = true
   workspaces.error = ''
   try {
-    const record = await call('workspace.create', { label, machines, skills, seed, seedEntities })
+    const owner = hub.session
+      ? {
+          name: hub.session.user,
+          email: hub.session.email || credentials().email || '',
+        }
+      : null
+    const record = await call('workspace.create', {
+      label,
+      machines,
+      skills,
+      seed,
+      seedEntities,
+      owner,
+    })
     workspaces.items = await call('workspace.list')
     await openWorkspace(record.id)
     return record
@@ -313,6 +348,21 @@ export async function detachSkill(name) {
     workspaces.skills = await call('workspace.skills', { id: workspaces.active })
     await afterScopeWrite()
     toast(`${name} detached`)
+  } finally {
+    workspaces.busy = ''
+  }
+}
+
+export async function setMcpEnabled(name, enabled, definition = null) {
+  workspaces.busy = `mcp:${name}`
+  try {
+    workspaces.mcp = await call('workspace.setMcpEnabled', {
+      id: workspaces.active,
+      name,
+      enabled,
+      definition,
+    })
+    return workspaces.mcp
   } finally {
     workspaces.busy = ''
   }

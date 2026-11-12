@@ -1,0 +1,14 @@
+#!/bin/sh
+# The `entity` CLI, for a terminal, a script or CI.
+#
+# Inside the app the same code is reachable through a generated shim at
+# <workspace>/.bin/entity, because a harness launched from Finder has neither
+# `node` nor this checkout on PATH. This file is for the case where it does:
+# a developer's shell, a hook, a test.
+set -e
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if command -v node >/dev/null 2>&1; then
+  exec node "$DIR/../electron/cli.cjs" "$@"
+fi
+echo "entity: node is not on PATH. Run it through the app instead." >&2
+exit 127

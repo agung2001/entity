@@ -12,6 +12,7 @@
 import { reactive } from 'vue'
 import { call, onRunEvent } from '@/composables/localBridge'
 import { applyRunState, hub } from '@/stores/hub'
+import { loadEntities } from '@/stores/entities'
 
 export const runs = reactive({
   loading: false,
@@ -30,6 +31,23 @@ export const runs = reactive({
 
 let unsubscribe = null
 let streamed = false
+let entityTimer = null
+
+/**
+ * A file changed under this workspace: an agent rewrote itself through the CLI,
+ * a person edited it in `$EDITOR`, or `git checkout` replaced it. The event says
+ * nothing about the run — it is the entity list that is now stale.
+ *
+ * Debounced because one write is several filesystem events, and coalesced
+ * because a reload during the burst would read a half-written file.
+ */
+function scheduleEntityReload() {
+  if (entityTimer) clearTimeout(entityTimer)
+  entityTimer = setTimeout(() => {
+    entityTimer = null
+    loadEntities(hub.workspace)
+  }, 200)
+}
 
 function blankLive(event) {
   return {
@@ -76,6 +94,11 @@ function applySummary(event) {
 function onEvent(event) {
   /* a run from another workspace is not this hub's news */
   if (!event || event.workspace !== hub.workspace) return
+
+  if (event.kind === 'workspace-changed') {
+    scheduleEntityReload()
+    return
+  }
 
   if (event.kind === 'state') {
     const entry = runs.live[event.runId] || blankLive(event)

@@ -16,19 +16,17 @@ import { BUILTIN_CMDS, HARNESSES } from '@/data/mock'
 
 const SESSION_KEY = 'entity.session'
 const WORKSPACE_KEY = 'entity.workspace'
-const CREDENTIALS_KEY = 'entity.credentials'
+const CREDENTIALS_KEY = 'entity.credentials' /* legacy renderer store, migrated once */
 
 /*
- * The hub ships with one admin account. These constants are a seed, not a
- * source of truth: on first run they are written into `entity.credentials`, and
- * from then on the stored record is what counts. The first sign-in is forced
- * through a password change, and once that lands the shipped password is
- * ignored for good — `admin` / `123456` stops working.
+ * The account belongs to the machine, not to a browser profile. The file is
+ * `~/.entity/auth.json`; the renderer only ever sees the public identity.
+ * `bootstrap` remains available for a hub with no account and no workspace.
  */
 export const DEFAULT_ADMIN = { username: 'admin', password: '123456' }
-/* sha256('123456') — the seed is compared as a hash, never as plain text */
 const DEFAULT_ADMIN_HASH = '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92'
 const DEFAULT_EMAIL = 'admin@studio-mac'
+export const DEFAULT_ACCOUNT_EMAIL = DEFAULT_EMAIL
 
 /* Three levels, one account on this machine. The role travels with the session
    so the rail can say what this person may do without showing an email. */
@@ -53,128 +51,218 @@ export const ROLES = [
 export const roleById = (id) => ROLES.find((role) => role.id === id) || ROLES[0]
 export const roleLabel = (id) => roleById(id).label
 
-function storeCredentials(record) {
-  try {
-    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(record))
-  } catch {
-    /* the change still holds for this run */
-  }
-  return record
-}
-
-async function hashPassword(password) {
-  const bytes = new TextEncoder().encode(String(password))
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/** The stored record wins; the shipped admin is seeded once and then ignored. */
-export function credentials() {
+/** The old renderer credential, read only so it can be moved into auth.json. */
+function readLegacyCredentials() {
   try {
     const raw = JSON.parse(localStorage.getItem(CREDENTIALS_KEY) || 'null')
-    if (raw && typeof raw.username === 'string' && typeof raw.hash === 'string') {
-      /* records written before the account menu shipped have no email or role */
-      if (typeof raw.email !== 'string') raw.email = `${raw.username}@studio-mac`
-      if (!ROLES.some((role) => role.id === raw.role)) raw.role = 'owner'
-      return storeCredentials(raw)
+    if (!raw || typeof raw.username !== 'string' || typeof raw.hash !== 'string') return null
+    if (typeof raw.email !== 'string') raw.email = `${raw.username}@studio-mac`
+    if (!ROLES.some((role) => role.id === raw.role)) raw.role = 'owner'
+    if (typeof raw.registered !== 'boolean') {
+      raw.registered = !(
+        raw.username === DEFAULT_ADMIN.username &&
+        raw.email === DEFAULT_EMAIL &&
+        raw.hash === DEFAULT_ADMIN_HASH
+      )
     }
+    return raw
   } catch {
-    /* unreadable record — reseed below */
+    return null
   }
-  return storeCredentials({
-    username: DEFAULT_ADMIN.username,
-    email: DEFAULT_EMAIL,
+}
+
+let accountLoaded = false
+let accountPending = null
+
+/**
+ * Read the account file once. On the first call an old localStorage credential
+ * is imported into `~/.entity/auth.json`; the untouched shipped seed is dropped
+ * instead, so a fresh hub can still adopt its first workspace creator.
+ */
+export async function loadAccount({ force = false } = {}) {
+  if (accountLoaded && !force) return { exists: Boolean(hub.account), user: hub.account }
+  if (accountPending && !force) return accountPending
+  accountPending = (async () => {
+    try {
+      let status = await call('auth.status')
+      if (!status.exists) {
+        const legacy = readLegacyCredentials()
+        if (legacy && legacy.registered !== false) {
+          try {
+            await call('auth.importLegacy', legacy)
+            status = await call('auth.status')
+          } catch {
+            /* a malformed old record falls through to bootstrap */
+          }
+        }
+        try {
+          localStorage.removeItem(CREDENTIALS_KEY)
+        } catch {
+          /* private mode */
+        }
+      }
+      try {
+        localStorage.removeItem(CREDENTIALS_KEY)
+      } catch {
+        /* private mode */
+      }
+      hub.account = status.user || null
+      accountLoaded = true
+      return status
+    } catch (error) {
+      hub.account = null
+      accountLoaded = true
+      return {
+        exists: false,
+        user: null,
+        error: error?.message || 'The account file could not be read.',
+      }
+    } finally {
+      accountPending = null
+    }
+  })()
+  return accountPending
+}
+
+export function accountExists() {
+  return Boolean(hub.account)
+}
+
+/** Public identity only. Never a password hash, cipher or plaintext. */
+export function credentials() {
+  return hub.account || {
+    username: '',
+    email: '',
     role: 'owner',
-    hash: DEFAULT_ADMIN_HASH,
-    mustChange: true,
-    updatedAt: null,
-  })
+    registered: false,
+  }
+}
+
+export function accountRecord() {
+  return hub.account
 }
 
 export async function verifyCredentials(handle, password) {
-  const record = credentials()
-  const username = String(handle || '').trim()
-  if (username.toLowerCase() !== record.username.toLowerCase()) {
-    return { ok: false, message: 'No account with that handle on this hub.' }
-  }
-  if ((await hashPassword(password)) !== record.hash) {
-    return { ok: false, message: 'That password does not match.' }
+  const result = await call('auth.verify', { ident: handle, password })
+  if (!result?.ok) return result || { ok: false, message: 'That password does not match.' }
+  if (result.user) {
+    hub.account = result.user
+    accountLoaded = true
   }
   return {
     ok: true,
-    username: record.username,
-    email: record.email,
-    role: record.role || 'owner',
-    mustChange: Boolean(record.mustChange),
+    username: result.user?.username || '',
+    email: result.user?.email || '',
+    role: result.user?.role || 'owner',
+    mustChange: Boolean(result.mustChange),
   }
 }
 
-/** Stores the new hash and clears the must-change flag for this account. */
+/**
+ * The first workspace creator becomes the account for this machine. If there is
+ * no account yet, a workspace owner read from disk seeds one with the documented
+ * default password. A real, registered account is never replaced.
+ */
+export async function adoptWorkspaceOwner(owner, password = DEFAULT_ADMIN.password) {
+  const email = String(owner?.email || '').trim()
+  if (!email || accountExists()) return hub.account
+  const user = await call('auth.adopt', {
+    email,
+    name: owner?.name || email.split('@')[0],
+    password,
+    role: 'owner',
+  })
+  if (user) {
+    hub.account = user
+    accountLoaded = true
+  }
+  return user
+}
+
+/** Bootstrap before a workspace exists: the email is the handle and password. */
+export async function registerAccount({ email, name = '', password, role = 'owner' }) {
+  const user = await call('auth.register', { email, name, password, role })
+  hub.account = user
+  accountLoaded = true
+  return user
+}
+
+/** Used after a verified sign-in (the old forced-change flow). */
 export async function setPassword(password) {
-  const record = credentials()
-  return storeCredentials({
-    ...record,
-    hash: await hashPassword(password),
-    mustChange: false,
-    updatedAt: new Date().toISOString(),
-  })
+  const user = await call('auth.setPassword', { password })
+  hub.account = user
+  accountLoaded = true
+  return user
 }
 
-/** Updates the handle and email; the password hash travels untouched. */
-export function updateAccount({ username, email }) {
-  const handle = String(username || '').trim()
-  if (!handle) throw new Error('A username is required.')
-  const record = credentials()
-  const next = storeCredentials({
-    ...record,
-    username: handle,
-    email: String(email || '').trim(),
-    updatedAt: new Date().toISOString(),
-  })
-  if (hub.session) {
-    const session = { ...hub.session, user: next.username, email: next.email, role: next.role }
-    hub.session = session
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    } catch {
-      /* the session still holds for this run */
-    }
-  }
-  return next
+/** Updates the public identity; the password verifier travels untouched. */
+export async function updateAccount({ username, email }) {
+  const user = await call('auth.update', { username, email })
+  hub.account = user
+  accountLoaded = true
+  syncSession(user)
+  return user
 }
 
 /** Verifies the current password before replacing it. */
 export async function changePassword(current, nextPassword) {
-  const record = credentials()
-  if (!current) return { ok: false, message: 'Enter the current password.' }
-  if ((await hashPassword(current)) !== record.hash) {
-    return { ok: false, message: 'That password does not match the current one.' }
+  const result = await call('auth.changePassword', { current, next: nextPassword })
+  if (result?.ok && result.user) {
+    hub.account = result.user
+    accountLoaded = true
+    syncSession(result.user)
   }
-  if (String(nextPassword).length < 6) {
-    return { ok: false, message: 'Use at least 6 characters.' }
+  return result || { ok: false, message: 'The password could not be changed.' }
+}
+
+function persistSession(session) {
+  try {
+    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    else localStorage.removeItem(SESSION_KEY)
+  } catch {
+    /* the session still holds for this run */
   }
-  if (nextPassword === DEFAULT_ADMIN.password) {
-    return { ok: false, message: 'That is the password this hub shipped with — choose a different one.' }
+}
+
+function syncSession(user) {
+  if (!hub.session || !user) return
+  hub.session = {
+    ...hub.session,
+    user: user.username,
+    email: user.email,
+    role: user.role,
   }
-  const updated = storeCredentials({
-    ...record,
-    hash: await hashPassword(nextPassword),
-    mustChange: false,
-    updatedAt: new Date().toISOString(),
-  })
-  return { ok: true, record: updated }
+  persistSession(hub.session)
+}
+
+/** Validate a remembered session against auth.json before the router trusts it. */
+export async function restoreSession() {
+  const status = await loadAccount()
+  if (!hub.session) return null
+  if (!status.user) {
+    hub.session = null
+    persistSession(null)
+    return null
+  }
+  const name = String(hub.session.user || '').toLowerCase()
+  const mail = String(hub.session.email || '').toLowerCase()
+  if (
+    name !== String(status.user.username || '').toLowerCase() &&
+    (!mail || mail !== String(status.user.email || '').toLowerCase())
+  ) {
+    hub.session = null
+    persistSession(null)
+    return null
+  }
+  syncSession(status.user)
+  return hub.session
 }
 
 function readSession() {
   try {
     const raw = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null')
     if (!raw || !raw.user) return null
-    /* one account per hub: a session for another handle came from the old
-       credentials model and is dropped */
-    const record = credentials()
-    if (raw.user.toLowerCase() !== record.username.toLowerCase()) return null
-    if (typeof raw.email !== 'string' || !raw.email) raw.email = record.email || ''
-    if (!ROLES.some((role) => role.id === raw.role)) raw.role = record.role || 'owner'
+    if (!ROLES.some((role) => role.id === raw.role)) raw.role = 'owner'
     return raw
   } catch {
     return null
@@ -190,7 +278,9 @@ function readWorkspaceId() {
 }
 
 export const hub = reactive({
-  /* --- session ------------------------------------------------------- */
+  /* --- account + session --------------------------------------------- */
+  /** public identity from ~/.entity/auth.json (never a password) */
+  account: null,
   session: readSession(),
 
   /* --- workspace data (filled by stores/workspaces.js) --------------- */
@@ -389,23 +479,19 @@ export function signIn(
 ) {
   const session = { user, email, role: role || 'owner', at: new Date().toISOString() }
   hub.session = session
+  persistSession(session)
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
     /* the old pre-fill key is no longer read anywhere */
     localStorage.removeItem('entity:last-user')
   } catch {
-    /* the session still holds for this run */
+    /* private mode */
   }
   return session
 }
 
 export function signOut() {
   hub.session = null
-  try {
-    localStorage.removeItem(SESSION_KEY)
-  } catch {
-    /* nothing to clear */
-  }
+  persistSession(null)
 }
 
 /* ── new workspace ────────────────────────────────────────────────── */
@@ -715,19 +801,25 @@ export async function setThreadContext(kind, value) {
   }
 }
 
-export async function chatSend(text) {
+export async function chatSend(text, { retry = false } = {}) {
   const thread = activeThread()
   if (!thread || hub.chat.sending) return
   const message = String(text || '').trim()
-  if (!message) return
+  if (!retry && !message) return
 
-  /* paint the question immediately; the harness answer arrives when it arrives */
+  /* A retry re-runs the same turn: drop the trailing error row, never add a
+     second copy of the question. The backend does the same before prompting. */
+  const base = retry
+    ? thread.messages.filter(
+        (entry, index) =>
+          !(index === thread.messages.length - 1 && entry.who === 'sys' && entry.error),
+      )
+    : thread.messages
   const optimistic = {
     ...thread,
-    messages: [
-      ...thread.messages,
-      { who: 'me', text: message, at: new Date().toISOString() },
-    ],
+    messages: retry
+      ? base
+      : [...base, { who: 'me', text: message, at: new Date().toISOString() }],
   }
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: optimistic }
   hub.chat.sending = true
@@ -738,6 +830,7 @@ export async function chatSend(text) {
       workspace: hub.workspace,
       id: thread.id,
       text: message,
+      retry,
     })
     remember(updated)
     await refreshChatList()

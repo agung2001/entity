@@ -15,8 +15,11 @@ const entities = require('./entity-store.cjs')
 const chats = require('./chat-store.cjs')
 const sessions = require('./session-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
+const mcpTools = require('./mcp-tools.cjs')
+const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
+const platform = require('./platform-core.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
@@ -27,7 +30,11 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.list': () => workspaces.list(),
     'workspace.needsSetup': () => workspaces.needsSetup(),
     'workspace.open': ({ id }) => workspaces.open(id),
-    'workspace.create': (args) => workspaces.create(args),
+    'workspace.create': (args) => {
+      const user = auth.get()
+      const owner = user ? { name: user.username, email: user.email } : args?.owner || null
+      return workspaces.create({ ...args, owner })
+    },
     'workspace.update': (args) => workspaces.update(args),
     'workspace.samples': () => workspaces.samples(),
     'workspace.export': (args) => workspaces.exportWorkspace(args),
@@ -42,10 +49,27 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.skillRead': (args) => workspaces.skillRead(args),
     'workspace.mcp': ({ id }) => workspaces.mcp(id),
     'workspace.writeMcp': (args) => workspaces.writeMcp(args),
+    'workspace.setMcpEnabled': (args) => workspaces.setMcpEnabled(args),
+    'workspace.context': ({ id }) => workspaces.open(id).context || '',
+    'workspace.setContext': (args) => workspaces.setContext(args),
+    'workspace.claimOwner': (args) => {
+      const user = auth.get()
+      const owner = user ? { name: user.username, email: user.email } : args?.owner || null
+      return workspaces.claimOwner({ ...args, owner })
+    },
     'workspace.library': () => localData.scanSkillLibrary(),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),
+    'auth.status': () => auth.status(),
+    'auth.verify': (args) => auth.verify(args),
+    'auth.register': (args) => auth.register(args),
+    'auth.adopt': (args) => auth.adopt(args),
+    'auth.importLegacy': (args) => auth.importLegacy(args),
+    'auth.update': (args) => auth.update(args),
+    'auth.setPassword': (args) => auth.setPassword(args),
+    'auth.changePassword': (args) => auth.changePassword(args),
+    'mcp.tools': (args) => mcpTools.tools(args),
     'harness.list': () => harnesses.list(),
     'harness.models': (args) => harnesses.models(args),
     'harness.setPath': (args) => harnesses.setPath(args),
@@ -119,6 +143,16 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'skills.scan': () => localData.scanSkillLibrary(),
     'skills.read': ({ harness, name }) =>
       localData.readSkillEntry(String(harness || ''), String(name || '')),
+
+    /* The agent-facing verbs, reachable from the window too. One vocabulary for
+       both: a feature added for an agent is a feature the UI can grow into, not
+       a second implementation of the same write. */
+    'platform.verbs': () => platform.verbsList(),
+    'platform.call': ({ fn, args }) => {
+      const result = platform.call(fn, args)
+      if (!result.ok) throw new Error(result.error)
+      return result.data
+    },
   }
 
   async function call(fn, args) {

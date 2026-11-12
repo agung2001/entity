@@ -53,6 +53,7 @@ const live = ref(null)
 const menuItem = ref(null)
 const menuPos = ref({ top: 0, left: 0 })
 const hmenu = ref(null)
+const focusMessage = ref(-1)
 let offEvent = null
 
 const isMac =
@@ -132,11 +133,28 @@ const messages = computed(() => {
   ]
 })
 
+const shareUrlFor = (index) =>
+  router.resolve({
+    name: 'chat',
+    query: { ...route.query, thread: hub.chat.active, msg: String(index) },
+  }).href
+
+function readMessageFocus() {
+  const raw = typeof route.query.msg === 'string' ? Number(route.query.msg) : NaN
+  focusMessage.value = Number.isInteger(raw) && raw >= 0 ? raw : -1
+}
+
+watch(
+  () => route.query.msg,
+  () => readMessageFocus(),
+  { immediate: true },
+)
+
 const threadTitle = computed(() => {
   const t = thread.value
   if (!t) return 'New thread'
   if (t.title) return t.title
-  const asked = [...(t.messages || [])].reverse().find((message) => message.who === 'me')
+  const asked = (t.messages || []).find((message) => message.who === 'me')
   return asked ? snippet(asked.text) : `Thread with ${agent.value?.name || 'entity'}`
 })
 
@@ -157,9 +175,10 @@ const latestTrace = computed(() => {
 const canTranscript = computed(() => Boolean(live.value || latestTrace.value))
 
 const threadLabel = (summary) =>
-  summary.title || snippet(summary.preview) || `Thread with ${summary.entity}`
+  summary.title ||
+  (summary.queries ? snippet(summary.preview) : `New thread · ${summary.entity}`)
 
-const lastAsked = (summary) => snippet(summary.preview) || 'New thread'
+const lastAsked = (summary) => (summary.queries ? snippet(summary.preview) : 'No question yet')
 const threadQueries = (summary) => summary.queries || 0
 const threadWhen = (summary) => ago(summary.updatedAt)
 
@@ -201,6 +220,19 @@ async function pickThread(id) {
   }
 }
 
+async function retryFailed(message) {
+  const list = thread.value?.messages || []
+  const at = list.findIndex((entry) => entry === message || (message.id && entry.id === message.id))
+  const question = [...list.slice(0, at >= 0 ? at : list.length)]
+    .reverse()
+    .find((entry) => entry.who === 'me')
+  if (!question) {
+    toast('No question to retry.')
+    return
+  }
+  await chatSend(question.text, { retry: true })
+}
+
 function startThread() {
   if (!hub.agents.length) return
   newOpen.value = true
@@ -215,6 +247,43 @@ function onCreated(created) {
 
 async function send(text) {
   await chatSend(text)
+}
+
+function openRowMenu(event, item) {
+  event?.stopPropagation?.()
+  if (menuItem.value?.id === item.id) {
+    menuItem.value = null
+    return
+  }
+  const rect = event.currentTarget.getBoundingClientRect()
+  const width = 178
+  const height = 122
+  const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8)
+  let top = rect.bottom + 6
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6)
+  menuPos.value = { top: `${top}px`, left: `${left}px` }
+  menuItem.value = item
+  nextTick(() => hmenu.value?.querySelector('button')?.focus())
+}
+
+function menuPin() {
+  const item = menuItem.value
+  menuItem.value = null
+  if (item) togglePin(item)
+}
+
+function menuRename() {
+  const item = menuItem.value
+  menuItem.value = null
+  if (item) startRename(item)
+}
+
+async function menuDelete() {
+  const item = menuItem.value
+  if (!item) return
+  const final = confirming.value === item.id
+  await deleteThread(item)
+  if (final && menuItem.value?.id === item.id) menuItem.value = null
 }
 
 function startRename(item) {
@@ -587,7 +656,11 @@ watch(
             <div class="cp-id">
               <h2>{{ threadTitle }}</h2>
               <p>
-                <span class="cp-entity">{{ agent.name }}</span>
+                <router-link
+                  class="cp-entity"
+                  :to="{ name: 'entity', params: { name: agent.name } }"
+                  :title="`Open ${agent.name}`"
+                >{{ agent.name }}</router-link>
                 <span aria-hidden="true">·</span>
                 <MachineIcon :size="10" />
                 {{ machineById(ctx.machine)?.label }}
@@ -630,8 +703,12 @@ watch(
             :chips="chips"
             :live="live"
             :entity-name="agent.name"
+            :thread-id="hub.chat.active"
+            :focus-index="focusMessage"
+            :share-url="shareUrlFor"
             list-class="c-thread"
             @chip="send"
+            @retry="retryFailed"
           />
 
           <div class="cp-dockwrap">

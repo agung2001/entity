@@ -65,6 +65,16 @@ function workspaceDir(id) {
  * role they hold — not a second sign-in path. Keeping the shape on disk means a
  * later multi-account step does not have to migrate it out of localStorage.
  */
+const MEMBERS_FILE = 'members.json'
+
+function normaliseOwner(value) {
+  if (!value || typeof value !== 'object') return null
+  const email = String(value.email || '').trim()
+  const name = String(value.name || '').trim() || (email ? email.split('@')[0] : '')
+  if (!email && !name) return null
+  return { name, email }
+}
+
 function normaliseMembers(value) {
   if (!Array.isArray(value)) return []
   const members = []
@@ -84,6 +94,47 @@ function normaliseMembers(value) {
     })
   }
   return members
+}
+
+function membersFile(dir) {
+  return path.join(dir, MEMBERS_FILE)
+}
+
+function readMembersFile(dir) {
+  const raw = readJson(membersFile(dir), null)
+  if (!raw || raw.schema !== 1) return { present: false, owner: null, members: [] }
+  return {
+    present: true,
+    owner: normaliseOwner(raw.owner),
+    members: normaliseMembers(raw.members),
+  }
+}
+
+/** The owner is always a member with the owner role, and only once. */
+function bindMembers(owner, members) {
+  const creator = normaliseOwner(owner)
+  const roster = normaliseMembers(members)
+  if (!creator) return { owner: null, members: roster }
+  const match = roster.find(
+    (entry) =>
+      (creator.email && entry.email.toLowerCase() === creator.email.toLowerCase()) ||
+      (!creator.email && entry.name.toLowerCase() === creator.name.toLowerCase()),
+  )
+  if (match) match.role = 'owner'
+  else roster.unshift({ ...creator, role: 'owner' })
+  return { owner: creator, members: roster }
+}
+
+function writeMembersFile(dir, workspaceId, owner, members) {
+  const bound = bindMembers(owner, members)
+  writeJson(membersFile(dir), {
+    schema: 1,
+    workspace: String(workspaceId || ''),
+    owner: bound.owner,
+    members: bound.members,
+    updatedAt: new Date().toISOString(),
+  })
+  return bound
 }
 
 /* ── small file helpers ───────────────────────────────────────────── */
@@ -140,13 +191,22 @@ function readRecord(id) {
   if (raw.id !== id) return null
   if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return null
 
+  const membersDoc = readMembersFile(dir)
+  const fallbackOwner = normaliseOwner(raw.owner)
+  const fallbackMembers = normaliseMembers(raw.members)
   return {
     id: raw.id,
     label: raw.label,
     kind: raw.kind === 'self-hosted' ? 'self-hosted' : 'local',
     createdAt: raw.createdAt || new Date(0).toISOString(),
     mcpStrict: raw.mcpStrict !== false,
-    members: normaliseMembers(raw.members),
+    /* the workspace-level system prompt: rules that belong to the scope rather
+       than to any one entity. Prepended to every entity's own instructions at
+       run time (electron/platform-brief.cjs), never merged into their files. */
+    context: String(raw.context || ''),
+    owner: membersDoc.present ? membersDoc.owner : fallbackOwner,
+    members: membersDoc.present ? membersDoc.members : fallbackMembers,
+    membersPath: membersDoc.present ? membersFile(dir) : '',
     path: dir,
     displayPath: tilde(dir),
   }
@@ -224,10 +284,8 @@ function update({ id, label, nextId, members } = {}) {
       moved = true
     }
     const raw = readJson(path.join(targetPath, 'workspace.json'), {}) || {}
-    const roster = normaliseMembers(members !== undefined ? members : raw.members)
-    if (roster.length && !roster.some((member) => member.role === 'owner')) {
-      throw new Error('A workspace needs at least one owner.')
-    }
+    const roster = normaliseMembers(members !== undefined ? members : current.members)
+    const bound = writeMembersFile(targetPath, targetId, current.owner, roster)
     const next = {
       ...raw,
       schema: 1,
@@ -236,7 +294,8 @@ function update({ id, label, nextId, members } = {}) {
       kind: current.kind,
       createdAt: current.createdAt,
       mcpStrict: current.mcpStrict !== false,
-      members: roster,
+      ...(bound.owner ? { owner: bound.owner } : {}),
+      members: bound.members,
     }
     writeJson(path.join(targetPath, 'workspace.json'), next)
   } catch (error) {
@@ -265,6 +324,62 @@ function open(id) {
     /* keep going */
   }
   return record
+}
+
+/**
+ * Backfill the owner on a workspace created by an older build, or an imported
+ * bundle that did not carry one. Only the account opening a workspace with no
+ * owner can claim it; a recorded owner is never replaced.
+ */
+function claimOwner({ id, owner } = {}) {
+  const record = open(id)
+  if (record.owner?.email || record.owner?.name) return record
+  const creator = normaliseOwner(owner)
+  if (!creator) return record
+  const file = path.join(record.path, 'workspace.json')
+  const raw = readJson(file, {}) || {}
+  const bound = writeMembersFile(record.path, record.id, creator, record.members)
+  writeJson(file, {
+    ...raw,
+    schema: 1,
+    id: record.id,
+    label: record.label,
+    kind: record.kind,
+    createdAt: record.createdAt,
+    mcpStrict: record.mcpStrict !== false,
+    owner: bound.owner,
+    members: bound.members,
+  })
+  return withCounts(readRecord(record.id))
+}
+
+/**
+ * The workspace-level system prompt.
+ *
+ * Kept beside `label` in `workspace.json` rather than in a second file: it is
+ * scope configuration, it moves with the workspace on export/import, and one
+ * file with the workspace's identity is easier to trust than two that can
+ * disagree.
+ */
+function setContext({ id, context } = {}) {
+  const record = open(id)
+  const file = path.join(record.path, 'workspace.json')
+  const raw = readJson(file, {}) || {}
+  if (typeof context !== 'string') {
+    throw new Error('context must be a string.')
+  }
+  writeJson(file, {
+    ...raw,
+    schema: 1,
+    id: record.id,
+    label: record.label,
+    kind: record.kind,
+    createdAt: record.createdAt,
+    mcpStrict: record.mcpStrict !== false,
+    members: record.members,
+    context,
+  })
+  return withCounts(readRecord(record.id))
 }
 
 /* ── machines: one ssh config per workspace ───────────────────────── */
@@ -787,37 +902,79 @@ function mcpPath(record) {
   return path.join(record.path, 'mcp.json')
 }
 
-function mcp(id) {
-  const record = open(id)
+function validServer(name, entry) {
+  if (!String(name || '').trim()) throw new Error('Every MCP server needs a name.')
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`MCP server "${name}" must be an object.`)
+  }
+  if (!entry.command && !entry.url) {
+    throw new Error(`MCP server "${name}" needs a command or a url.`)
+  }
+  if (entry.env && !Array.isArray(entry.env)) {
+    throw new Error(`MCP server "${name}": env is a list of variable names, not values.`)
+  }
+  return entry
+}
+
+function readMcpRaw(record) {
   const raw = readJson(mcpPath(record), { schema: 1, servers: {} })
   const servers = raw?.servers && typeof raw.servers === 'object' ? raw.servers : {}
+  const disabled = raw?.disabled && typeof raw.disabled === 'object' ? raw.disabled : {}
+  return { servers, disabled }
+}
+
+function mcp(id) {
+  const record = open(id)
+  const { servers, disabled } = readMcpRaw(record)
   return {
     schema: 1,
     strict: record.mcpStrict,
     path: tilde(mcpPath(record)),
     servers,
+    disabled,
     names: Object.keys(servers).sort(),
+    disabledNames: Object.keys(disabled).sort(),
   }
 }
 
-function writeMcp({ id, servers }) {
+function writeMcp({ id, servers, disabled }) {
   const record = open(id)
   if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
     throw new Error('Expected an object of server name → definition.')
   }
-  for (const [name, entry] of Object.entries(servers)) {
-    if (!name.trim()) throw new Error('Every MCP server needs a name.')
-    if (!entry || typeof entry !== 'object') {
-      throw new Error(`MCP server "${name}" must be an object.`)
-    }
-    if (!entry.command && !entry.url) {
-      throw new Error(`MCP server "${name}" needs a command or a url.`)
-    }
-    if (entry.env && !Array.isArray(entry.env)) {
-      throw new Error(`MCP server "${name}": env is a list of variable names, not values.`)
+  const current = readMcpRaw(record)
+  const parked = disabled && typeof disabled === 'object' && !Array.isArray(disabled)
+    ? disabled
+    : current.disabled
+  for (const [name, entry] of Object.entries(servers)) validServer(name, entry)
+  for (const [name, entry] of Object.entries(parked)) validServer(name, entry)
+  writeJson(mcpPath(record), { schema: 1, servers, disabled: parked })
+  return mcp(id)
+}
+
+/**
+ * Enable/disable one server without losing its definition. Disabling moves the
+ * definition into `disabled`; enabling moves it back. Global servers that are
+ * not in the pool yet can be enabled by sending their definition.
+ */
+function setMcpEnabled({ id, name, enabled, definition = null }) {
+  const record = open(id)
+  const key = String(name || '').trim()
+  if (!key) throw new Error('An MCP server needs a name.')
+  const { servers, disabled } = readMcpRaw(record)
+  if (enabled) {
+    const entry = disabled[key] || servers[key] || definition
+    if (!entry) throw new Error(`No definition for MCP server "${key}".`)
+    servers[key] = validServer(key, entry)
+    delete disabled[key]
+  } else {
+    const entry = servers[key] || disabled[key] || definition
+    if (entry) {
+      disabled[key] = validServer(key, entry)
+      delete servers[key]
     }
   }
-  writeJson(mcpPath(record), { schema: 1, servers })
+  writeJson(mcpPath(record), { schema: 1, servers, disabled })
   return mcp(id)
 }
 
@@ -946,7 +1103,8 @@ function exportWorkspace({ id } = {}) {
       kind: record.kind,
       createdAt: record.createdAt,
       mcpStrict: record.mcpStrict !== false,
-      members: normaliseMembers(raw.members),
+      owner: record.owner,
+      members: record.members,
     },
     files,
     skills: exportedSkills(record),
@@ -979,7 +1137,9 @@ function importWorkspace({ bundle } = {}) {
   const skipped = []
   try {
     const createdAt = new Date().toISOString()
+    const owner = normaliseOwner(bundle.workspace?.owner)
     const members = normaliseMembers(bundle.workspace?.members)
+    const bound = writeMembersFile(staging, id, owner, members)
     writeJson(path.join(staging, 'workspace.json'), {
       schema: 1,
       id,
@@ -987,7 +1147,8 @@ function importWorkspace({ bundle } = {}) {
       kind: bundle.workspace?.kind === 'self-hosted' ? 'self-hosted' : 'local',
       createdAt,
       mcpStrict: bundle.workspace?.mcpStrict !== false,
-      members,
+      ...(bound.owner ? { owner: bound.owner } : {}),
+      members: bound.members,
     })
     for (const dir of ['entities', 'chats', 'skills', 'runs', 'artifacts']) {
       fs.mkdirSync(path.join(staging, dir), { recursive: true })
@@ -1086,6 +1247,7 @@ function create({
   skills: wanted = [],
   seed = false,
   seedEntities: selectedSamples = null,
+  owner = null,
 } = {}) {
   const id = slugify(label)
   if (!id || !SLUG.test(id)) {
@@ -1105,6 +1267,8 @@ function create({
     const now = new Date().toISOString()
     const chosenMachines = [...new Set(['local', ...attached.map(String)])]
     const kind = chosenMachines.some((entry) => entry !== 'local') ? 'self-hosted' : 'local'
+    const creator = normaliseOwner(owner)
+    const bound = writeMembersFile(staging, id, creator, creator ? [creator] : [])
 
     for (const dir of ['entities', 'skills', 'runs', 'artifacts']) {
       fs.mkdirSync(path.join(staging, dir), { recursive: true })
@@ -1119,7 +1283,8 @@ function create({
           kind,
           createdAt: now,
           mcpStrict: true,
-          members: [],
+          ...(bound.owner ? { owner: bound.owner } : {}),
+          members: bound.members,
         },
         null,
         2,
@@ -1178,6 +1343,8 @@ module.exports = {
   open,
   create,
   update,
+  setContext,
+  claimOwner,
   samples,
   machines,
   machinesDir,
@@ -1192,6 +1359,7 @@ module.exports = {
   skillRead,
   mcp,
   writeMcp,
+  setMcpEnabled,
   exportWorkspace,
   importWorkspace,
   remove,

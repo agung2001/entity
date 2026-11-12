@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
-import { hub } from '@/stores/hub'
+import { hub, restoreSession } from '@/stores/hub'
 import { loadWorkspaces, workspaces } from '@/stores/workspaces'
 
 import LoginView from '@/views/LoginView.vue'
@@ -147,6 +147,9 @@ const router = createRouter({
  * was trying to reach travels in `?redirect` and is honoured after creation.
  */
 router.beforeEach(async (to) => {
+  /* A remembered session is only trusted after auth.json agrees with it. */
+  await restoreSession()
+
   if (to.meta.public) {
     if (to.name !== 'login' || !hub.session) return true
     /* a live session does not need the sign-in screen again */
@@ -175,7 +178,7 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title || 'entity'
+  document.title = to.meta.title || 'entity — local agent workspace'
 })
 
 export default router

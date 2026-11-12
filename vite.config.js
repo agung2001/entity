@@ -10,6 +10,8 @@ const require = createRequire(import.meta.url)
    call table — the browser dev server and the packaged app cannot drift apart. */
 const ELECTRON_DIR = fileURLToPath(new URL('./electron/', import.meta.url))
 const RPC_PATH = require.resolve('./electron/rpc.cjs')
+const WATCH_PATH = require.resolve('./electron/workspace-watch.cjs')
+const STORE_PATH = require.resolve('./electron/workspace-store.cjs')
 
 /**
  * Local data for `npm run dev` (and `npm run preview`).
@@ -46,24 +48,36 @@ function localDataPlugin() {
   /** live SSE responses — one per open window */
   const clients = new Set()
   let rpc = null
+  let watcher = null
+
+  /** one SSE frame per event, to every open window */
+  function push(event) {
+    const line = `data: ${JSON.stringify(event)}\n\n`
+    for (const res of clients) {
+      try {
+        res.write(line)
+      } catch {
+        clients.delete(res)
+      }
+    }
+  }
 
   function getRpc() {
     if (rpc) return rpc
     const { createRpc } = require(RPC_PATH)
-    rpc = createRpc({
-      emit: (event) => {
-        const line = `data: ${JSON.stringify(event)}\n\n`
-        for (const res of clients) {
-          try {
-            res.write(line)
-          } catch {
-            clients.delete(res)
-          }
-        }
-      },
-      reveal: revealFile,
-    })
+    rpc = createRpc({ emit: push, reveal: revealFile })
     return rpc
+  }
+
+  /**
+   * The same watch the packaged app runs, so `npm run dev` in a browser behaves
+   * like the window: an agent editing its own file reloads the list here too.
+   */
+  function startWatcher() {
+    if (watcher) return
+    const { watchWorkspaces } = require(WATCH_PATH)
+    const { WORKSPACES_DIR } = require(STORE_PATH)
+    watcher = watchWorkspaces({ root: WORKSPACES_DIR, emit: push })
   }
 
   function resetRpc() {
@@ -172,6 +186,7 @@ function localDataPlugin() {
     name: 'entity-local-data',
     configureServer(server) {
       mount(server.middlewares)
+      startWatcher()
       /* electron/*.cjs sits outside the module graph; drop it when it changes so
          `/__entity/*` reflects the edit without restarting the server. */
       server.watcher.add(ELECTRON_DIR)

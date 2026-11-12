@@ -6,6 +6,7 @@ import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
 import { hub, initials, roleById, signOut } from '@/stores/hub'
 import { workspaces } from '@/stores/workspaces'
 import { artifacts } from '@/stores/artifacts'
+import { gravatarUrl } from '@/lib/gravatar'
 
 const route = useRoute()
 const router = useRouter()
@@ -126,6 +127,7 @@ const displayName = computed(() => {
 /* The rail says what this person may do, not where their mail is delivered. */
 const role = computed(() => roleById(hub.session?.role || 'owner'))
 const avatar = computed(() => initials(displayName.value) || 'as')
+const avatarUrl = computed(() => gravatarUrl(hub.session?.email || '', 72))
 
 function leave() {
   accountOpen.value = false
@@ -239,7 +241,8 @@ function leave() {
           :aria-expanded="accountOpen ? 'true' : 'false'"
           @click="toggleAccount"
         >
-          <span class="avatar">{{ avatar }}</span>
+          <img v-if="avatarUrl" class="avatar avatar-img" :src="avatarUrl" alt="" />
+          <span v-else class="avatar">{{ avatar }}</span>
           <span class="who">
             {{ displayName }}
             <span>{{ role.label }}</span>

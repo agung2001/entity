@@ -1,0 +1,17 @@
+{
+  "name": "entity — local agent workspace",
+  "short_name": "entity",
+  "description": "A local workspace for AI agents: entities, skills, machines, chats and artifacts, all on this machine.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0c09",
+  "theme_color": "#f8b956",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

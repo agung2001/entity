@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
+const { watchWorkspaces } = require('./workspace-watch.cjs')
+const workspaces = require('./workspace-store.cjs')
 
 // Set by `npm run dev:desktop`; empty when running a built app.
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL
@@ -8,6 +10,7 @@ const isDev = Boolean(RENDERER_URL)
 
 let mainWindow = null
 let rpc = null
+let watcher = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -70,6 +73,11 @@ app.whenReady().then(() => {
     reveal: (file) => shell.showItemInFolder(file),
   })
 
+  /* An agent that rewrites its own instructions writes a file this process did
+     not write. Without this watch the window would keep rendering the previous
+     instructions until the user navigated away and back. */
+  watcher = watchWorkspaces({ root: workspaces.WORKSPACES_DIR, emit: broadcast })
+
   ipcMain.handle('app:info', () => ({
     name: app.getName(),
     version: app.getVersion(),
@@ -95,6 +103,11 @@ app.whenReady().then(() => {
 /* A run is a child of this process. Quitting takes it down, which is why a run
    that outlives the window is reported as canceled on the next boot. */
 app.on('before-quit', () => {
+  try {
+    watcher?.close()
+  } catch {
+    /* quitting anyway */
+  }
   try {
     rpc?.closeAll()
   } catch {
