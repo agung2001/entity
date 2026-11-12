@@ -12,7 +12,7 @@
  */
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'
-import { HARNESSES } from '@/data/mock'
+import { harnesses } from '@/stores/harnesses'
 
 const SESSION_KEY = 'entity.session'
 const WORKSPACE_KEY = 'entity.workspace'
@@ -417,7 +417,9 @@ export function applyRunState(latest = {}) {
 /* ── lookups ──────────────────────────────────────────────────────── */
 export const agentById = (id) => hub.agents.find((a) => a.id === id) || null
 export const machineById = (id) => hub.machines.find((m) => m.id === id) || null
-export const harnessById = (id) => HARNESSES.find((h) => h.id === id) || HARNESSES[0]
+export const harnessById = (id) =>
+  harnesses.items.find((h) => h.id === id) ||
+  { id: String(id || ''), label: String(id || 'no harness') }
 export const skillByName = (name) => hub.skills.find((s) => s.name === name) || null
 
 export const skillOwners = (name) => hub.agents.filter((a) => a.skills.includes(name))
@@ -525,7 +527,9 @@ export function askSession() {
   return {
     entity: agent?.id || '',
     machine: machineById(c.machine)?.id || hub.machines[0]?.id || 'local',
-    harness: HARNESSES.some((h) => h.id === c.harness) ? c.harness : agent?.harness || 'claude',
+    harness: harnesses.items.some((h) => h.id === c.harness)
+      ? c.harness
+      : agent?.harness || 'claude',
     model: String(c.model || agent?.model || ''),
   }
 }
@@ -590,7 +594,7 @@ export function slashMenu(value, agent, machine = 'local') {
      `/claude:<name>` reference is valid from a pi or codex thread too, because
      the backend resolves the namespace to that harness's library. The current
      harness's skills come first, then the rest. */
-  const harnessOrder = [...new Set([agent?.harness, ...HARNESSES.map((h) => h.id)])]
+  const harnessOrder = [...new Set([agent?.harness, ...harnesses.items.map((h) => h.id)])]
   const rank = (id) => {
     const at = harnessOrder.indexOf(id)
     return at < 0 ? harnessOrder.length : at

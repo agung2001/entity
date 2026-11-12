@@ -8,7 +8,6 @@ import MachineIcon from '@/components/MachineIcon.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
-import { HARNESSES, MODELS } from '@/data/mock'
 import {
   agentById,
   ago,
@@ -51,19 +50,15 @@ const lastChat = computed(() => {
 })
 
 const modelData = computed(() => harnesses.models[form.harness] || null)
-const modelOptions = computed(() => [
-  ...new Set([...(modelData.value?.models || []), ...(MODELS[form.harness] || [])]),
-])
+/* Only what the harness itself reports; there is no built-in list to merge. */
+const modelOptions = computed(() => [...new Set(modelData.value?.models || [])])
 const modelLoading = computed(() => Boolean(modelData.value?.loading))
 const harnessOptions = computed(() =>
-  HARNESSES.map((item) => {
-    const found = harnesses.items.find((entry) => entry.id === item.id)
-    return {
-      id: item.id,
-      label: item.label,
-      meta: found ? (found.installed ? 'installed' : 'not found') : '',
-    }
-  }),
+  harnesses.items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    meta: item.installed ? 'installed' : 'not found',
+  })),
 )
 const instructionRows = computed(() =>
   Math.max(18, String(form.instructions || '').split('\n').length + 2),
@@ -116,10 +111,7 @@ watch(
   () => form.harness,
   (harness, previous) => {
     if (seeding.value || !previous || harness === previous) return
-    const known = [
-      ...(harnesses.models[harness]?.models || []),
-      ...(MODELS[harness] || []),
-    ]
+    const known = harnesses.models[harness]?.models || []
     if (form.model && !known.includes(form.model)) form.model = ''
     loadModels(harness).catch(() => {})
     loadHarnesses().catch(() => {})

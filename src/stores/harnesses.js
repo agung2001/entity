@@ -1,6 +1,10 @@
 /**
- * Installed harnesses and the model hints each CLI can report. Paths are
- * machine-wide, so they live outside the active workspace.
+ * Installed harnesses and the models each CLI can report.
+ *
+ * This store is the renderer's only harness list: ids, labels, install state and
+ * models all come from `harness.list` / `harness.models` (electron/harness-store.cjs),
+ * so adding a CLI never needs a second edit here. Paths are machine-wide, so they
+ * live outside the active workspace.
  */
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'

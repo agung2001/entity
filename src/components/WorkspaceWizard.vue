@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { HARNESSES } from '@/data/mock'
+import { harnesses, loadHarnesses } from '@/stores/harnesses'
 import {
   createWorkspace,
   loadHosts,
@@ -32,7 +32,8 @@ const busy = ref(false)
 const hosts = computed(() => workspaces.hosts)
 const samples = computed(() => workspaces.samples)
 
-const harnessLabel = (id) => HARNESSES.find((h) => h.id === id)?.label || id
+const harnessLabel = (id) =>
+  harnesses.items.find((h) => h.id === id)?.label || id
 
 /** Same derivation the store uses, shown so the folder name is never a surprise. */
 const slug = computed(() =>
@@ -80,6 +81,7 @@ function applySampleDefaults() {
 async function sync() {
   if (!workspaces.samples.length) await loadSamples()
   if (!workspaces.hosts.length) await loadHosts()
+  if (!harnesses.items.length) await loadHarnesses()
   applySampleDefaults()
 }
 

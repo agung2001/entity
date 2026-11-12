@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
-import { HARNESSES } from '@/data/mock'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
 import {
@@ -16,6 +15,7 @@ import {
   snippet,
   toast,
 } from '@/stores/hub'
+import { harnesses, loadHarnesses } from '@/stores/harnesses'
 
 /**
  * Two readings of the same history.
@@ -79,6 +79,7 @@ function saveSessionCount(harness, count) {
 
 onMounted(async () => {
   readSessionCounts()
+  loadHarnesses().catch(() => {})
   await ensureChats()
 })
 
@@ -105,7 +106,7 @@ const filteredJournal = computed(() => {
 })
 
 const labelOf = (harness) =>
-  HARNESSES.find((entry) => entry.id === harness)?.label || harness
+  harnesses.items.find((entry) => entry.id === harness)?.label || harness
 
 const state = computed(() => cache[active.value] || {
   loading: false,
@@ -256,7 +257,7 @@ async function copyResume(session) {
         Journal <span class="n">{{ rows.length }}</span>
       </button>
       <button
-        v-for="harness in HARNESSES"
+        v-for="harness in harnesses.items"
         :key="harness.id"
         role="tab"
         :aria-selected="active === harness.id ? 'true' : 'false'"

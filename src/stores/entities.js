@@ -8,8 +8,7 @@
  */
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'
-import { applyRunState, hub } from '@/stores/hub'
-import { HARNESSES } from '@/data/mock'
+import { applyRunState, harnessById, hub } from '@/stores/hub'
 
 export const entities = reactive({
   loading: false,
@@ -19,7 +18,7 @@ export const entities = reactive({
   items: [],
 })
 
-const harnessLabel = (id) => HARNESSES.find((h) => h.id === id)?.label || id || 'no harness'
+const harnessLabel = (id) => harnessById(id).label
 
 /** entity file → the row shape the hub renders */
 export function toAgent(entity) {

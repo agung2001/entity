@@ -1,7 +1,6 @@
 <script setup>
 import { computed } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
-import { HARNESSES } from '@/data/mock'
 import { harnesses } from '@/stores/harnesses'
 
 /**
@@ -17,7 +16,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const label = computed(
-  () => HARNESSES.find((item) => item.id === props.harness)?.label || props.harness || 'No harness',
+  () => harnesses.items.find((item) => item.id === props.harness)?.label || props.harness || 'No harness',
 )
 const installed = computed(() => {
   const found = harnesses.items.find((item) => item.id === props.harness)

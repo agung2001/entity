@@ -13,7 +13,6 @@ import TimelineDialog from '@/components/TimelineDialog.vue'
 import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
 import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
-import { HARNESSES } from '@/data/mock'
 import {
   activeThread,
   agentById,

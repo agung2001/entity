@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
-import { HARNESSES, MODELS } from '@/data/mock'
 import { COLORS, MOODS, SHAPES, setMark } from '@/composables/entityMark'
 import { scaffoldEntity } from '@/stores/entities'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
@@ -16,26 +15,32 @@ const emit = defineEmits(['close', 'created'])
 
 const name = ref('')
 const description = ref('')
-const harness = ref(HARNESSES[0]?.id || 'claude')
+const harness = ref('')
 const model = ref('')
 const error = ref('')
 const busy = ref(false)
 const nameInput = ref(null)
 
 const harnessOptions = computed(() =>
-  HARNESSES.map((item) => {
-    const found = harnesses.items.find((entry) => entry.id === item.id)
-    return {
-      id: item.id,
-      label: item.label,
-      meta: found ? (found.installed ? 'installed' : 'not found') : '',
-    }
-  }),
+  harnesses.items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    meta: item.installed ? 'installed' : 'not found',
+  })),
+)
+
+/* The harness list comes from the machine, not from here; seed the picker once
+   it lands, unless the user already chose. */
+watch(
+  () => harnesses.items,
+  (items) => {
+    if (!harness.value && items[0]) harness.value = items[0].id
+  },
+  { immediate: true, deep: true },
 )
 const modelData = computed(() => harnesses.models[harness.value] || null)
-const modelOptions = computed(() => [
-  ...new Set([...(modelData.value?.models || []), ...(MODELS[harness.value] || [])]),
-])
+/* Only what the harness itself reports; there is no built-in list to merge. */
+const modelOptions = computed(() => [...new Set(modelData.value?.models || [])])
 const modelLoading = computed(() => Boolean(modelData.value?.loading))
 const slug = computed(() =>
   String(name.value || '')
@@ -153,7 +158,7 @@ async function create() {
           :placeholder="modelData?.default || 'harness default'"
           @update:model-value="model = $event"
         />
-        <p class="mnote">Written as <code class="mono">model:</code> in the entity file. Leave blank to let {{ HARNESSES.find((h) => h.id === harness)?.label || harness }} choose.</p>
+        <p class="mnote">Written as <code class="mono">model:</code> in the entity file. Leave blank to let {{ harnesses.items.find((h) => h.id === harness)?.label || harness }} choose.</p>
       </div>
       <p v-if="error" class="run-warn">{{ error }}</p>
       <div class="mo-foot" style="padding: 8px 0 0; border: 0">

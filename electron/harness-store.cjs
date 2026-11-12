@@ -18,21 +18,15 @@ const HOME = os.homedir()
 const CONFIG = path.join(workspaces.ROOT, 'harnesses.json')
 const MODEL_TTL = 60_000
 
+/* The one harness list. The renderer reads it through `harness.list` instead of
+   carrying a copy, so adding a CLI here is the whole change. */
 const META = [
   { id: 'claude', label: 'Claude Code', command: 'claude' },
   { id: 'codex', label: 'Codex CLI', command: 'codex' },
+  { id: 'gemini', label: 'Gemini CLI', command: 'gemini' },
   { id: 'opencode', label: 'opencode', command: 'opencode' },
   { id: 'pi', label: 'pi', command: 'pi' },
-  { id: 'gemini', label: 'Gemini CLI', command: 'gemini' },
 ]
-
-const FALLBACK_MODELS = {
-  claude: ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
-  codex: ['gpt-5-codex', 'gpt-5'],
-  opencode: ['anthropic/claude-sonnet-4', 'openai/gpt-5'],
-  pi: ['claude-sonnet-4-5', 'gpt-5'],
-  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-}
 
 const cache = new Map()
 
@@ -238,7 +232,7 @@ function models({ id, force = false } = {}) {
 
   const found = resolvedPath(meta.id)
   const detected = []
-  let source = 'hint'
+  let source = 'none'
   if (found && executable(found)) {
     const fromCli = cliModels(meta.id, found)
     if (fromCli.length) {
@@ -251,7 +245,9 @@ function models({ id, force = false } = {}) {
     detected.unshift(configured)
     if (source !== 'cli') source = 'config'
   }
-  const models = [...new Set([...detected, ...(FALLBACK_MODELS[meta.id] || [])])]
+  /* No built-in names: a model is offered only when this machine can name it,
+     either from the CLI's own listing or from the config the CLI already has. */
+  const models = [...new Set(detected)]
   const value = {
     id: meta.id,
     models,

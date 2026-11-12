@@ -2,7 +2,6 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
-import { HARNESSES, MODELS } from '@/data/mock'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { agentById, createThread, hub } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
@@ -32,9 +31,8 @@ const machines = computed(() =>
 const agent = computed(() => agentById(form.entity))
 const machine = computed(() => machines.value.find((item) => item.id === form.machine) || null)
 const modelData = computed(() => harnesses.models[form.harness] || null)
-const modelOptions = computed(() => [
-  ...new Set([...(modelData.value?.models || []), ...(MODELS[form.harness] || [])]),
-])
+/* Only what the harness itself reports; there is no built-in list to merge. */
+const modelOptions = computed(() => [...new Set(modelData.value?.models || [])])
 const modelLoading = computed(() => Boolean(modelData.value?.loading))
 const entityOptions = computed(() =>
   hub.agents.map((item) => ({
@@ -45,14 +43,23 @@ const entityOptions = computed(() =>
   })),
 )
 const harnessOptions = computed(() =>
-  HARNESSES.map((item) => {
-    const found = harnesses.items.find((entry) => entry.id === item.id)
-    return {
-      id: item.id,
-      label: item.label,
-      meta: found ? (found.installed ? 'installed' : 'not found') : '',
-    }
-  }),
+  harnesses.items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    meta: item.installed ? 'installed' : 'not found',
+  })),
+)
+
+/* The list is the main process's, so it can arrive after this dialog opens.
+   Until it does, the thread keeps whatever its entity asked for; a name this
+   machine no longer knows settles on the first harness it does have. */
+watch(
+  () => harnesses.items,
+  (items) => {
+    if (!items.length || items.some((item) => item.id === form.harness)) return
+    form.harness = items[0].id
+  },
+  { immediate: true, deep: true },
 )
 const remote = computed(() => Boolean(machine.value && !machine.value.thisMachine))
 
@@ -66,7 +73,7 @@ function reset() {
     ? wantedMachine
     : machines.value[0]?.id || 'local'
   form.harness =
-    defaults.harness || last.harness || agentById(form.entity)?.harness || 'claude'
+    defaults.harness || last.harness || agentById(form.entity)?.harness || harnesses.items[0]?.id || ''
   form.model =
     defaults.model ||
     (agent.value?.harness === form.harness ? agent.value.model || '' : '') ||

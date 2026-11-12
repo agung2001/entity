@@ -21,10 +21,12 @@ const {
   firstParagraph,
 } = require('./frontmatter.cjs')
 const localData = require('./local-data.cjs')
+const harnesses = require('./harness-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 
-/** `claude | codex | pi | opencode | gemini` — the harnesses this step can run. */
-const HARNESSES = ['claude', 'codex', 'pi', 'opencode', 'gemini']
+/** `claude | codex | pi | opencode | gemini` — the harnesses this step can run.
+ *  Read from `harness-store`'s META so an added CLI is one edit, not two. */
+const HARNESSES = harnesses.META.map((meta) => meta.id)
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/
 
