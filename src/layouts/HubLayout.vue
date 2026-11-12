@@ -17,6 +17,7 @@ const isChat = computed(() => route.name === 'chat')
 const isSkill = computed(() => route.name === 'skill')
 const isEntity = computed(() => route.name === 'entity')
 const isMachine = computed(() => route.name === 'machine')
+const isArtifact = computed(() => route.name === 'artifact')
 
 const crumbs = computed(() => {
   if (isSkill.value) {
@@ -27,28 +28,20 @@ const crumbs = computed(() => {
     ]
   }
   if (isEntity.value) {
-    return [{ label: 'entities', to: '/entities' }, { label: route.params.name }]
+    return [{ label: 'entities' }, { label: route.params.name }]
   }
   if (isMachine.value) {
     return [{ label: 'machines', to: '/machines' }, { label: route.params.id }]
+  }
+  if (isArtifact.value) {
+    return [{ label: 'artifacts' }, { label: route.params.id }]
   }
   return null
 })
 
 const overlayOpen = computed(() => hub.wizard.open || hub.palette.open)
 
-const isMac =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 const isDesktop = hasDesktopBridge()
-/* Browsers own several Cmd/Ctrl+Shift combinations; the dev server uses the
-   same Option/Alt+Shift escape hatch as the other browser-safe shortcuts. */
-const newChatShortcut = isDesktop
-  ? isMac
-    ? '⌘N'
-    : 'Ctrl+N'
-  : isMac
-    ? '⌥⇧N'
-    : 'Alt+Shift+N'
 
 function openPalette() {
   hub.palette.open = true
@@ -56,8 +49,9 @@ function openPalette() {
   hub.palette.active = 0
 }
 
-/* New thread is a topbar action everywhere. The dialog belongs to ChatView, so
-   the URL carries the intent and ChatView consumes it on arrival. */
+/* New thread is a keyboard action; the visible + lives in the chat rail. The
+   dialog belongs to ChatView, so the URL carries the intent and ChatView
+   consumes it on arrival. */
 function openNewThread() {
   if (!hub.agents.length) return
   const query = route.name === 'chat' ? { ...route.query, new: '1' } : { new: '1' }
@@ -116,15 +110,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
     <main>
       <AppTopbar :crumb="route.meta.crumb" :crumbs="crumbs">
-        <button
-          class="btn btn-yellow topbar-new"
-          type="button"
-          :disabled="!hub.agents.length"
-          @click="openNewThread"
-        >
-          New thread
-          <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
-        </button>
         <router-link v-if="isSkill" class="linkbtn" to="/skills">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M9.6 3.2L5 8l4.6 4.8" />

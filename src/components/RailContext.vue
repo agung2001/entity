@@ -1,11 +1,12 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ArtifactRailPanel from '@/components/ArtifactRailPanel.vue'
 import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
-import EntityMark from '@/components/EntityMark.vue'
+import EntityRailPanel from '@/components/EntityRailPanel.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import NavIcon from '@/components/NavIcon.vue'
-import { ago, hub, openWizard, toast } from '@/stores/hub'
+import { hub, openWizard, toast } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
 import {
   exportWorkspace,
@@ -57,11 +58,11 @@ const section = computed(() => {
     return { id: 'workspaces', title: 'Workspaces', count: workspaces.items.length, back: false }
   }
   const name = String(route.name || 'overview')
+  if (hub.rail.entities) return { id: 'entities', title: 'Entities', count: hub.agents.length }
+  if (hub.rail.artifacts) return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
+  if (name === 'entity') return { id: 'entities', title: 'Entities', count: hub.agents.length }
+  if (name === 'artifact') return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
   if (name === 'chat') return { id: 'chat', title: 'Chats', count: hub.chat.summaries.length }
-  if (name === 'entities' || name === 'entity') {
-    return { id: 'entities', title: 'Entities', count: hub.agents.length }
-  }
-  if (name === 'artifacts') return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
   if (name === 'machines' || name === 'machine') {
     return { id: 'machines', title: 'Machines', count: hub.machines.length }
   }
@@ -84,20 +85,6 @@ const section = computed(() => {
   }
   return { id: 'overview', title: 'Overview', count: hub.machines.length }
 })
-
-const threadCount = (name) =>
-  hub.chat.summaries.filter((thread) => thread.entity === name).length
-
-function sizeLabel(bytes) {
-  if (!Number.isFinite(bytes)) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10_240 ? 1 : 0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10_485_760 ? 1 : 0)} MB`
-}
-
-function openArtifact(item) {
-  router.push({ name: 'artifacts', query: { file: item.id } })
-}
 
 function openWorkspaceTab(tab) {
   router.push({ name: 'workspace', query: tab === 'general' ? {} : { tab } })
@@ -381,43 +368,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     </div>
 
     <div v-else-if="section.id === 'entities'" class="rail-t2-body">
-      <p v-if="!hub.agents.length" class="rail-t2-empty">No entities in this workspace yet.</p>
-      <button
-        v-for="entity in hub.agents"
-        :key="entity.id"
-        class="rail-t2-row"
-        type="button"
-        :aria-current="route.name === 'entity' && route.params.name === entity.id ? 'page' : undefined"
-        @click="router.push({ name: 'entity', params: { name: entity.id } })"
-      >
-        <EntityMark mini :entity="entity.name" />
-        <span class="t">
-          <b>{{ entity.name }}</b>
-          <span class="m">{{ entity.harnessLabel }}</span>
-        </span>
-        <span class="c">{{ threadCount(entity.name) }}</span>
-      </button>
+      <EntityRailPanel />
     </div>
 
     <div v-else-if="section.id === 'artifacts'" class="rail-t2-body">
-      <p v-if="!artifacts.items.length" class="rail-t2-empty">
-        No artifacts yet. Upload one from the shelf.
-      </p>
-      <button
-        v-for="item in artifacts.items"
-        :key="item.id"
-        class="rail-t2-row"
-        type="button"
-        :title="item.name"
-        @click="openArtifact(item)"
-      >
-        <span class="rail-t2-ic"><NavIcon name="artifact" /></span>
-        <span class="t">
-          <b>{{ item.name }}</b>
-          <span class="m">{{ item.ext || 'file' }} · {{ sizeLabel(item.size) }}</span>
-        </span>
-        <span class="c">{{ ago(item.modifiedAt) }}</span>
-      </button>
+      <ArtifactRailPanel />
     </div>
 
     <div v-else-if="section.id === 'overview' || section.id === 'machines'" class="rail-t2-body">

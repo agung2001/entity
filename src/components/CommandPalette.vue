@@ -99,13 +99,23 @@ const navigationItems = computed(() => [
     id: 'nav:entities',
     label: 'Entities',
     meta: 'Entity directory',
-    act: () => router.push('/entities'),
+    act: () => {
+      hub.rail.workspaces = false
+      hub.rail.workspace = false
+      hub.rail.entities = true
+      hub.rail.artifacts = false
+    },
   },
   {
     id: 'nav:artifacts',
     label: 'Artifacts',
     meta: 'Files in this workspace',
-    act: () => router.push('/artifacts'),
+    act: () => {
+      hub.rail.workspaces = false
+      hub.rail.workspace = false
+      hub.rail.entities = false
+      hub.rail.artifacts = true
+    },
   },
   {
     id: 'nav:skills',

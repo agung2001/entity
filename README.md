@@ -242,8 +242,9 @@ image or a download card, and also attaches any file written to the artifact
 shelf during the turn even when the answer never names it. A failed turn keeps
 the files it managed to save, and older threads without artifact metadata are
 matched to their request windows when they are read. An absolute `/artifacts/…`
-path resolves through the same read RPC. `#/artifacts` remains the shelf for
-browsing, uploading, searching, filtering and removing those files.
+path resolves through the same read RPC. The rail's artifact panel is the shelf
+for browsing, uploading, searching, filtering and removing those files; opening
+a row goes to the artifact's own detail page.
 
 ## Layout
 
@@ -287,13 +288,12 @@ src/
     LoginView.vue     sign in
     SetupView.vue     first run: create the first workspace (no rail, no skip)
     OverviewView.vue  workspace statistics, machines, entities, recent runs
-    ChatView.vue      collapsible thread history, row action menu, searchable filters, transcript
-    EntitiesView.vue  the entity table; "Add entity" scaffolds a file
+    ChatView.vue      thread transcript, row action menu, composer and minimap
     EntityDetailView.vue  entity page: editable harness/model, harness paths, Markdown instructions
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
     McpView.vue       workspace MCP pool + global harness MCP config (attach to pool)
     AccountView.vue   profile + password, sound, and the Entity MCP server connection
-    ArtifactsView.vue  workspace artifact shelf: upload, remove, search, extension filter, sort
+    ArtifactDetailView.vue  one artifact: inline preview, metadata, download/reveal/delete
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
     MachineDetailView.vue  one host: connection, key copy, probe, attachment
@@ -306,6 +306,9 @@ src/
     MarkPicker.vue    shape + mood + colour, opened on the entity page
     AppRail.vue       two-tier shell: icon strip + contextual second panel
     RailContext.vue   the second tier's list for the current section
+    EntityRailPanel.vue   entity search, state filters, add and row actions
+    ArtifactRailPanel.vue artifact search, type/sort filters and upload
+    EntityCreateDialog.vue the one entity creation form
     AppTopbar.vue     breadcrumbs + view tools
     MessageList / MessageBody / SlashComposer
     ThreadMinimap.vue  right-edge message outline and jump card
@@ -313,7 +316,6 @@ src/
     McpAccountPanel.vue  Entity's MCP server status, token, agent config and tools
     MarkdownEditor.vue Write/Review Markdown editor with a sanitized preview
     HarnessPaths.vue   machine-wide executable overrides for the five harnesses
-    ArtifactThumb.vue  lazy image thumbnail for the artifact grid
     PickMenu.vue      the quiet text trigger used for filter axes
     WorkspaceWizard.vue    the create form (setup page and modal)
     WorkspaceStats.vue     the overview's entity / conversation / skill / machine cards
@@ -356,12 +358,11 @@ history mode has no server to resolve a path on reload.
 | `#/setup` | Create the first workspace (no rail — the hub is not usable yet) |
 | `#/` | Overview |
 | `#/chat` | Chat |
-| `#/entities` | Entities |
 | `#/entities/:name` | Entity detail (identity, skills, source file) |
 | `#/skills` | Workspace skills |
 | `#/skills/:name` | Skill detail |
 | `#/mcp` | Workspace MCP pool + global harness MCP configs |
-| `#/artifacts` | Workspace artifacts: upload, preview, remove, search, filter, sort |
+| `#/artifacts/:id` | Artifact detail: inline preview, metadata, download, reveal, delete |
 | `#/machines` | Machines |
 | `#/machines/:id` | Machine detail (connection, key copy, probe) |
 | `#/activity` | Redirects to Workspace → Activity (old links keep working) |
@@ -374,24 +375,27 @@ The rail has two tiers. The first is a 64px icon strip: brand, Workspaces,
 Entities, Artifacts and Chat, with the theme switch and account at the bottom.
 Each icon has an immediate tooltip. The second tier belongs to the section in
 the URL — entity files under Entities, the shelf under Artifacts, machines
-under Overview, and the WORKING/DONE chat history under Chat. The Workspaces
-button (the overview glyph) opens the Workspaces panel; choosing a workspace
-goes straight to its settings, where Overview, General, Members, Skills, MCP,
-Machines and Activity are the second-tier tabs. Click the brand to fold the second tier away (`⌘B` still
-works), drag its right edge to resize it (double-click resets), and the
-light/dark switch sits at the bottom of the icon strip (`⌘⇧L` in the desktop
-app, `⌥⇧L` in a browser). New thread is a yellow topbar action; `⌘N` in the
-desktop app and `⌥⇧N` in a browser.
+under Overview, and the WORKING/DONE chat history under Chat. Entity and
+artifact rows open their detail pages directly; the lists, search, filters,
+upload and add actions live in the rail. The chat history has a text search and
+a time filter instead of Today/Yesterday headings. The Workspaces button (the
+overview glyph) opens the Workspaces panel; choosing a workspace goes straight
+to its settings, where Overview, General, Members, Skills, MCP, Machines and
+Activity are the second-tier tabs. Click the brand to fold the second tier away
+(`⌘B` still works), drag its right edge to resize it (double-click resets), and
+the light/dark switch sits at the bottom of the icon strip (`⌘⇧L` in the
+desktop app, `⌥⇧L` in a browser). New thread is the + in the Chat rail; `⌘N`
+in the desktop app and `⌥⇧N` in a browser.
 
 Workspace settings are a page (`#/workspace`) with no second tab strip: the
-rail's second tier carries General, Members, Skills, MCP, Machines and Activity,
-and the page shows only the selected tab. The Workspaces panel carries the
+rail's second tier carries Overview, General, Members, Skills, MCP, Machines
+and Activity, and the page shows only the selected tab. The Workspaces panel carries the
 workspace list plus new/import and per-row export/delete actions. MCP has its
 own page (`#/mcp`) for the servers the workspace consumes, while
 `#/account/mcp` is the opposite direction: the loopback
 MCP server an agent connects to. Account is three deep-linkable routes:
 `#/account` for the profile, `#/account/sound` for SFX and `#/account/mcp` for
-the server. Workspace artifacts have their own page (`#/artifacts`);
+the server. Artifacts have their own detail pages (`#/artifacts/:id`);
 entities, skills and machines keep theirs.
 
 One account belongs to a hub, and the first workspace creator owns it. The

@@ -69,7 +69,7 @@ function openFromKeyboard(e, id) {
         </p>
       </div>
       <div class="head-actions">
-        <button class="btn" @click="router.push('/entities')">Entities</button>
+        <button class="btn" @click="hub.rail.entities = true">Entities</button>
         <button class="btn btn-ink" @click="router.push('/workspace')">Workspace settings</button>
       </div>
     </div>
@@ -164,7 +164,7 @@ function openFromKeyboard(e, id) {
         </li>
         <li v-if="!recentThreads.length" class="log-empty">
           No conversations yet. Open an entity and start a chat.
-          <router-link to="/entities">Go to entities</router-link>
+          <button class="empty-link" type="button" @click="hub.rail.entities = true">Go to entities</button>
         </li>
       </ol>
     </div>

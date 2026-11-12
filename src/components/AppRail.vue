@@ -138,7 +138,20 @@ function toggleRail() {
 }
 
 function toggleWorkspacePanel() {
-  hub.rail.workspaces = !hub.rail.workspaces
+  const next = !hub.rail.workspaces
+  hub.rail.workspaces = next
+  if (next) {
+    hub.rail.workspace = false
+    hub.rail.entities = false
+    hub.rail.artifacts = false
+  }
+}
+
+function openRailPanel(panel) {
+  hub.rail.workspaces = false
+  hub.rail.workspace = false
+  hub.rail.entities = panel === 'entities'
+  hub.rail.artifacts = panel === 'artifacts'
 }
 
 /* A route move means the section's own list should win again. The workspace
@@ -147,6 +160,8 @@ watch(
   () => route.fullPath,
   (path) => {
     hub.rail.workspaces = false
+    hub.rail.entities = false
+    hub.rail.artifacts = false
     /* Overview can be opened from the workspace second-tier menu without
        replacing that menu with the overview machine list. */
     if (path !== '/') hub.rail.workspace = false
@@ -198,9 +213,9 @@ function openAccountPage() {
 }
 
 const NAV = [
-  { to: '/entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
+  { panel: 'entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
   {
-    to: '/artifacts',
+    panel: 'artifacts',
     view: 'artifacts',
     label: 'Artifacts',
     icon: 'artifact',
@@ -209,7 +224,13 @@ const NAV = [
   { to: '/chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => hub.chat.summaries.length },
 ]
 
-const isActive = (item) => route.path === item.to || route.path.startsWith(item.to + '/')
+function isActive(item) {
+  const panelOpen = hub.rail.workspaces || hub.rail.entities || hub.rail.artifacts
+  if (panelOpen) return item.panel ? hub.rail[item.panel] : false
+  if (item.panel === 'entities') return route.name === 'entity'
+  if (item.panel === 'artifacts') return route.name === 'artifact'
+  return route.path === item.to || route.path.startsWith(item.to + '/')
+}
 const user = computed(() => hub.session?.user || 'no session')
 
 /* "agung@studio.dev" → "Agung" in the account menu, the full handle underneath */
@@ -242,7 +263,7 @@ function leave() {
     class="rail"
     :data-collapsed="collapsed ? '1' : '0'"
     :data-resizing="resizing ? '1' : '0'"
-    :data-panel="hub.rail.workspaces ? '1' : '0'"
+    :data-panel="hub.rail.workspaces || hub.rail.entities || hub.rail.artifacts ? '1' : '0'"
     :style="railStyle"
   >
     <div class="rail-t1">
@@ -273,18 +294,31 @@ function leave() {
       <div class="rail-t1-sep" aria-hidden="true"></div>
 
       <nav class="rail-nav" aria-label="Workspace">
-        <router-link
-          v-for="item in NAV"
-          :key="item.view"
-          class="rail-ico"
-          :to="item.to"
-          :aria-current="isActive(item) ? 'page' : undefined"
-          :aria-label="item.label"
-          :data-tip="item.label"
-        >
-          <NavIcon :name="item.icon" />
-          <span v-if="item.count && item.count()" class="rail-badge">{{ item.count() }}</span>
-        </router-link>
+        <template v-for="item in NAV" :key="item.view">
+          <router-link
+            v-if="item.to"
+            class="rail-ico"
+            :to="item.to"
+            :aria-current="isActive(item) ? 'page' : undefined"
+            :aria-label="item.label"
+            :data-tip="item.label"
+          >
+            <NavIcon :name="item.icon" />
+            <span v-if="item.count && item.count()" class="rail-badge">{{ item.count() }}</span>
+          </router-link>
+          <button
+            v-else
+            class="rail-ico"
+            type="button"
+            :aria-current="isActive(item) ? 'page' : undefined"
+            :aria-label="item.label"
+            :data-tip="item.label"
+            @click="openRailPanel(item.panel)"
+          >
+            <NavIcon :name="item.icon" />
+            <span v-if="item.count && item.count()" class="rail-badge">{{ item.count() }}</span>
+          </button>
+        </template>
       </nav>
 
       <div class="rail-t1-spacer"></div>

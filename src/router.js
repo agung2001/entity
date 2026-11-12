@@ -7,12 +7,11 @@ import SetupView from '@/views/SetupView.vue'
 import HubLayout from '@/layouts/HubLayout.vue'
 import OverviewView from '@/views/OverviewView.vue'
 import ChatView from '@/views/ChatView.vue'
-import EntitiesView from '@/views/EntitiesView.vue'
 import EntityDetailView from '@/views/EntityDetailView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import SkillDetailView from '@/views/SkillDetailView.vue'
 import McpView from '@/views/McpView.vue'
-import ArtifactsView from '@/views/ArtifactsView.vue'
+import ArtifactDetailView from '@/views/ArtifactDetailView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import MachineDetailView from '@/views/MachineDetailView.vue'
 import AccountView from '@/views/AccountView.vue'
@@ -62,12 +61,6 @@ const router = createRouter({
           meta: { crumb: 'chat', title: 'Chat · entity' },
         },
         {
-          path: 'entities',
-          name: 'entities',
-          component: EntitiesView,
-          meta: { crumb: 'entities', title: 'Entities · entity' },
-        },
-        {
           path: 'entities/:name',
           name: 'entity',
           component: EntityDetailView,
@@ -92,10 +85,10 @@ const router = createRouter({
           meta: { crumb: 'mcp', title: 'MCP · entity' },
         },
         {
-          path: 'artifacts',
-          name: 'artifacts',
-          component: ArtifactsView,
-          meta: { crumb: 'artifacts', title: 'Artifacts · entity' },
+          path: 'artifacts/:id(.*)',
+          name: 'artifact',
+          component: ArtifactDetailView,
+          meta: { crumb: 'artifact', title: 'Artifact · entity' },
         },
         {
           path: 'machines',

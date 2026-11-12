@@ -381,8 +381,9 @@ function onLiveEvent(event) {
   }
 }
 
-/* The topbar's New thread sends us here with ?new=1. Opening the dialog is
-   local state, so consume the flag before the address bar keeps showing it. */
+/* The rail's + and the new-thread shortcut send us here with ?new=1. Opening
+   the dialog is local state, so consume the flag before the address bar keeps
+   showing it. */
 function consumeNewQuery() {
   if (route.query.new !== '1') return
   startThread()
@@ -484,7 +485,7 @@ watch(
           <div class="empty-note">
             <b>No entity in this workspace yet.</b>
             <span>A thread is a real conversation with one entity's file. Create an entity first.</span>
-            <router-link to="/entities">Go to entities</router-link>
+            <button class="empty-link" type="button" @click="hub.rail.entities = true">Go to entities</button>
           </div>
         </section>
 

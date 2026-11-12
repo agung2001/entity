@@ -2,7 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import { matchesQuery } from '@/composables/search'
 import {
+  ago,
   ensureChats,
   hub,
   pinThread,
@@ -28,6 +30,15 @@ const confirming = ref('')
 const menuItem = ref(null)
 const menuPos = ref({ top: 0, left: 0 })
 const hmenu = ref(null)
+const query = ref('')
+const range = ref('all')
+const RANGE_OPTIONS = [
+  { id: 'all', label: 'Any time' },
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: '7d', label: 'Last 7 days' },
+  { id: '30d', label: 'Last 30 days' },
+]
 const GROUPS_KEY = 'entity.rail.chatGroups'
 
 const collapsed = reactive(readCollapsed())
@@ -60,52 +71,47 @@ function titleOf(thread) {
   return thread.title || (thread.queries ? snippet(thread.preview) : `New thread · ${thread.entity}`)
 }
 
-function clock(iso) {
-  const date = new Date(iso || '')
-  if (!Number.isFinite(date.getTime())) return 'now'
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
 function dayStart(value) {
   const date = new Date(value || '')
   if (!Number.isFinite(date.getTime())) return null
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
-function dateLabel(iso) {
-  const day = dayStart(iso)
-  if (!day) return 'Undated'
+function inRange(thread) {
+  if (range.value === 'all') return true
+  const date = new Date(thread.updatedAt || '')
+  if (!Number.isFinite(date.getTime())) return false
   const today = dayStart(new Date())
-  const diff = Math.round((today - day) / 86_400_000)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Yesterday'
-  return day.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    ...(day.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }),
-  })
+  if (range.value === 'today') return date >= today
+  if (range.value === 'yesterday') {
+    const start = new Date(today)
+    start.setDate(start.getDate() - 1)
+    return date >= start && date < today
+  }
+  const days = range.value === '7d' ? 7 : 30
+  return date >= new Date(today.getTime() - days * 86_400_000)
 }
 
-function byDate(list) {
-  const groups = new Map()
-  for (const thread of list) {
-    const label = dateLabel(thread.updatedAt)
-    if (!groups.has(label)) groups.set(label, [])
-    groups.get(label).push(thread)
-  }
-  return [...groups.entries()].map(([label, items]) => ({ label, threads: items }))
-}
+const filteredThreads = computed(() =>
+  threads.value.filter((thread) => {
+    if (!inRange(thread)) return false
+    return matchesQuery(
+      `${titleOf(thread)} ${thread.preview || ''} ${thread.entity || ''}`,
+      query.value,
+    )
+  }),
+)
 
 function stateOf(thread) {
   if (isWorking(thread)) return 'Working…'
   if (!thread.queries) return 'New'
-  return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${clock(thread.updatedAt)}`
+  return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${ago(thread.updatedAt)}`
 }
 
 const sections = computed(() => {
   const working = []
   const done = []
-  const ordered = [...threads.value].sort((a, b) =>
+  const ordered = [...filteredThreads.value].sort((a, b) =>
     String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
   )
   for (const thread of ordered) {
@@ -113,8 +119,8 @@ const sections = computed(() => {
     else done.push(thread)
   }
   return [
-    { id: 'working', label: 'Working', threads: working, dates: byDate(working) },
-    { id: 'done', label: 'Done', threads: done, dates: byDate(done) },
+    { id: 'working', label: 'Working', threads: working },
+    { id: 'done', label: 'Done', threads: done },
   ]
 })
 
@@ -265,8 +271,34 @@ defineExpose({ newThread })
       </span>
     </div>
 
+    <div class="rchat-tools">
+      <label class="rchat-search">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" />
+          <path d="M10.5 10.5L14 14" />
+        </svg>
+        <input
+          v-model="query"
+          type="search"
+          placeholder="Search threads"
+          aria-label="Search threads"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button v-if="query" type="button" aria-label="Clear search" @click="query = ''">×</button>
+      </label>
+      <label class="rchat-range">
+        <span>Time</span>
+        <select v-model="range" aria-label="Filter threads by time">
+          <option v-for="option in RANGE_OPTIONS" :key="option.id" :value="option.id">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+    </div>
+
     <div class="rchat-list">
-      <template v-if="threads.length">
+      <template v-if="filteredThreads.length">
         <section
           v-for="section in sections"
           :key="section.id"
@@ -291,14 +323,9 @@ defineExpose({ newThread })
             <p v-if="!section.threads.length" class="rchat-empty">
               {{ section.id === 'working' ? 'Nothing running.' : 'No finished chats yet.' }}
             </p>
-            <div v-for="day in section.dates" :key="day.label" class="rchat-day">
-              <div class="rchat-dayhead">
-                <span>{{ day.label }}</span>
-                <span>{{ day.threads.length }}</span>
-              </div>
-              <div
-                v-for="thread in day.threads"
-                :key="thread.id"
+            <div
+              v-for="thread in section.threads"
+              :key="thread.id"
                 class="rchat-row"
                 :data-on="thread.id === hub.chat.active ? '1' : '0'"
                 :data-pinned="thread.pinned ? '1' : '0'"
@@ -362,14 +389,16 @@ defineExpose({ newThread })
                     <circle cx="12.8" cy="8" r="1.2" />
                   </svg>
                 </button>
-              </div>
             </div>
           </div>
         </section>
       </template>
 
+      <p v-else-if="threads.length" class="rchat-empty">
+        No threads match this search and time filter.
+      </p>
       <p v-else class="rchat-empty">
-        No chats yet. Use + or the top bar to start one.
+        No chats yet. Use + to start one.
       </p>
     </div>
 

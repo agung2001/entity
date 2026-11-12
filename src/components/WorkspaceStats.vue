@@ -35,13 +35,13 @@ const lastActivity = computed(() => {
 
 <template>
   <section class="stat-grid" aria-label="Workspace statistics">
-    <router-link class="stat-card" to="/entities">
+    <button class="stat-card" type="button" @click="hub.rail.entities = true">
       <span class="stat-k">Entities</span>
       <span class="stat-v">{{ hub.agents.length }}</span>
       <span class="stat-m">
         {{ running }} running · {{ problems }} {{ problems === 1 ? 'problem' : 'problems' }}
       </span>
-    </router-link>
+    </button>
 
     <router-link class="stat-card" to="/chat">
       <span class="stat-k">Conversations</span>

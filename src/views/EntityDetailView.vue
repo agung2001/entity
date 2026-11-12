@@ -30,6 +30,12 @@ import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 const route = useRoute()
 const router = useRouter()
 const saving = ref(false)
+
+async function goEntities() {
+  await router.push('/')
+  hub.rail.entities = true
+}
+
 const form = reactive({ harness: '', model: '', instructions: '' })
 const seeding = ref(false)
 const configOpen = ref(false)
@@ -199,7 +205,7 @@ async function copyPath() {
   <div class="view entp-view">
     <template v-if="agent">
       <div class="entp-bar">
-        <button class="back" type="button" @click="router.push('/entities')">
+        <button class="back" type="button" @click="goEntities">
           <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7.5 2.5L4 6l3.5 3.5" /></svg>
           Entities
         </button>
@@ -400,7 +406,7 @@ async function copyPath() {
     <div v-else class="empty-note">
       <b>That entity is not in this workspace.</b>
       <span>It may have been renamed or deleted on disk.</span>
-      <router-link to="/entities">Back to entities</router-link>
+      <button class="empty-link" type="button" @click="goEntities">Back to entities</button>
     </div>
   </div>
 </template>
