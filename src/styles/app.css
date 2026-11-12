@@ -9666,3 +9666,15 @@ label.pick:has(input:focus-visible) {
     display: none;
   }
 }
+
+/* The spinner owns the clear-button slot while models load; in normal flow it
+   painted over the input's magnifier and made the field look crowded. */
+.model-input > .model-spin--field {
+  position: absolute;
+  top: 11px;
+  right: 33px;
+  z-index: 2;
+}
+.model-input[aria-busy='true'] .model-clear {
+  display: none;
+}

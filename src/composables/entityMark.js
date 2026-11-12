@@ -565,8 +565,10 @@ const entityKey = (workspace, entity) => `${workspace || '_'}::${entity}`
 const entityStoreKey = (workspace, entity) =>
   `${ENTITY_MARK_PREFIX}${workspace || '_'}:${entity}`
 
-/** The mark record for one entity, or the hub's own mark when there is none. */
-export function markFor(workspace, entity) {
+/** The mark record for one entity, or the hub's own mark when there is none.
+ *  `fallback` lets a seeded entity carry its first shape/colour/mood in its own
+ *  frontmatter; once the picker writes a localStorage record, that wins. */
+export function markFor(workspace, entity, fallback = null) {
   if (!entity) return markSettings
   const key = entityKey(workspace, entity)
   let mark = entityMarks.get(key)
@@ -578,9 +580,9 @@ export function markFor(workspace, entity) {
       /* a bad stored value just means the defaults */
     }
     mark = reactive({
-      mood: saved?.mood || 'none',
-      color: saved?.color || 'sun',
-      shape: shapeById(saved?.shape).id,
+      mood: saved?.mood || fallback?.mood || 'none',
+      color: saved?.color || fallback?.color || 'sun',
+      shape: shapeById(saved?.shape || fallback?.shape).id,
       custom: /^#[0-9a-f]{6}$/i.test(String(saved?.custom || '')) ? saved.custom : '',
     })
     entityMarks.set(key, mark)

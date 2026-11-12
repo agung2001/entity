@@ -66,7 +66,7 @@ const contextOptions = {
     hub.agents.map((a) => ({
       id: a.id,
       label: a.name,
-      glyph: moodGlyph(markFor(hub.workspace, a.id).mood),
+      glyph: moodGlyph(markFor(hub.workspace, a.id, a.mark).mood),
     })),
   machine: () => hub.machines.map((m) => ({ id: m.id, label: m.label, meta: m.thisMachine ? 'local' : 'remote' })),
   harness: () => HARNESSES.map((h) => ({ id: h.id, label: h.label })),

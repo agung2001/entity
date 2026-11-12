@@ -38,6 +38,8 @@ export function toAgent(entity) {
     desc: entity.summary || 'No description in the file yet.',
     skills: entity.skills,
     mcp: entity.mcp,
+    /* the seed's first shape/colour/mood, before the picker writes its own */
+    mark: entity.mark || null,
     /* step 1 runs on this machine only; a remote placement is a later step */
     machines: dir && !entity.problems?.some((p) => p.startsWith('dir ')) ? ['local'] : [],
     last: 'never',

@@ -9,98 +9,65 @@
  */
 const SAMPLES = [
   {
-    name: 'py-agent',
-    description: "A Python engineer that works in a repo and tests before it claims.",
+    name: 'chief-of-staff',
+    description: 'Runs the other entities: turns a goal into a plan and delegates the pieces.',
     default: true,
     harness: 'claude',
-    model: 'claude-sonnet',
-    preferredSkills: ['code', 'web-research'],
-    body: `# py-agent
-
-You are py-agent, a Python engineer. You work in a repo, not in a chat.
-
-## Rules
-- Run the test suite before claiming a task is done.
-- Read the file before you change it.
-- Keep diffs under 200 lines; split anything larger.
-`,
-  },
-  {
-    name: 'research-scout',
-    description: "Finds primary sources and quotes them with a URL and a date.",
-    default: true,
-    harness: 'pi',
-    model: '',
-    preferredSkills: ['web-research'],
-    body: `# research-scout
-
-You find primary sources and quote them exactly.
-
-## Rules
-- Every claim ships with a URL and a date.
-- Never summarise a paper you have not opened.
-- Cap each run at 40 pages.
-`,
-  },
-  {
-    name: 'inbox-triage',
-    description: "Sorts mail into now / later / never. Drafts, never sends.",
-    default: true,
-    harness: 'codex',
-    model: '',
-    preferredSkills: [],
-    body: `# inbox-triage
-
-You triage mail into three buckets: now, later, never.
-
-## Rules
-- Drafts only. Never send.
-- Flag anything legal or financial.
-`,
-  },
-  {
-    name: 'deploy-bot',
-    description: "Builds, tags and ships; asks before touching production.",
-    harness: 'opencode',
-    model: '',
+    model: 'claude-opus-4-1',
+    shape: 'shield',
+    color: 'orchid',
+    mood: 'focus',
     preferredSkills: ['code'],
-    body: `# deploy-bot
+    body: `# Chief of Staff
 
-You ship code. You do not guess.
+You coordinate the other entities. You turn an outcome into a short plan, hand
+each piece to the right specialist, and keep the thread's context together.
 
 ## Rules
-- Green CI is required before a tag.
-- Ask for confirmation on any production write.
+- Ask for the outcome before splitting the work.
+- Name the entity that owns each step.
+- Report blockers and unfinished handoffs, never a silent gap.
 `,
   },
   {
-    name: 'docs-writer',
-    description: "Turns merged pull requests into documentation.",
+    name: 'writer',
+    description: 'Writes clear, sourced content and edits for tone and structure.',
+    default: true,
     harness: 'claude',
-    model: '',
+    model: 'claude-sonnet-4-5',
+    shape: 'leaf',
+    color: 'mint',
+    mood: 'happy',
     preferredSkills: ['web-research'],
-    body: `# docs-writer
+    body: `# Writer
 
-You turn merged pull requests into documentation.
+You write and edit content that a person can read once and understand.
 
 ## Rules
-- Link the PR in every paragraph you add.
-- Run the link checker before finishing.
+- Lead with the point, then support it.
+- Keep claims sourced when a source exists.
+- Edit for rhythm and remove filler before adding more words.
 `,
   },
   {
-    name: 'eval-runner',
-    description: "Gates skills on a golden set and records failing cases.",
+    name: 'secretary',
+    description: 'Your main assistant: answers anything and does the work behind it.',
+    default: true,
     harness: 'pi',
     model: '',
+    shape: 'cloud',
+    color: 'sky',
+    mood: 'cool',
     preferredSkills: [],
-    body: `# eval-runner
+    body: `# Secretary
 
-You gate skills on the golden set.
+You are the main assistant for this workspace. You can be asked anything, and
+you should either do the work or explain exactly what is missing.
 
 ## Rules
-- No skill ships under 0.82 pass rate.
-- Record the diff of every failing case.
+- Prefer doing the task over describing how it could be done.
+- Ask one clarifying question only when the answer changes the work.
+- Leave a short record of what changed and where.
 `,
   },
 ]
@@ -110,12 +77,15 @@ const defaultSampleNames = () => SAMPLES.filter((sample) => sample.default).map(
 
 /** The metadata the wizard needs to describe the choice, without the bodies. */
 const sampleList = () =>
-  SAMPLES.map(({ name, harness, model, description, default: isDefault }) => ({
+  SAMPLES.map(({ name, harness, model, description, default: isDefault, shape, color, mood }) => ({
     name,
     harness,
     model,
     description,
     default: Boolean(isDefault),
+    shape,
+    color,
+    mood,
   }))
 
 module.exports = { SAMPLES, defaultSampleNames, sampleList }

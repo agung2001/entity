@@ -1236,7 +1236,11 @@ function seedEntities(staging, attachedSkills, selected) {
     if (wanted && !wanted.has(sample.name)) continue
     const skills = sample.preferredSkills.filter((skill) => names.has(skill))
     const skillsLine = skills.length ? `skills: ${skills.join(', ')}\n` : ''
-    const text = `---\nname: ${sample.name}\nharness: ${sample.harness}\nmodel: ${sample.model}\ndir: ${tilde(HOME)}\n${skillsLine}---\n\n${sample.body}`
+    const markLine = ['shape', 'color', 'mood']
+      .filter((key) => sample[key])
+      .map((key) => `${key}: ${sample[key]}\n`)
+      .join('')
+    const text = `---\nname: ${sample.name}\nharness: ${sample.harness}\nmodel: ${sample.model}\ndir: ${tilde(HOME)}\n${skillsLine}${markLine}---\n\n${sample.body}`
     fs.writeFileSync(path.join(dir, `${sample.name}.md`), text, 'utf8')
   }
 }

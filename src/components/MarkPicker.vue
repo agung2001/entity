@@ -42,7 +42,13 @@ const wheelHue = ref(78)
 const wheelSat = ref(0.78)
 const wheelLight = ref(0.62)
 
-const mark = computed(() => markFor(hub.workspace, props.entity))
+const mark = computed(() =>
+  markFor(
+    hub.workspace,
+    props.entity,
+    hub.agents.find((agent) => agent.name === props.entity)?.mark || null,
+  ),
+)
 const activeGlyph = computed(() => moodGlyph(mark.value.mood))
 const activeShape = computed(() => shapeById(mark.value.shape))
 const currentColor = computed(() => colorById(mark.value.color, mark.value.custom))

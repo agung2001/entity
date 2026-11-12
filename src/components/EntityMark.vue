@@ -22,7 +22,10 @@ const props = defineProps({
 })
 
 const el = ref(null)
-const mark = computed(() => markFor(props.workspace || hub.workspace, props.entity))
+const seed = computed(() =>
+  props.entity ? hub.agents.find((agent) => agent.name === props.entity)?.mark || null : null,
+)
+const mark = computed(() => markFor(props.workspace || hub.workspace, props.entity, seed.value))
 
 function mount() {
   if (!el.value) return
@@ -47,7 +50,14 @@ function remount() {
 
 onMounted(mount)
 watch(
-  [() => props.entity, () => props.workspace, () => props.shape, () => mark.value.shape, () => hub.workspace],
+  [
+    () => props.entity,
+    () => props.workspace,
+    () => props.shape,
+    () => mark.value.shape,
+    () => seed.value,
+    () => hub.workspace,
+  ],
   remount,
 )
 onBeforeUnmount(() => releaseMark(el.value))

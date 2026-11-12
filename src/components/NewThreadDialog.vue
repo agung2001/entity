@@ -41,7 +41,7 @@ const entityOptions = computed(() =>
     id: item.id,
     label: item.name,
     meta: item.harnessLabel,
-    glyph: moodGlyph(markFor(hub.workspace, item.id).mood),
+    glyph: moodGlyph(markFor(hub.workspace, item.id, item.mark).mood),
   })),
 )
 const harnessOptions = computed(() =>

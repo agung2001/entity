@@ -136,7 +136,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       @input="onInput"
       @keydown="onKey"
     />
-    <span v-if="loading" class="model-spin" role="status" aria-label="Loading models"></span>
+    <span v-if="loading" class="model-spin model-spin--field" role="status" aria-label="Loading models"></span>
     <button
       v-if="draft"
       class="model-clear"
