@@ -201,6 +201,24 @@ function list({ workspace } = {}) {
   }
 }
 
+/** Files written since a timestamp, newest first. Used to attach a turn's
+ *  output to the chat answer instead of making the person hunt the shelf. */
+function recent({ workspace, since, limit = 12 } = {}) {
+  const record = workspaces.open(workspace)
+  const numeric = Number(since)
+  const sinceMs = Number.isFinite(numeric) ? numeric : Date.parse(String(since || ''))
+  const items = []
+  walk(record, '', items)
+  const rows = Number.isFinite(sinceMs)
+    ? items.filter((item) => {
+        const at = Date.parse(item.modifiedAt)
+        return Number.isFinite(at) && at >= sinceMs
+      })
+    : items
+  rows.sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt)))
+  return rows.slice(0, Math.max(0, Math.min(100, Number(limit) || 12)))
+}
+
 function read({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
   const file = absolute(record, id)
@@ -323,8 +341,8 @@ function brief(workspace) {
   const dir = ensureDir(record)
   return [
     `Workspace artifacts live in ${dir}.`,
-    'When you create a document, image, or screenshot for the user, save it there.',
-    'Use a filename without spaces (dashes are fine), and in your reply refer to it as artifact://<relative-path> so the chat can show it.',
+    'When you create a document, image, or screenshot for the user, save it inside that directory — not in /tmp, the workspace root, or a chat message.',
+    'Use a filename without spaces (dashes are fine), and in your reply refer to it as artifact://<relative-path> so the chat can show it inline.',
   ].join(' ')
 }
 
@@ -333,6 +351,7 @@ module.exports = {
   artifactsDir,
   rootPath,
   list,
+  recent,
   read,
   download,
   upload,

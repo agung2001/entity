@@ -15,6 +15,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
+const { tilde } = require('./frontmatter.cjs')
 
 const ROOT = process.env.ENTITY_HOME
   ? path.resolve(process.env.ENTITY_HOME)
@@ -182,7 +183,12 @@ function writeUser(user) {
 
 function status() {
   const raw = readAuth()
-  return { exists: Boolean(raw), user: raw ? publicUser(raw.user) : null, path: AUTH_FILE }
+  return {
+    exists: Boolean(raw),
+    user: raw ? publicUser(raw.user) : null,
+    path: AUTH_FILE,
+    displayPath: tilde(AUTH_FILE),
+  }
 }
 
 function get() {

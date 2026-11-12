@@ -107,6 +107,31 @@ function normaliseExecution(raw) {
   return Object.keys(execution).length ? execution : null
 }
 
+function normaliseArtifact(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  let id = String(raw.id || '').replace(/\\/g, '/')
+  const marker = '/artifacts/'
+  const at = id.indexOf(marker)
+  if (at >= 0) id = id.slice(at + marker.length)
+  if (id.startsWith('artifacts/')) id = id.slice('artifacts/'.length)
+  id = id
+    .split('/')
+    .filter((part) => part && part !== '.' && part !== '..')
+    .join('/')
+  if (!id) return null
+  const name = String(raw.name || id.split('/').pop() || 'artifact').slice(0, 180)
+  return {
+    id: id.slice(0, 500),
+    name,
+    kind: ['image', 'text', 'pdf', 'archive', 'audio', 'video', 'file'].includes(raw.kind)
+      ? raw.kind
+      : 'file',
+    mime: String(raw.mime || 'application/octet-stream').slice(0, 120),
+    ...(Number.isFinite(raw.size) ? { size: raw.size } : {}),
+    ...(raw.modifiedAt ? { modifiedAt: String(raw.modifiedAt) } : {}),
+  }
+}
+
 function normaliseMessage(message) {
   if (!message || typeof message !== 'object') return null
   const who = ['me', 'agent', 'sys'].includes(message.who) ? message.who : 'sys'
@@ -116,6 +141,9 @@ function normaliseMessage(message) {
     ? message.steps.map(normaliseStep).filter(Boolean)
     : []
   const execution = normaliseExecution(message.execution)
+  const linkedArtifacts = Array.isArray(message.artifacts)
+    ? message.artifacts.map(normaliseArtifact).filter(Boolean)
+    : []
   return {
     who,
     text,
@@ -130,6 +158,8 @@ function normaliseMessage(message) {
     ...(message.error ? { error: true } : {}),
     ...(steps.length ? { steps } : {}),
     ...(execution ? { execution } : {}),
+    /* files the harness put on the artifact shelf during this turn */
+    ...(linkedArtifacts.length ? { artifacts: linkedArtifacts } : {}),
   }
 }
 
@@ -346,6 +376,43 @@ function remove({ workspace, id }) {
   const existed = fs.existsSync(file)
   if (existed) fs.rmSync(file, { force: true })
   return { removed: existed }
+}
+
+/** `artifact://shots/page.png` in the answer is already rendered by the body. */
+function artifactRefs(text) {
+  const ids = new Set()
+  const pattern = /artifact:\/\/([^\s<>()]+)|\/artifacts\/([^\s<>()]+)/gi
+  let match
+  while ((match = pattern.exec(String(text || '')))) {
+    let id = (match[1] || match[2] || '').replace(/[.,;:!?]+$/, '').split(/[?#]/)[0]
+    try {
+      id = decodeURIComponent(id)
+    } catch {
+      /* keep the raw id */
+    }
+    const marker = '/artifacts/'
+    const at = id.indexOf(marker)
+    if (at >= 0) id = id.slice(at + marker.length)
+    if (id.startsWith('artifacts/')) id = id.slice('artifacts/'.length)
+    if (id) ids.add(id.replace(/^\/+/, ''))
+  }
+  return ids
+}
+
+/** A screenshot is part of the answer even when the harness never names it. */
+function turnArtifacts(workspace, sinceMs, answer) {
+  const linked = artifactRefs(answer)
+  return artifacts
+    .recent({ workspace, since: sinceMs, limit: 16 })
+    .filter((item) => !linked.has(item.id))
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      mime: item.mime,
+      size: item.size,
+      modifiedAt: item.modifiedAt,
+    }))
 }
 
 function promptFor(messages) {
@@ -658,6 +725,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
   let turnMessage = null
   try {
     const prompt = promptFor(thread.messages)
+    const turnStartedMs = Date.now()
     const run = await runHarness(entity, thread, prompt, {
       onStart: (execution) => emitTurn('start', { execution }),
       onStep,
@@ -665,6 +733,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
     flushStep()
 
     const at = now()
+    const createdArtifacts = run.ok ? turnArtifacts(record.id, turnStartedMs, run.answer) : []
     const execution = { ...run.execution, id: messageId, harness: thread.harness }
     turnMessage = run.ok
       ? {
@@ -674,6 +743,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
           at,
           steps: run.steps,
           execution,
+          ...(createdArtifacts.length ? { artifacts: createdArtifacts } : {}),
         }
       : {
           who: 'sys',

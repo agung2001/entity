@@ -205,16 +205,20 @@ Old messages without a transcript simply do not show one. Each answer also has
 copy, share and "save as artifact" actions. A failed turn carries a **Retry**
 button that re-runs the same question without adding a second copy of it. Every
 message — question or answer — has copy/share; share is a deep link
-(`?thread=…&msg=…`) that opens the thread and scrolls to that row. A right-edge
-outline draws one tick per message, follows the reading position, and opens a
-jump card on hover or focus.
+(`?thread=…&msg=…`) that opens the thread and scrolls to that row. Opening
+`#/chat` without a query adopts the newest thread and replaces the URL, so the
+address is always shareable. A right-edge outline draws one tick per message,
+follows the reading position, and opens a jump card on hover or focus.
 
 ### Artifacts in chat
 
-The harness is told that workspace artifacts live in `<ws>/artifacts` and that a
-saved file should be referenced as `artifact://<relative-path>`. The chat renders
-that reference as an image or a download card, and `#/artifacts` is the shelf for
-browsing, uploading, searching, filtering and removing those files.
+The harness is told that workspace artifacts live in `<ws>/artifacts`, that a
+screenshot belongs there rather than `/tmp`, and that a saved file should be
+referenced as `artifact://<relative-path>`. The chat renders that reference as an
+image or a download card, and also attaches any file written to the artifact
+shelf during the turn even when the answer never names it. An absolute
+`/artifacts/…` path resolves through the same read RPC. `#/artifacts` remains the
+shelf for browsing, uploading, searching, filtering and removing those files.
 
 ## Layout
 
@@ -338,6 +342,11 @@ history mode has no server to resolve a path on reload.
 | `#/workspaces` | Manage workspaces (add, export/import, delete, settings) |
 | `#/workspace` | Workspace settings (general + members) |
 | `#/account` | Account profile and MCP server management |
+
+The rail keeps Overview, Chat, Entities, Artifacts and Activity in the main
+list. Skills, MCP and Machines sit behind an **Advanced** disclosure (remembered
+per window) so the everyday surface is not a glossary; the section opens
+automatically when a deep link lands on one of those pages.
 
 Workspace settings are a page (`#/workspace`), not a modal: General and Members
 are separate tabs for the name, the directory id and the member roster. Managing

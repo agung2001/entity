@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import ThreadMinimap from '@/components/ThreadMinimap.vue'
 import MessageBody from '@/components/MessageBody.vue'
+import ChatArtifacts from '@/components/ChatArtifacts.vue'
 import TraceTimeline from '@/components/TraceTimeline.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
 import { credentials, hub, toast } from '@/stores/hub'
@@ -216,6 +217,7 @@ function traceSummary(message) {
         :style="m.who === 'me' && userAvatar ? { '--msg-avatar': 'url(' + userAvatar + ')' } : null"
       >
         <MessageBody :text="m.text" />
+        <ChatArtifacts v-if="m.artifacts?.length" :items="m.artifacts" />
         <EntityMark v-if="m.who === 'agent'" mini :entity="entityName" class="msg-avatar" />
       </div>
       <details v-if="hasTrace(m)" class="msg-trace" :data-who="m.who">

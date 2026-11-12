@@ -215,9 +215,28 @@ function onChatKey(event) {
 async function pickThread(id) {
   try {
     await selectThread(id)
+    return true
   } catch {
     await ensureChats()
+    return false
   }
+}
+
+/** The newest conversation by activity, not the first pinned row. */
+function newestThreadId() {
+  const rows = [...hub.chat.summaries].sort((a, b) =>
+    String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
+  )
+  return rows[0]?.id || ''
+}
+
+/** Refresh the history and open its newest thread when the URL has none. */
+async function openInitialThread(wanted = '') {
+  await ensureChats()
+  if (wanted && (await pickThread(wanted))) return
+  if (hub.chat.active) return
+  const latest = newestThreadId()
+  if (latest) await pickThread(latest)
 }
 
 async function retryFailed(message) {
@@ -412,13 +431,8 @@ onMounted(async () => {
   offEvent = onRunEvent(onLiveEvent)
   window.addEventListener('keydown', onChatKey, true)
   document.addEventListener('click', onDocumentClick)
-  await ensureChats()
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
-  if (wanted) {
-    await pickThread(wanted)
-    return
-  }
-  if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
+  await openInitialThread(wanted)
 })
 
 onBeforeUnmount(() => {
@@ -437,15 +451,35 @@ watch(
     live.value = null
     transcriptOpen.value = false
     menuItem.value = null
-    await ensureChats()
-    if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
+    await openInitialThread()
+  },
+)
+
+/* /chat is a place, so the address bar names the thread. A shared link opens
+   that thread; opening the bare page adopts the newest one and replaces the
+   URL so it is shareable without a second click. */
+watch(
+  () => hub.chat.active,
+  (id, previous) => {
+    if (!id) return
+    const current = typeof route.query.thread === 'string' ? route.query.thread : ''
+    if (current === id) return
+    const query = { ...route.query, thread: id }
+    if (previous && previous !== id) delete query.msg
+    router.replace({ name: 'chat', query })
   },
 )
 
 watch(
   () => route.query.thread,
   async (id) => {
-    if (typeof id === 'string' && id) await pickThread(id)
+    if (typeof id !== 'string' || !id) return
+    if (await pickThread(id)) return
+    /* A dead link falls back to what is open, or the newest thread. */
+    const fallback = hub.chat.active || newestThreadId()
+    if (fallback && fallback !== id) {
+      router.replace({ name: 'chat', query: { ...route.query, thread: fallback } })
+    }
   },
 )
 

@@ -22,9 +22,9 @@ const TOKEN =
   /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|artifact:\/\/([^\s<>()]+)|(https?:\/\/[^\s<>()]+\.(?:png|jpe?g|gif|webp|avif|bmp|ico|svg)(?:\?[^\s<>()]*)?)/gi
 
 function decodeId(value) {
-  let id = value
+  let id = String(value).split(/[?#]/)[0]
   try {
-    id = decodeURIComponent(value)
+    id = decodeURIComponent(id)
   } catch {
     /* keep the raw value */
   }
@@ -46,13 +46,16 @@ const segments = computed(() => {
     if (match.index > last) out.push({ type: 'text', text: text.slice(last, match.index) })
     if (match[1] !== undefined) {
       const src = match[2]
-      const artifact = src.startsWith('artifact://')
+      /* An agent may paste the absolute artifact path instead of the scheme.
+         Both resolve through the same read RPC. */
+      const artifact =
+        src.startsWith('artifact://') || (!/^https?:/i.test(src) && src.includes('/artifacts/'))
       out.push({
         type: 'image',
         src,
         alt: match[1] || 'Image',
         artifact,
-        id: artifact ? decodeId(src.slice('artifact://'.length)) : '',
+        id: artifact ? decodeId(src) : '',
       })
     } else if (match[3]) {
       const token = match[3].replace(/[.,;:!?]+$/, '')

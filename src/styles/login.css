@@ -623,9 +623,11 @@
   -webkit-mask-image: linear-gradient(to top, #000 8%, transparent 76%);
   opacity: 0.6;
   animation: a51-grid 7s linear infinite;
+  will-change: transform;
 }
 @keyframes a51-grid {
-  to { background-position: 0 22px, 34px 0; }
+  from { transform: perspective(260px) rotateX(63deg) translateY(0); }
+  to { transform: perspective(260px) rotateX(63deg) translateY(22px); }
 }
 .a51-dust i {
   bottom: 16%;
@@ -673,7 +675,10 @@
     transparent 0 3px,
     rgba(246, 196, 69, 0.022) 3px 4px
   );
-  mix-blend-mode: screen;
+}
+.a51 {
+  contain: layout paint;
+  pointer-events: none;
 }
 .a51-stamp {
   position: absolute;

@@ -680,6 +680,9 @@ main {
     justify-content: center;
     padding: 0 0 18px;
   }
+  .rail[data-collapsed='1'] .nav-group {
+    display: none;
+  }
   .rail[data-collapsed='1'] .nav a {
     justify-content: center;
     padding: 0;
@@ -859,6 +862,36 @@ main {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);
+}
+.nav-group {
+  margin-top: 8px;
+  border-top: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  color: var(--muted) !important;
+  font-family: var(--mono);
+  font-size: 9.5px !important;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.nav-group:hover {
+  color: var(--ink) !important;
+}
+.nav-group .lbl {
+  margin-right: auto;
+}
+.nav-chev {
+  width: 11px !important;
+  height: 11px !important;
+  opacity: 0.55 !important;
+  transition: transform 0.16s ease;
+}
+.nav-group[aria-expanded='true'] .nav-chev {
+  transform: rotate(90deg);
+}
+.nav-adv {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .rail-foot {
@@ -4115,6 +4148,17 @@ select:focus-visible {
   .nav .count {
     display: none;
   }
+  .nav-group {
+    margin-top: 0;
+    padding-left: 10px;
+    border-top: 0 !important;
+    border-left: 1px solid var(--border);
+    border-radius: 0 !important;
+  }
+  .nav-adv {
+    flex-direction: row;
+    gap: 2px;
+  }
   .rail-foot {
     margin: 0 0 0 auto;
     padding: 0;
@@ -5359,6 +5403,206 @@ label.pick:has(input:focus-visible) {
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Files produced during a turn sit with the answer, not on a separate page. */
+.msg-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.msg-attach {
+  margin: 0;
+  min-width: 0;
+  max-width: min(440px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.msg-attach-img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--surface);
+  cursor: zoom-in;
+}
+.msg-attach-img img {
+  display: block;
+  width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+}
+.msg-attach-ph {
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  padding: 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.msg-attach-ph[data-error='1'] {
+  color: var(--danger);
+}
+.msg-attach figcaption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-top: 1px solid var(--border);
+}
+.msg-attach-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-2);
+}
+.msg-attach-meta {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+}
+.msg-attach-dl {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg-attach-dl:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.msg-attach-file {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 230px;
+  padding: 10px;
+}
+.msg-attach-ext {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: var(--accent-ink);
+}
+.msg-attach-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.msg-attach-copy b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.msg-attach-copy span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+}
+.msg-artifact-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(15, 13, 7, 0.72);
+  backdrop-filter: blur(3px);
+}
+.msg-artifact-modal img {
+  max-width: min(1400px, 94vw);
+  max-height: 86vh;
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+.msg-artifact-modal-x {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(20, 18, 12, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+.msg-artifact-modal-x svg {
+  width: 14px;
+  height: 14px;
+}
+.msg-artifact-modal-foot {
+  position: fixed;
+  right: 24px;
+  bottom: 20px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.82);
+}
+.msg-artifact-modal-foot .msg-attach-dl {
+  color: #ffe6a3;
+}
+.msg-artifact-modal-note {
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  .msg-attach {
+    max-width: 100%;
+  }
+  .msg-artifact-modal {
+    padding: 12px;
+  }
+  .msg-artifact-modal-x {
+    top: 10px;
+    right: 10px;
+  }
+  .msg-artifact-modal-foot {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+  }
 }
 .msg-foot {
   align-self: flex-start;

@@ -80,16 +80,16 @@ let timer = 0
 onBeforeUnmount(() => clearTimeout(timer))
 
 onMounted(async () => {
-  try {
-    if (!workspaces.loaded) await loadWorkspaces()
-  } catch {
-    /* a broken profile still gets the login screen */
-  }
-  const status = await loadAccount({ force: true })
+  /* Both reads are independent; doing them in sequence made a cold sign-in
+     wait for one round trip after another. */
+  const [, status] = await Promise.all([
+    workspaces.loaded ? Promise.resolve() : loadWorkspaces().catch(() => {}),
+    loadAccount({ force: true }),
+  ])
   if (status.exists) {
     /* Deliberately generic: the account email is not a login hint. */
     identPlaceholder.value = 'Email or handle'
-    accountHint.value = `Credentials are stored on this machine in ${status.path || 'auth.json'}.`
+    accountHint.value = `Credentials are stored on this machine in ${status.displayPath || status.path || 'auth.json'}.`
     return
   }
 
@@ -125,23 +125,24 @@ onMounted(async () => {
 
 function finish() {
   busy.value = true
+  signIn(
+    pendingUser.value,
+    pendingEmail.value || credentials().email,
+    pendingRole.value || credentials().role,
+  )
+  claimActiveWorkspaceOwner({
+    name: pendingUser.value,
+    email: pendingEmail.value || credentials().email,
+  })
+  done.value = true
+  busy.value = false
+  /* No ceremonial pause: the session is already on disk, and navigation is the
+     only work left. */
+  clearTimeout(timer)
   timer = setTimeout(() => {
-    signIn(
-      pendingUser.value,
-      pendingEmail.value || credentials().email,
-      pendingRole.value || credentials().role,
-    )
-    claimActiveWorkspaceOwner({
-      name: pendingUser.value,
-      email: pendingEmail.value || credentials().email,
-    })
-    done.value = true
-    busy.value = false
-    timer = setTimeout(() => {
-      const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-      router.push(redirect)
-    }, 420)
-  }, 600)
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+    router.push(redirect)
+  }, 140)
 }
 
 async function submitCredentials() {
@@ -257,7 +258,7 @@ function backToSignIn() {
   <main class="auth login">
     <div class="a51" aria-hidden="true">
       <div class="a51-stars">
-        <i v-for="n in 54" :key="`star-${n}`" :style="starStyle(n)"></i>
+        <i v-for="n in 34" :key="`star-${n}`" :style="starStyle(n)"></i>
       </div>
       <div class="a51-sun"></div>
       <div class="a51-ufo">
@@ -272,7 +273,7 @@ function backToSignIn() {
       <div class="a51-grid"></div>
       <div class="a51-ridge a51-ridge--near"></div>
       <div class="a51-dust">
-        <i v-for="n in 18" :key="`dust-${n}`" :style="dustStyle(n)"></i>
+        <i v-for="n in 12" :key="`dust-${n}`" :style="dustStyle(n)"></i>
       </div>
       <div class="a51-search a51-search--left"></div>
       <div class="a51-search a51-search--right"></div>

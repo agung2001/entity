@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '@/components/BrandMark.vue'
+import NavIcon from '@/components/NavIcon.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
 import { hub, initials, roleById, signOut } from '@/stores/hub'
 import { workspaces } from '@/stores/workspaces'
@@ -78,6 +79,19 @@ const NAV = [
   { to: '/chat', view: 'chat', label: 'Chat', icon: 'chat' },
   { to: '/entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
   {
+    to: '/artifacts',
+    view: 'artifacts',
+    label: 'Artifacts',
+    icon: 'artifact',
+    count: () => artifacts.items.length,
+  },
+  { to: '/activity', view: 'activity', label: 'Activity', icon: 'pulse' },
+]
+
+/* Plumbing stays behind a disclosure: a person who only chats and writes
+   entities should not have to learn what an MCP server is on day one. */
+const ADVANCED = [
+  {
     to: '/skills',
     view: 'skills',
     label: 'Skills',
@@ -94,23 +108,43 @@ const NAV = [
     count: () => Object.keys(workspaces.mcp?.servers || {}).length,
   },
   {
-    to: '/artifacts',
-    view: 'artifacts',
-    label: 'Artifacts',
-    icon: 'artifact',
-    count: () => artifacts.items.length,
-  },
-  {
     to: '/machines',
     view: 'machines',
     label: 'Machines',
     icon: 'screen',
     count: () => workspaces.machines.length,
   },
-  { to: '/activity', view: 'activity', label: 'Activity', icon: 'pulse' },
 ]
 
+const ADVANCED_KEY = 'entity.rail.advanced'
+const advancedOpen = ref(false)
+try {
+  advancedOpen.value = localStorage.getItem(ADVANCED_KEY) === '1'
+} catch {
+  /* private mode: start closed */
+}
+
 const isActive = (item) => route.path === item.to || route.path.startsWith(item.to + '/')
+const advancedActive = computed(() => ADVANCED.some(isActive))
+const showAdvanced = computed(() => collapsed.value || advancedOpen.value)
+
+function toggleAdvanced() {
+  advancedOpen.value = !advancedOpen.value
+  try {
+    localStorage.setItem(ADVANCED_KEY, advancedOpen.value ? '1' : '0')
+  } catch {
+    /* session-only */
+  }
+}
+
+/* A deep link (or the palette) should reveal the section it lands in. */
+watch(
+  () => route.path,
+  () => {
+    if (advancedActive.value) advancedOpen.value = true
+  },
+  { immediate: true },
+)
 const user = computed(() => hub.session?.user || 'no session')
 
 /* "agung@studio.dev" → "Agung" in the rail, the full handle underneath */
@@ -155,43 +189,39 @@ function leave() {
         :aria-label="item.label"
         :title="collapsed ? item.label : undefined"
       >
-        <svg v-if="item.icon === 'grid'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <rect x="1.5" y="1.5" width="5.4" height="5.4" rx="1.4" />
-          <rect x="9.1" y="1.5" width="5.4" height="5.4" rx="1.4" />
-          <rect x="1.5" y="9.1" width="5.4" height="5.4" rx="1.4" />
-          <rect x="9.1" y="9.1" width="5.4" height="5.4" rx="1.4" />
-        </svg>
-        <svg v-else-if="item.icon === 'chat'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <rect x="1.6" y="2.4" width="12.8" height="8.8" rx="1.6" />
-          <path d="M5.2 11.2v2.7l3.1-2.7" />
-        </svg>
-        <svg v-else-if="item.icon === 'agent'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <circle cx="8" cy="5.4" r="2.9" />
-          <path d="M2.6 14c.5-2.6 2.7-4.2 5.4-4.2s4.9 1.6 5.4 4.2" />
-        </svg>
-        <svg v-else-if="item.icon === 'star'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <path d="M8 1.8l1.9 4.1 4.3.5-3.2 3 .9 4.3L8 11.5 4.1 13.7l.9-4.3-3.2-3 4.3-.5z" />
-        </svg>
-        <svg v-else-if="item.icon === 'mcp'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <path d="M4.4 9.2V5.5a1.4 1.4 0 012.8 0v3.4a1.4 1.4 0 002.8 0V5.5a1.4 1.4 0 012.8 0v3.7" />
-          <path d="M3.4 9.2h9.2v1.3a4.6 4.6 0 01-9.2 0z" />
-          <path d="M8 14.3v.8" />
-        </svg>
-        <svg v-else-if="item.icon === 'artifact'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <path d="M3 2.4h6l4 4v7.2H3z" />
-          <path d="M9 2.4v4h4M5.4 9.4h5.2M5.4 11.6h3.4" />
-        </svg>
-        <svg v-else-if="item.icon === 'screen'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <rect x="1.6" y="2.6" width="12.8" height="8.2" rx="1.6" />
-          <path d="M5.4 13.6h5.2" />
-        </svg>
-        <svg v-else viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-          <path d="M2 11.4l3.2-4.5 2.6 2.4L10.6 4l3.4 4.2" />
-          <path d="M2 14h12" />
-        </svg>
+        <NavIcon :name="item.icon" />
         <span class="lbl">{{ item.label }}</span>
         <span v-if="item.count" class="count">{{ item.count() }}</span>
       </router-link>
+
+      <button
+        class="nav-group"
+        type="button"
+        :aria-expanded="showAdvanced ? 'true' : 'false'"
+        aria-controls="nav-advanced"
+        :title="collapsed ? 'Advanced' : undefined"
+        @click="toggleAdvanced"
+      >
+        <span class="lbl">Advanced</span>
+        <svg class="nav-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M6 3.5L10.5 8 6 12.5" />
+        </svg>
+      </button>
+
+      <div v-if="showAdvanced" id="nav-advanced" class="nav-adv">
+        <router-link
+          v-for="item in ADVANCED"
+          :key="item.view"
+          :to="item.to"
+          :aria-current="isActive(item) ? 'page' : undefined"
+          :aria-label="item.label"
+          :title="collapsed ? item.label : undefined"
+        >
+          <NavIcon :name="item.icon" />
+          <span class="lbl">{{ item.label }}</span>
+          <span v-if="item.count" class="count">{{ item.count() }}</span>
+        </router-link>
+      </div>
     </nav>
 
     <div class="rail-foot">
