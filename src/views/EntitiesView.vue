@@ -4,7 +4,7 @@ import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
-import { HARNESSES } from '@/data/mock'
+import { HARNESSES, MODELS } from '@/data/mock'
 import { scaffoldEntity } from '@/stores/entities'
 import { ago, ensureChats, hub, machineById, openDrawer, toast } from '@/stores/hub'
 
@@ -23,15 +23,6 @@ const error = ref('')
 const busy = ref(false)
 const nameInput = ref(null)
 
-/* Models are a hint, not a whitelist: the field is free text so a harness that
-   ships a new model is usable without a release. */
-const MODELS = {
-  claude: ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
-  codex: ['gpt-5-codex', 'gpt-5'],
-  opencode: ['anthropic/claude-sonnet-4', 'openai/gpt-5'],
-  pi: ['claude-sonnet-4-5', 'gpt-5'],
-  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-}
 const modelOptions = computed(() => MODELS[harness.value] || [])
 
 const lastChat = (name) => {

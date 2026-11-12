@@ -1665,6 +1665,66 @@ kbd {
   margin: 3px 0 2px;
 }
 
+/* ── overview statistics ─────────────────────────────────────── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: 14px 14px 13px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.stat-card:hover {
+  border-color: var(--border-strong);
+  background: #fff;
+}
+.stat-k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-v {
+  font-family: var(--font);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--ink);
+}
+.stat-m {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.stat-foot {
+  margin: 0 0 28px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.stat-foot b {
+  color: var(--ink);
+  font-weight: 500;
+}
+.stat-foot a {
+  border-bottom: 1px solid var(--border-strong);
+}
+.stat-foot a:hover {
+  color: var(--ink);
+}
+
 /* ── machines (overview) ──────────────────────────────────────── */
 .machines {
   display: grid;
@@ -2111,6 +2171,77 @@ kbd {
   opacity: 0.65;
 }
 
+/* activity — a harness session row, with the command that resumes it */
+.sess-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 210px 108px;
+  align-items: center;
+  gap: 14px;
+  min-height: 54px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.sess-row:first-child {
+  border-top: 0;
+}
+.sess-th {
+  min-height: 34px;
+  padding: 0 14px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sess-th .rt {
+  text-align: right;
+}
+.sess-th .sess-id {
+  font-size: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+.sess-row time {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.sess-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sess-main b {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-meta {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-id {
+  font-size: 10.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ── cards grid (skills / machines views) ─────────────────────── */
 .grid3 {
   display: grid;
@@ -2207,6 +2338,27 @@ kbd {
 .card2 .foot span:last-child {
   text-align: right;
   flex: none;
+}
+/* the library card carries its own actions, so it cannot be one big link */
+.card2 .card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.card2 .card-actions .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+.card2 .card-actions .meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.card2 .card-actions a.btn {
+  color: inherit;
+  text-decoration: none;
 }
 .dots {
   display: flex;
@@ -3108,6 +3260,57 @@ kbd {
   line-height: 1.5;
   color: var(--muted);
 }
+
+/* workspace page — general settings, member roster, MCP pool */
+.ws-page {
+  max-width: 960px;
+}
+.ws-meta {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 7px 10px;
+  font-size: 11.5px;
+}
+.ws-meta dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ws-meta dd {
+  margin: 0;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.member-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) 118px 78px;
+  gap: 8px;
+  align-items: center;
+}
+.member-row .acct-input {
+  min-width: 0;
+}
+.ws-mcp {
+  max-width: 960px;
+  margin-top: 16px;
+}
+.ws-mcp .mnote {
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+.ws-mcp .mcp-editor {
+  width: 100%;
+  margin: 10px 0;
+}
 .fld .lbl {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -3440,6 +3643,16 @@ select:focus-visible {
   .machines {
     grid-template-columns: 1fr;
   }
+  .stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .member-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .member-row .btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
   .grid3 {
     grid-template-columns: 1fr 1fr;
   }
@@ -3476,6 +3689,12 @@ select:focus-visible {
   }
 }
 @media (max-width: 820px) {
+  .sess-row {
+    grid-template-columns: 68px minmax(0, 1fr) 96px;
+  }
+  .sess-row .sess-id {
+    display: none;
+  }
   .app {
     flex-direction: column;
   }
@@ -3550,6 +3769,9 @@ select:focus-visible {
   }
 }
 @media (max-width: 620px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
   .tr {
     grid-template-columns: 1fr 96px;
     height: auto;

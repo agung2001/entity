@@ -13,6 +13,7 @@ const localData = require('./local-data.cjs')
 const workspaces = require('./workspace-store.cjs')
 const entities = require('./entity-store.cjs')
 const chats = require('./chat-store.cjs')
+const sessions = require('./session-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
@@ -24,6 +25,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.needsSetup': () => workspaces.needsSetup(),
     'workspace.open': ({ id }) => workspaces.open(id),
     'workspace.create': (args) => workspaces.create(args),
+    'workspace.update': (args) => workspaces.update(args),
     'workspace.samples': () => workspaces.samples(),
     'workspace.machines': ({ id }) => workspaces.machines(id),
     'workspace.attachMachine': (args) => workspaces.attachMachine(args),
@@ -57,6 +59,9 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'chat.send': (args) => chats.send(args),
     'chat.remove': (args) => chats.remove(args),
 
+    /* harness sessions, read from each CLI's own store */
+    'sessions.list': (args) => sessions.list(args),
+
     /* runs */
     'run.start': (args) => runner.start(args),
     'run.cancel': (args) => runner.cancel(args),
@@ -65,7 +70,26 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
 
     /* the machine as it exists, not as this workspace intends it */
     'ssh.hosts': () => localData.readSshHosts(),
-    'ssh.probe': ({ alias }) => localData.probeSshHost(String(alias || '')),
+    'ssh.probe': ({ alias, workspace }) => {
+      /* An attached host is tested through the workspace's own machines/CONFIG
+         (and the key copy beside it) — that is the file that matters.
+         An unattached host is tested through ~/.ssh/config, because a probe is
+         how the user decides whether attaching is worth it, and a config that
+         does not mention the host yet would answer the wrong question. */
+      const target = String(alias || '')
+      let configFile = ''
+      if (workspace) {
+        try {
+          const attached = workspaces
+            .machines(workspace)
+            .some((machine) => machine.id === target && !machine.missing)
+          if (attached) configFile = workspaces.machinesConfigPath(workspaces.open(workspace))
+        } catch {
+          configFile = ''
+        }
+      }
+      return localData.probeSshHost(target, { configFile })
+    },
     'skills.scan': () => localData.scanSkillLibrary(),
     'skills.read': ({ harness, name }) =>
       localData.readSkillEntry(String(harness || ''), String(name || '')),

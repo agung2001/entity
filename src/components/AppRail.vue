@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '@/components/BrandMark.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
 import { hub, initials, roleById, signOut } from '@/stores/hub'
-import { loadLibrary, workspaces } from '@/stores/workspaces'
+import { workspaces } from '@/stores/workspaces'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,7 +32,6 @@ function toggleRail() {
 }
 
 onMounted(() => {
-  loadLibrary()
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKey)
 })
@@ -69,7 +68,9 @@ const NAV = [
     view: 'skills',
     label: 'Skills',
     icon: 'star',
-    count: () => workspaces.library?.count ?? workspaces.skills.length,
+    /* the workspace's own skills — the page opens on that tab, and counting the
+       machine-wide libraries here would mean scanning them on every launch */
+    count: () => workspaces.skills.length,
   },
   {
     to: '/machines',

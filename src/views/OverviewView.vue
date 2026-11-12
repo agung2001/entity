@@ -1,11 +1,11 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import AskConsole from '@/components/AskConsole.vue'
 import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import WorkspaceStats from '@/components/WorkspaceStats.vue'
 import {
   ago,
   ensureChats,
@@ -13,7 +13,6 @@ import {
   hub,
   machineById,
   openDrawer,
-  openSettings,
   problemCount,
   snippet,
 } from '@/stores/hub'
@@ -78,11 +77,11 @@ function openFromKeyboard(e, id) {
       </div>
       <div class="head-actions">
         <button class="btn" @click="router.push('/entities')">Entities</button>
-        <button class="btn btn-ink" @click="openSettings('machines')">Workspace settings</button>
+        <button class="btn btn-ink" @click="router.push('/workspace')">Workspace settings</button>
       </div>
     </div>
 
-    <AskConsole />
+    <WorkspaceStats />
 
     <div class="sec-head">
       <h2>Machines</h2>
@@ -112,7 +111,7 @@ function openFromKeyboard(e, id) {
           <span>{{ agentsOn(m.id) }} {{ agentsOn(m.id) === 1 ? 'entity' : 'entities' }}</span>
         </div>
       </button>
-      <button class="machine add-machine" type="button" @click="openSettings('machines')">
+      <button class="machine add-machine" type="button" @click="router.push('/machines')">
         <div class="row1"><span class="nm">Attach a machine</span></div>
         <p class="spec">From ~/.ssh/config</p>
         <div class="foot"><span>workspace scope</span><span>local only today</span></div>

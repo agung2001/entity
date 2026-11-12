@@ -6,15 +6,8 @@ import AppTopbar from '@/components/AppTopbar.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import EntityDrawer from '@/components/EntityDrawer.vue'
 import ToastHost from '@/components/ToastHost.vue'
-import WorkspaceSettings from '@/components/WorkspaceSettings.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
-import {
-  closeDrawer,
-  closeSettings,
-  closeWizard,
-  hub,
-  toast,
-} from '@/stores/hub'
+import { closeDrawer, closeWizard, hub, toast } from '@/stores/hub'
 
 const route = useRoute()
 
@@ -32,7 +25,7 @@ const crumbs = computed(() =>
 )
 
 const overlayOpen = computed(
-  () => hub.drawer.open || hub.settings.open || hub.wizard.open || hub.palette.open,
+  () => hub.drawer.open || hub.wizard.open || hub.palette.open,
 )
 
 function openPalette() {
@@ -45,7 +38,6 @@ function openPalette() {
 function onScrim() {
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
-  else if (hub.settings.open) closeSettings()
   else closeDrawer()
 }
 
@@ -58,7 +50,6 @@ function onKey(e) {
   if (e.key !== 'Escape') return
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
-  else if (hub.settings.open) closeSettings()
   else if (hub.drawer.open) closeDrawer()
 }
 
@@ -100,7 +91,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
     <div class="scrim" :data-open="overlayOpen ? '1' : '0'" @click="onScrim"></div>
     <EntityDrawer />
-    <WorkspaceSettings :open="hub.settings.open" @close="closeSettings" />
     <div class="modal modal-wizard" :data-open="hub.wizard.open ? '1' : '0'" role="dialog" aria-modal="true" aria-label="New workspace">
       <button class="x mo-x" aria-label="Close" @click="closeWizard">
         <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">

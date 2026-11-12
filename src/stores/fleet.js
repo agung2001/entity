@@ -8,6 +8,7 @@
  */
 import { computed, reactive } from 'vue'
 import { probeSshHost, readSshHosts } from '@/composables/localBridge'
+import { hub } from '@/stores/hub'
 
 export const fleet = reactive({
   loading: false,
@@ -63,7 +64,9 @@ export async function probeHost(host) {
   fleet.probes[alias] = { state: 'testing', ms: 0, message: 'testing…', reason: '' }
   const started = performance.now()
   try {
-    const result = await probeSshHost(alias)
+    /* the workspace's own machines/CONFIG is what gets tested once a workspace
+       exists; a host that is only in ~/.ssh/config still works before setup */
+    const result = await probeSshHost(alias, hub.workspace || '')
     fleet.probes[alias] = {
       state: result.ok ? 'ok' : 'fail',
       ms: result.ms ?? Math.round(performance.now() - started),

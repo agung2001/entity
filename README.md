@@ -50,20 +50,29 @@ assume a port.
 
 ```
 ~/.entity/workspaces/<id>/          one workspace = one directory
-  workspace.json                   { schema, id, label, kind, createdAt, mcpStrict }
+  workspace.json                   { schema, id, label, kind, createdAt, mcpStrict, members }
   entities/<name>.md               frontmatter = config, body = instructions
   skills/<name>                    symlink into a harness skill library
   mcp.json                         { schema, servers: { name: { command | url, args, env } } }
-  machines.json                    { schema, attached: ["local", "hetzner-prod"] }
+  machines/CONFIG                  this workspace's ssh_config (Host blocks)
+  machines/<host>                  a copy of that host's key, mode 0600
+  chats/<threadId>.json            one conversation per file
   runs/<runId>.jsonl               append-only run log
 ```
+
+`machines/CONFIG` is in `ssh_config` grammar and is rebuilt from `~/.ssh/config`
+on every attach and detach; `# entity-machines: [...]` on its fourth line is the
+attached list (ssh ignores comments), which is how a host that disappeared from
+the user's config still stays attached as *missing*. A workspace made before
+this layout had `machines.json`; it is migrated on first open and the old file
+is kept as `.machines.json.bak`.
 
 Two rules make the scope coherent:
 
 1. **The workspace is the scope, the machine is the source.** `~/.ssh/config`
-   says which hosts exist; `machines.json` says which ones this workspace may
-   use. `~/.claude/skills` says which skills exist; `skills/` says which ones this
-   workspace has.
+   says which hosts exist; `machines/CONFIG` says which ones this workspace may
+   use, and carries the key copy so it can prove it. `~/.claude/skills` says
+   which skills exist; `skills/` says which ones this workspace has.
 2. **No cross-workspace references.** `skills:` and `mcp:` on an entity resolve
    only inside its own workspace. The same name in two workspaces is two
    unrelated things.
@@ -75,7 +84,7 @@ preselected). The same form is reachable as a modal from the workspace switcher.
 
 Skills are not part of that form: the harness libraries are already on this
 machine, so a skill is attached to a workspace later (one symlink, from the
-Skills view or Workspace settings) when it is actually needed.
+Skills view) when it is actually needed.
 
 ### One file is the entity
 
@@ -102,6 +111,37 @@ prompt itself always goes in on **stdin**; `cwd` is the entity's `dir`. `skills:
 and `mcp:` names that do not resolve are reported as `problems[]` on the entity —
 the file stays readable, the run is still allowed.
 
+### Skills are called, not just declared
+
+`skills:` on an entity is a declaration; it changes nothing about what the
+harness loads. To actually use a skill, start the message with a reference:
+
+| reference | resolves to |
+| --- | --- |
+| `/workspace:<name>` | `<ws>/skills/<name>` — attached to this workspace |
+| `/<harness>:<name>` | that harness's own library, e.g. `~/.claude/skills/<name>` |
+
+The `/` menu lists both (the entity's own skills first), and inserts the
+reference. The backend resolves it to an absolute path and sends
+
+```
+use this skill /abs/path/to/skill
+
+<the rest of the prompt>
+```
+
+The reference itself is not sent. A reference this app owns that does not
+resolve is an error — a typo should not turn into an answer without the skill it
+named. `/review` (no colon) and `/<unknown>:<name>` are left alone: those belong
+to the harness. This is the one place the workspace's `skills/` directory is
+load-bearing, and it is why a harness-only skill can be used without attaching
+it first.
+
+The **Skills** page opens on the workspace's own list. The machine-wide harness
+libraries are a second tab, and they are scanned lazily — on first open of that
+tab (or the first `/` typed in a composer), then cached for the session — so a
+launch does not walk six skill directories nobody asked for.
+
 ## Layout
 
 ```
@@ -109,8 +149,11 @@ electron/
   main.cjs            main process: window, lifecycle, IPC entry points
   preload.cjs         contextBridge — `call()` + `onRunEvent()`, nothing else
   rpc.cjs             the one call table (workspace / entity / run / machine / skill)
-  workspace-store.cjs workspace dirs: create (atomic), list, machines, skills, mcp
+  workspace-store.cjs workspace dirs: create (atomic), list, update, machines, skills, mcp
   entity-store.cjs    entities/*.md read/write/scaffold + problems[]
+  chat-store.cjs      threads under <ws>/chats, one harness turn per send
+  session-store.cjs   each harness's own session store, scoped by entity cwd
+  skill-ref.cjs       /workspace:<name> and /<harness>:<name> → `use this skill <path>`
   runner-local.cjs    spawn a harness, stream events, append the run log
   frontmatter.cjs     the flat frontmatter parser shared by entities and skills
   seed.cjs            the optional sample entities + their descriptions/defaults
@@ -126,13 +169,13 @@ src/
   views/
     LoginView.vue     sign in
     SetupView.vue     first run: create the first workspace (no rail, no skip)
-    OverviewView.vue  ask console, machines, entities, recent runs
+    OverviewView.vue  workspace statistics, machines, entities, recent runs
     ChatView.vue      threads, rebuilt per workspace
     EntitiesView.vue  the entity table; "Add entity" scaffolds a file
-    SkillsView.vue    the workspace's skill catalog + attach from the machine
+    SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
     MachinesView.vue  fleet from ~/.ssh/config + workspace attachments
-    ActivityView.vue  the run journal
+    ActivityView.vue  thread journal + one tab per harness session store
   components/
     EntityMark.vue    the animated voxel character
     HarnessIcon.vue   brand marks for the skill filter pills
@@ -141,13 +184,12 @@ src/
     MarkPicker.vue    mood + colour, opened from the drawer
     AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
-    AskConsole / MessageList / SlashComposer
+    MessageList / SlashComposer
     PickMenu.vue      the quiet text trigger used for filter axes
     EntityDrawer.vue  overview, Run, skills, ENTITY.md
-    RunPanel.vue      prompt, live tail, cancel, recent runs
     WorkspaceWizard.vue    the create form (setup page and modal)
-    WorkspaceSettings.vue  machines / skills / MCP tabs
-    AccountModal.vue  username, email and password
+    WorkspaceStats.vue     the overview's entity / conversation / skill / machine cards
+    NewThreadDialog.vue    entity, machine, harness and model before a thread starts
     CommandPalette.vue
     ToastHost.vue
   composables/
@@ -161,7 +203,7 @@ src/
     runs.js           run summaries, live output, stale-event guard
     fleet.js          ssh hosts from ~/.ssh/config + per-host probe state
   data/
-    mock.js           harness ids and the four built-in slash commands — nothing else
+    mock.js           harness ids, model hints and the four built-in slash commands
   styles/
     app.css           tokens, shell, rail, tables, consoles, overlays, run panel
     login.css         the sign-in and setup screens
@@ -187,7 +229,12 @@ history mode has no server to resolve a path on reload.
 | `#/skills` | Workspace skills |
 | `#/skills/:name` | Skill detail |
 | `#/machines` | Machines |
-| `#/activity` | Activity |
+| `#/activity` | Activity (journal + harness sessions) |
+| `#/workspace` | Workspace settings (name, id, members, MCP) |
+
+Workspace settings are a page (`#/workspace`), not a modal: the name, the
+directory id, the member roster and the MCP pool live there, while entities,
+skills and machines keep their own pages.
 
 The guard runs in order: **session → workspace → route**. After sign-in, if
 `~/.entity/workspaces/` holds no readable `workspace.json`, the router sends the
@@ -267,12 +314,15 @@ packaged app renders a blank window.
 ## Ceilings (stated, not hidden)
 
 - A run dies with the app; there is no daemon.
-- Skills are not sandboxed per workspace at execution time — the harness reads its
-  own user-level library. The workspace scope governs what the hub shows, attaches
-  and completes.
-- MCP is enforced for claude only (see above).
+- Skills are not sandboxed per workspace at execution time: a harness loads its
+  own user-level library. `skills:` is a declaration; the `/workspace:<name>` and
+  `/<harness>:<name>` references are what actually point a harness at a skill.
+  MCP is enforced for claude only (see above).
 - Remote placement, ssh deploy and workspace deletion are not implemented; a
   directory in Finder is the honest interface.
+- A workspace's `machines/CONFIG` holds absolute `IdentityFile` paths, so moving
+  or renaming the directory by hand breaks the key reference. Attach a host again
+  after such a move.
 
 ## Not included (add when you need them)
 

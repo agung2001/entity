@@ -8,7 +8,9 @@ import { attachMachine, detachMachine, workspaces } from '@/stores/workspaces'
 /**
  * Two lists that answer two different questions: `~/.ssh/config` says which hosts
  * exist on this machine, the workspace says which of them it may use. Attaching
- * writes `machines.json`; probing is the only thing that runs ssh.
+ * rebuilds `machines/CONFIG` and copies the host's key beside it; probing runs
+ * ssh against that workspace config, so the test proves what the workspace
+ * carries rather than what the user happens to have globally.
  */
 onMounted(loadFleet)
 
@@ -19,6 +21,8 @@ const localMachine = computed(
 )
 const attached = computed(() => new Set(workspaces.machines.map((machine) => machine.id)))
 const missingHosts = computed(() => workspaces.machines.filter((machine) => machine.missing))
+const attachedMachine = (alias) =>
+  workspaces.machines.find((machine) => machine.id === alias) || null
 
 const stateOf = (alias) => {
   const state = probeState(alias).state
@@ -58,9 +62,12 @@ async function toggle(alias, isAttached) {
         <h1>Machines</h1>
         <p class="lede">
           Every host in <code class="mono">{{ fleet.displayPath }}</code>, and the ones this
-          workspace has attached. Discovery reads the ssh config; attaching writes
-          <code class="mono">machines.json</code>. Test a host with the keys already here;
-          attaching it changes what the workspace may use, not what it has deployed.
+          workspace has attached. Discovery reads the ssh config; attaching rebuilds
+          <code class="mono">machines/CONFIG</code> and copies the host's key into
+          <code class="mono">machines/</code> (mode 0600). Test ssh through the config that
+          matters: <code class="mono">~/.ssh/config</code> before a host is attached, this
+          workspace's own copy after. Attaching changes what the workspace may use, not
+          what it has deployed.
         </p>
       </div>
       <div class="head-actions">
@@ -97,6 +104,7 @@ async function toggle(alias, isAttached) {
           <div class="kv">
             <span>local</span>
             <span>{{ localMachine.desc }}</span>
+            <span class="mono">{{ localMachine.config }}</span>
           </div>
           <p class="probe-msg">Chats happen here in step 1 — no ssh, no daemon.</p>
         </div>
@@ -135,6 +143,13 @@ async function toggle(alias, isAttached) {
             <span>{{ m.source }}</span>
             <span v-if="m.proxyJump">jump {{ m.proxyJump }}</span>
             <span v-if="probeMs(m.alias)">{{ probeMs(m.alias) }}</span>
+            <span
+              v-if="attachedMachine(m.alias)"
+              class="mono"
+              :title="attachedMachine(m.alias).keyNote || attachedMachine(m.alias).key"
+            >
+              {{ attachedMachine(m.alias).keyPresent ? 'key copied' : 'no key copy' }}
+            </span>
           </div>
           <p
             v-if="stateOf(m.alias) === 'fail'"

@@ -206,6 +206,8 @@ export const hub = reactive({
   machines: [],
   /** skills attached to the active workspace */
   skills: [],
+  /** the harness libraries on this machine, for the `/` menu (not workspace scope) */
+  harnessSkills: [],
   /** recent runs, newest first */
   runs: [],
   /** advisory notes that are not tied to one entity (machines, skills) */
@@ -215,7 +217,6 @@ export const hub = reactive({
   entityFilter: 'all',
   drawer: { open: false, agentId: '', tab: 'overview' },
   palette: { open: false, query: '', active: 0 },
-  settings: { open: false, tab: 'machines' },
   wizard: { open: false },
   toast: { open: false, message: '' },
 
@@ -232,7 +233,7 @@ export const hub = reactive({
     active: '',
     sending: false,
     filters: { entity: 'all', machine: 'all', harness: 'all' },
-    last: { entity: '', machine: 'local', harness: 'claude' },
+    last: { entity: '', machine: 'local', harness: 'claude', model: '' },
   },
 })
 
@@ -271,13 +272,26 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
     entity: agents[0]?.id || '',
     machine: machines[0]?.id || 'local',
     harness: agents[0]?.harness || 'claude',
+    model: agents[0]?.model || '',
   }
-
   if (hub.drawer.agentId) {
     hub.drawer.agentId = agents.some((a) => a.id === hub.drawer.agentId)
       ? hub.drawer.agentId
       : ''
   }
+}
+
+/**
+ * The machine-wide harness libraries, kept off the workspace scope on purpose:
+ * attaching a skill is a workspace decision, but what the harnesses have
+ * installed is a fact about this machine and survives a workspace switch.
+ */
+export function applyLibrary(items = []) {
+  hub.harnessSkills = (Array.isArray(items) ? items : []).map((item) => ({
+    name: String(item?.name || ''),
+    harness: String(item?.harness || ''),
+    harnessLabel: String(item?.harnessLabel || item?.harness || ''),
+  }))
 }
 
 /** The run table paints its own state; this is where it lands on the entity. */
@@ -417,16 +431,6 @@ export function closeDrawer() {
   hub.drawer.open = false
 }
 
-/* ── workspace settings ───────────────────────────────────────────── */
-export function openSettings(tab = 'machines') {
-  hub.settings.tab = tab
-  hub.settings.open = true
-}
-
-export function closeSettings() {
-  hub.settings.open = false
-}
-
 /* ── new workspace ────────────────────────────────────────────────── */
 export function openWizard() {
   hub.wizard.open = true
@@ -450,20 +454,86 @@ export function askSession() {
     entity: agent?.id || '',
     machine: machineById(c.machine)?.id || hub.machines[0]?.id || 'local',
     harness: HARNESSES.some((h) => h.id === c.harness) ? c.harness : agent?.harness || 'claude',
+    model: String(c.model || agent?.model || ''),
   }
 }
 
 export const askAgent = () => agentById(askSession().entity)
 
-/* slash-command menu — one shape for both composers */
+/* A reference is typed, so a skill whose name is not a token cannot be offered
+   in the menu — the backend uses the same grammar and would reject it. */
+const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
+
+/* slash-command menu — one shape for both composers.
+ *
+ * A skill is addressed by where it lives, because that is what the backend has
+ * to resolve to a path:
+ *
+ *   /workspace:<name>   a skill attached to this workspace
+ *   /<harness>:<name>   a skill in that harness's own library
+ *
+ * The entity's own `skills:` come first, then the rest of the workspace, then
+ * the harness library — a name attached to the workspace is never also offered
+ * as a harness skill, because it is the same file. */
 export function slashMenu(value, agent) {
   const parts = String(value || '').split(/\s/)
   if (!value?.startsWith('/') || parts.length !== 1) return []
   const q = parts[0].slice(1).toLowerCase()
-  const all = BUILTIN_CMDS.concat(
-    (agent?.skills || []).map((s) => ({ name: '/' + s, desc: `Skill attached to this workspace`, skill: true })),
-  )
-  return all.filter((c) => c.name.slice(1).toLowerCase().startsWith(q)).slice(0, 7)
+  const own = new Set((agent?.skills || []).map((name) => name.toLowerCase()))
+
+  const items = BUILTIN_CMDS.map((command) => ({ ...command, kind: 'command' }))
+
+  const attached = hub.skills
+    .filter((skill) => !skill.missing && SKILL_REF_NAME.test(skill.name))
+    .map((skill) => skill.name)
+  const ordered = [
+    ...attached.filter((name) => own.has(name.toLowerCase())),
+    ...attached.filter((name) => !own.has(name.toLowerCase())),
+  ]
+  for (const name of ordered) {
+    items.push({
+      name: `/workspace:${name}`,
+      desc: own.has(name.toLowerCase())
+        ? 'Skill this entity carries'
+        : 'Skill attached to this workspace',
+      kind: 'skill',
+    })
+  }
+
+  /* Every harness library is offered, not only the entity's own harness: a
+     `/claude:<name>` reference is valid from a pi or codex thread too, because
+     the backend resolves the namespace to that harness's library. The current
+     harness's skills come first, then the rest. */
+  const harnessOrder = [...new Set([agent?.harness, ...HARNESSES.map((h) => h.id)])]
+  const rank = (id) => {
+    const at = harnessOrder.indexOf(id)
+    return at < 0 ? harnessOrder.length : at
+  }
+  const harnessSkills = hub.harnessSkills
+    .filter((skill) => SKILL_REF_NAME.test(skill.name))
+    .filter(
+      (skill) => !ordered.some((name) => name.toLowerCase() === skill.name.toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        rank(a.harness) - rank(b.harness) ||
+        a.name.localeCompare(b.name) ||
+        a.harness.localeCompare(b.harness),
+    )
+
+  for (const skill of harnessSkills) {
+    items.push({
+      name: `/${skill.harness}:${skill.name}`,
+      desc: `${skill.harnessLabel} skill on this machine`,
+      kind: 'harness',
+    })
+  }
+
+  /* A bare `/` should still reach the harness libraries. The old seven-row cap
+     let four commands plus a few workspace skills hide them completely, so the
+     list is long enough to hold a whole machine library and scrolls inside the
+     composer menu. */
+  return items.filter((item) => item.name.slice(1).toLowerCase().startsWith(q)).slice(0, 100)
 }
 
 /* ── chat ─────────────────────────────────────────────────────────── */
@@ -526,7 +596,12 @@ export const activeThread = () => hub.chat.threads[hub.chat.active] || null
 export const threadContext = () => {
   const thread = activeThread()
   return thread
-    ? { entity: thread.entity, machine: thread.machine, harness: thread.harness }
+    ? {
+        entity: thread.entity,
+        machine: thread.machine,
+        harness: thread.harness,
+        model: thread.model || '',
+      }
     : hub.chat.last
 }
 
@@ -541,7 +616,12 @@ export async function openThread(id) {
   if (!thread) throw new Error('That thread no longer exists.')
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: thread }
   hub.chat.active = thread.id
-  hub.chat.last = { entity: thread.entity, machine: thread.machine, harness: thread.harness }
+  hub.chat.last = {
+    entity: thread.entity,
+    machine: thread.machine,
+    harness: thread.harness,
+    model: thread.model || '',
+  }
   return thread
 }
 
@@ -556,7 +636,12 @@ export function setChatFilter(kind, value) {
 function remember(thread) {
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: thread }
   hub.chat.active = thread.id
-  hub.chat.last = { entity: thread.entity, machine: thread.machine, harness: thread.harness }
+  hub.chat.last = {
+    entity: thread.entity,
+    machine: thread.machine,
+    harness: thread.harness,
+    model: thread.model || '',
+  }
 }
 
 export async function createThread(overrides = {}) {
@@ -566,11 +651,19 @@ export async function createThread(overrides = {}) {
   const machine = overrides.machine || previous.machine || hub.machines[0]?.id || 'local'
   const harness =
     overrides.harness || previous.harness || agentById(entity)?.harness || 'claude'
+  const agent = agentById(entity)
+  const model =
+    overrides.model !== undefined
+      ? String(overrides.model || '')
+      : agent?.harness === harness
+        ? String(agent.model || '')
+        : ''
   const thread = await call('chat.create', {
     workspace: hub.workspace,
     entity,
     machine,
     harness,
+    model,
   })
   remember(thread)
   await refreshChatList()

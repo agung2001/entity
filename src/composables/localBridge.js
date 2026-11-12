@@ -73,8 +73,8 @@ export async function readSshHosts() {
   return call('ssh.hosts')
 }
 
-export async function probeSshHost(alias) {
-  return call('ssh.probe', { alias })
+export async function probeSshHost(alias, workspace = '') {
+  return call('ssh.probe', { alias, workspace })
 }
 
 export async function scanSkillLibraries() {

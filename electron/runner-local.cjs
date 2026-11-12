@@ -11,6 +11,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
+const skillRef = require('./skill-ref.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
 const COALESCE_MS = 50
@@ -127,6 +128,7 @@ function readRunFile(record, file, isActive) {
     harness: meta.harness || '',
     dir: meta.dir || '',
     prompt: meta.prompt || '',
+    skill: meta.skill || null,
     status,
     startedAt: meta.startedAt || null,
     endedAt: exit?.endedAt || lastAt,
@@ -249,6 +251,10 @@ function createRunner({ emit = () => {} } = {}) {
 
     const dir = entities.resolveDir(entity)
     const record = workspaces.open(workspace)
+    /* `/workspace:<skill>` or `/<harness>:<skill>` is resolved to a path and the
+       prompt becomes `use this skill <path>`; a reference that does not resolve
+       throws here, before a run id is spent */
+    const applied = skillRef.rewrite(record, String(prompt))
     const runId = newRunId()
     const run = {
       runId,
@@ -280,7 +286,7 @@ function createRunner({ emit = () => {} } = {}) {
     const spec = invocation(
       entity.harness,
       entity.instructions,
-      String(prompt),
+      applied.text,
       mcpFile,
       record.mcpStrict,
       entity.model,
@@ -293,7 +299,16 @@ function createRunner({ emit = () => {} } = {}) {
       entity: entity.name,
       harness: entity.harness,
       dir,
+      /* `prompt` is what the user typed; `skill` is what it resolved to */
       prompt: String(prompt),
+      skill: applied.ref
+        ? {
+            namespace: applied.ref.namespace,
+            label: applied.ref.label,
+            name: applied.ref.name,
+            path: applied.ref.path,
+          }
+        : null,
       startedAt: run.startedAt,
       mcp: mcpFile ? entity.mcp.filter((server) => workspaces.mcp(workspace).servers[server]) : [],
       systemPrompt: spec.system,

@@ -13,6 +13,7 @@ import SkillDetailView from '@/views/SkillDetailView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import ActivityView from '@/views/ActivityView.vue'
 import AccountView from '@/views/AccountView.vue'
+import WorkspaceView from '@/views/WorkspaceView.vue'
 
 /* Clean URLs wherever an HTTP server can resolve a path. The packaged app
    loads `dist/index.html` over `file://`, where there is no server to answer a
@@ -83,6 +84,12 @@ const router = createRouter({
           name: 'activity',
           component: ActivityView,
           meta: { crumb: 'activity', title: 'Activity · entity' },
+        },
+        {
+          path: 'workspace',
+          name: 'workspace',
+          component: WorkspaceView,
+          meta: { crumb: 'workspace', title: 'Workspace · entity' },
         },
         {
           path: 'account',

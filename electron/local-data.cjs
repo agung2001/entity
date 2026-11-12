@@ -124,13 +124,8 @@ function readSshFile(file, depth, seen, hosts) {
   return hosts
 }
 
-function readSshHosts() {
-  const exists = fs.existsSync(SSH_CONFIG_PATH)
-  const parsed = exists
-    ? readSshFile(SSH_CONFIG_PATH, 0, new Set(), [])
-    : []
-
-  /* One card per Host block, in config order. A second block that repeats an
+function uniqueHosts(parsed) {
+  /* One entry per Host block, in config order. A second block that repeats an
      alias is dropped, which is how ssh resolves a repeated Host anyway. */
   const used = new Set()
   const unique = []
@@ -140,6 +135,23 @@ function readSshHosts() {
     free.forEach((alias) => used.add(alias))
     unique.push({ ...host, aliases: free })
   }
+  return unique
+}
+
+/**
+ * Parse any file in ssh_config grammar — the user's config, or a workspace's
+ * own `machines/CONFIG`. Same reader, so the two cannot disagree about what a
+ * Host block is.
+ */
+function parseSshHostsFile(file) {
+  const resolved = path.resolve(String(file || ''))
+  if (!fs.existsSync(resolved)) return []
+  return uniqueHosts(readSshFile(resolved, 0, new Set(), []))
+}
+
+function readSshHosts() {
+  const exists = fs.existsSync(SSH_CONFIG_PATH)
+  const unique = exists ? parseSshHostsFile(SSH_CONFIG_PATH) : []
 
   const hosts = unique.map((host, index) => {
     const hostName = host.hostName || host.aliases[0]
@@ -171,8 +183,9 @@ function readSshHosts() {
   }
 }
 
-function probeSshHost(alias) {
+function probeSshHost(alias, options = {}) {
   const target = String(alias || '').trim()
+  const configFile = String(options.configFile || '').trim()
   if (!target || target.startsWith('-')) {
     return Promise.resolve({
       alias: target,
@@ -185,18 +198,16 @@ function probeSshHost(alias) {
 
   const started = Date.now()
   return new Promise((resolve) => {
+    /* `-F` replaces ~/.ssh/config with the workspace's own copy, so a probe
+       proves the config this workspace carries, not the one the user happens to
+       have. A missing file falls back to the default config instead of failing. */
+    const argv = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new']
+    if (configFile && fs.existsSync(configFile)) argv.unshift('-F', configFile)
+    argv.push(target, 'true')
+
     execFile(
       'ssh',
-      [
-        '-o',
-        'BatchMode=yes',
-        '-o',
-        'ConnectTimeout=5',
-        '-o',
-        'StrictHostKeyChecking=accept-new',
-        target,
-        'true',
-      ],
+      argv,
       { timeout: 12000, windowsHide: true, maxBuffer: 64 * 1024 },
       (error, stdout, stderr) => {
         const ms = Date.now() - started
@@ -673,6 +684,7 @@ function readWorkspaceSkill(root, name) {
 module.exports = {
   SSH_CONFIG_PATH,
   HARNESSES,
+  parseSshHostsFile,
   readSshHosts,
   probeSshHost,
   scanSkillLibrary,

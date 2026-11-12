@@ -17,6 +17,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
+const skillRef = require('./skill-ref.cjs')
 const { invocation } = require('./runner-local.cjs')
 
 /* a generous cap: the renderer only paints the newest turns, but the file is
@@ -73,6 +74,12 @@ function normaliseMessage(message) {
     who,
     text,
     at: message.at || now(),
+    /* a skill reference is resolved once, when it is sent: the transcript keeps
+       what was typed, `sent` keeps what the harness received, and a replayed
+       turn does not have to resolve a skill that may since have been detached */
+    ...(who === 'me' && typeof message.sent === 'string' && message.sent
+      ? { sent: message.sent }
+      : {}),
     ...(message.error ? { error: true } : {}),
   }
 }
@@ -88,6 +95,9 @@ function normaliseThread(raw, record) {
     entity,
     machine: String(raw.machine || 'local'),
     harness: String(raw.harness || 'claude'),
+    /* a thread may pin a model independently of the entity file; '' means the
+       harness default (or the entity's own model, see runHarness) */
+    model: String(raw.model || ''),
     title: String(raw.title || ''),
     createdAt: raw.createdAt || now(),
     updatedAt: raw.updatedAt || raw.createdAt || now(),
@@ -127,6 +137,7 @@ function summarise(thread) {
     entity: thread.entity,
     machine: thread.machine,
     harness: thread.harness,
+    model: thread.model || '',
     title: thread.title,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
@@ -195,7 +206,7 @@ function checkHarness(harness, entity) {
   return value
 }
 
-function create({ workspace, entity, machine = 'local', harness, message }) {
+function create({ workspace, entity, machine = 'local', harness, model = '', message }) {
   const record = workspaces.open(workspace)
   const agent = checkEntity(workspace, entity)
   const thread = {
@@ -205,6 +216,7 @@ function create({ workspace, entity, machine = 'local', harness, message }) {
     entity: agent.name,
     machine: String(machine || 'local'),
     harness: checkHarness(harness, agent),
+    model: String(model || '').trim(),
     title: '',
     createdAt: now(),
     updatedAt: now(),
@@ -217,13 +229,14 @@ function create({ workspace, entity, machine = 'local', harness, message }) {
 }
 
 /** Context can only move before the first question — after that it is history. */
-function update({ workspace, id, entity, machine, harness }) {
+function update({ workspace, id, entity, machine, harness, model }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread) throw new Error('That thread no longer exists.')
   if (thread.messages.some((message) => message.who === 'me')) {
     throw new Error('This thread has already started. Its context is locked.')
   }
+  const previousHarness = thread.harness
   if (entity && entity !== thread.entity) {
     const agent = checkEntity(workspace, entity)
     thread.entity = agent.name
@@ -231,6 +244,10 @@ function update({ workspace, id, entity, machine, harness }) {
   }
   if (machine) thread.machine = String(machine)
   if (harness) thread.harness = checkHarness(harness, checkEntity(workspace, thread.entity))
+  if (model !== undefined) thread.model = String(model || '').trim()
+  /* a model belongs to its harness: changing the harness without naming a new
+     model drops the old one instead of passing an incompatible name through */
+  else if (thread.harness !== previousHarness) thread.model = ''
   thread.updatedAt = now()
   writeThread(record, thread)
   return thread
@@ -250,13 +267,14 @@ function promptFor(messages) {
   )
   const latest = turns[turns.length - 1]
   if (!latest) return ''
-  if (turns.length === 1) return latest.text
+  if (turns.length === 1) return latest.sent || latest.text
 
   let text = [
     'Continue this conversation. Answer the latest user message as the assistant.',
     '',
     ...turns.map(
-      (message) => `${message.who === 'me' ? 'User' : 'Assistant'}: ${message.text}`,
+      (message) =>
+        `${message.who === 'me' ? 'User' : 'Assistant'}: ${message.sent || message.text}`,
     ),
   ].join('\n\n')
 
@@ -266,7 +284,7 @@ function promptFor(messages) {
   return text
 }
 
-function runHarness(entity, thread) {
+function runHarness(entity, thread, prompt) {
   return new Promise((resolve, reject) => {
     let dir
     try {
@@ -278,17 +296,12 @@ function runHarness(entity, thread) {
 
     let spec
     try {
-      /* a model belongs to the harness it was configured for; switching the
-         thread to another harness must not carry an incompatible model */
-      const model = thread.harness === entity.harness ? entity.model : ''
-      spec = invocation(
-        thread.harness,
-        entity.instructions,
-        promptFor(thread.messages),
-        '',
-        false,
-        model,
-      )
+      /* A model belongs to the harness it was configured for. The thread's own
+         choice wins; an entity model is only a fallback when the thread runs
+         that same harness. */
+      const model =
+        thread.model || (thread.harness === entity.harness ? entity.model : '')
+      spec = invocation(thread.harness, entity.instructions, prompt, '', false, model)
     } catch (error) {
       reject(error)
       return
@@ -385,13 +398,24 @@ async function send({ workspace, id, text }) {
 
   const entity = checkEntity(workspace, thread.entity)
 
-  thread.messages.push({ who: 'me', text: message, at: now() })
+  /* `/workspace:<skill>` or `/<harness>:<skill>` becomes
+     `use this skill <path>` — resolved before anything is written, so a typo
+     leaves no half-turn in the transcript */
+  const applied = skillRef.rewrite(record, message)
+
+  thread.messages.push({
+    who: 'me',
+    text: message,
+    at: now(),
+    ...(applied.ref ? { sent: applied.text } : {}),
+  })
   thread.updatedAt = now()
   writeThread(record, thread)
 
   sending.set(thread.id, true)
   try {
-    const answer = await runHarness(entity, thread)
+    const prompt = promptFor(thread.messages)
+    const answer = await runHarness(entity, thread, prompt)
     thread.messages.push({ who: 'agent', text: answer, at: now() })
   } catch (error) {
     thread.messages.push({

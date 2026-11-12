@@ -1,25 +1,29 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import SkillIcon from '@/components/SkillIcon.vue'
 import { hub, toast } from '@/stores/hub'
 import { attachSkill, loadLibrary, workspaces } from '@/stores/workspaces'
 
 /**
- * Two scopes, one page.
+ * One page, two scopes — workspace first.
  *
- * `library` is discovery: every skill each harness on this machine already
- * carries, read from `~/.pi`, `~/.claude`, `~/.codex`, … — the same reading as
- * before workspaces existed, with the harness as the filter axis.
+ * `workspace` is intent: the symlinks this workspace owns. It is the tab the
+ * page opens on, and it is one small directory read.
  *
- * `workspace` is intent: the symlinks this workspace owns. Attaching is one
- * symlink from the library, so an update in the library flows through here.
+ * `harness libraries` is discovery: every skill each harness on this machine
+ * already carries, read from `~/.pi`, `~/.claude`, `~/.codex`, … Scanning all of
+ * them walks six directory trees, so it is paid for only when this tab is
+ * opened, and the result is cached for the session.
  */
-const tab = ref('library')
+const tab = ref('workspace')
 const harness = ref('all')
 const busy = ref('')
 
-onMounted(loadLibrary)
+/* lazy: nothing is scanned until the library tab is actually shown */
+watch(tab, (value) => {
+  if (value === 'library' && !workspaces.library) loadLibrary()
+})
 
 const library = computed(() => workspaces.library)
 const items = computed(() => workspaces.skills)
@@ -41,16 +45,6 @@ const visibleLibrary = computed(() => {
   return all.filter((item) => item.harness === harness.value)
 })
 
-const available = computed(() => {
-  const seen = new Set()
-  return (library.value?.items || []).filter((item) => {
-    const key = item.name.toLowerCase()
-    if (attachedNames.value.has(key) || seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-})
-
 const isAttached = (item) => attachedNames.value.has(item.name.toLowerCase())
 
 const when = (iso) => {
@@ -64,8 +58,9 @@ const when = (iso) => {
 }
 
 async function attach(item) {
+  const key = `${item.harness}:${item.name}`
   if (busy.value) return
-  busy.value = item.name
+  busy.value = key
   try {
     await attachSkill({ name: item.name, harness: item.harness })
   } catch (error) {
@@ -83,30 +78,21 @@ async function attach(item) {
         <p class="eyebrow">Skills · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Skills</h1>
         <p class="lede">
-          Every skill installed on this machine, read from each harness’s own library, plus
-          the ones this workspace has attached. The same skill can live in more than one
-          place, so filter by harness to see the copy that runtime actually loads.
+          The skills this workspace has attached, first. The harness libraries on this
+          machine — <code class="mono">~/.pi</code>, <code class="mono">~/.claude</code>,
+          <code class="mono">~/.codex</code>, … — are one tab away, and are only read when
+          you open that tab.
         </p>
       </div>
       <div class="head-actions">
-        <button
-          class="btn"
-          type="button"
-          @click="tab = tab === 'workspace' ? 'library' : 'workspace'"
-        >
-          {{ tab === 'workspace' ? 'Browse library' : 'Workspace skills' }}
-        </button>
+        <span class="meta">
+          {{ items.length }} attached
+          <template v-if="library && !library.error"> · {{ library.count }} in the libraries</template>
+        </span>
       </div>
     </div>
 
     <div class="sk-tabs" role="tablist" aria-label="Skill scope">
-      <button
-        role="tab"
-        :aria-selected="tab === 'library' ? 'true' : 'false'"
-        @click="tab = 'library'"
-      >
-        Library <span class="n">{{ library?.count ?? 0 }}</span>
-      </button>
       <button
         role="tab"
         :aria-selected="tab === 'workspace' ? 'true' : 'false'"
@@ -114,85 +100,25 @@ async function attach(item) {
       >
         Workspace <span class="n">{{ items.length }}</span>
       </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'library' ? 'true' : 'false'"
+        @click="tab = 'library'"
+      >
+        Harness libraries <span v-if="library && !library.error" class="n">{{ library.count }}</span>
+      </button>
     </div>
 
-    <template v-if="tab === 'library'">
-      <div v-if="!library" class="empty-note">
-        <b>Scanning the harness skill libraries…</b>
-      </div>
-
-      <div v-else-if="library.error" class="empty-note">
-        <b>{{ library.error }}</b>
-        <button class="btn btn-sm" type="button" @click="loadLibrary()">Try again</button>
-      </div>
-
-      <template v-else>
-        <div class="lib-bar">
-          <div class="hints" aria-label="Filter by harness">
-            <button
-              v-for="f in filters"
-              :key="f.id"
-              class="hint"
-              type="button"
-              :aria-pressed="harness === f.id ? 'true' : 'false'"
-              @click="harness = f.id"
-            >
-              <HarnessIcon :name="f.id" />
-              {{ f.label }} <span class="hint-n">{{ f.count }}</span>
-            </button>
-          </div>
-          <span class="lib-meta">
-            {{ visibleLibrary.length }} of {{ library.count }}
-            <template v-if="library.hostname"> · {{ library.hostname }}</template>
-          </span>
-        </div>
-
-        <div v-if="visibleLibrary.length" class="grid3">
-          <router-link
-            v-for="s in visibleLibrary"
-            :key="s.id"
-            class="card2"
-            :to="{ name: 'skill', params: { name: s.name }, query: { harness: s.harness } }"
-          >
-            <div class="card-top">
-              <h3><SkillIcon />{{ s.name }}</h3>
-              <span
-                class="tag tag-icon"
-                role="img"
-                :title="s.harnessLabel"
-                :aria-label="s.harnessLabel"
-              >
-                <HarnessIcon :name="s.harness" :size="12" />
-              </span>
-            </div>
-            <p class="p">{{ s.path }}</p>
-            <p v-if="s.description" class="desc">{{ s.description }}</p>
-            <div class="foot">
-              <span>
-                {{ s.files }} {{ s.files === 1 ? 'file' : 'files' }} · {{ s.size }}
-                <template v-if="isAttached(s)"> · attached</template>
-              </span>
-              <span>{{ s.version || when(s.updatedAt) }}</span>
-            </div>
-          </router-link>
-        </div>
-
-        <div v-else class="empty-note">
-          <b>No skills in this harness library.</b>
-          <span v-if="harness !== 'all'">Switch to All, or add a skill directory for it.</span>
-          <span v-else>No harness skill directories were found on this machine.</span>
-        </div>
-      </template>
-    </template>
-
-    <template v-else>
+    <template v-if="tab === 'workspace'">
       <div class="lib-bar">
         <span class="lib-meta">
           {{ items.length }} attached
-          <template v-if="library"> · {{ library.count }} on this machine</template>
           <template v-if="hub.agents.length"> · {{ hub.agents.length }} entities can name them</template>
         </span>
-        <span class="lib-meta mono">{{ workspaces.mcp.path ? workspaces.mcp.path.replace(/mcp\.json$/, 'skills/') : '' }}</span>
+        <span class="lib-meta mono">{{ hub.workspacePath }}/skills</span>
+        <button class="btn btn-sm" type="button" @click="tab = 'library'">
+          Attach from libraries
+        </button>
       </div>
 
       <div v-if="items.length" class="grid3">
@@ -226,29 +152,97 @@ async function attach(item) {
       </div>
 
       <div v-else class="empty-note">
-        <b>No skills in this workspace.</b>
-        <span>Attach one from the harness libraries on this machine — it is a symlink, not a copy.</span>
+        <b>No skills in this workspace yet.</b>
+        <span>Attaching one from a harness library is a symlink, not a copy.</span>
+        <div class="empty-actions">
+          <button class="btn btn-sm" type="button" @click="tab = 'library'">
+            Open the harness libraries
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <template v-else>
+      <div v-if="!library" class="empty-note">
+        <b>Scanning the harness skill libraries…</b>
       </div>
 
-      <div class="sec-head" style="margin-top: 26px">
-        <h2>Attach from this machine</h2>
-        <span class="meta">{{ available.length }}</span>
-      </div>
-      <p v-if="!library" class="machine-note">Reading the harness skill libraries…</p>
-      <div v-else-if="available.length" class="picks picks--scroll">
-        <button
-          v-for="item in available"
-          :key="item.id"
-          class="pick"
-          type="button"
-          :title="item.description"
-          :disabled="busy === item.name"
-          @click="attach(item)"
-        >
-          {{ item.name }} <span class="pick-meta">{{ item.harnessLabel }}</span>
+      <div v-else-if="library.error" class="empty-note">
+        <b>{{ library.error }}</b>
+        <button class="btn btn-sm" type="button" @click="loadLibrary({ force: true })">
+          Try again
         </button>
       </div>
-      <p v-else class="machine-note">Every skill on this machine is already attached.</p>
+
+      <template v-else>
+        <div class="lib-bar">
+          <div class="hints" aria-label="Filter by harness">
+            <button
+              v-for="f in filters"
+              :key="f.id"
+              class="hint"
+              type="button"
+              :aria-pressed="harness === f.id ? 'true' : 'false'"
+              @click="harness = f.id"
+            >
+              <HarnessIcon :name="f.id" />
+              {{ f.label }} <span class="hint-n">{{ f.count }}</span>
+            </button>
+          </div>
+          <span class="lib-meta">
+            {{ visibleLibrary.length }} of {{ library.count }}
+            <template v-if="library.hostname"> · {{ library.hostname }}</template>
+          </span>
+        </div>
+
+        <div v-if="visibleLibrary.length" class="grid3">
+          <div v-for="s in visibleLibrary" :key="s.id" class="card2">
+            <div class="card-top">
+              <h3><SkillIcon />{{ s.name }}</h3>
+              <span
+                class="tag tag-icon"
+                role="img"
+                :title="s.harnessLabel"
+                :aria-label="s.harnessLabel"
+              >
+                <HarnessIcon :name="s.harness" :size="12" />
+              </span>
+            </div>
+            <p class="p">{{ s.path }}</p>
+            <p v-if="s.description" class="desc">{{ s.description }}</p>
+            <div class="foot">
+              <span>
+                {{ s.files }} {{ s.files === 1 ? 'file' : 'files' }} · {{ s.size }}
+              </span>
+              <span>{{ s.version || when(s.updatedAt) }}</span>
+            </div>
+            <div class="card-actions">
+              <router-link
+                class="btn btn-sm"
+                :to="{ name: 'skill', params: { name: s.name }, query: { harness: s.harness } }"
+              >
+                Open
+              </router-link>
+              <button
+                v-if="!isAttached(s)"
+                class="btn btn-sm"
+                type="button"
+                :disabled="busy === `${s.harness}:${s.name}`"
+                @click="attach(s)"
+              >
+                {{ busy === `${s.harness}:${s.name}` ? 'Attaching…' : 'Attach' }}
+              </button>
+              <span v-else class="meta">attached to this workspace</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="empty-note">
+          <b>No skills in this harness library.</b>
+          <span v-if="harness !== 'all'">Switch to All, or add a skill directory for it.</span>
+          <span v-else>No harness skill directories were found on this machine.</span>
+        </div>
+      </template>
     </template>
   </div>
 </template>

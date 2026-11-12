@@ -16,3 +16,13 @@ export const BUILTIN_CMDS = [
   { name: '/plan', desc: 'Write a plan before touching code' },
   { name: '/handoff', desc: 'Write the run summary to .entity/run.json' },
 ]
+
+/* Model names are a hint, not a whitelist: the composer accepts free text so a
+   harness that ships a new model is usable without a release. */
+export const MODELS = {
+  claude: ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
+  codex: ['gpt-5-codex', 'gpt-5'],
+  opencode: ['anthropic/claude-sonnet-4', 'openai/gpt-5'],
+  pi: ['claude-sonnet-4-5', 'gpt-5'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+}

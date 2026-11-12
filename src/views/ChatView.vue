@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import MessageList from '@/components/MessageList.vue'
+import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import { HARNESSES } from '@/data/mock'
@@ -13,7 +14,6 @@ import {
   agentById,
   ago,
   chatSend,
-  createThread,
   ensureChats,
   harnessById,
   hub,
@@ -35,6 +35,8 @@ import {
  * to the next turn.
  */
 const route = useRoute()
+const router = useRouter()
+const newOpen = ref(false)
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
@@ -92,11 +94,15 @@ async function pickThread(id) {
   }
 }
 
-async function startThread() {
-  try {
-    await createThread()
-  } catch (error) {
-    hub.chat.error = error?.message || 'The thread could not be started.'
+function startThread() {
+  if (!hub.agents.length) return
+  newOpen.value = true
+}
+
+function onCreated(thread) {
+  newOpen.value = false
+  if (thread?.id && route.query.thread !== thread.id) {
+    router.replace({ name: 'chat', query: { thread: thread.id } })
   }
 }
 
@@ -238,6 +244,10 @@ watch(
                 <span aria-hidden="true">·</span>
                 <HarnessIcon :name="ctx.harness" :size="10" />
                 {{ harnessById(ctx.harness).label }}
+                <template v-if="ctx.model">
+                  <span aria-hidden="true">·</span>
+                  <span class="mono">{{ ctx.model }}</span>
+                </template>
               </p>
             </div>
             <span class="ask-stat" :aria-label="statLabel">
@@ -302,5 +312,7 @@ watch(
         </section>
       </div>
     </div>
+
+    <NewThreadDialog :open="newOpen" :defaults="ctx" @close="newOpen = false" @created="onCreated" />
   </div>
 </template>

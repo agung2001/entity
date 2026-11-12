@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { openSettings, openWizard, toast } from '@/stores/hub'
+import { openWizard, toast } from '@/stores/hub'
 import { activeWorkspace, openWorkspace, workspaces } from '@/stores/workspaces'
 
 /**
@@ -47,7 +47,7 @@ function newWorkspace() {
 
 function settings() {
   open.value = false
-  openSettings('machines')
+  router.push('/workspace')
 }
 
 function onTriggerKey(e) {

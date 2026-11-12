@@ -58,6 +58,9 @@ const files = computed(() => entry.value?.files || [])
 const currentFile = computed(() => files.value[fileIndex.value] || null)
 const usedBy = computed(() => skillOwners(name.value))
 const version = computed(() => item.value?.version || '')
+/* the composer's `/` menu uses the same grammar; a name with a space is not a
+   callable reference, so the page does not advertise one */
+const refCallable = computed(() => /^[A-Za-z0-9._-]+$/.test(item.value?.name || ''))
 const description = computed(() => item.value?.description || '')
 const missing = computed(() => Boolean(item.value?.missing))
 
@@ -80,7 +83,9 @@ async function load() {
   fileIndex.value = 0
   entry.value = null
   error.value = ''
-  if (!workspaces.library) await loadLibrary()
+  /* a workspace skill is read from `skills/`; only a library skill needs the
+     machine-wide scan, which is why it is not paid for here */
+  if (!inWorkspace.value && !workspaces.library) await loadLibrary()
   if (!item.value || missing.value) return
 
   const ticket = ++token
@@ -155,6 +160,9 @@ async function attach() {
             <span class="tag">{{ item.missing ? 'missing' : item.harnessLabel }}</span>
           </div>
           <p class="sk-path">{{ item.path }}</p>
+          <p v-if="!item.missing && refCallable" class="sk-path">
+            call it with /{{ inWorkspace ? 'workspace' : item.harness }}:{{ item.name }}
+          </p>
           <p class="lede">
             {{
               description ||

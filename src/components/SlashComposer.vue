@@ -1,11 +1,13 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { slashMenu } from '@/stores/hub'
+import { loadLibrary, workspaces } from '@/stores/workspaces'
 
 /**
  * The composer, with the `/` menu above it. Commands are the four harness
- * built-ins plus the skills this agent carries; picking one inserts the
- * command and leaves the arguments to you.
+ * built-ins plus the skills this entity can reach — a workspace skill as
+ * `/workspace:<name>`, a harness library skill as `/<harness>:<name>`. Picking
+ * one inserts the reference; the backend turns it into a path.
  */
 const props = defineProps({
   agent: { type: Object, required: true },
@@ -19,6 +21,8 @@ const draft = ref('')
 const menu = ref([])
 const active = ref(0)
 const input = ref(null)
+/* one library read per composer mount, even if the scan fails */
+let libraryAsked = false
 
 const open = computed(() => menu.value.length > 0)
 
@@ -26,7 +30,23 @@ function refresh() {
   if (props.disabled) return
   menu.value = slashMenu(draft.value, props.agent)
   if (active.value > menu.value.length - 1) active.value = 0
+  /* the harness libraries are the expensive half of the menu; they are read the
+     first time a `/` is typed, not when the page mounts. A failed scan gets one
+     retry — repeating it on every keystroke would spawn a scan per character. */
+  if (draft.value.startsWith('/') && !libraryAsked) {
+    libraryAsked = true
+    if (!workspaces.library) loadLibrary()
+    else if (workspaces.library.error) loadLibrary({ force: true })
+  }
 }
+
+/* the scan is async: when it lands, fill in the menu for the draft on screen */
+watch(
+  () => workspaces.library,
+  () => {
+    if (draft.value.startsWith('/')) refresh()
+  },
+)
 
 function closeMenu() {
   menu.value = []
@@ -93,7 +113,7 @@ function onBlur() {
       >
         <span class="name">{{ c.name }}</span>
         <span class="desc">{{ c.desc }}</span>
-        <span class="k">{{ c.skill ? 'skill' : 'command' }}</span>
+        <span class="k">{{ c.kind || 'command' }}</span>
       </button>
     </div>
 

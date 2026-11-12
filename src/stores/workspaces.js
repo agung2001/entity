@@ -8,7 +8,7 @@
  */
 import { computed, reactive } from 'vue'
 import { call } from '@/composables/localBridge'
-import { applyScope, hub, toast } from '@/stores/hub'
+import { applyLibrary, applyScope, hub, toast } from '@/stores/hub'
 import { loadEntities } from '@/stores/entities'
 import { loadRuns, resetRuns, runs } from '@/stores/runs'
 
@@ -71,6 +71,31 @@ export async function loadScope(id) {
   })
 }
 
+/** Rename/move a workspace and save its member roster. */
+export async function updateWorkspace({ label, id, members }) {
+  const previous = workspaces.active
+  const record = await call('workspace.update', {
+    id: previous,
+    label,
+    nextId: id,
+    members,
+  })
+
+  workspaces.items = await call('workspace.list')
+  const moved = record.id !== previous
+  workspaces.active = record.id
+  hub.workspace = record.id
+  hub.workspaceLabel = record.label
+  hub.workspaceKind = record.kind
+  hub.workspacePath = record.displayPath
+  persist(record.id)
+
+  /* A new directory name is a new scope key: reload so chat/runs stop claiming
+     the old id. A label-only edit leaves the open data untouched. */
+  if (moved) await loadScope(record.id)
+  return record
+}
+
 export async function openWorkspace(id) {
   const record = await call('workspace.open', { id })
   workspaces.active = record.id
@@ -131,14 +156,25 @@ export async function loadWorkspaces() {
 
 /** The machine-wide harness libraries — discovery, not intent. */
 let libraryPending = null
-export async function loadLibrary() {
+/**
+ * Scan every harness library on this machine.
+ *
+ * Deliberately lazy: the workspace's own skills are the primary view, so a
+ * six-directory walk is paid for only when something asks for it — the Library
+ * tab, a `/` in the composer, or a library skill page — and the answer is cached
+ * for the session. `force` is the "Try again" path after a failed scan.
+ */
+export async function loadLibrary({ force = false } = {}) {
   /* the rail and the skills page both mount at once; scan the machine once */
   if (libraryPending) return libraryPending
+  if (workspaces.library && !force) return workspaces.library
   libraryPending = (async () => {
     try {
       workspaces.library = await call('workspace.library')
+      applyLibrary(workspaces.library?.items)
     } catch (error) {
       workspaces.library = { items: [], harnesses: [], count: 0, error: error?.message || '' }
+      applyLibrary([])
     } finally {
       libraryPending = null
     }
