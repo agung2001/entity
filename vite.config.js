@@ -89,7 +89,7 @@ function localDataPlugin() {
 
   async function resetRpc() {
     try {
-      rpc?.closeAll()
+      await rpc?.closeAll()
     } catch {
       /* the dev server is reloading anyway */
     }

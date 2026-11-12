@@ -16,6 +16,9 @@ import ArtifactsView from '@/views/ArtifactsView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import MachineDetailView from '@/views/MachineDetailView.vue'
 import AccountView from '@/views/AccountView.vue'
+import AccountProfileView from '@/views/account/AccountProfileView.vue'
+import AccountSoundView from '@/views/account/AccountSoundView.vue'
+import AccountMcpView from '@/views/account/AccountMcpView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
 import ManageWorkspacesView from '@/views/ManageWorkspacesView.vue'
 
@@ -126,9 +129,28 @@ const router = createRouter({
         },
         {
           path: 'account',
-          name: 'account',
           component: AccountView,
-          meta: { crumb: 'account', title: 'Account · entity' },
+          meta: { crumb: 'account' },
+          children: [
+            {
+              path: '',
+              name: 'account',
+              component: AccountProfileView,
+              meta: { crumb: 'account', title: 'Account · entity' },
+            },
+            {
+              path: 'sound',
+              name: 'account-sound',
+              component: AccountSoundView,
+              meta: { crumb: 'account', title: 'Sound · entity' },
+            },
+            {
+              path: 'mcp',
+              name: 'account-mcp',
+              component: AccountMcpView,
+              meta: { crumb: 'account', title: 'MCP server · entity' },
+            },
+          ],
         },
       ],
     },

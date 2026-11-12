@@ -1,248 +1,414 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import HarnessIcon from '@/components/HarnessIcon.vue'
 import { call } from '@/composables/localBridge'
-import { hub, toast } from '@/stores/hub'
-import { setMcpEnabled, workspaces } from '@/stores/workspaces'
+import { matchesQuery } from '@/composables/search'
+import { parametersOf } from '@/lib/mcp'
+import { toast } from '@/stores/hub'
 
 /**
- * The account-level MCP view: every server the machine knows about, whether it
- * is enabled in this workspace, which entities opted in, and the tools the
- * server exposes. Enabling does not rewrite a harness config; it puts the
- * definition into this workspace's pool, which is the only MCP scope the app
- * owns.
+ * Account → MCP is the connection desk for Entity's own MCP server.
+ *
+ * This is the opposite direction from the workspace pool: the pool is what
+ * Entity consumes, while this loopback endpoint is what an agent (Claude Code,
+ * pi, an IDE) connects to so it can read and write this workspace repo.
  */
-const globals = reactive({ loading: false, loaded: false, error: '', groups: [] })
-const tools = reactive({})
-const busy = ref('')
-
-function definitionOf(server) {
-  if (!server) return null
-  if (server.url) return { url: String(server.url) }
-  if (!server.command) return null
-  const value = { command: String(server.command) }
-  if (Array.isArray(server.args) && server.args.length) value.args = server.args.map(String)
-  if (Array.isArray(server.env) && server.env.length) value.env = server.env.map(String)
-  return value
-}
-
-const entries = computed(() => {
-  const map = new Map()
-  for (const [name, definition] of Object.entries(workspaces.mcp?.servers || {})) {
-    map.set(name, {
-      name,
-      definition,
-      enabled: true,
-      source: 'workspace',
-      harness: '',
-      harnessLabel: 'Workspace pool',
-    })
-  }
-  for (const [name, definition] of Object.entries(workspaces.mcp?.disabled || {})) {
-    if (map.has(name)) continue
-    map.set(name, {
-      name,
-      definition,
-      enabled: false,
-      source: 'workspace',
-      harness: '',
-      harnessLabel: 'Workspace pool',
-    })
-  }
-  for (const group of globals.groups) {
-    for (const server of group.servers || []) {
-      const found = map.get(server.name)
-      if (found) {
-        found.harness = found.harness || group.harness
-        found.harnessLabel = found.harnessLabel || group.label
-        continue
-      }
-      map.set(server.name, {
-        name: server.name,
-        definition: definitionOf(server),
-        enabled: false,
-        source: group.harness,
-        harness: group.harness,
-        harnessLabel: group.label,
-      })
-    }
-  }
-  return [...map.values()].sort((a, b) => {
-    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
+const state = reactive({
+  loading: true,
+  loaded: false,
+  error: '',
+  status: null,
 })
+const port = ref('4781')
+const allowWrite = ref(false)
+const reveal = ref(false)
+const busy = ref('')
+const notice = ref(null)
+const testResult = ref(null)
+const confirmingRotate = ref(false)
+const search = ref('')
+let rotateTimer = 0
 
-const enabledCount = computed(() => entries.value.filter((entry) => entry.enabled).length)
-const commandLine = (entry) => {
-  const value = entry.definition || {}
-  if (value.command) return [value.command, ...(value.args || [])].join(' ')
-  return value.url || 'no command or URL'
+const status = computed(() => state.status)
+const pill = computed(() => {
+  if (!status.value) return 'unknown'
+  if (!status.value.enabled) return 'off'
+  return status.value.running ? 'listening' : 'not bound'
+})
+const tokenDisplay = computed(() => {
+  const token = status.value?.token || ''
+  if (!token) return 'No token minted yet.'
+  return reveal.value ? token : '•'.repeat(Math.min(token.length, 48))
+})
+const tokenForConfig = computed(() => status.value?.token || 'YOUR_TOKEN')
+const endpoint = computed(() => status.value?.url || `http://127.0.0.1:${port.value}/mcp`)
+
+const agentJson = computed(() =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        entity: {
+          type: 'http',
+          url: endpoint.value,
+          headers: { Authorization: `Bearer ${tokenForConfig.value}` },
+        },
+      },
+    },
+    null,
+    2,
+  ),
+)
+const agentJsonDisplay = computed(() =>
+  agentJson.value.replace(`Bearer ${tokenForConfig.value}`, 'Bearer YOUR_TOKEN'),
+)
+const agentCli = computed(
+  () =>
+    `claude mcp add --transport http entity ${endpoint.value} --header "Authorization: Bearer ${tokenForConfig.value}"`,
+)
+const agentCliDisplay = computed(
+  () => `claude mcp add --transport http entity ${endpoint.value} --header "Authorization: Bearer YOUR_TOKEN"`,
+)
+
+const tools = computed(() => status.value?.tools || [])
+const visibleTools = computed(() =>
+  tools.value.filter((tool) =>
+    matchesQuery(`${tool.name} ${tool.title || ''} ${tool.description || ''}`, search.value),
+  ),
+)
+
+function messageOf(error) {
+  return String(error?.message || error).replace(/^Error:\s*/, '')
 }
-const entitiesFor = (name) => hub.agents.filter((agent) => agent.mcp.includes(name))
 
-async function loadGlobals(force = false) {
-  if (!force && (globals.loading || globals.loaded)) return
-  globals.loading = true
-  globals.error = ''
+async function load(force = false) {
+  if (state.loading && state.loaded) return
+  state.loading = true
+  state.error = ''
   try {
-    const data = await call('mcp.globals')
-    globals.groups = data?.groups || []
-    globals.loaded = true
+    const data = await call('mcpServer.status')
+    state.status = data
+    port.value = String(data.port)
+    allowWrite.value = Boolean(data.allowWrite)
+    state.loaded = true
   } catch (error) {
-    globals.error = error?.message || 'Could not read the harness MCP configs.'
+    state.error = messageOf(error)
   } finally {
-    globals.loading = false
+    state.loading = false
   }
 }
 
-async function toggle(entry) {
+function applyStatus(data) {
+  state.status = data
+  port.value = String(data.port)
+  allowWrite.value = Boolean(data.allowWrite)
+  state.loaded = true
+}
+
+function validPort() {
+  const value = Number(port.value)
+  return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : null
+}
+
+async function saveConfig() {
   if (busy.value) return
-  busy.value = entry.name
+  const parsed = validPort()
+  if (!parsed) {
+    notice.value = { ok: false, text: 'The port must be a number between 1024 and 65535.' }
+    return
+  }
+  busy.value = 'save'
+  notice.value = null
+  testResult.value = null
   try {
-    await setMcpEnabled(entry.name, !entry.enabled, entry.definition)
-    toast(entry.enabled ? `${entry.name} disabled` : `${entry.name} enabled`)
-    if (!entry.enabled) loadTools(entry)
+    const data = await call('mcpServer.save', {
+      enabled: true,
+      port: parsed,
+      allowWrite: allowWrite.value,
+    })
+    applyStatus(data)
+    notice.value = {
+      ok: !data.error,
+      text: data.error || (data.running ? 'Saved. The loopback listener is live.' : 'Saved, but the listener did not start.'),
+    }
   } catch (error) {
-    toast(error?.message || `${entry.name} could not be changed.`)
+    notice.value = { ok: false, text: messageOf(error) }
   } finally {
     busy.value = ''
   }
 }
 
-async function loadTools(entry) {
-  const current = tools[entry.name]
-  if (current?.loading) return
-  tools[entry.name] = { loading: true, loaded: false, error: '', items: [] }
+async function disable() {
+  if (busy.value) return
+  busy.value = 'save'
+  notice.value = null
+  testResult.value = null
   try {
-    const data = await call('mcp.tools', { workspace: hub.workspace, name: entry.name })
-    tools[entry.name] = {
-      loading: false,
-      loaded: true,
-      error: '',
-      items: Array.isArray(data?.tools) ? data.tools : [],
-      readAt: data?.readAt || '',
-    }
+    const data = await call('mcpServer.save', { enabled: false, port: validPort() || undefined })
+    applyStatus(data)
+    notice.value = { ok: true, text: 'Listener stopped. The token and port are kept.' }
   } catch (error) {
-    tools[entry.name] = {
-      loading: false,
-      loaded: false,
-      error: error?.message || 'The server did not answer tools/list.',
-      items: [],
-    }
+    notice.value = { ok: false, text: messageOf(error) }
+  } finally {
+    busy.value = ''
   }
 }
 
-onMounted(async () => {
-  await loadGlobals()
-  const enabled = entries.value.filter((item) => item.enabled)
-  /* show the tools of what is enabled; if the pool is empty, read the first
-     few discovered servers so the tab is useful before anything is switched on */
-  const initial = enabled.length ? enabled.slice(0, 6) : entries.value.slice(0, 3)
-  for (const entry of initial) loadTools(entry)
+async function testConnection() {
+  if (busy.value) return
+  busy.value = 'test'
+  testResult.value = null
+  notice.value = null
+  try {
+    const result = await call('mcpServer.test')
+    if (result.ok) {
+      testResult.value = result
+      notice.value = { ok: true, text: `Connected · ${result.tools} tools · ${result.latencyMs} ms` }
+    } else {
+      notice.value = { ok: false, text: result.error || 'The connection test failed.' }
+    }
+  } catch (error) {
+    notice.value = { ok: false, text: messageOf(error) }
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function copy(value, label) {
+  try {
+    await navigator.clipboard.writeText(value)
+    toast(`${label} copied`)
+  } catch {
+    toast(`${label} could not be copied.`)
+  }
+}
+
+async function rotate() {
+  if (busy.value) return
+  if (!confirmingRotate.value) {
+    confirmingRotate.value = true
+    clearTimeout(rotateTimer)
+    rotateTimer = setTimeout(() => {
+      confirmingRotate.value = false
+    }, 3000)
+    return
+  }
+  confirmingRotate.value = false
+  clearTimeout(rotateTimer)
+  busy.value = 'rotate'
+  notice.value = null
+  try {
+    const data = await call('mcpServer.rotate')
+    applyStatus(data)
+    reveal.value = true
+    notice.value = {
+      ok: true,
+      text: 'New token minted. Update every agent that connects to this server.',
+    }
+  } catch (error) {
+    notice.value = { ok: false, text: messageOf(error) }
+  } finally {
+    busy.value = ''
+  }
+}
+
+function parameters(tool) {
+  return parametersOf(tool)
+}
+
+onMounted(() => {
+  load().catch(() => {})
 })
 </script>
 
 <template>
-  <section class="mcp-acct">
-    <div class="mcp-acct-head">
-      <div>
-        <h2>MCP servers</h2>
-        <p class="mnote">
-          Enable a server here to put it in this workspace's pool. An entity calls it with
-          <code class="mono">mcp: name</code>; the tool list is read from the server itself.
-        </p>
-      </div>
-      <span class="meta">{{ enabledCount }} enabled · {{ entries.length }} known</span>
+  <section class="acct-mcp">
+    <div v-if="state.loading && !state.status" class="empty-note">
+      <b>Reading MCP server status…</b>
+    </div>
+    <div v-else-if="state.error" class="empty-note">
+      <b>{{ state.error }}</b>
+      <button class="btn btn-sm" type="button" @click="load(true)">Try again</button>
     </div>
 
-    <div v-if="globals.error" class="acct-error" role="alert">
-      {{ globals.error }}
-      <button class="btn btn-sm" type="button" @click="loadGlobals(true)">Try again</button>
-    </div>
-
-    <div v-if="globals.loading && !entries.length" class="empty-note">
-      <b>Reading MCP configs…</b>
-    </div>
-    <div v-else-if="!entries.length" class="empty-note">
-      <b>No MCP servers found.</b>
-      <span>Add one in the MCP page, or configure a harness on this machine.</span>
-    </div>
-
-    <ul v-else class="mcp-acct-list">
-      <li
-        v-for="entry in entries"
-        :key="entry.name"
-        class="mcp-acct-row"
-        :data-on="entry.enabled ? '1' : '0'"
-      >
-        <div class="mcp-acct-top">
-          <span class="mcp-acct-state"><i></i>{{ entry.enabled ? 'enabled' : 'disabled' }}</span>
-          <b>{{ entry.name }}</b>
-          <span class="mcp-acct-src">
-            <HarnessIcon v-if="entry.harness" :name="entry.harness" :size="11" />
-            {{ entry.harnessLabel }}
-          </span>
-          <button
-            class="mcp-toggle"
-            type="button"
-            role="switch"
-            :aria-checked="entry.enabled ? 'true' : 'false'"
-            :disabled="busy === entry.name || (!entry.enabled && !entry.definition)"
-            :title="entry.enabled ? 'Disable in this workspace' : 'Enable in this workspace'"
-            @click="toggle(entry)"
-          >
-            <span class="mcp-toggle-knob"></span>
-          </button>
-        </div>
-
-        <p class="mcp-acct-cmd mono">{{ commandLine(entry) }}</p>
-
-        <div class="mcp-acct-meta">
-          <span v-if="entitiesFor(entry.name).length" class="mcp-acct-ents">
-            used by
-            <span v-for="entity in entitiesFor(entry.name)" :key="entity.name" class="mcp-ent">
-              {{ entity.name }}
+    <template v-else>
+      <div class="acct-mcp-grid">
+        <article class="acct-card acct-mcp-status">
+          <div class="acct-card-head">
+            <div>
+              <h2>MCP server</h2>
+              <p class="mnote">
+                One loopback endpoint that serves this workspace repo to an agent. Off by default;
+                writes are opt-in.
+              </p>
+            </div>
+            <span class="acct-mcp-pill" :data-on="status?.running ? '1' : '0'">
+              <i></i>{{ pill }}
             </span>
-          </span>
-          <span v-else class="mcp-acct-none">no entity opts in yet</span>
+          </div>
+
+          <div v-if="status?.error" class="acct-error" role="alert">
+            {{ status.error }}
+          </div>
+          <div v-if="notice" class="acct-mcp-notice" :data-ok="notice.ok ? '1' : '0'" role="status">
+            {{ notice.text }}
+          </div>
+
+          <div class="mcp-srv-grid">
+            <div class="fld">
+              <label class="lbl" for="mcp-srv-port">Port</label>
+              <input
+                id="mcp-srv-port"
+                v-model="port"
+                class="acct-input mono"
+                type="number"
+                min="1024"
+                max="65535"
+                :disabled="Boolean(busy)"
+              />
+            </div>
+            <div class="fld">
+              <label class="lbl" for="mcp-srv-endpoint">Endpoint</label>
+              <input
+                id="mcp-srv-endpoint"
+                class="acct-input mono"
+                type="text"
+                :value="endpoint"
+                readonly
+              />
+            </div>
+          </div>
+
+          <div class="mcp-srv-toggle">
+            <div>
+              <b>Allow writes</b>
+              <span>
+                Exposes <code class="mono">create_entity</code>. Reads work without it. Writes still
+                land only inside the selected workspace.
+              </span>
+            </div>
+            <button
+              class="sfx-switch"
+              type="button"
+              role="switch"
+              :aria-checked="allowWrite ? 'true' : 'false'"
+              :aria-label="allowWrite ? 'Disable MCP writes' : 'Enable MCP writes'"
+              :disabled="Boolean(busy)"
+              @click="allowWrite = !allowWrite"
+            >
+              <span></span>
+            </button>
+          </div>
+
+          <div class="mcp-srv-actions">
+            <button class="btn btn-ink" type="button" :disabled="Boolean(busy)" @click="saveConfig">
+              {{ busy === 'save' ? 'Saving…' : status?.running ? 'Save & restart' : 'Save & enable' }}
+            </button>
+            <button
+              class="btn"
+              type="button"
+              :disabled="Boolean(busy) || !status?.enabled"
+              @click="disable"
+            >Disable</button>
+            <button
+              class="btn"
+              type="button"
+              :disabled="Boolean(busy) || !status?.running"
+              @click="testConnection"
+            >{{ busy === 'test' ? 'Testing…' : 'Test connection' }}</button>
+            <span v-if="testResult" class="mcp-srv-test mono">
+              {{ testResult.tools }} tools · {{ testResult.latencyMs }} ms
+            </span>
+          </div>
+          <p class="mnote mcp-srv-foot">
+            Loopback only. Config lives in <code class="mono">~/.entity/mcp-server.json</code>, mode 0600.
+            It never lives inside the workspace.
+          </p>
+        </article>
+
+        <article class="acct-card acct-mcp-access">
+          <div class="acct-card-head">
+            <div>
+              <h2>Bearer token</h2>
+              <p class="mnote">The only secret an agent needs. Rotate it if it leaks.</p>
+            </div>
+          </div>
+          <code class="mcp-token">{{ tokenDisplay }}</code>
+          <div class="mcp-srv-actions">
+            <button class="btn btn-sm" type="button" :disabled="!status?.token" @click="reveal = !reveal">
+              {{ reveal ? 'Hide' : 'Reveal' }}
+            </button>
+            <button class="btn btn-sm" type="button" :disabled="!status?.token" @click="copy(status?.token || '', 'Token')">
+              Copy
+            </button>
+            <button
+              class="btn btn-sm"
+              :class="{ 'btn-danger': confirmingRotate }"
+              type="button"
+              :disabled="Boolean(busy) || !status?.token"
+              @click="rotate"
+            >{{ confirmingRotate ? 'Click again to rotate' : 'Rotate' }}</button>
+          </div>
+          <p class="mnote acct-mcp-note">
+            Send it as <code class="mono">Authorization: Bearer …</code>. The value is masked here
+            until you reveal it, and never appears in the URL or logs.
+          </p>
+        </article>
+      </div>
+
+      <article class="acct-card">
+        <div class="acct-card-head">
+          <div>
+            <h2>Agent configuration</h2>
+            <p class="mnote">Paste this into an MCP client. Re-copy after rotating the token.</p>
+          </div>
+        </div>
+        <div class="acct-mcp-snippet">
+          <div class="acct-mcp-snippet-head">
+            <span>Agent JSON</span>
+            <button class="btn btn-sm" type="button" @click="copy(agentJson, 'Agent JSON')">Copy JSON</button>
+          </div>
+          <pre>{{ agentJsonDisplay }}</pre>
+        </div>
+        <div class="acct-mcp-snippet mcp-srv-cli">
+          <div class="acct-mcp-snippet-head">
+            <span>Claude Code</span>
+            <button class="btn btn-sm" type="button" @click="copy(agentCli, 'Claude command')">Copy command</button>
+          </div>
+          <pre>{{ agentCliDisplay }}</pre>
+        </div>
+      </article>
+
+      <article class="acct-card acct-mcp-tools">
+        <div class="acct-card-head acct-mcp-tools-head">
+          <div>
+            <h2>Tools</h2>
+            <p class="mnote">
+              The exact surface this server advertises. Reads are always available; writes require
+              the switch above.
+            </p>
+          </div>
+          <label class="acct-mcp-search">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4L14 14" />
+            </svg>
+            <input v-model="search" type="search" placeholder="Search tools" aria-label="Search MCP tools" autocomplete="off" />
+          </label>
         </div>
 
-        <div class="mcp-acct-tools">
-          <button
-            v-if="!tools[entry.name]?.loaded"
-            class="btn btn-sm"
-            type="button"
-            :disabled="tools[entry.name]?.loading || !entry.definition"
-            @click="loadTools(entry)"
-          >
-            {{ tools[entry.name]?.loading ? 'Reading tools…' : 'List tools' }}
-          </button>
-          <template v-else>
-            <details
-              v-if="tools[entry.name].items.length"
-              class="mcp-tools-fold"
-              :open="tools[entry.name].items.length <= 12"
-            >
-              <summary class="mcp-tools-count">
-                {{ tools[entry.name].items.length }}
-                {{ tools[entry.name].items.length === 1 ? 'tool' : 'tools' }}
-              </summary>
-              <ul class="mcp-tools">
-                <li v-for="tool in tools[entry.name].items" :key="tool.name">
-                  <b class="mono">{{ tool.name }}</b>
-                  <span v-if="tool.description">{{ tool.description }}</span>
-                </li>
-              </ul>
-            </details>
-            <span v-else class="mcp-acct-none">The server exposes no tools.</span>
-          </template>
-          <span v-if="tools[entry.name]?.error" class="mcp-tools-error">
-            {{ tools[entry.name].error }}
-            <button class="mcp-link" type="button" @click="loadTools(entry)">retry</button>
-          </span>
-        </div>
-      </li>
-    </ul>
+        <p v-if="search && !visibleTools.length" class="acct-mcp-loading">No tool matches this search.</p>
+        <ul v-else class="acct-mcp-tool-list mcp-srv-tools">
+          <li v-for="tool in visibleTools" :key="tool.name">
+            <div class="acct-mcp-tool-head">
+              <code>{{ tool.name }}</code>
+              <span v-if="tool.annotations?.readOnlyHint === false" class="mcp-srv-write">write</span>
+              <span>{{ parameters(tool).length }} param{{ parameters(tool).length === 1 ? '' : 's' }}</span>
+            </div>
+            <p>{{ tool.description }}</p>
+            <p v-if="parameters(tool).length" class="acct-mcp-params mono">
+              <span v-for="param in parameters(tool)" :key="param">{{ param }}</span>
+            </p>
+          </li>
+        </ul>
+      </article>
+    </template>
   </section>
 </template>

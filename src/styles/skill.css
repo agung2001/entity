@@ -131,6 +131,30 @@
   border-bottom-color: var(--ink);
   font-weight: 500;
 }
+.sk-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 11px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.sk-tabs a:first-child {
+  padding-left: 0;
+}
+.sk-tabs a:hover {
+  color: var(--ink);
+}
+.sk-tabs a[aria-selected='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+  font-weight: 500;
+}
 .sk-tabs .harness-icon {
   flex: none;
   opacity: 0.7;

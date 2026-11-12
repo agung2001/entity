@@ -63,6 +63,7 @@ window.
   entities/<name>.md               frontmatter = config, body = instructions
   skills/<name>                    symlink into a harness skill library
   mcp.json                         { schema, servers: { name: { command | url, args, env } } }
+~/.entity/mcp-server.json           Entity's own MCP server: enabled, port, token (0600), allowWrite
   machines/CONFIG                  this workspace's ssh_config (Host blocks)
   machines/<host>                  a copy of that host's key, mode 0600
   chats/<threadId>.json            one conversation per file
@@ -158,7 +159,10 @@ transport, not a second implementation.
 
 `env` on an MCP server is a list of variable **names** — `mcp.json` never holds a
 value, and no verb returns one. Set the variable in the environment the app runs
-in.
+in. Account → MCP is the other direction: a loopback HTTP MCP endpoint with a
+bearer token, exposing `list_workspaces`, `get_workspace`, `list_entities`,
+`get_entity`, `create_entity`, `list_chats`, `read_chat` and `list_artifacts`.
+Reads work by default; `create_entity` needs **Allow writes**.
 
 A write changes the file; the window notices without a reload because
 `workspace-watch.cjs` watches `entities/`, `skills/`, `workspace.json` and
@@ -243,6 +247,7 @@ electron/
   session-store.cjs   each harness's own session store, scoped by entity cwd
   mcp-store.cjs       MCP config discovery across ~/.claude.json, ~/.codex, ~/.pi, …
   mcp-tools.cjs       opens a server's JSON-RPC handshake and asks for tools/list
+  mcp-server.cjs      Entity's own loopback MCP server: workspaces, entities, chats, artifacts
   artifact-store.cjs  <ws>/artifacts: list, read, upload, saveText, remove, prompt brief
   harness-store.cjs   installed CLI paths, ~/.entity/harnesses.json, detected model hints
   skill-ref.cjs       /workspace:<name> and /<harness>:<name> → `use this skill <path>`
@@ -274,7 +279,7 @@ src/
     EntityDetailView.vue  entity page: editable harness/model, harness paths, Markdown instructions
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
     McpView.vue       workspace MCP pool + global harness MCP config (attach to pool)
-    AccountView.vue   profile + password, and the MCP servers this workspace can use
+    AccountView.vue   profile + password, sound, and the Entity MCP server connection
     ArtifactsView.vue  workspace artifact shelf: upload, remove, search, extension filter, sort
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
@@ -292,7 +297,7 @@ src/
     MessageList / MessageBody / SlashComposer
     ThreadMinimap.vue  right-edge message outline and jump card
     ModelInput.vue     free-text model field with detected suggestions
-    McpAccountPanel.vue  enable/disable MCP servers, entity opt-ins and tool lists
+    McpAccountPanel.vue  Entity's MCP server status, token, agent config and tools
     MarkdownEditor.vue Write/Review Markdown editor with a sanitized preview
     HarnessPaths.vue   machine-wide executable overrides for the five harnesses
     ArtifactThumb.vue  lazy image thumbnail for the artifact grid
@@ -349,7 +354,9 @@ history mode has no server to resolve a path on reload.
 | `#/activity` | Redirects to Workspace → Activity (old links keep working) |
 | `#/workspaces` | Manage workspaces (add, export/import, delete, settings) |
 | `#/workspace` | Workspace tabs: General, Members, Skills, MCP, Machines, Activity |
-| `#/account` | Account profile and MCP server management |
+| `#/account` | Account profile |
+| `#/account/sound` | Pixel Area 51 sound settings |
+| `#/account/mcp` | Entity MCP server status, token and tools |
 
 The rail keeps Overview, Entities and Artifacts in the main list, then folds
 the chat history underneath them: one animated mark, title, state and menu per
@@ -365,9 +372,11 @@ Workspace settings are a page (`#/workspace`), not a modal: General, Members,
 Skills, MCP, Machines and Activity are tabs for the record, roster, working
 sections and journal. Managing
 workspaces is its own page (`#/workspaces`): add, export/import one JSON bundle,
-choose settings, or delete. MCP has its own page (`#/mcp`), and Account has a
-second MCP tab that can enable/disable a server for this workspace and list the
-tools it exposes. Workspace artifacts have their own page (`#/artifacts`);
+choose settings, or delete. MCP has its own page (`#/mcp`) for the servers the
+workspace consumes, while `#/account/mcp` is the opposite direction: the loopback
+MCP server an agent connects to. Account is three deep-linkable routes:
+`#/account` for the profile, `#/account/sound` for SFX and `#/account/mcp` for
+the server. Workspace artifacts have their own page (`#/artifacts`);
 entities, skills and machines keep theirs.
 
 One account belongs to a hub, and the first workspace creator owns it. The
@@ -509,10 +518,10 @@ packaged app renders a blank window.
   MCP is enforced for claude only (see above).
 - Remote placement and ssh deploy are not implemented; a directory in Finder is
   still the honest interface for a workspace that needs to be moved by hand.
-- The agent-facing surface is a CLI, not MCP. `platform-core.cjs` is designed as
-  the seam a stdio MCP server would sit on (same verbs, named args), but it is
-  not built: six tool schemas cost every run of every agent, and every harness
-  here can already run a shell. Add it when a harness that cannot appears.
+- The in-run tool is still the CLI. Account → MCP additionally exposes a
+  loopback Streamable HTTP MCP server (`127.0.0.1`, bearer token, writes opt-in)
+  for clients outside a run. Both transports read the same workspace modules;
+  the MCP server is off until enabled.
 - `audit.jsonl` is written and readable (`entity audit`) but has no window yet.
 - Export carries entities, chats, artifacts, copied skills and the MCP pool.
   Copied private keys, generated ssh config and run logs are deliberately left out.

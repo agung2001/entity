@@ -1,7 +1,9 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import { call } from '@/composables/localBridge'
+import { matchesQuery } from '@/composables/search'
+import { commandLine, definitionOf, envNames, poolEntries, transportOf } from '@/lib/mcp'
 import { hub, toast } from '@/stores/hub'
 import { workspaces, writeMcp } from '@/stores/workspaces'
 
@@ -10,86 +12,133 @@ const props = defineProps({
   embedded: { type: Boolean, default: false },
 })
 
-
 /**
- * MCP is its own page now: the workspace pool on one tab, and the servers each
- * harness already has configured on the other. The globals tab is read-only —
- * this app does not rewrite another tool's config.
+ * MCP inventory. The workspace pool and the harness configs on this machine
+ * are two scopes of the same table: same columns, same drawer, same search.
+ * The globals side is read-only except for attaching a definition to the pool.
  */
-const tab = ref('workspace')
-const mcpText = ref('')
-const error = ref('')
-const busy = ref(false)
-const attaching = ref('')
+const scope = ref('workspace')
+const search = ref('')
+const harness = ref('all')
+const sortKey = ref('name')
+const sortDir = ref('asc')
 const globals = reactive({ loading: false, loaded: false, error: '', groups: [], count: 0 })
+const selected = ref(null)
+const confirming = ref(false)
 
-const servers = computed(() =>
-  Object.entries(workspaces.mcp?.servers || {}).map(([name, value]) => ({
-    name,
-    command: String(value?.command || ''),
-    args: Array.isArray(value?.args) ? value.args.map(String) : [],
-    url: String(value?.url || ''),
-    env: Array.isArray(value?.env) ? value.env : [],
-  })),
+const addOpen = ref(false)
+const addBusy = ref(false)
+const addError = ref('')
+const editing = ref('')
+const addForm = reactive({ name: '', transport: 'stdio', command: '', args: '', url: '', env: '' })
+
+const jsonOpen = ref(false)
+const jsonText = ref('')
+const jsonError = ref('')
+const jsonBusy = ref(false)
+
+const pool = computed(() => poolEntries(workspaces.mcp))
+const poolServers = computed(() => poolEntries(workspaces.mcp).filter((entry) => entry.enabled))
+const enabledCount = computed(() => poolServers.value.length)
+const disabledCount = computed(() => pool.value.length - enabledCount.value)
+const totalGlobals = computed(() => globals.groups.reduce((total, group) => total + (group.servers?.length || 0), 0))
+
+const usedBy = (name) => hub.agents.filter((agent) => agent.mcp.includes(name)).map((agent) => agent.name)
+const inPool = (name) => Boolean(workspaces.mcp?.servers?.[name])
+
+function sourcesFor(name) {
+  return globals.groups
+    .filter((group) => (group.servers || []).some((server) => server.name === name))
+    .map((group) => group.label)
+}
+
+function poolMatches(entry) {
+  return matchesQuery(
+    `${entry.name} ${commandLine(entry.definition)} ${envNames(entry.definition).join(' ')} ${usedBy(entry.name).join(' ')} ${sourcesFor(entry.name).join(' ')}`,
+    search.value,
+  )
+}
+
+function globalMatches(row) {
+  return matchesQuery(
+    `${row.name} ${row.harnessLabel} ${row.file} ${commandLine(row.definition)} ${envNames(row.definition).join(' ')}`,
+    search.value,
+  )
+}
+
+function compare(a, b) {
+  const key = sortKey.value
+  const left = String(key === 'transport' ? a.transport : key === 'harness' ? a.harnessLabel : a.name)
+  const right = String(key === 'transport' ? b.transport : key === 'harness' ? b.harnessLabel : b.name)
+  const order = left.localeCompare(right)
+  return sortDir.value === 'asc' ? order : -order
+}
+
+const workspaceRows = computed(() =>
+  poolServers.value
+    .map((entry) => ({
+      ...entry,
+      kind: 'pool',
+      transport: transportOf(entry.definition),
+      command: commandLine(entry.definition),
+      env: envNames(entry.definition),
+      used: usedBy(entry.name),
+      sources: sourcesFor(entry.name),
+    }))
+    .filter(poolMatches)
+    .sort(compare),
 )
 
-const commandLine = (server) => {
-  if (server.command) return [server.command, ...(server.args || [])].join(' ')
-  return server.url || '—'
-}
-
-const attachedNames = computed(() => new Set(servers.value.map((server) => server.name)))
-
-async function attachGlobal(server) {
-  if (attaching.value) return
-  if (attachedNames.value.has(server.name)) {
-    toast(`${server.name} is already in this workspace`)
-    return
-  }
-  const definition = server.url
-    ? { url: server.url }
-    : { command: server.command, ...(server.args.length ? { args: [...server.args] } : {}) }
-  if (server.env.length) definition.env = [...server.env]
-  attaching.value = `${server.harness}:${server.name}`
-  try {
-    await writeMcp({ ...(workspaces.mcp?.servers || {}), [server.name]: definition })
-    toast(
-      server.env.length
-        ? `${server.name} attached · set ${server.env.join(', ')} in the environment`
-        : `${server.name} attached to this workspace`,
+const globalRows = computed(() => {
+  if (harness.value !== 'all' && !globals.groups.some((group) => group.harness === harness.value)) return []
+  return globals.groups
+    .filter((group) => harness.value === 'all' || group.harness === harness.value)
+    .flatMap((group) =>
+      (group.servers || []).map((server) => {
+        const definition = definitionOf(server)
+        return {
+          kind: 'global',
+          name: server.name,
+          definition,
+          transport: transportOf(definition),
+          command: commandLine(definition),
+          env: envNames(definition),
+          harness: group.harness,
+          harnessLabel: group.label,
+          file: (group.files || [])[0]?.path || '',
+          source: group.harness,
+        }
+      }),
     )
-  } catch (problem) {
-    toast(problem?.message || `${server.name} could not be attached.`)
-  } finally {
-    attaching.value = ''
+    .filter(globalMatches)
+    .sort(compare)
+})
+
+const rows = computed(() => (scope.value === 'workspace' ? workspaceRows.value : globalRows.value))
+const totalRows = computed(() => (scope.value === 'workspace' ? enabledCount.value : totalGlobals.value))
+
+function toggleSort(key) {
+  if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  else {
+    sortKey.value = key
+    sortDir.value = 'asc'
   }
 }
 
-function syncMcp() {
-  const source = workspaces.mcp?.servers || {}
-  mcpText.value = Object.keys(source).length ? JSON.stringify(source, null, 2) : '{\n  \n}'
-  error.value = ''
+function setScope(next) {
+  scope.value = next
+  harness.value = 'all'
+  search.value = ''
 }
 
-async function saveMcp() {
-  if (busy.value) return
-  error.value = ''
-  let parsed
-  try {
-    parsed = mcpText.value.trim() ? JSON.parse(mcpText.value) : {}
-  } catch {
-    error.value = 'That is not valid JSON.'
-    return
-  }
-  busy.value = true
-  try {
-    await writeMcp(parsed)
-    toast('MCP pool saved')
-  } catch (problem) {
-    error.value = problem?.message || 'The MCP pool could not be saved.'
-  } finally {
-    busy.value = false
-  }
+function openDrawer(row) {
+  selected.value = row
+  confirming.value = false
+}
+
+function closeDrawer() {
+  selected.value = null
+  confirming.value = false
 }
 
 async function loadGlobals(force = false) {
@@ -101,8 +150,8 @@ async function loadGlobals(force = false) {
     globals.groups = data?.groups || []
     globals.count = data?.count || 0
     globals.loaded = true
-  } catch (problem) {
-    globals.error = problem?.message || 'Could not read the harness MCP configs.'
+  } catch (error) {
+    globals.error = error?.message || 'Could not read the harness MCP configs.'
     globals.groups = []
     globals.count = 0
     globals.loaded = false
@@ -111,177 +160,506 @@ async function loadGlobals(force = false) {
   }
 }
 
-onMounted(syncMcp)
+async function copyCommand() {
+  if (!selected.value) return
+  try {
+    await navigator.clipboard.writeText(selected.value.command)
+    toast(`${selected.value.name} command copied`)
+  } catch {
+    toast('The command could not be copied.')
+  }
+}
 
-watch(() => workspaces.mcp, syncMcp, { deep: true })
-watch(tab, (value) => {
-  if (value === 'globals') loadGlobals()
+function beginEdit() {
+  if (!selected.value) return
+  const definition = selected.value.definition || {}
+  editing.value = selected.value.name
+  addForm.name = selected.value.name
+  addForm.transport = definition.url ? 'http' : 'stdio'
+  addForm.command = definition.command || ''
+  addForm.args = Array.isArray(definition.args) ? definition.args.join('\n') : ''
+  addForm.url = definition.url || ''
+  addForm.env = envNames(definition).join(', ')
+  addError.value = ''
+  addOpen.value = true
+  closeDrawer()
+}
+
+function beginAdd() {
+  editing.value = ''
+  addForm.name = ''
+  addForm.transport = 'stdio'
+  addForm.command = ''
+  addForm.args = ''
+  addForm.url = ''
+  addForm.env = ''
+  addError.value = ''
+  addOpen.value = true
+}
+
+function definitionFromForm() {
+  if (addForm.transport === 'http') {
+    if (!addForm.url.trim()) throw new Error('A remote server needs a URL.')
+    return { url: addForm.url.trim() }
+  }
+  if (!addForm.command.trim()) throw new Error('A local server needs a command.')
+  const definition = { command: addForm.command.trim() }
+  const args = addForm.args
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (args.length) definition.args = args
+  const env = addForm.env
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (env.length) definition.env = env
+  return definition
+}
+
+async function saveServer() {
+  if (addBusy.value) return
+  addError.value = ''
+  const name = addForm.name.trim()
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    addError.value = 'Use letters, digits, dots, dashes or underscores for the server name.'
+    return
+  }
+  let definition
+  try {
+    definition = definitionFromForm()
+  } catch (error) {
+    addError.value = error.message
+    return
+  }
+  const next = { ...(workspaces.mcp?.servers || {}) }
+  if (!editing.value && next[name]) {
+    addError.value = `${name} is already in the workspace pool.`
+    return
+  }
+  next[name] = definition
+  addBusy.value = true
+  try {
+    await writeMcp(next)
+    toast(editing.value ? `${name} updated` : `${name} added to the workspace pool`)
+    addOpen.value = false
+  } catch (error) {
+    addError.value = error?.message || 'The server could not be saved.'
+  } finally {
+    addBusy.value = false
+  }
+}
+
+async function removeSelected() {
+  if (!selected.value) return
+  if (!confirming.value) {
+    confirming.value = true
+    return
+  }
+  const name = selected.value.name
+  const next = { ...(workspaces.mcp?.servers || {}) }
+  delete next[name]
+  try {
+    await writeMcp(next)
+    toast(`${name} removed from the workspace pool`)
+    closeDrawer()
+  } catch (error) {
+    toast(error?.message || `${name} could not be removed.`)
+  }
+}
+
+async function attachSelected() {
+  if (!selected.value || selected.value.kind !== 'global') return
+  if (inPool(selected.value.name)) return
+  if (!selected.value.definition) {
+    toast('That server has neither a command nor a URL.')
+    return
+  }
+  const next = {
+    ...(workspaces.mcp?.servers || {}),
+    [selected.value.name]: selected.value.definition,
+  }
+  try {
+    await writeMcp(next)
+    toast(`${selected.value.name} attached to the workspace pool`)
+    closeDrawer()
+  } catch (error) {
+    toast(error?.message || `${selected.value.name} could not be attached.`)
+  }
+}
+
+function openJson() {
+  jsonText.value = JSON.stringify(workspaces.mcp?.servers || {}, null, 2)
+  jsonError.value = ''
+  jsonOpen.value = true
+}
+
+async function saveJson() {
+  if (jsonBusy.value) return
+  jsonError.value = ''
+  let parsed
+  try {
+    parsed = jsonText.value.trim() ? JSON.parse(jsonText.value) : {}
+  } catch {
+    jsonError.value = 'That is not valid JSON.'
+    return
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    jsonError.value = 'The pool must be an object of server name → definition.'
+    return
+  }
+  jsonBusy.value = true
+  try {
+    await writeMcp(parsed)
+    toast('MCP pool saved')
+    jsonOpen.value = false
+  } catch (error) {
+    jsonError.value = error?.message || 'The MCP pool could not be saved.'
+  } finally {
+    jsonBusy.value = false
+  }
+}
+
+onMounted(() => {
+  loadGlobals().catch(() => {})
 })
 </script>
 
 <template>
-  <div :class="props.embedded ? 'ws-embed' : 'view'">
+  <div :class="props.embedded ? 'ws-embed mcp-inv' : 'view mcp-inv'">
     <div v-if="!props.embedded" class="page-head">
       <div>
         <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>MCP</h1>
         <p class="lede">
-          The workspace pool is what an entity opts into with <code class="mono">mcp: name</code>.
-          Globals are read from each harness's own configuration on this machine —
-          <code class="mono">~/.claude.json</code>, <code class="mono">~/.codex/config.toml</code>,
-          <code class="mono">~/.pi/agent/mcp.json</code>, and the rest.
+          Every server the workspace carries, and every server the harnesses already know.
+          An entity opts into the pool with <code class="mono">mcp: name</code>.
         </p>
       </div>
       <div class="head-actions">
-        <span class="meta">
-          {{ servers.length }} in the workspace ·
-          {{ globals.loaded ? `${globals.count} global` : 'globals on demand' }}
-        </span>
-      </div>
-    </div>
-
-    <div class="sk-tabs" role="tablist" aria-label="MCP scope">
-      <button
-        role="tab"
-        :aria-selected="tab === 'workspace' ? 'true' : 'false'"
-        @click="tab = 'workspace'"
-      >
-        Workspace <span class="n">{{ servers.length }}</span>
-      </button>
-      <button
-        role="tab"
-        :aria-selected="tab === 'globals' ? 'true' : 'false'"
-        @click="tab = 'globals'"
-      >
-        Globals <span v-if="globals.loaded" class="n">{{ globals.count }}</span>
-      </button>
-    </div>
-
-    <template v-if="tab === 'workspace'">
-      <div class="lib-bar">
-        <span class="lib-meta">
-          One pool for the workspace; an entity opts in with
-          <code class="mono">mcp: name</code>.
-        </span>
-        <span class="lib-meta mono">{{ workspaces.mcp?.path || '' }}</span>
-      </div>
-
-      <div v-if="servers.length" class="grid3">
-        <article v-for="server in servers" :key="server.name" class="card2">
-          <div class="card-top">
-            <h3>{{ server.name }}</h3>
-          </div>
-          <p class="p mono">{{ commandLine(server) }}</p>
-          <p v-if="server.env.length" class="desc">
-            env keys: <span class="mono">{{ server.env.join(', ') }}</span>
-          </p>
-          <div class="foot">
-            <span>{{ server.url ? 'remote' : 'local' }}</span>
-            <span>{{ server.args.length }} args</span>
-          </div>
-        </article>
-      </div>
-      <div v-else class="empty-note">
-        <b>No MCP servers in this workspace yet.</b>
-        <span>Add one below; an entity can then name it in its frontmatter.</span>
-      </div>
-
-      <section class="acct-card" style="margin-top: 16px">
-        <div class="acct-card-head">
-          <h2>Pool editor</h2>
-          <span class="mnote">JSON · env holds variable names</span>
-        </div>
-        <p class="mnote">
-          <code class="mono">env</code> holds variable <em>names</em> — values resolve from the
-          environment when a chat starts and are never written here. Enforced for
-          <b>claude</b> conversations only (<code class="mono">--strict-mcp-config</code>:
-          {{ workspaces.mcp.strict ? 'on' : 'off' }}).
-        </p>
-        <textarea
-          v-model="mcpText"
-          class="mcp-editor mono"
-          rows="10"
-          spellcheck="false"
-          :disabled="busy"
-        ></textarea>
-        <p v-if="error" class="acct-error" role="alert">{{ error }}</p>
-        <div class="acct-actions">
-          <button class="btn btn-ink" type="button" :disabled="busy" @click="saveMcp">
-            {{ busy ? 'Saving…' : 'Save pool' }}
-          </button>
-        </div>
-      </section>
-    </template>
-
-    <template v-else>
-      <div class="lib-bar">
-        <span class="lib-meta">
-          Read-only. Every MCP server each harness already has configured on this machine.
-        </span>
-        <button class="btn btn-sm" type="button" :disabled="globals.loading" @click="loadGlobals(true)">
-          {{ globals.loading ? 'Reading…' : 'Refresh' }}
+        <button class="btn" type="button" @click="openJson">JSON</button>
+        <button class="btn btn-ink" type="button" @click="beginAdd">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+          Add server
         </button>
       </div>
+    </div>
 
-      <div v-if="globals.loading" class="empty-note">
-        <b>Reading harness MCP configs…</b>
+    <header v-else class="mcp-inv-head">
+      <div>
+        <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
+        <h2>MCP inventory</h2>
+        <p class="lede">
+          The workspace pool and the harness configs on this machine, in one comparison table.
+          Entities opt in with <code class="mono">mcp: name</code>.
+        </p>
       </div>
-      <div v-else-if="globals.error" class="empty-note">
-        <b>{{ globals.error }}</b>
-        <button class="btn btn-sm" type="button" @click="loadGlobals(true)">Try again</button>
+      <div class="mcp-inv-actions">
+        <button class="btn btn-sm" type="button" @click="openJson">JSON</button>
+        <button class="btn btn-sm btn-ink" type="button" @click="beginAdd">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+          Add server
+        </button>
       </div>
-      <div v-else-if="!globals.groups.length" class="empty-note">
-        <b>No global MCP servers found.</b>
-        <span>The harnesses on this machine do not have an MCP config with servers yet.</span>
+    </header>
+
+    <div class="mcp-inv-tool">
+      <label class="mcp-inv-search">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" />
+          <path d="M10.4 10.4L14 14" />
+        </svg>
+        <input
+          v-model="search"
+          type="search"
+          placeholder="Search name, command, env or entity"
+          aria-label="Search MCP servers"
+          autocomplete="off"
+        />
+      </label>
+      <div class="mcp-inv-seg" role="group" aria-label="MCP scope">
+        <button
+          type="button"
+          :aria-pressed="scope === 'workspace' ? 'true' : 'false'"
+          @click="setScope('workspace')"
+        >Workspace <span>{{ enabledCount }}</span></button>
+        <button
+          type="button"
+          :aria-pressed="scope === 'globals' ? 'true' : 'false'"
+          @click="setScope('globals')"
+        >On this machine <span>{{ totalGlobals }}</span></button>
+      </div>
+      <div v-if="scope === 'globals'" class="mcp-inv-chips" role="group" aria-label="Harness filter">
+        <button
+          type="button"
+          :aria-pressed="harness === 'all' ? 'true' : 'false'"
+          @click="harness = 'all'"
+        >All harnesses</button>
+        <button
+          v-for="group in globals.groups"
+          :key="group.harness"
+          type="button"
+          :aria-pressed="harness === group.harness ? 'true' : 'false'"
+          @click="harness = group.harness"
+        >
+          <HarnessIcon :name="group.harness" :size="11" />
+          {{ group.label }}
+        </button>
+      </div>
+      <span class="mcp-inv-spacer"></span>
+      <span class="mcp-inv-count">
+        {{ rows.length }} of {{ totalRows }} {{ scope === 'workspace' ? 'servers' : 'on this machine' }}
+      </span>
+    </div>
+
+    <div v-if="globals.error" class="acct-error" role="alert">
+      {{ globals.error }}
+      <button class="btn btn-sm" type="button" @click="loadGlobals(true)">Try again</button>
+    </div>
+
+    <div v-if="scope === 'globals' && globals.loading && !globals.groups.length" class="empty-note">
+      <b>Reading harness MCP configs…</b>
+    </div>
+
+    <div v-else-if="rows.length" class="mcp-inv-table" :class="{ 'is-global': scope === 'globals' }">
+      <div class="mcp-inv-thead">
+        <button type="button" class="mcp-inv-th" @click="toggleSort('name')">
+          Server
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 6.2L5 3.4l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+        </button>
+        <button v-if="scope === 'workspace'" type="button" class="mcp-inv-th" @click="toggleSort('transport')">
+          Transport
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 6.2L5 3.4l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+        </button>
+        <button v-else type="button" class="mcp-inv-th" @click="toggleSort('harness')">
+          Harness
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 6.2L5 3.4l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+        </button>
+        <span v-if="scope === 'workspace'">Command / URL</span>
+        <span v-else>Command / URL</span>
+        <span>Env</span>
+        <span>{{ scope === 'workspace' ? 'Used by' : 'Source file' }}</span>
+        <span v-if="scope === 'workspace'">Source</span>
+        <span v-else>Pool</span>
+        <span></span>
       </div>
 
-      <template v-else>
-        <section v-for="group in globals.groups" :key="group.harness" class="mcp-group">
-          <div class="sec-head">
-            <h2 class="mcp-group-title">
-              <HarnessIcon :name="group.harness" :size="14" />
-              {{ group.label }}
-            </h2>
-            <span class="meta">{{ group.servers.length }} servers</span>
-          </div>
-          <p class="mnote mcp-files">
-            {{ group.files.map((file) => file.path).join(' · ') }}
-          </p>
-          <div class="grid3">
-            <article v-for="server in group.servers" :key="`${group.harness}:${server.name}`" class="card2">
-              <div class="card-top">
-                <h3>{{ server.name }}</h3>
+      <div class="mcp-inv-body">
+        <div
+          v-for="row in rows"
+          :key="`${row.kind}:${row.harness || 'pool'}:${row.name}`"
+          class="mcp-inv-row"
+          role="button"
+          tabindex="0"
+          @click="openDrawer(row)"
+          @keydown.enter="openDrawer(row)"
+          @keydown.space.prevent="openDrawer(row)"
+        >
+          <span class="mcp-inv-nm">
+            <b>{{ row.name }}</b>
+            <span>{{ row.kind === 'pool' ? (row.transport === 'http' ? 'remote' : 'local') : row.harnessLabel }}</span>
+          </span>
+          <span v-if="scope === 'workspace'">
+            <span class="mcp-inv-tc" :data-t="row.transport"><i></i>{{ row.transport === 'http' ? 'http' : 'stdio' }}</span>
+          </span>
+          <span v-else class="mcp-inv-harness">
+            <HarnessIcon :name="row.harness" :size="11" />
+            {{ row.harnessLabel }}
+          </span>
+          <span class="mono mcp-inv-command">{{ row.command }}</span>
+          <span class="mono mcp-inv-env">{{ row.env.length ? row.env.join(', ') : '—' }}</span>
+          <span v-if="scope === 'workspace'" class="mcp-inv-used">
+            <span v-if="row.used.length" v-for="entity in row.used" :key="entity" class="mcp-inv-u">{{ entity }}</span>
+            <span v-else class="mcp-inv-none">no entity</span>
+          </span>
+          <span v-else class="mono mcp-inv-file">{{ row.file || '—' }}</span>
+          <span v-if="scope === 'workspace'" class="mcp-inv-src">
+            <span v-if="row.sources.length" v-for="source in row.sources" :key="source" class="mcp-inv-s">{{ source }}</span>
+            <span v-else class="mcp-inv-s">only here</span>
+          </span>
+          <span v-else class="mcp-inv-flag" :data-on="inPool(row.name) ? '1' : '0'">
+            {{ inPool(row.name) ? 'in pool' : '—' }}
+          </span>
+          <span class="mcp-inv-end">
+            <button
+              class="mcp-inv-menu"
+              type="button"
+              :aria-label="`Open details for ${row.name}`"
+              @click.stop="openDrawer(row)"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" />
+              </svg>
+            </button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="!globals.loading" class="empty-note mcp-inv-empty">
+      <b>{{ scope === 'workspace' && !enabledCount ? 'No MCP servers in this pool yet.' : 'Nothing matches.' }}</b>
+      <span>
+        {{ scope === 'workspace' && !enabledCount ? 'Add one, or attach a server the harnesses already know.' : 'Search covers names, commands, env keys, entities and harnesses.' }}
+      </span>
+      <button v-if="scope === 'workspace' && !enabledCount" class="btn btn-ink" type="button" @click="beginAdd">
+        Add server
+      </button>
+    </div>
+
+    <div class="mcp-inv-foot">
+      <span><b>{{ enabledCount }}</b> in the pool · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> entities opt in · <b>{{ totalGlobals }}</b> on this machine</span>
+      <span class="r">Harness configs stay read-only · strict {{ workspaces.mcp?.strict ? 'on' : 'off' }}</span>
+    </div>
+
+    <Teleport to="body">
+      <div class="mcp-drawer-scrim" :data-open="selected ? '1' : '0'" @click="closeDrawer"></div>
+      <aside
+        class="mcp-drawer"
+        :data-open="selected ? '1' : '0'"
+        role="dialog"
+        aria-modal="true"
+        aria-label="MCP server details"
+      >
+        <template v-if="selected">
+          <header class="mcp-drawer-head">
+            <div>
+              <p class="eyebrow">{{ selected.kind === 'pool' ? 'Workspace pool' : `${selected.harnessLabel} · config` }}</p>
+              <h2>{{ selected.name }}</h2>
+            </div>
+            <button class="x" type="button" aria-label="Close details" @click="closeDrawer">
+              <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 2l8 8M10 2l-8 8" />
+              </svg>
+            </button>
+          </header>
+          <div class="mcp-drawer-body">
+            <dl class="mcp-drawer-facts">
+              <div><dt>Transport</dt><dd>{{ selected.transport === 'http' ? 'remote · http/sse' : 'local · stdio' }}</dd></div>
+              <div v-if="selected.definition?.command"><dt>Command</dt><dd class="mono">{{ selected.definition.command }}</dd></div>
+              <div v-if="selected.definition?.args?.length"><dt>Arguments</dt><dd class="mono">{{ selected.definition.args.join(' ') }}</dd></div>
+              <div v-if="selected.definition?.url"><dt>URL</dt><dd class="mono">{{ selected.definition.url }}</dd></div>
+              <div><dt>Env</dt><dd class="mono">{{ selected.env.length ? selected.env.join(', ') : 'none' }}</dd></div>
+              <div><dt>In pool</dt><dd>{{ selected.kind === 'pool' || inPool(selected.name) ? 'yes' : 'no' }}</dd></div>
+            </dl>
+
+            <section class="mcp-drawer-block">
+              <h3>{{ selected.kind === 'pool' ? 'Used by' : 'Known to' }}</h3>
+              <div class="mcp-inv-used">
+                <template v-if="selected.kind === 'pool'">
+                  <span v-if="usedBy(selected.name).length" v-for="entity in usedBy(selected.name)" :key="entity" class="mcp-inv-u">{{ entity }}</span>
+                  <span v-else class="mcp-inv-none">no entity names it</span>
+                </template>
+                <span v-else class="mcp-inv-u">{{ selected.harnessLabel }}</span>
               </div>
-              <p class="p mono">{{ commandLine(server) }}</p>
-              <p v-if="server.env.length" class="desc">
-                env keys: <span class="mono">{{ server.env.join(', ') }}</span>
+            </section>
+
+            <section class="mcp-drawer-block">
+              <h3>Definition</h3>
+              <pre class="codebox">{{ JSON.stringify(selected.definition, null, 2) }}</pre>
+            </section>
+
+            <section class="mcp-drawer-block">
+              <h3>Environment</h3>
+              <p class="mcp-drawer-note">
+                {{ selected.env.length ? 'Values resolve from the environment when a chat starts. Only the names are stored here.' : 'No environment variables are required.' }}
               </p>
-              <div class="foot">
-                <span>{{ server.url ? 'remote' : 'local' }}</span>
-                <span class="mono">{{ server.configPath }}</span>
-              </div>
-              <div class="card-actions">
-                <button
-                  class="btn btn-sm"
-                  type="button"
-                  :disabled="Boolean(attaching) || attachedNames.has(server.name) || (!server.command && !server.url)"
-                  :title="attachedNames.has(server.name) ? 'Already in the workspace pool' : 'Attach this server to the workspace'"
-                  @click="attachGlobal(server)"
-                >
-                  {{
-                    attachedNames.has(server.name)
-                      ? 'Attached'
-                      : attaching === `${server.harness}:${server.name}`
-                        ? 'Attaching…'
-                        : 'Attach'
-                  }}
-                </button>
-                <span class="meta">{{ server.harnessLabel }}</span>
-              </div>
-            </article>
+            </section>
           </div>
-        </section>
-      </template>
-    </template>
+          <footer class="mcp-drawer-foot">
+            <button class="btn btn-sm" type="button" @click="copyCommand">Copy command</button>
+            <span class="r">
+              <template v-if="selected.kind === 'pool'">
+                <button class="btn btn-sm" type="button" @click="beginEdit">Edit</button>
+                <button
+                  class="btn btn-sm btn-danger"
+                  type="button"
+                  :class="{ confirming }"
+                  @click="removeSelected"
+                >{{ confirming ? 'Click again to remove' : 'Remove' }}</button>
+              </template>
+              <button
+                v-else
+                class="btn btn-sm btn-ink"
+                type="button"
+                :disabled="inPool(selected.name) || !selected.definition"
+                @click="attachSelected"
+              >{{ inPool(selected.name) ? 'In pool' : 'Attach to pool' }}</button>
+            </span>
+          </footer>
+        </template>
+      </aside>
+    </Teleport>
+
+    <Teleport to="body">
+      <div class="scrim" :data-open="addOpen || jsonOpen ? '1' : '0'" @click="addOpen = false; jsonOpen = false"></div>
+      <div class="modal mcp-modal" :data-open="addOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP server">
+        <div class="mo-head">
+          <h2>{{ editing ? 'Edit MCP server' : 'Add MCP server' }}</h2>
+          <p>Write the definition into this workspace's pool. Env holds variable names only.</p>
+          <button class="x mo-x" type="button" aria-label="Close" @click="addOpen = false">
+            <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+          </button>
+        </div>
+        <form class="mo-body" @submit.prevent="saveServer">
+          <div class="fld">
+            <label class="lbl" for="mcp-server-name">Name</label>
+            <input id="mcp-server-name" v-model="addForm.name" type="text" class="acct-input mono" spellcheck="false" :disabled="Boolean(editing) || addBusy" />
+          </div>
+          <div class="fld">
+            <label class="lbl" for="mcp-server-transport">Transport</label>
+            <select id="mcp-server-transport" v-model="addForm.transport" class="acct-input" :disabled="addBusy">
+              <option value="stdio">Local · stdio</option>
+              <option value="http">Remote · URL</option>
+            </select>
+          </div>
+          <template v-if="addForm.transport === 'stdio'">
+            <div class="fld">
+              <label class="lbl" for="mcp-server-command">Command</label>
+              <input id="mcp-server-command" v-model="addForm.command" type="text" class="acct-input mono" placeholder="npx" spellcheck="false" :disabled="addBusy" />
+            </div>
+            <div class="fld">
+              <label class="lbl" for="mcp-server-args">Arguments</label>
+              <textarea id="mcp-server-args" v-model="addForm.args" class="acct-input mono" rows="3" placeholder="One argument per line" spellcheck="false" :disabled="addBusy"></textarea>
+            </div>
+          </template>
+          <div v-else class="fld">
+            <label class="lbl" for="mcp-server-url">URL</label>
+            <input id="mcp-server-url" v-model="addForm.url" type="url" class="acct-input mono" placeholder="https://example.com/mcp" spellcheck="false" :disabled="addBusy" />
+          </div>
+          <div class="fld">
+            <label class="lbl" for="mcp-server-env">Env names</label>
+            <input id="mcp-server-env" v-model="addForm.env" type="text" class="acct-input mono" placeholder="GITHUB_TOKEN, LINEAR_TOKEN" spellcheck="false" :disabled="addBusy" />
+            <p class="mnote">Comma-separated names. Values stay in the environment, never in mcp.json.</p>
+          </div>
+          <p v-if="addError" class="acct-error" role="alert">{{ addError }}</p>
+          <div class="mo-foot" style="padding: 8px 0 0; border: 0">
+            <button class="btn" type="button" :disabled="addBusy" @click="addOpen = false">Cancel</button>
+            <button class="btn btn-ink" type="submit" :disabled="addBusy">{{ addBusy ? 'Saving…' : editing ? 'Save server' : 'Add server' }}</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="modal modal-narrow mcp-modal" :data-open="jsonOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP pool JSON">
+        <div class="mo-head">
+          <h2>Pool JSON</h2>
+          <p>{{ workspaces.mcp?.path || 'mcp.json' }}</p>
+          <button class="x mo-x" type="button" aria-label="Close" @click="jsonOpen = false">
+            <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+          </button>
+        </div>
+        <div class="mo-body">
+          <textarea v-model="jsonText" class="mcp-editor mono" rows="16" spellcheck="false"></textarea>
+          <p v-if="jsonError" class="acct-error" role="alert">{{ jsonError }}</p>
+          <div class="mo-foot" style="padding: 8px 0 0; border: 0">
+            <button class="btn" type="button" @click="jsonOpen = false">Cancel</button>
+            <button class="btn btn-ink" type="button" :disabled="jsonBusy" @click="saveJson">{{ jsonBusy ? 'Saving…' : 'Save pool' }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

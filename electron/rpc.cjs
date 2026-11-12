@@ -16,6 +16,7 @@ const chats = require('./chat-store.cjs')
 const sessions = require('./session-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
 const mcpTools = require('./mcp-tools.cjs')
+const mcpServer = require('./mcp-server.cjs')
 const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
@@ -62,6 +63,10 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),
+    'mcpServer.status': () => mcpServer.status(),
+    'mcpServer.save': (args) => mcpServer.save(args),
+    'mcpServer.rotate': () => mcpServer.rotate(),
+    'mcpServer.test': () => mcpServer.test(),
     'auth.status': () => auth.status(),
     'auth.verify': (args) => auth.verify(args),
     'auth.register': (args) => auth.register(args),
@@ -174,13 +179,14 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     /* Both halves: a run and a chat answer each hold a harness process, and a
        quit that only stopped runs would leave the chat answering into a
        window that no longer exists. */
-    closeAll: () => {
+    closeAll: async () => {
       try {
         chats.closeAll()
       } catch {
         /* the runner still has children to stop */
       }
       runner.closeAll()
+      await mcpServer.stop()
     },
     activeCount: () => runner.activeCount() + chats.activeCount(),
   }

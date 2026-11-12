@@ -78,8 +78,20 @@ const navigationItems = computed(() => [
   {
     id: 'nav:account',
     label: 'Account settings',
-    meta: 'Profile, password and MCP tab',
+    meta: 'Profile and password',
     act: () => router.push('/account'),
+  },
+  {
+    id: 'nav:account-sound',
+    label: 'Sound settings',
+    meta: 'Pixel Area 51 cues and volume',
+    act: () => router.push('/account/sound'),
+  },
+  {
+    id: 'nav:account-mcp',
+    label: 'MCP server',
+    meta: 'Status, bearer token and tools',
+    act: () => router.push('/account/mcp'),
   },
   {
     id: 'nav:entities',

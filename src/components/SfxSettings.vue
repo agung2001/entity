@@ -1,13 +1,12 @@
 <script setup>
 import { computed } from 'vue'
-import { SFX_CUES, SFX_THEMES, playSfx, setSfx, sfxSettings } from '@/lib/sfx'
+import { SFX_CUES, playSfx, setSfx, sfxSettings } from '@/lib/sfx'
 
 /**
  * The sound desk. One theme, procedural cues, a master switch and a volume
  * that applies live. Previewing a cue bypasses the off switch so the choice is
  * audible before it is turned back on.
  */
-const theme = computed(() => SFX_THEMES.find((item) => item.id === sfxSettings.theme) || SFX_THEMES[0])
 const volumePercent = computed(() => Math.round(sfxSettings.volume * 100))
 
 function toggle() {
@@ -70,22 +69,6 @@ function preview(id) {
           @input="setVolume"
           @change="preview('tap')"
         />
-      </div>
-
-      <div class="acct-sep">
-        <span>Theme</span>
-        <small>procedural · Web Audio</small>
-      </div>
-
-      <div class="sfx-theme">
-        <span class="sfx-sigil" aria-hidden="true">
-          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-        </span>
-        <span class="sfx-theme-copy">
-          <b>{{ theme.name }}</b>
-          <span>{{ theme.desc }}</span>
-        </span>
-        <span class="sfx-active">active</span>
       </div>
 
       <div class="acct-sep">

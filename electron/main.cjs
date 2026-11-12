@@ -130,7 +130,7 @@ app.on('before-quit', async (event) => {
   }
 
   try {
-    rpc?.closeAll()
+    await rpc?.closeAll()
   } catch {
     /* quitting anyway */
   }
