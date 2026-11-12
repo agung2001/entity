@@ -15,6 +15,7 @@ import {
   setMark,
   shapeById,
 } from '@/composables/entityMark'
+import { matchesQuery } from '@/composables/search'
 import { hub } from '@/stores/hub'
 
 /**
@@ -98,14 +99,7 @@ const results = computed(() => {
   const q = query.value.trim().toLowerCase()
   return EMOJI_GROUPS.filter((item) => group.value === 'all' || item.id === group.value)
     .flatMap((item) => item.items.map((emoji) => ({ ...emoji, groupLabel: item.label })))
-    .filter((emoji) => {
-      if (!q) return true
-      return (
-        emoji.name.toLowerCase().includes(q) ||
-        emoji.keywords.toLowerCase().includes(q) ||
-        emoji.glyph === q
-      )
-    })
+    .filter((emoji) => !q || emoji.glyph === q || matchesQuery(`${emoji.name} ${emoji.keywords}`, q))
 })
 
 function toggle() {

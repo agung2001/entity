@@ -94,6 +94,8 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'entity.read': ({ workspace, name }) => entities.read(workspace, name),
     'entity.write': ({ entity }) => entities.write(entity),
     'entity.scaffold': (args) => entities.scaffold(args),
+    'entity.duplicate': (args) => entities.duplicate(args),
+    'entity.remove': (args) => entities.remove(args),
     'entity.reveal': ({ workspace, name }) => {
       const file = entities.locate({ workspace, name })
       reveal(file)

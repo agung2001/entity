@@ -2095,6 +2095,60 @@ kbd {
   width: 14px;
   height: 14px;
 }
+.row-menu-btn[aria-expanded='true'] {
+  color: var(--ink);
+  background: var(--bg);
+  border-color: var(--border-strong);
+}
+
+/* Teleported to <body>: the entity table clips its overflow. */
+.row-menu-pop {
+  position: fixed;
+  z-index: 90;
+  width: 184px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: 0 18px 40px rgba(10, 10, 10, 0.18), 0 2px 6px rgba(10, 10, 10, 0.06);
+}
+.row-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.row-menu-item:hover,
+.row-menu-item:focus-visible {
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+}
+.row-menu-item svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  opacity: 0.68;
+}
+.row-menu-danger {
+  color: var(--danger);
+}
+.row-menu-danger:hover,
+.row-menu-danger.confirming {
+  background: var(--danger-soft);
+}
+.row-menu-danger svg {
+  opacity: 0.85;
+}
 
 /* ── activity ─────────────────────────────────────────────────── */
 .log {
@@ -4609,7 +4663,8 @@ select:focus-visible {
 .wiz input[type='text'],
 .wiz select,
 .modal input[type='text'],
-.modal select {
+.modal select,
+.modal textarea {
   width: 100%;
   height: 36px;
   padding: 0 10px;
@@ -4621,10 +4676,18 @@ select:focus-visible {
   border-radius: var(--r);
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
+.modal textarea {
+  height: auto;
+  min-height: 84px;
+  padding: 9px 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
 .wiz input[type='text']:focus,
 .wiz select:focus,
 .modal input[type='text']:focus,
-.modal select:focus {
+.modal select:focus,
+.modal textarea:focus {
   outline: none;
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -6137,7 +6200,7 @@ label.pick:has(input:focus-visible) {
 .model-input > input {
   width: 100%;
   height: 36px;
-  padding: 0 54px 0 30px;
+  padding: 0 54px 0 10px;
   font: inherit;
   font-size: 13px;
   color: var(--ink);
@@ -6156,15 +6219,6 @@ label.pick:has(input:focus-visible) {
 }
 .model-input > input::placeholder {
   color: var(--muted);
-}
-.model-ic {
-  position: absolute;
-  left: 10px;
-  top: 11px;
-  width: 13px;
-  height: 13px;
-  color: var(--muted);
-  pointer-events: none;
 }
 .model-clear,
 .model-chev {

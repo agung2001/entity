@@ -197,11 +197,13 @@ function write(entity) {
   return read(entity.workspace, name)
 }
 
-function scaffold({ workspace, name, harness = 'claude', model = '' }) {
+function scaffold({ workspace, name, harness = 'claude', model = '', description = '', shape = '', color = '', mood = '' }) {
   const safe = safeName(name)
   const file = entityPath(workspace, safe)
   if (fs.existsSync(file)) throw new Error(`${safe}.md already exists in this workspace.`)
-  const body = `# ${safe}\n\nWhat this entity is for.\n\n## Rules\n- One rule per line.\n`
+  const brief = String(description || '').trim()
+  const oneLine = brief.replace(/\s+/g, ' ').trim()
+  const body = `# ${safe}\n\n${brief || 'What this entity is for.'}\n\n## Rules\n- One rule per line.\n`
   return write({
     workspace,
     name: safe,
@@ -211,7 +213,51 @@ function scaffold({ workspace, name, harness = 'claude', model = '' }) {
     skills: [],
     mcp: [],
     instructions: body,
+    frontmatter: {
+      ...(oneLine ? { description: oneLine } : {}),
+      ...(shape ? { shape: String(shape).trim() } : {}),
+      ...(color ? { color: String(color).trim() } : {}),
+      ...(mood ? { mood: String(mood).trim() } : {}),
+    },
   })
+}
+
+/** Copy an entity file under a fresh name; every key survives. */
+function duplicate({ workspace, name, nextName = '', shape = '', color = '', mood = '' }) {
+  const source = read(workspace, name)
+  if (!source) throw new Error(`${name}.md does not exist in this workspace.`)
+  let target = String(nextName || '').trim()
+  if (!target) {
+    const base = `${source.name}-copy`
+    target = base
+    let n = 2
+    while (fs.existsSync(entityPath(workspace, target))) target = `${base}-${n++}`
+  }
+  target = safeName(target)
+  if (fs.existsSync(entityPath(workspace, target))) {
+    throw new Error(`${target}.md already exists in this workspace.`)
+  }
+  return write({
+    ...source,
+    workspace,
+    name: target,
+    frontmatter: {
+      ...source.frontmatter,
+      name: target,
+      ...(shape ? { shape: String(shape).trim() } : {}),
+      ...(color ? { color: String(color).trim() } : {}),
+      ...(mood ? { mood: String(mood).trim() } : {}),
+    },
+  })
+}
+
+/** Delete the entity file. Conversations stay where they are. */
+function remove({ workspace, name }) {
+  const safe = safeName(name)
+  const file = entityPath(workspace, safe)
+  if (!fs.existsSync(file)) throw new Error(`${safe}.md does not exist in this workspace.`)
+  fs.rmSync(file)
+  return { name: safe }
 }
 
 /** The exact file path, for "Reveal in Finder" and for run headers. */
@@ -236,6 +282,8 @@ module.exports = {
   read,
   write,
   scaffold,
+  duplicate,
+  remove,
   locate,
   resolveDir,
   safeName,

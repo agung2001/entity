@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { matchesQuery } from '@/composables/search'
 import { openWizard, toast } from '@/stores/hub'
 import {
   exportWorkspace,
@@ -27,13 +28,10 @@ const createdLabel = (record) =>
   record?.createdAt ? new Date(record.createdAt).toLocaleDateString() : '—'
 
 const filtered = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  const rows = workspaces.items.filter((record) => {
-    if (!q) return true
-    return `${record.label} ${record.id} ${record.displayPath} ${record.kind}`
-      .toLowerCase()
-      .includes(q)
-  })
+  const q = query.value
+  const rows = workspaces.items.filter((record) =>
+    matchesQuery(`${record.label} ${record.id} ${record.displayPath} ${record.kind}`, q),
+  )
   return [...rows].sort((a, b) =>
     sort.value === 'name'
       ? String(a.label).localeCompare(String(b.label))

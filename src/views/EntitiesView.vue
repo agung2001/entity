@@ -5,8 +5,13 @@ import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import ModelInput from '@/components/ModelInput.vue'
+import PickMenu from '@/components/PickMenu.vue'
 import { HARNESSES, MODELS } from '@/data/mock'
+import { COLORS, MOODS, SHAPES, setMark } from '@/composables/entityMark'
+import { matchesQuery } from '@/composables/search'
 import { scaffoldEntity } from '@/stores/entities'
+import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 import { ago, ensureChats, harnessById, hub, machineById, toast } from '@/stores/hub'
 
 /**
@@ -21,13 +26,41 @@ const adding = ref(false)
 const search = ref('')
 const openId = ref('')
 const name = ref('')
+const description = ref('')
 const harness = ref('claude')
 const model = ref('')
 const error = ref('')
 const busy = ref(false)
 const nameInput = ref(null)
 
-const modelOptions = computed(() => MODELS[harness.value] || [])
+const harnessOptions = computed(() =>
+  HARNESSES.map((item) => {
+    const found = harnesses.items.find((entry) => entry.id === item.id)
+    return {
+      id: item.id,
+      label: item.label,
+      meta: found ? (found.installed ? 'installed' : 'not found') : '',
+    }
+  }),
+)
+const modelData = computed(() => harnesses.models[harness.value] || null)
+const modelOptions = computed(() => [
+  ...new Set([...(modelData.value?.models || []), ...(MODELS[harness.value] || [])]),
+])
+const modelLoading = computed(() => Boolean(modelData.value?.loading))
+
+/** A new entity gets a mark up front, deterministically from its name. */
+function markForName(value) {
+  let hash = 5381
+  for (const char of String(value || '')) hash = ((hash * 33) ^ char.charCodeAt(0)) >>> 0
+  const shapes = SHAPES.length > 1 ? SHAPES.slice(1) : SHAPES
+  const moods = MOODS.length > 1 ? MOODS.slice(1) : MOODS
+  return {
+    shape: shapes[hash % shapes.length].id,
+    color: COLORS[(hash >>> 7) % COLORS.length].id,
+    mood: moods[(hash >>> 13) % moods.length].id,
+  }
+}
 
 const lastChat = (name) => {
   const thread = hub.chat.summaries.find((item) => item.entity === name)
@@ -38,6 +71,7 @@ onMounted(ensureChats)
 
 watch(harness, () => {
   model.value = ''
+  loadModels(harness.value).catch(() => {})
 })
 
 const filterCounts = computed(() => {
@@ -49,11 +83,10 @@ const filterCounts = computed(() => {
 })
 
 const list = computed(() => {
-  const q = search.value.trim().toLowerCase()
+  const q = search.value
   return hub.agents.filter((agent) => {
     if (hub.entityFilter !== 'all' && agent.status !== hub.entityFilter) return false
-    if (!q) return true
-    return `${agent.name} ${agent.desc} ${agent.harnessLabel}`.toLowerCase().includes(q)
+    return matchesQuery(`${agent.name} ${agent.desc} ${agent.harnessLabel}`, q)
   })
 })
 
@@ -92,8 +125,11 @@ async function startAdd() {
   adding.value = true
   error.value = ''
   name.value = ''
+  description.value = ''
   harness.value = HARNESSES[0].id
   model.value = ''
+  loadHarnesses().catch(() => {})
+  loadModels(harness.value).catch(() => {})
   await nextTick()
   nameInput.value?.focus()
 }
@@ -102,6 +138,7 @@ function cancelAdd() {
   adding.value = false
   error.value = ''
   name.value = ''
+  description.value = ''
   model.value = ''
 }
 
@@ -112,13 +149,21 @@ async function create() {
     error.value = 'Use lowercase letters, digits and dashes.'
     return
   }
+  if (!description.value.trim()) {
+    error.value = 'Add a short description so the entity knows what it is for.'
+    return
+  }
   busy.value = true
   try {
+    const mark = markForName(slug.value)
     const created = await scaffoldEntity({
       name: slug.value,
       harness: harness.value,
       model: model.value,
+      description: description.value,
+      mark,
     })
+    setMark({ workspace: hub.workspace, entity: created.name, ...mark, persist: true })
     adding.value = false
     toast(`${created.name}.md created`)
     router.push({ name: 'entity', params: { name: created.name } })
@@ -272,21 +317,46 @@ async function create() {
           <p class="mnote">File: <code class="mono">entities/{{ slug || 'name' }}.md</code></p>
         </div>
         <div class="fld">
-          <label class="lbl" for="ent-harness">Harness</label>
-          <select id="ent-harness" v-model="harness" :disabled="busy">
-            <option v-for="h in HARNESSES" :key="h.id" :value="h.id">{{ h.label }}</option>
-          </select>
+          <label class="lbl" for="ent-desc">Description</label>
+          <textarea
+            id="ent-desc"
+            v-model="description"
+            rows="3"
+            placeholder="What this entity owns, who it helps, and what a finished job looks like."
+            :disabled="busy"
+            @input="error = ''"
+          ></textarea>
+          <p class="mnote">Saved as the entity's starting brief. Its harness expands this into the full instructions.</p>
         </div>
         <div class="fld">
-          <label class="lbl" for="ent-model">Model</label>
-          <input id="ent-model" v-model="model" type="text" :list="`ent-models-${harness}`" placeholder="harness default" spellcheck="false" :disabled="busy" />
-          <datalist :id="`ent-models-${harness}`"><option v-for="option in modelOptions" :key="option" :value="option" /></datalist>
+          <span class="lbl">Harness</span>
+          <PickMenu
+            class="field-select"
+            head="Harness"
+            icons="harness"
+            :options="harnessOptions"
+            :model-value="harness"
+            :disabled="busy"
+            @update:model-value="harness = $event"
+          />
+        </div>
+        <div class="fld">
+          <span class="lbl">Model</span>
+          <ModelInput
+            :model-value="model"
+            :options="modelOptions"
+            :loading="modelLoading"
+            :disabled="busy"
+            label="Model"
+            :placeholder="modelData?.default || 'harness default'"
+            @update:model-value="model = $event"
+          />
           <p class="mnote">Written as <code class="mono">model:</code> in the entity file. Leave blank to let {{ HARNESSES.find((h) => h.id === harness)?.label || harness }} choose.</p>
         </div>
         <p v-if="error" class="run-warn">{{ error }}</p>
         <div class="mo-foot" style="padding: 8px 0 0; border: 0">
           <button class="btn" type="button" :disabled="busy" @click="cancelAdd">Cancel</button>
-          <button class="btn btn-ink" type="submit" :disabled="busy">{{ busy ? 'Creating…' : 'Create file' }}</button>
+          <button class="btn btn-ink" type="submit" :disabled="busy">{{ busy ? 'Creating…' : 'Create Entity' }}</button>
         </div>
       </form>
     </div>

@@ -3,6 +3,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fleet, loadFleet } from '@/stores/fleet'
 import { loadLibrary, openWorkspace, workspaces } from '@/stores/workspaces'
+import { matchesQuery } from '@/composables/search'
 import { ago, ensureChats, hub, initials, snippet, toast } from '@/stores/hub'
 
 /**
@@ -240,7 +241,7 @@ const groups = computed(() => {
   const q = hub.palette.query.trim().toLowerCase()
   const make = (id, label, source) => {
     const matched = q
-      ? source.filter((item) => `${item.label} ${item.meta}`.toLowerCase().includes(q))
+      ? source.filter((item) => matchesQuery(`${item.label} ${item.meta}`, q))
       : source
     const limit = limits[id] || LIMIT_START[id] || 4
     return {

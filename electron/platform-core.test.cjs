@@ -159,3 +159,32 @@ test('set-fields refuses an mcp server that is not in the pool', () => {
   assert.equal(ok.ok, true, ok.error)
   assert.deepEqual(ok.data.changed, ['mcp'])
 })
+
+test('a described entity can be duplicated and deleted', () => {
+  const workspace = freshWorkspace('lifecycle')
+  const created = entities.scaffold({
+    workspace,
+    name: 'reviewer',
+    harness: 'claude',
+    description: 'Reviews pull requests\nand reports real defects first.',
+    shape: 'shield',
+    color: 'orchid',
+    mood: 'focus',
+  })
+
+  assert.equal(created.mark.shape, 'shield')
+  assert.equal(created.mark.color, 'orchid')
+  assert.equal(created.mark.mood, 'focus')
+  assert.match(created.summary, /Reviews pull requests/)
+  assert.match(created.instructions, /reports real defects first/)
+
+  const copy = entities.duplicate({ workspace, name: 'reviewer' })
+  assert.equal(copy.name, 'reviewer-copy')
+  assert.deepEqual(copy.mark, created.mark)
+  assert.equal(copy.instructions, created.instructions)
+  assert.equal(fs.existsSync(entities.locate({ workspace, name: 'reviewer' })), true)
+
+  entities.remove({ workspace, name: 'reviewer' })
+  assert.equal(fs.existsSync(entities.locate({ workspace, name: 'reviewer' })), false)
+  assert.deepEqual(entities.list(workspace).map((item) => item.name), ['reviewer-copy'])
+})

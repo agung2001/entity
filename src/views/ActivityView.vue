@@ -6,6 +6,7 @@ import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import { HARNESSES } from '@/data/mock'
 import { call } from '@/composables/localBridge'
+import { matchesQuery } from '@/composables/search'
 import {
   ago,
   ensureChats,
@@ -85,22 +86,21 @@ const rows = computed(() => hub.chat.summaries || [])
 const machineLabel = (id) => machineById(id)?.label || id
 
 const filteredJournal = computed(() => {
-  const q = journalQuery.value.trim().toLowerCase()
-  if (!q) return rows.value
+  const q = journalQuery.value
   return rows.value.filter((thread) =>
-    [
-      thread.title,
-      thread.entity,
-      thread.preview,
-      thread.id,
-      thread.harness,
-      thread.machine,
-      machineLabel(thread.machine),
-      snippet(thread.preview),
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(q),
+    matchesQuery(
+      [
+        thread.title,
+        thread.entity,
+        thread.preview,
+        thread.id,
+        thread.harness,
+        thread.machine,
+        machineLabel(thread.machine),
+        snippet(thread.preview),
+      ].join(' '),
+      q,
+    ),
   )
 })
 
@@ -120,20 +120,19 @@ const titleOf = (session) =>
   session.title || session.preview || `Session ${String(session.id).slice(0, 8)}`
 
 const filteredSessions = computed(() => {
-  const q = sessionQuery.value.trim().toLowerCase()
-  if (!q) return state.value.items
+  const q = sessionQuery.value
   return state.value.items.filter((session) =>
-    [
-      session.title,
-      session.preview,
-      session.id,
-      session.dir,
-      session.harnessLabel,
-      ...(session.entities || []),
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(q),
+    matchesQuery(
+      [
+        session.title,
+        session.preview,
+        session.id,
+        session.dir,
+        session.harnessLabel,
+        ...(session.entities || []),
+      ].join(' '),
+      q,
+    ),
   )
 })
 

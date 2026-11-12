@@ -94,12 +94,16 @@ export async function saveEntity(entity) {
   return saved
 }
 
-export async function scaffoldEntity({ name, harness, model = '' }) {
+export async function scaffoldEntity({ name, harness, model = '', description = '', mark = null }) {
   const created = await call('entity.scaffold', {
     workspace: hub.workspace,
     name,
     harness,
     model,
+    description,
+    shape: mark?.shape || '',
+    color: mark?.color || '',
+    mood: mark?.mood || '',
   })
   await loadEntities(hub.workspace)
   return created
@@ -107,6 +111,24 @@ export async function scaffoldEntity({ name, harness, model = '' }) {
 
 export async function revealEntity(name) {
   return call('entity.reveal', { workspace: hub.workspace, name })
+}
+
+export async function duplicateEntity(name, mark = null) {
+  const copy = await call('entity.duplicate', {
+    workspace: hub.workspace,
+    name,
+    shape: mark?.shape || '',
+    color: mark?.color || '',
+    mood: mark?.mood || '',
+  })
+  await loadEntities(hub.workspace)
+  return copy
+}
+
+export async function removeEntity(name) {
+  const result = await call('entity.remove', { workspace: hub.workspace, name })
+  await loadEntities(hub.workspace)
+  return result
 }
 
 /** Re-apply run state after the agent list is replaced. */

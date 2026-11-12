@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import { matchesQuery } from '@/composables/search'
 
 /**
  * A quiet text trigger that opens a small menu — used for the chat's filter
@@ -34,15 +35,14 @@ const items = computed(() =>
 
 /* the menu is a list you look things up in, not a list you scroll: typing
    narrows every axis, including entity names and skill counts */
-const visibleItems = computed(() => {
-  const needle = query.value.trim().toLowerCase()
-  if (!needle) return items.value
-  return items.value.filter((entry) =>
-    `${entry.label} ${entry.meta || ''} ${entry.id || ''} ${entry.glyph || ''}`
-      .toLowerCase()
-      .includes(needle),
-  )
-})
+const visibleItems = computed(() =>
+  items.value.filter((entry) =>
+    matchesQuery(
+      `${entry.label} ${entry.meta || ''} ${entry.id || ''} ${entry.glyph || ''}`,
+      query.value,
+    ),
+  ),
+)
 
 const current = computed(() => items.value.find((o) => o.id === props.modelValue) || null)
 

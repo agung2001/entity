@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { matchesQuery } from '@/composables/search'
 
 /**
  * A free-text model field with a searchable suggestion list. The harnesses keep
@@ -23,21 +24,14 @@ const searching = ref(false)
 const active = ref(-1)
 const draft = ref(props.modelValue)
 
-const visible = computed(() => {
-  const needle = searching.value ? draft.value.trim().toLowerCase() : ''
-  const items = needle
-    ? props.options.filter((item) => item.toLowerCase().includes(needle))
-    : props.options
-  return items.slice(0, 200)
+const matched = computed(() => {
+  const needle = searching.value ? draft.value.trim() : ''
+  return props.options.filter((item) => matchesQuery(item, needle))
 })
 
-const remaining = computed(() => {
-  const needle = searching.value ? draft.value.trim().toLowerCase() : ''
-  const total = needle
-    ? props.options.filter((item) => item.toLowerCase().includes(needle)).length
-    : props.options.length
-  return Math.max(0, total - visible.value.length)
-})
+const visible = computed(() => matched.value.slice(0, 200))
+
+const remaining = computed(() => Math.max(0, matched.value.length - visible.value.length))
 
 watch(
   () => props.modelValue,
@@ -117,10 +111,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 <template>
   <div ref="root" class="model-input" :data-open="open ? '1' : '0'" :aria-busy="loading ? 'true' : undefined">
-    <svg class="model-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.4" />
-      <path d="M10.3 10.3L13.6 13.6" />
-    </svg>
     <input
       ref="input"
       v-model="draft"

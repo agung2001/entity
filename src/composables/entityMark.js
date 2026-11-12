@@ -590,6 +590,17 @@ export function markFor(workspace, entity, fallback = null) {
   return mark
 }
 
+/** Forget a deleted entity's mark so a later file with the same name starts clean. */
+export function forgetMark(workspace, entity) {
+  if (!entity) return
+  entityMarks.delete(entityKey(workspace, entity))
+  try {
+    localStorage.removeItem(entityStoreKey(workspace, entity))
+  } catch {
+    /* private mode — nothing stored */
+  }
+}
+
 /** Colour and badge are element-local, so two entities never share a colour. */
 function applyMark(el, mark) {
   const c = colorById(mark.color, mark.custom)

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ArtifactThumb from '@/components/ArtifactThumb.vue'
+import { matchesQuery } from '@/composables/search'
 import { hub, toast } from '@/stores/hub'
 import {
   artifacts,
@@ -59,11 +60,10 @@ watch(extensions, (list) => {
 })
 
 const filtered = computed(() => {
-  const q = query.value.trim().toLowerCase()
+  const q = query.value
   const rows = artifacts.items.filter((item) => {
     if (ext.value !== 'all' && (item.ext || 'no extension') !== ext.value) return false
-    if (!q) return true
-    return `${item.name} ${item.id} ${item.ext} ${item.mime}`.toLowerCase().includes(q)
+    return matchesQuery(`${item.name} ${item.id} ${item.ext} ${item.mime}`, q)
   })
   const sorted = [...rows]
   if (sort.value === 'oldest') {
