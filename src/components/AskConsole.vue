@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import MessageList from '@/components/MessageList.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import { askAgent, askCounts, askKey, askSend, askThread, hub } from '@/stores/hub'
@@ -11,6 +11,13 @@ import { askAgent, askCounts, askKey, askSend, askThread, hub } from '@/stores/h
  */
 askThread()
 askCounts()
+watch(
+  () => hub.workspace,
+  () => {
+    askThread()
+    askCounts()
+  },
+)
 
 const agent = computed(() => askAgent())
 const thread = computed(() => hub.ask.threads[askKey()] || [])
@@ -29,7 +36,18 @@ function send(text) {
 </script>
 
 <template>
-  <section class="ask">
+  <section v-if="!agent" class="ask ask-empty">
+    <div class="ask-head">
+      <p class="eyebrow">Console</p>
+    </div>
+    <p class="empty-note">
+      <b>No entity in this workspace yet.</b>
+      <span>Create one on the Entities page and the console will read its file.</span>
+      <router-link to="/entities">Go to entities</router-link>
+    </p>
+  </section>
+
+  <section v-else class="ask">
     <div class="ask-head">
       <p class="eyebrow">Talk to {{ agent.name }}</p>
       <span class="ask-stat" :aria-label="statLabel">

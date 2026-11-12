@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import MessageList from '@/components/MessageList.vue'
 import PickMenu from '@/components/PickMenu.vue'
@@ -29,6 +29,10 @@ import {
  * harness. Replies come from the same engine the overview console uses.
  */
 buildChat()
+watch(
+  () => hub.workspace,
+  () => buildChat(),
+)
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
@@ -78,7 +82,9 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
         <h1>Chat</h1>
         <p class="sub">Every thread you have run, on the machine and harness it ran on.</p>
         <div class="right">
-          <button class="btn btn-ink" @click="newThread()">New thread</button>
+          <button class="btn btn-ink" :disabled="!hub.agents.length" @click="newThread()">
+            New thread
+          </button>
         </div>
       </header>
 
@@ -127,7 +133,7 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
                 :data-on="t.id === hub.chat.active ? '1' : '0'"
                 @click="selectThread(t.id)"
               >
-                <EntityMark mini />
+                <EntityMark mini :entity="t.entity" />
                 <span>
                   <span class="hl">
                     <b>{{ agentById(t.entity)?.name }}</b>
@@ -148,9 +154,17 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
           </div>
         </aside>
 
-        <section v-if="thread" class="cpanel">
+        <section v-if="!hub.agents.length" class="cpanel cpanel-empty">
+          <div class="empty-note">
+            <b>No entity in this workspace yet.</b>
+            <span>A thread is a conversation with one entity's file. Create an entity first.</span>
+            <router-link to="/entities">Go to entities</router-link>
+          </div>
+        </section>
+
+        <section v-else-if="thread" class="cpanel">
           <header class="cp-head">
-            <EntityMark />
+            <EntityMark :entity="agent.name" />
             <div class="cp-id">
               <h2>{{ agent.name }}</h2>
               <p>{{ machineById(ctx.machine)?.label }} · {{ harnessById(ctx.harness).label }}</p>

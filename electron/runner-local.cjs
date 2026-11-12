@@ -1,0 +1,425 @@
+/**
+ * Running an entity on this machine.
+ *
+ * One harness process per run, spawned with an argv array (never a shell), the
+ * prompt on **stdin**, and `cwd` set to the entity's `dir`. Output is coalesced
+ * per 50 ms and appended to `<ws>/runs/<runId>.jsonl`, so the run survives a
+ * reload of the window and dies with the app — which is stated, not hidden.
+ */
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawn } = require('node:child_process')
+const entities = require('./entity-store.cjs')
+const workspaces = require('./workspace-store.cjs')
+const { expandHome } = require('./frontmatter.cjs')
+
+const COALESCE_MS = 50
+const KILL_AFTER_MS = 3000
+/* How many run files the list reads before giving up on the tail of history. */
+const MAX_RUNS_SCANNED = 400
+
+/* Each harness takes instructions differently. Only claude and pi have a real
+   system prompt; the rest get the file prepended to the prompt text. */
+function invocation(harness, instructions, prompt, mcpFile, strict) {
+  const preface = `${instructions.trim()}\n\n---\n\n${prompt}`
+  switch (harness) {
+    case 'claude': {
+      const argv = ['-p', '--append-system-prompt', instructions]
+      if (mcpFile) argv.push('--mcp-config', mcpFile)
+      if (mcpFile && strict) argv.push('--strict-mcp-config')
+      return { cmd: 'claude', argv, stdin: prompt, system: true }
+    }
+    case 'pi':
+      return { cmd: 'pi', argv: ['-p', '--append-system-prompt', instructions], stdin: prompt, system: true }
+    case 'opencode':
+      return { cmd: 'opencode', argv: ['run'], stdin: preface, system: false }
+    case 'codex':
+      return { cmd: 'codex', argv: ['exec', '-'], stdin: preface, system: false }
+    case 'gemini':
+      return { cmd: 'gemini', argv: ['-p'], stdin: preface, system: false }
+    default:
+      throw new Error(`The harness "${harness}" has no known invocation.`)
+  }
+}
+
+/** claude's own MCP file shape, filtered to the entity's `mcp:` list. */
+function writeClaudeMcp(record, runId, entity) {
+  const pool = workspaces.mcp(record.id)
+  const servers = {}
+  for (const name of entity.mcp) {
+    const entry = pool.servers[name]
+    if (entry) servers[name] = entry
+  }
+  const file = path.join(record.path, 'runs', `.mcp-${runId}.json`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`, 'utf8')
+  return { file, count: Object.keys(servers).length }
+}
+
+function newRunId() {
+  return `r_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function readRunFile(record, file, isActive) {
+  let text = ''
+  try {
+    text = fs.readFileSync(path.join(record.path, 'runs', file), 'utf8')
+  } catch {
+    return null
+  }
+  let meta = {}
+  let status = 'queued'
+  let exit = null
+  let lastAt = null
+  let lastError = ''
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    let event
+    try {
+      event = JSON.parse(line)
+    } catch {
+      continue
+    }
+    lastAt = event.at || lastAt
+    if (event.kind === 'state' || event.kind === 'exit') {
+      if (event.kind === 'state') {
+        if (!meta.entity) meta = { ...meta, ...event.data }
+        if (event.data?.error) lastError = event.data.error
+        status = event.data?.status || status
+      } else {
+        exit = event.data || {}
+        status = exit.code === 0 ? 'ok' : 'error'
+        if (exit.canceled) status = 'canceled'
+      }
+    }
+  }
+
+  /* A run that still says `running` but has no child in this process died with
+     the hub. It is reported as canceled; the log is left untouched. */
+  let note = ''
+  if (status === 'running' && !isActive) {
+    status = 'canceled'
+    note = 'hub closed'
+  }
+
+  return {
+    id: path.basename(file, '.jsonl'),
+    workspace: record.id,
+    entity: meta.entity || '',
+    harness: meta.harness || '',
+    dir: meta.dir || '',
+    prompt: meta.prompt || '',
+    status,
+    startedAt: meta.startedAt || null,
+    endedAt: exit?.endedAt || lastAt,
+    exitCode: exit?.code ?? null,
+    ms: exit?.ms ?? null,
+    error: lastError || meta.error || '',
+    note,
+  }
+}
+
+function createRunner({ emit = () => {} } = {}) {
+  /** runId → live run */
+  const active = new Map()
+  /** `${workspace}/${entity}` → runId — one run per entity, on purpose */
+  const locks = new Map()
+
+  function runsDir(workspaceId) {
+    return path.join(workspaces.open(workspaceId).path, 'runs')
+  }
+
+  function publish(run, kind, data) {
+    run.seq += 1
+    const event = { runId: run.runId, workspace: run.workspace, seq: run.seq, at: new Date().toISOString(), kind, data }
+    try {
+      fs.appendFileSync(run.file, `${JSON.stringify(event)}\n`, 'utf8')
+    } catch {
+      /* the stream still reaches the window */
+    }
+    emit(event)
+    return event
+  }
+
+  function flush(run, kind) {
+    const buffer = kind === 'stdout' ? run.outBuf : run.errBuf
+    if (!buffer.length) return
+    const text = buffer.join('')
+    if (kind === 'stdout') run.outBuf = []
+    else run.errBuf = []
+    publish(run, kind, text)
+  }
+
+  function schedule(run, kind) {
+    if (kind === 'stdout') {
+      if (run.outTimer) return
+      run.outTimer = setTimeout(() => {
+        run.outTimer = null
+        flush(run, 'stdout')
+      }, COALESCE_MS)
+    } else {
+      if (run.errTimer) return
+      run.errTimer = setTimeout(() => {
+        run.errTimer = null
+        flush(run, 'stderr')
+      }, COALESCE_MS)
+    }
+  }
+
+  function cleanup(run) {
+    clearTimeout(run.outTimer)
+    clearTimeout(run.errTimer)
+    run.outTimer = run.errTimer = null
+    flush(run, 'stdout')
+    flush(run, 'stderr')
+    if (run.mcpFile) {
+      try {
+        fs.rmSync(run.mcpFile, { force: true })
+      } catch {
+        /* the run directory is disposable */
+      }
+    }
+    active.delete(run.runId)
+    const key = `${run.workspace}/${run.entity}`
+    if (locks.get(key) === run.runId) locks.delete(key)
+  }
+
+  function finish(run, { code = null, canceled = false, error = '' } = {}) {
+    if (run.finished) return
+    run.finished = true
+    clearTimeout(run.killTimer)
+
+    if (run.outTimer) {
+      clearTimeout(run.outTimer)
+      run.outTimer = null
+    }
+    if (run.errTimer) {
+      clearTimeout(run.errTimer)
+      run.errTimer = null
+    }
+    flush(run, 'stdout')
+    flush(run, 'stderr')
+
+    const endedAt = new Date().toISOString()
+    const ms = run.startedAt ? Date.now() - run.startedMs : 0
+    const status = canceled ? 'canceled' : code === 0 ? 'ok' : 'error'
+    if (error) publish(run, 'state', { status: 'error', error, endedAt })
+    publish(run, 'exit', { code, ms, endedAt, canceled })
+    if (run.mcpFile) {
+      try {
+        fs.rmSync(run.mcpFile, { force: true })
+      } catch {
+        /* nothing to remove */
+      }
+      run.mcpFile = ''
+    }
+    run.status = status
+    run.exitCode = code
+    run.endedAt = endedAt
+    active.delete(run.runId)
+    const key = `${run.workspace}/${run.entity}`
+    if (locks.get(key) === run.runId) locks.delete(key)
+  }
+
+  function start({ workspace, name, prompt }) {
+    const entity = entities.read(workspace, name)
+    if (!entity) throw new Error(`No entity called "${name}" in this workspace.`)
+    if (!prompt || !String(prompt).trim()) throw new Error('Write a prompt first.')
+
+    const key = `${workspace}/${entity.name}`
+    if (locks.has(key)) throw new Error(`${entity.name} is already running.`)
+
+    const dir = entities.resolveDir(entity)
+    const record = workspaces.open(workspace)
+    const runId = newRunId()
+    const run = {
+      runId,
+      workspace,
+      entity: entity.name,
+      harness: entity.harness,
+      dir,
+      seq: 0,
+      status: 'running',
+      outBuf: [],
+      errBuf: [],
+      outTimer: null,
+      errTimer: null,
+      killTimer: null,
+      finished: false,
+      mcpFile: '',
+      file: path.join(runsDir(workspace), `${runId}.jsonl`),
+      startedMs: Date.now(),
+      startedAt: new Date().toISOString(),
+    }
+
+    let mcpFile = ''
+    if (entity.harness === 'claude' && record.mcpStrict) {
+      const written = writeClaudeMcp(record, runId, entity)
+      mcpFile = written.file
+      run.mcpFile = written.file
+    }
+
+    const spec = invocation(entity.harness, entity.instructions, String(prompt), mcpFile, record.mcpStrict)
+    locks.set(key, runId)
+    active.set(runId, run)
+
+    publish(run, 'state', {
+      status: 'running',
+      entity: entity.name,
+      harness: entity.harness,
+      dir,
+      prompt: String(prompt),
+      startedAt: run.startedAt,
+      mcp: mcpFile ? entity.mcp.filter((server) => workspaces.mcp(workspace).servers[server]) : [],
+      systemPrompt: spec.system,
+    })
+
+    let child
+    try {
+      child = spawn(spec.cmd, spec.argv, {
+        cwd: dir,
+        env: process.env,
+        shell: false,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+    } catch (error) {
+      finish(run, { error: String(error?.message || error) })
+      throw error
+    }
+
+    run.child = child
+
+    child.on('error', (error) => {
+      const missing = error?.code === 'ENOENT'
+      finish(run, {
+        error: missing
+          ? `${spec.cmd} is not installed on this machine, or not on PATH.`
+          : String(error?.message || error),
+      })
+    })
+
+    child.stdout?.on('data', (chunk) => {
+      run.outBuf.push(String(chunk))
+      schedule(run, 'stdout')
+    })
+    child.stderr?.on('data', (chunk) => {
+      run.errBuf.push(String(chunk))
+      schedule(run, 'stderr')
+    })
+
+    child.on('close', (code, signal) => {
+      finish(run, { code: typeof code === 'number' ? code : null, canceled: run.canceled || signal === 'SIGTERM' })
+    })
+
+    child.stdin?.on('error', () => {
+      /* a harness that exits before reading stdin is not a hub error */
+    })
+    try {
+      child.stdin?.write(spec.stdin)
+      child.stdin?.end()
+    } catch {
+      /* the close handler reports the failure */
+    }
+
+    return {
+      runId,
+      entity: entity.name,
+      harness: entity.harness,
+      dir,
+      systemPrompt: spec.system,
+    }
+  }
+
+  function cancel({ runId }) {
+    const run = active.get(String(runId || ''))
+    if (!run || !run.child) return { canceled: false, reason: 'not running' }
+    if (run.canceled) return { canceled: true, reason: 'already stopping' }
+    run.canceled = true
+    try {
+      run.child.kill('SIGTERM')
+    } catch {
+      /* the process may have exited between the check and the signal */
+    }
+    clearTimeout(run.killTimer)
+    run.killTimer = setTimeout(() => {
+      try {
+        run.child.kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
+    }, KILL_AFTER_MS)
+    publish(run, 'state', { status: 'canceled', note: 'SIGTERM' })
+    return { canceled: true }
+  }
+
+  /** Newest first, with the effective status of every run in this workspace. */
+  function list({ workspace }) {
+    const record = workspaces.open(workspace)
+    let files = []
+    try {
+      files = fs
+        .readdirSync(path.join(record.path, 'runs'))
+        .filter((file) => file.endsWith('.jsonl') && !file.startsWith('.'))
+    } catch {
+      return []
+    }
+    /* A workspace accumulates runs forever; parse the newest ones. The cap is
+       generous enough that the journal still looks complete in practice. */
+    const newest = files
+      .map((file) => {
+        try {
+          return { file, mtime: fs.statSync(path.join(record.path, 'runs', file)).mtimeMs }
+        } catch {
+          return { file, mtime: 0 }
+        }
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, MAX_RUNS_SCANNED)
+      .map((entry) => entry.file)
+
+    return newest
+      .map((file) => readRunFile(record, file, active.has(path.basename(file, '.jsonl'))))
+      .filter(Boolean)
+      .sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')))
+  }
+
+  /** entity name → its most recent run, for the table's state column. */
+  function latest({ workspace }) {
+    const map = {}
+    for (const run of list({ workspace })) {
+      if (!run.entity || map[run.entity]) continue
+      map[run.entity] = run
+    }
+    return map
+  }
+
+  function snapshot({ workspace, runId }) {
+    const run = active.get(String(runId || ''))
+    if (!run) return null
+    return {
+      runId: run.runId,
+      workspace: run.workspace,
+      entity: run.entity,
+      harness: run.harness,
+      dir: run.dir,
+      status: run.status,
+    }
+  }
+
+  function closeAll() {
+    for (const run of active.values()) {
+      try {
+        run.child?.kill('SIGTERM')
+      } catch {
+        /* quitting anyway */
+      }
+      cleanup(run)
+    }
+  }
+
+  return { start, cancel, list, latest, snapshot, closeAll, activeCount: () => active.size }
+}
+
+module.exports = { createRunner, invocation, HARNESSES: entities.HARNESSES }

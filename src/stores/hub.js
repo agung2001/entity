@@ -1,23 +1,17 @@
 /**
- * The hub's single source of truth for this session.
+ * The hub's view model for this session.
  *
- * Everything here is sample data mutated in place — there is no backend yet
- * (see reports/unclear/hub-mockup-questions.md). Views read `hub` and call the
- * actions below; nothing reaches into another component's state.
+ * The data itself belongs to the active workspace and is read from disk by the
+ * Electron call table (`electron/rpc.cjs`). `src/stores/workspaces.js` opens a
+ * workspace and pushes the result in here through `applyScope()`; views read
+ * `hub` and call the actions below, and nothing reaches into another
+ * component's state.
+ *
+ * The arrays start empty on purpose: a hub with no workspace is not a hub with
+ * sample data, it is a hub that should be at /setup.
  */
 import { reactive } from 'vue'
-import {
-  ACTIVITY,
-  AGENTS,
-  BUILTIN_CMDS,
-  CHAT_SEED,
-  ENTITY_MD,
-  HARNESSES,
-  MACHINES,
-  SKILL_DETAIL,
-  SKILLS,
-  WORKSPACES,
-} from '@/data/mock'
+import { BUILTIN_CMDS, HARNESSES } from '@/data/mock'
 
 const SESSION_KEY = 'entity.session'
 const WORKSPACE_KEY = 'entity.workspace'
@@ -34,8 +28,6 @@ export const DEFAULT_ADMIN = { username: 'admin', password: '123456' }
 /* sha256('123456') — the seed is compared as a hash, never as plain text */
 const DEFAULT_ADMIN_HASH = '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92'
 const DEFAULT_EMAIL = 'admin@studio-mac'
-
-const clone = (v) => JSON.parse(JSON.stringify(v))
 
 function storeCredentials(record) {
   try {
@@ -164,43 +156,43 @@ function readSession() {
   }
 }
 
+function readWorkspaceId() {
+  try {
+    return localStorage.getItem(WORKSPACE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
 export const hub = reactive({
   /* --- session ------------------------------------------------------- */
   session: readSession(),
 
-  /* --- workspace data ------------------------------------------------ */
-  workspace: (() => {
-    try {
-      const id = localStorage.getItem(WORKSPACE_KEY)
-      return WORKSPACES.some((w) => w.id === id) ? id : 'sundoro'
-    } catch {
-      return 'sundoro'
-    }
-  })(),
-  agents: clone(AGENTS),
-  machines: clone(MACHINES),
-  skills: clone(SKILLS),
-  activity: clone(ACTIVITY),
-  /** per-machine skill versions; only web-research has a real record */
-  coverage: { 'web-research': clone(SKILL_DETAIL['web-research'].coverage) },
+  /* --- workspace data (filled by stores/workspaces.js) --------------- */
+  /** `id` of the active workspace, or '' before setup */
+  workspace: readWorkspaceId(),
+  /** label + kind of the active workspace, mirrored for headings */
+  workspaceLabel: '',
+  workspaceKind: 'local',
+  workspacePath: '',
+  /** entities of the active workspace */
+  agents: [],
+  /** machines this workspace may use (local + attached ssh aliases) */
+  machines: [],
+  /** skills attached to the active workspace */
+  skills: [],
+  /** recent runs, newest first */
+  runs: [],
+  /** advisory notes that are not tied to one entity (machines, skills) */
+  activity: [],
 
   /* --- ui ------------------------------------------------------------ */
   entityFilter: 'all',
-  drawer: { open: false, agentId: 'py-agent', tab: 'overview' },
-  move: {
-    open: false,
-    agentId: null,
-    to: null,
-    skills: [],
-    md: true,
-    running: false,
-    finished: false,
-    progress: 0,
-    stepNote: '',
-    doneTitle: '',
-  },
+  drawer: { open: false, agentId: '', tab: 'overview' },
   palette: { open: false, query: '', active: 0 },
   account: { open: false },
+  settings: { open: false, tab: 'machines' },
+  wizard: { open: false },
   toast: { open: false, message: '' },
 
   /* --- consoles ------------------------------------------------------ */
@@ -211,57 +203,134 @@ export const hub = reactive({
     active: null,
     seq: 0,
     filters: { entity: 'all', machine: 'all', harness: 'all' },
-    last: { entity: 'py-agent', machine: 'studio-mac', harness: 'claude' },
+    last: { entity: '', machine: 'local', harness: 'claude' },
   },
 })
+
+/* ── scope: what one workspace owns ───────────────────────────────── */
+
+/**
+ * Replaces every workspace-scoped array in one move. Called after a workspace
+ * opens or reloads, so no view keeps data from the previous scope — and the
+ * console threads are dropped, because a thread that references a foreign
+ * entity name would be a quiet lie.
+ */
+export function applyScope({ agents = [], machines = [], skills = [], runs = [], activity = [] } = {}) {
+  hub.agents = agents
+  hub.machines = machines
+  hub.skills = skills
+  hub.runs = runs
+  hub.activity = activity
+
+  hub.entityFilter = 'all'
+  if (!agents.some((agent) => agent.id === hub.drawer.agentId)) {
+    hub.drawer.open = false
+    hub.drawer.agentId = agents[0]?.id || ''
+    hub.drawer.tab = 'overview'
+  }
+
+  hub.ask.threads = {}
+  hub.ask.counts = {}
+  hub.chat.built = false
+  hub.chat.sessions = []
+  hub.chat.active = null
+  hub.chat.seq = 0
+  hub.chat.filters = { entity: 'all', machine: 'all', harness: 'all' }
+  hub.chat.last = {
+    entity: agents[0]?.id || '',
+    machine: machines[0]?.id || 'local',
+    harness: agents[0]?.harness || 'claude',
+  }
+
+  if (hub.drawer.agentId) hub.drawer.agentId = agents.some((a) => a.id === hub.drawer.agentId) ? hub.drawer.agentId : ''
+}
+
+/** The run table paints its own state; this is where it lands on the entity. */
+export function applyRunState(latest = {}) {
+  hub.runs = Object.values(latest).sort((a, b) =>
+    String(b.startedAt || '').localeCompare(String(a.startedAt || '')),
+  )
+  for (const agent of hub.agents) {
+    const run = latest[agent.name]
+    if (!run) {
+      agent.status = 'sleep'
+      agent.last = 'never'
+      agent.exitCode = null
+      agent.runError = ''
+      continue
+    }
+    agent.lastAt = run.startedAt || null
+    agent.last = run.startedAt ? ago(run.startedAt) : 'never'
+    agent.lastRunId = run.id
+    agent.exitCode = run.exitCode
+    agent.status =
+      run.status === 'running'
+        ? 'running'
+        : run.status === 'ok'
+          ? 'idle'
+          : run.status === 'canceled'
+            ? 'sleep'
+            : 'error'
+    /* a failed run is not a problem with the file — keep the two apart so the
+       entity's `problems[]` still means "this file cannot resolve" */
+    agent.runError = run.status === 'error' ? run.error || 'the run exited non-zero' : ''
+  }
+}
 
 /* ── lookups ──────────────────────────────────────────────────────── */
 export const agentById = (id) => hub.agents.find((a) => a.id === id) || null
 export const machineById = (id) => hub.machines.find((m) => m.id === id) || null
 export const harnessById = (id) => HARNESSES.find((h) => h.id === id) || HARNESSES[0]
-export const workspaceById = (id) => WORKSPACES.find((w) => w.id === id) || WORKSPACES[0]
 export const skillByName = (name) => hub.skills.find((s) => s.name === name) || null
-export const skillDetail = (name) => SKILL_DETAIL[name] || null
 
 export const skillOwners = (name) => hub.agents.filter((a) => a.skills.includes(name))
 export const skillMachineIds = (name) => [
   ...new Set(skillOwners(name).flatMap((a) => a.machines)),
 ]
 
+/** A workspace skill is in place exactly once: on the machine you are using. */
 export function skillCoverage(name) {
-  if (hub.coverage[name]) {
-    return hub.machines.map((m) => ({
-      machine: m,
-      ...(hub.coverage[name][m.id] || { version: null, state: 'none', last: '—' }),
-    }))
-  }
-  /* no version record: coverage is just "which machines have an owner here" */
-  const ids = skillMachineIds(name)
-  return hub.machines.map((m) => ({
-    machine: m,
-    version: ids.includes(m.id) ? 'installed' : null,
-    state: ids.includes(m.id) ? 'installed' : 'none',
+  const present = hub.skills.some((skill) => skill.name === name && !skill.missing)
+  return hub.machines.map((machine) => ({
+    machine,
+    version: present ? 'installed' : null,
+    state: present ? 'installed' : 'none',
     last: '—',
   }))
 }
 
-export function strandedSkillCount() {
-  return hub.skills.filter((s) => {
-    const owners = skillOwners(s.name)
-    const machines = new Set(owners.flatMap((a) => a.machines))
-    return owners.length > 0 && machines.size === 1
-  }).length
-}
+/** Sandbox-relevant summary shown on the overview: entities with a real problem. */
+export const agentsWithProblems = () => hub.agents.filter((agent) => agent.problems?.length)
+export const problemCount = () =>
+  hub.agents.reduce((sum, agent) => sum + (agent.problems?.length || 0), 0)
 
 /* ── mark rule parsing ────────────────────────────────────────────── */
 export function mdRules(agent) {
-  const block = (ENTITY_MD[agent.id] || '').match(/## Rules\n([\s\S]*?)(?:\n## |$)/)
-  return ((block && block[1]) || '').match(/^- (.+)$/gm)?.map((s) => s.slice(2)) || []
+  if (Array.isArray(agent?.rules)) return agent.rules
+  return []
 }
 
-export const entityMd = (agent) => ENTITY_MD[agent.id] || `# ${agent.name}\n\nNo instructions yet.`
+export const entityMd = (agent) =>
+  agent?.instructions || `# ${agent?.name || 'entity'}\n\nNo instructions yet.`
 
-export const initials = (name) => name.replace(/[^a-z0-9]/gi, '').slice(0, 2).toLowerCase()
+export const initials = (name) => String(name || '').replace(/[^a-z0-9]/gi, '').slice(0, 2).toLowerCase()
+
+export function ago(iso) {
+  if (!iso) return 'never'
+  const then = new Date(iso).getTime()
+  if (!Number.isFinite(then)) return 'never'
+  const ms = Date.now() - then
+  if (ms < 0) return 'just now'
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return 'yesterday'
+  if (days < 30) return `${days}d ago`
+  return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 /* ── toast ────────────────────────────────────────────────────────── */
 let toastTimer = 0
@@ -297,16 +366,6 @@ export function signOut() {
   }
 }
 
-export function setWorkspace(id) {
-  if (!WORKSPACES.some((w) => w.id === id)) return
-  hub.workspace = id
-  try {
-    localStorage.setItem(WORKSPACE_KEY, id)
-  } catch {
-    /* session-only */
-  }
-}
-
 /* ── entity drawer ────────────────────────────────────────────────── */
 export function openDrawer(agentId, tab = 'overview') {
   if (!agentById(agentId)) return
@@ -319,6 +378,25 @@ export function closeDrawer() {
   hub.drawer.open = false
 }
 
+/* ── workspace settings ───────────────────────────────────────────── */
+export function openSettings(tab = 'machines') {
+  hub.settings.tab = tab
+  hub.settings.open = true
+}
+
+export function closeSettings() {
+  hub.settings.open = false
+}
+
+/* ── new workspace ────────────────────────────────────────────────── */
+export function openWizard() {
+  hub.wizard.open = true
+}
+
+export function closeWizard() {
+  hub.wizard.open = false
+}
+
 /* ── account settings ─────────────────────────────────────────────── */
 export function openAccount() {
   hub.account.open = true
@@ -328,111 +406,20 @@ export function closeAccount() {
   hub.account.open = false
 }
 
-/* ── move / relocate ──────────────────────────────────────────────── */
-export function openMove(agentId, toId) {
-  const agent = agentById(agentId) || hub.agents[0]
-  hub.move.agentId = agent.id
-  hub.move.skills = [...agent.skills]
-  hub.move.to =
-    toId ||
-    hub.machines.find((m) => !agent.machines.includes(m.id) || m.id !== agent.machines[0]).id
-  hub.move.md = true
-  hub.move.running = false
-  hub.move.finished = false
-  hub.move.progress = 0
-  hub.move.stepNote = ''
-  hub.move.doneTitle = ''
-  hub.move.open = true
+/* ── the console: a reader over the entity's own record ───────────── */
+function defaultAsk() {
+  const agent = hub.agents[0]
+  return { entity: agent?.id || '', machine: 'local', harness: agent?.harness || 'claude' }
 }
-
-export function closeMove() {
-  if (hub.move.running) return
-  hub.move.open = false
-}
-
-export const movePackNote = () => {
-  const agent = agentById(hub.move.agentId)
-  if (!agent) return ''
-  const n = hub.move.skills.length
-  return `Estimated ${agent.size} · ssh · ${n} skill${n === 1 ? '' : 's'}${
-    hub.move.md ? ' + ENTITY.md' : ''
-  } · ~6s on LAN`
-}
-
-export function toggleMoveSkill(name) {
-  const at = hub.move.skills.indexOf(name)
-  if (at > -1) hub.move.skills.splice(at, 1)
-  else hub.move.skills.push(name)
-}
-
-let moveTimer = 0
-export function startTransfer() {
-  if (hub.move.running || hub.move.finished) return
-  const agent = agentById(hub.move.agentId)
-  const to = hub.move.to
-  if (!agent || !to) return
-
-  hub.move.running = true
-  hub.move.progress = 0
-  hub.move.stepNote = 'packing the runtime'
-
-  clearInterval(moveTimer)
-  moveTimer = setInterval(() => {
-    hub.move.progress = Math.min(100, hub.move.progress + 6 + Math.random() * 13)
-    if (hub.move.progress >= 40 && hub.move.progress < 100) {
-      hub.move.stepNote = `sending to ${machineById(to)?.label || to} over ssh`
-    }
-    if (hub.move.progress >= 100) {
-      clearInterval(moveTimer)
-      hub.move.stepNote = 'verifying ENTITY.md and skills'
-      setTimeout(() => {
-        if (!agent.machines.includes(to)) agent.machines.push(to)
-        hub.activity.unshift({
-          t: 'now',
-          who: agent.name,
-          act: `copied to ${to}`,
-          where: `${agent.size} · ssh`,
-        })
-        hub.move.doneTitle = `${agent.name} is live on ${to}.`
-        hub.move.running = false
-        hub.move.finished = true
-        hub.move.stepNote = ''
-        toast(`${agent.name} is live on ${to}`)
-      }, 380)
-    }
-  }, 130)
-}
-
-/* ── skill copy (skill page) ──────────────────────────────────────── */
-export function copySkillToMachine(name, machineId) {
-  const detail = skillDetail(name)
-  const machine = machineById(machineId)
-  if (!detail || !machine) return
-  if (!hub.coverage[name]) hub.coverage[name] = {}
-  hub.coverage[name][machineId] = {
-    version: detail.version,
-    state: 'sync',
-    last: 'just now',
-  }
-  hub.activity.unshift({
-    t: 'now',
-    who: 'library',
-    act: `copied ${name} ${detail.version} to ${machine.label}`,
-    where: 'skill',
-  })
-  toast(`${name} ${detail.version} copied to ${machine.label}`)
-}
-
-/* ── the console: one reply engine for both surfaces ──────────────── */
-const ASK_DEF = { entity: 'py-agent', machine: 'studio-mac', harness: 'claude' }
 
 /** The console joins the session you already initiated — it cannot retarget one. */
 export function askSession() {
-  const c = hub.chat.last || ASK_DEF
+  const c = hub.chat.last || defaultAsk()
+  const agent = agentById(c.entity) || hub.agents[0]
   return {
-    entity: agentById(c.entity) ? c.entity : ASK_DEF.entity,
-    machine: machineById(c.machine) ? c.machine : ASK_DEF.machine,
-    harness: HARNESSES.some((h) => h.id === c.harness) ? c.harness : ASK_DEF.harness,
+    entity: agent?.id || '',
+    machine: machineById(c.machine)?.id || hub.machines[0]?.id || 'local',
+    harness: HARNESSES.some((h) => h.id === c.harness) ? c.harness : agent?.harness || 'claude',
   }
 }
 
@@ -441,24 +428,24 @@ export const askKey = () => {
   return `${s.entity}|${s.machine}|${s.harness}`
 }
 
-export const askAgent = () => agentById(askSession().entity) || hub.agents[0]
-export const askMachine = () => machineById(askSession().machine) || hub.machines[0]
+export const askAgent = () => agentById(askSession().entity)
+export const askMachine = () => machineById(askSession().machine) || hub.machines[0] || null
 export const askHarnessFn = () => harnessById(askSession().harness)
 
 export function greeting(agent) {
+  if (!agent) return 'No entity yet. Create one in this workspace to give the console a subject.'
   const rules = mdRules(agent).length
-  return `${agent.desc} ${agent.skills.length} skills and ENTITY.md (${rules} ${
-    rules === 1 ? 'rule' : 'rules'
-  }) travel with me.`
+  return `${agent.desc || 'No description in the file yet.'} ${agent.skills.length} ${
+    agent.skills.length === 1 ? 'skill' : 'skills'
+  } and ENTITY.md (${rules} ${rules === 1 ? 'rule' : 'rules'}) travel with me.`
 }
 
 export function askThread() {
-  const s = askSession()
   const key = askKey()
-  const agent = agentById(s.entity) || hub.agents[0]
+  const agent = askAgent()
   if (!hub.ask.threads[key]) {
     hub.ask.threads[key] = [
-      { who: 'sys', text: `run → ${askMachine().label} · ${askHarnessFn().label}` },
+      { who: 'sys', text: `run → ${askMachine()?.label || 'local'} · ${askHarnessFn().label}` },
       { who: 'agent', text: greeting(agent) },
     ]
   }
@@ -473,6 +460,7 @@ export function askCounts() {
 
 export function askSend(text) {
   const agent = askAgent()
+  if (!agent) return
   const log = askThread()
   log.push({ who: 'me', text })
   log.push({ who: 'agent', text: askReply(agent, askMachine(), askHarnessFn(), text) })
@@ -481,74 +469,74 @@ export function askSend(text) {
   counts.got += 1
 }
 
+/**
+ * A deterministic answer read out of the entity's own file. It is not a model
+ * call: the hub does not pretend to be the harness. `run.start` is where real
+ * work happens.
+ */
 export function askReply(agent, machine, harness, question) {
   const rules = mdRules(agent)
   const guard = rules.length
     ? `ENTITY.md guard: ${rules[0]}`
     : 'ENTITY.md has no guards written yet.'
-  const t = question.toLowerCase()
+  const t = String(question || '').toLowerCase()
+  const where = agent.machines.length
+    ? agent.machines.map((id) => machineById(id)?.label || id).join(' and ')
+    : 'no machine'
 
-  if (question.startsWith('/')) {
-    const name = question.split(/\s+/)[0]
+  if (String(question).startsWith('/')) {
+    const name = String(question).split(/\s+/)[0]
     const skill = name.slice(1)
     if (BUILTIN_CMDS.some((c) => c.name === name))
-      return `${name} → ${agent.name} · ${machine.label} · ${harness.label}.\nBuilt into ${harness.label}, so there is nothing to install. ${guard}`
+      return `${name} → ${agent.name} · ${machine?.label || 'local'} · ${harness.label}.\nBuilt into ${harness.label}, so there is nothing to install. ${guard}`
     if (agent.skills.includes(skill))
-      return `${name} → ${agent.name} · ${machine.label} · ${harness.label}.\n${skill} is attached, so it ships inside the bundle and runs from the agent home — nothing to install on ${machine.label}. ${guard}`
+      return `${name} → ${agent.name} · ${machine?.label || 'local'} · ${harness.label}.\n${skill} is attached to this workspace, so the harness can load it from its own library. ${guard}`
     return `No command or skill called ${name} on ${agent.name}.\nAttached: ${agent.skills
       .map((s) => '/' + s)
-      .join(', ')}. Built in: ${BUILTIN_CMDS.map((c) => c.name).join(', ')}.`
+      .join(', ') || 'none'}. Built in: ${BUILTIN_CMDS.map((c) => c.name).join(', ')}.`
   }
   if (/where|machine|server|local|host/.test(t))
-    return (
-      (agent.machines.length
-        ? `I am placed on ${agent.machines.join(' and ')}.`
-        : 'I am not placed on a machine yet.') +
-      ` This session is ${harness.label} on ${machine.label}.`
-    )
+    return `I run on ${where}. Working directory: ${agent.dir || 'not set'}. This session is ${harness.label}.`
   if (/skill|carry|tool|able/.test(t))
     return agent.skills.length
-      ? `I carry ${agent.skills.length} skills: ${agent.skills.join(', ')}. Type / here to run one.`
-      : 'No skills attached yet — attach them before I run.'
+      ? `This workspace attaches ${agent.skills.length}: ${agent.skills.join(', ')}. Type / here to run one.`
+      : 'No skills attached to this entity yet — attach them to the workspace first.'
   if (/entity|\.md|instruction|rule/.test(t))
-    return `ENTITY.md travels with me everywhere — ${rules.length} rules. ${guard}`
-  if (/move|transfer|migrat|copy|replicat/.test(t))
-    return 'Move agent copies me, the skills you tick and ENTITY.md to another machine. Start it from my drawer or the Machines view.'
-  if (/model|runtime|size|harness/.test(t))
-    return `${agent.model}, ${agent.runtime} runtime, ${agent.size} on disk. Harness here: ${harness.label}.`
+    return `ENTITY.md is ${agent.displayPath}. ${rules.length} rules. ${guard}`
+  if (/model|runtime|size|harness|dir/.test(t))
+    return `${agent.harness} · ${agent.model || 'harness default model'} · in ${agent.dir || 'an unset directory'}.`
   if (/^(hi|hello|hey)\b/.test(t))
-    return `I am ${agent.name} on ${machine.label}. Ask about my skills, my ENTITY.md, or where I run.`
-  return `I only answer from my own record: ${agent.name}, ${agent.skills.length} skills, ${machine.label}, ${harness.label}. Try “where do you run”, “what do you carry”, or type / for a command.`
+    return `I am ${agent.name} on ${machine?.label || 'local'}. Ask about my skills, my ENTITY.md, or where I run.`
+  return `I only answer from my own record: ${agent.name}, ${agent.skills.length} skills, ${agent.dir || 'no dir'}. Try “where do you run”, “what do you carry”, or type / for a command.`
 }
 
 /* slash-command menu — one shape for both composers */
 export function slashMenu(value, agent) {
-  const parts = value.split(/\s/)
-  if (!value.startsWith('/') || parts.length !== 1) return []
+  const parts = String(value || '').split(/\s/)
+  if (!value?.startsWith('/') || parts.length !== 1) return []
   const q = parts[0].slice(1).toLowerCase()
   const all = BUILTIN_CMDS.concat(
-    agent.skills.map((s) => ({ name: '/' + s, desc: `Skill carried by ${agent.name}`, skill: true })),
+    (agent?.skills || []).map((s) => ({ name: '/' + s, desc: `Skill attached to this workspace`, skill: true })),
   )
   return all.filter((c) => c.name.slice(1).toLowerCase().startsWith(q)).slice(0, 7)
 }
 
 /* ── chat ─────────────────────────────────────────────────────────── */
-const greetingFor = (entityId) => greeting(agentById(entityId) || hub.agents[0])
-
 export function buildChat() {
   if (hub.chat.built) return
-  hub.chat.sessions = CHAT_SEED.map((seed) => {
-    const agent = agentById(seed.entity) || hub.agents[0]
-    const machine = machineById(seed.machine) || hub.machines[0]
-    const harness = harnessById(seed.harness)
-    const msgs = [{ who: 'agent', text: greetingFor(seed.entity) }]
-    seed.asks.forEach((q) => {
-      msgs.push({ who: 'me', text: q })
-      msgs.push({ who: 'agent', text: askReply(agent, machine, harness, q) })
-    })
-    return { ...seed, msgs }
-  })
+  hub.chat.sessions = hub.agents.map((agent) => ({
+    id: `t-${agent.id}`,
+    entity: agent.id,
+    machine: hub.machines[0]?.id || 'local',
+    harness: agent.harness,
+    when: agent.last && agent.last !== 'never' ? agent.last : 'never',
+    msgs: [{ who: 'agent', text: greeting(agent) }],
+  }))
   hub.chat.active = hub.chat.sessions[0]?.id || null
+  if (hub.chat.sessions[0]) {
+    const first = hub.chat.sessions[0]
+    hub.chat.last = { entity: first.entity, machine: first.machine, harness: first.harness }
+  }
   hub.chat.built = true
 }
 
@@ -596,11 +584,17 @@ export function setThreadContext(kind, value) {
   }
   if (kind === 'machine' && s.machine !== value) {
     s.machine = value
-    s.msgs.push({ who: 'sys', text: `machine → ${machineById(value).label} · ${harnessById(s.harness).label}` })
+    s.msgs.push({
+      who: 'sys',
+      text: `machine → ${machineById(value)?.label || value} · ${harnessById(s.harness).label}`,
+    })
   }
   if (kind === 'harness' && s.harness !== value) {
     s.harness = value
-    s.msgs.push({ who: 'sys', text: `harness → ${harnessById(value).label} · ${machineById(s.machine).label}` })
+    s.msgs.push({
+      who: 'sys',
+      text: `harness → ${harnessById(value).label} · ${machineById(s.machine)?.label || s.machine}`,
+    })
   }
   hub.chat.last = { entity: s.entity, machine: s.machine, harness: s.harness }
 }
@@ -617,7 +611,7 @@ export function newThread(overrides = {}) {
     machine,
     harness,
     when: 'now',
-    msgs: [{ who: 'agent', text: greetingFor(entity) }],
+    msgs: [{ who: 'agent', text: greeting(agentById(entity)) }],
   }
   hub.chat.sessions.unshift(thread)
   hub.chat.active = thread.id
@@ -636,7 +630,8 @@ export function chatFocusEntity(id) {
 export function chatSend(text) {
   const s = activeThread()
   if (!s) return
-  const agent = agentById(s.entity) || hub.agents[0]
+  const agent = agentById(s.entity)
+  if (!agent) return
   s.msgs.push({ who: 'me', text })
   s.msgs.push({
     who: 'agent',

@@ -2,35 +2,32 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AskConsole from '@/components/AskConsole.vue'
+import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
-import { fleet, loadFleet, probeState } from '@/stores/fleet'
-import { hub, openDrawer, strandedSkillCount, workspaceById } from '@/stores/hub'
+import { ago, hub, openDrawer, openSettings, problemCount } from '@/stores/hub'
+import { runs } from '@/stores/runs'
+import { loadHosts, workspaces } from '@/stores/workspaces'
 
 const router = useRouter()
 
-onMounted(loadFleet)
+onMounted(() => {
+  if (!workspaces.hosts.length) loadHosts()
+})
 
-const workspace = computed(() => workspaceById(hub.workspace).label)
-const live = computed(() => hub.agents.filter((a) => a.status === 'running').length)
-const stranded = computed(() => strandedSkillCount())
-const hostCount = computed(() => (fleet.loaded ? fleet.hosts.length : hub.machines.length))
+const running = computed(() => hub.agents.filter((a) => a.status === 'running').length)
+const problems = computed(() => problemCount())
+const machineCount = computed(() => workspaces.machines.length)
+const otherHosts = computed(() =>
+  Math.max(0, workspaces.hosts.length - (workspaces.machines.length - 1)),
+)
 
 const agentsOn = (machineId) => hub.agents.filter((a) => a.machines.includes(machineId)).length
 
-const dotState = (status) => ({ running: 'live', idle: 'idle', sleep: 'sleep' })[status] || 'idle'
+const dotState = (status) =>
+  ({ running: 'live', idle: 'idle', sleep: 'sleep', error: 'fail' })[status] || 'idle'
 
-const hostState = (alias) => {
-  const state = probeState(alias).state
-  return state === 'ok' || state === 'fail' || state === 'testing' ? state : 'idle'
-}
-const hostLabel = (alias) => {
-  const state = hostState(alias)
-  if (state === 'ok') return 'reachable'
-  if (state === 'fail') return 'unreachable'
-  if (state === 'testing') return 'testing'
-  return 'in config'
-}
+const recent = computed(() => (runs.history || []).slice(0, 5))
 
 function openFromKeyboard(e, id) {
   if (e.key === 'Enter' || e.key === ' ') {
@@ -44,13 +41,22 @@ function openFromKeyboard(e, id) {
   <div class="view">
     <div class="page-head">
       <div>
-        <p class="eyebrow">Workspace · {{ workspace }}</p>
+        <p class="eyebrow">Workspace · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Overview</h1>
         <p class="lede">
-          {{ hub.agents.length }} entities across {{ hostCount }} machines,
-          {{ live }} running now. {{ stranded }} skills are installed on a single
-          machine — move an entity to carry them across.
+          {{ hub.agents.length }} {{ hub.agents.length === 1 ? 'entity' : 'entities' }} on
+          {{ machineCount }} {{ machineCount === 1 ? 'machine' : 'machines' }},
+          {{ running }} running now.
+          <template v-if="problems">
+            {{ problems }} {{ problems === 1 ? 'problem needs' : 'problems need' }} a look —
+            a missing directory, skill or MCP server.
+          </template>
+          <template v-else> Every entity file resolves.</template>
         </p>
+      </div>
+      <div class="head-actions">
+        <button class="btn" @click="router.push('/entities')">Entities</button>
+        <button class="btn btn-ink" @click="openSettings('machines')">Workspace settings</button>
       </div>
     </div>
 
@@ -59,48 +65,48 @@ function openFromKeyboard(e, id) {
     <div class="sec-head">
       <h2>Machines</h2>
       <span class="meta">
-        {{ fleet.hosts.length > 6 ? `showing 6 of ${fleet.hosts.length}` : `${fleet.hosts.length} hosts` }}
-        · {{ fleet.displayPath }}
+        {{ machineCount }} attached
+        <template v-if="otherHosts"> · {{ otherHosts }} more in {{ workspaces.hosts.length ? '~/.ssh/config' : 'the fleet' }}</template>
       </span>
     </div>
     <div class="machines">
       <button
-        v-for="m in fleet.hosts.slice(0, 6)"
+        v-for="m in workspaces.machines"
         :key="m.id"
         class="machine"
         type="button"
-        :data-probe="hostState(m.alias)"
+        :data-probe="m.missing ? 'fail' : m.thisMachine ? 'ok' : 'idle'"
         @click="router.push('/machines')"
       >
         <div class="row1">
           <span class="nm"><MachineIcon :size="12" />{{ m.label }}</span>
-          <span class="state" :data-s="hostState(m.alias)">
-            <i></i>{{ hostLabel(m.alias) }}
+          <span class="state" :data-s="m.missing ? 'fail' : m.thisMachine ? 'ok' : 'idle'">
+            <i></i>{{ m.missing ? 'missing' : m.thisMachine ? 'this machine' : 'attached' }}
           </span>
         </div>
-        <p class="spec">{{ m.spec }}</p>
+        <p class="spec">{{ m.spec || m.id }}</p>
         <div class="foot">
           <span>{{ m.source }}</span>
-          <span>{{ agentsOn(m.alias) }} {{ agentsOn(m.alias) === 1 ? 'entity' : 'entities' }}</span>
+          <span>{{ agentsOn(m.id) }} {{ agentsOn(m.id) === 1 ? 'entity' : 'entities' }}</span>
         </div>
       </button>
-      <p v-if="fleet.loading && !fleet.loaded" class="machine-note">
-        Reading {{ fleet.displayPath }}…
-      </p>
-      <p v-else-if="fleet.error" class="machine-note">{{ fleet.error }}</p>
-      <p v-else-if="!fleet.hosts.length" class="machine-note">
-        No hosts in {{ fleet.displayPath }}.
-      </p>
+      <button class="machine add-machine" type="button" @click="openSettings('machines')">
+        <div class="row1"><span class="nm">Attach a machine</span></div>
+        <p class="spec">From ~/.ssh/config</p>
+        <div class="foot"><span>workspace scope</span><span>local only runs today</span></div>
+      </button>
+      <p v-if="workspaces.error" class="machine-note">{{ workspaces.error }}</p>
     </div>
 
     <div class="sec-head">
       <h2>Entities</h2>
-      <span class="meta">sorted by last run</span>
+      <span class="meta">sorted by name · {{ hub.agents.length }} files</span>
     </div>
     <div class="tbl">
       <div class="tr th">
         <span>Entity</span><span>State</span><span class="col-machines">Machines</span>
         <span class="col-skills">Skills</span><span class="col-last">Last run</span>
+        <span class="col-actions">Actions</span>
       </div>
       <div
         v-for="a in hub.agents"
@@ -112,10 +118,15 @@ function openFromKeyboard(e, id) {
         @keydown="openFromKeyboard($event, a.id)"
       >
         <span class="cell-agent">
-          <EntityMark />
+          <EntityMark :entity="a.name" />
           <span>
-            <span class="nm2">{{ a.name }}</span>
-            <span class="sub2">{{ a.runtime }} · {{ a.model }}</span>
+            <span class="nm2">
+              {{ a.name }}
+              <em v-if="a.problems.length" class="row-warn" :title="a.problems.join('\n')">
+                {{ a.problems.length }}
+              </em>
+            </span>
+            <span class="sub2">{{ a.harnessLabel }}<template v-if="a.model"> · {{ a.model }}</template></span>
           </span>
         </span>
         <span class="col-state">
@@ -125,21 +136,32 @@ function openFromKeyboard(e, id) {
           <template v-if="a.machines.length">
             <span v-for="m in a.machines" :key="m" class="chipm">{{ m }}</span>
           </template>
-          <span v-else class="unplaced">unplaced</span>
+          <span v-else class="unplaced">nowhere</span>
         </span>
         <span class="num col-skills">{{ a.skills.length }}</span>
         <span class="last col-last">{{ a.last }}</span>
+        <EntityActions :entity="a" />
+      </div>
+      <div
+        v-if="!hub.agents.length"
+        class="tr"
+        style="grid-column: 1 / -1; cursor: default; color: var(--muted); font-size: 12.5px"
+      >
+        No entities in this workspace yet.
       </div>
     </div>
 
     <div class="log">
-      <div class="sec-head"><h2>Activity</h2><span class="meta">last 48h</span></div>
+      <div class="sec-head"><h2>Runs</h2><span class="meta">newest first</span></div>
       <ol>
-        <li v-for="(e, i) in hub.activity.slice(0, 5)" :key="i">
-          <time>{{ e.t }} ago</time>
-          <span class="who"><EntityMark mini />{{ e.who }}</span>
-          <span class="what"><b>{{ e.act }}</b></span>
-          <span class="where">{{ e.where }}</span>
+        <li v-for="run in recent" :key="run.id">
+          <time>{{ ago(run.startedAt) }}</time>
+          <span class="who"><EntityMark mini :entity="run.entity" />{{ run.entity }}</span>
+          <span class="what"><b>{{ run.status }}</b> · {{ run.harness }}</span>
+          <span class="where">exit {{ run.exitCode ?? '—' }}</span>
+        </li>
+        <li v-if="!recent.length" class="log-empty">
+          Nothing has run in this workspace yet. Open an entity and use its Run tab.
         </li>
       </ol>
     </div>

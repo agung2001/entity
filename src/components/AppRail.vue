@@ -3,9 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
-import { fleet, loadFleet } from '@/stores/fleet'
-import { library, loadLibrary } from '@/stores/library'
 import { hub, initials, openAccount, signOut } from '@/stores/hub'
+import { workspaces } from '@/stores/workspaces'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,8 +13,6 @@ const accountOpen = ref(false)
 const accountRoot = ref(null)
 
 onMounted(() => {
-  loadFleet()
-  loadLibrary()
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKey)
 })
@@ -52,14 +49,14 @@ const NAV = [
     view: 'skills',
     label: 'Skills',
     icon: 'star',
-    count: () => (library.loaded ? library.count : hub.skills.length),
+    count: () => workspaces.skills.length,
   },
   {
     to: '/machines',
     view: 'machines',
     label: 'Machines',
     icon: 'screen',
-    count: () => (fleet.loaded ? fleet.hosts.length : hub.machines.length),
+    count: () => workspaces.machines.length,
   },
   { to: '/activity', view: 'activity', label: 'Activity', icon: 'pulse' },
 ]

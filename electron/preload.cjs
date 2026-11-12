@@ -5,9 +5,16 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('desktop', {
   isElectron: true,
   getAppInfo: () => ipcRenderer.invoke('app:info'),
-  /* local machine data — read-only ssh config, ssh probes and skill libraries */
-  readSshHosts: () => ipcRenderer.invoke('ssh:hosts'),
-  probeSshHost: (alias) => ipcRenderer.invoke('ssh:probe', alias),
-  scanSkills: () => ipcRenderer.invoke('skills:scan'),
-  readSkill: (harness, name) => ipcRenderer.invoke('skills:read', { harness, name }),
+
+  /* All local data goes through one call table (electron/rpc.cjs). The renderer
+     passes a name and an argument object; it never passes a path or a command. */
+  call: (fn, args) => ipcRenderer.invoke('entity:call', { fn, args }),
+
+  /* Streaming run events. Returns an unsubscribe function; every event carries
+     its own workspace so the renderer can drop foreign ones. */
+  onRunEvent: (cb) => {
+    const listener = (_event, payload) => cb(payload)
+    ipcRenderer.on('entity:event', listener)
+    return () => ipcRenderer.removeListener('entity:event', listener)
+  },
 })

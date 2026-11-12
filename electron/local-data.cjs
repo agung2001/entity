@@ -14,8 +14,14 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { execFile } = require('node:child_process')
+const {
+  HOME,
+  tilde,
+  stripQuotes,
+  expandHome,
+  parseFrontmatter,
+} = require('./frontmatter.cjs')
 
-const HOME = os.homedir()
 const PLATFORM = process.platform
 
 /* Windows reads the per-user config from %USERPROFILE%\.ssh\config, which is
@@ -24,34 +30,6 @@ const PLATFORM = process.platform
    OpenSSH config (%ProgramData%\ssh\ssh_config) is deliberately not merged: it
    describes an ssh server, not the hosts this user connects to. */
 const SSH_CONFIG_PATH = path.join(HOME, '.ssh', 'config')
-
-function tilde(value) {
-  if (!value) return ''
-  const normalized = String(value)
-  if (normalized === HOME) return '~'
-  if (normalized.startsWith(HOME + path.sep)) {
-    return '~' + path.sep + normalized.slice(HOME.length + 1)
-  }
-  return normalized
-}
-
-function stripQuotes(value) {
-  const v = String(value || '').trim()
-  if (
-    (v.startsWith('"') && v.endsWith('"')) ||
-    (v.startsWith("'") && v.endsWith("'"))
-  ) {
-    return v.slice(1, -1)
-  }
-  return v
-}
-
-function expandHome(value) {
-  if (!value) return value
-  if (value === '~') return HOME
-  if (value.startsWith('~/') || value.startsWith('~\\')) return path.join(HOME, value.slice(2))
-  return value
-}
 
 /* ── ssh config ───────────────────────────────────────────────────── */
 
@@ -417,34 +395,8 @@ function walkFiles(root, { cap = 400, maxDepth = 4, withBodies = false } = {}) {
   return out
 }
 
-/* YAML-ish frontmatter: enough for the keys a SKILL.md actually carries, with
-   folded (`>`) and literal (`|`) descriptions joined into one line. */
-function parseFrontmatter(text) {
-  if (!text.startsWith('---')) return {}
-  const end = text.indexOf('\n---', 3)
-  if (end < 0) return {}
-  const lines = text.slice(3, end).split(/\r?\n/)
-  const out = {}
-  let key = null
-
-  for (const raw of lines) {
-    const line = raw.replace(/\r$/, '')
-    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
-    if (match) {
-      key = match[1]
-      out[key] = match[2]
-      continue
-    }
-    if (key && (/^\s+/.test(line) || line.trim() === '') && line.trim()) {
-      out[key] = `${out[key] ? `${out[key]} ` : ''}${line.trim()}`
-    }
-  }
-
-  for (const k of Object.keys(out)) {
-    out[k] = stripQuotes(String(out[k]).replace(/^[>|][+-]?\s*/, '')).trim()
-  }
-  return out
-}
+/* The frontmatter parser lives in frontmatter.cjs so skills and entities read
+   the same grammar. Re-exported below for callers that already expect it here. */
 
 function findEntryFile(dir) {
   for (const name of ['SKILL.md', 'skill.md', 'SKILL.markdown']) {
@@ -481,6 +433,144 @@ function readSkillMeta(entryFile, fallbackName) {
   }
 }
 
+/** Which harness a resolved path belongs to, if any — used to label a symlink. */
+function harnessSourceOf(realPath) {
+  if (!realPath) return null
+  for (const harness of HARNESSES) {
+    for (const root of harness.roots) {
+      if (realPath === root || realPath.startsWith(root + path.sep)) {
+        return { harness: harness.id, harnessLabel: harness.label, root }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Scan one directory that holds skills — either a harness's own library or a
+ * workspace's `skills/` directory. Same shape for both, so the library view and
+ * the workspace view cannot disagree about what a skill is.
+ *
+ * In workspace mode (`detectHarness`) each entry is usually a symlink into a
+ * harness library: the harness is read off the resolved target, and a link whose
+ * target is gone becomes `missing: true` instead of disappearing.
+ */
+function scanSkillDir(root, options = {}) {
+  const { harness = 'workspace', harnessLabel = 'Workspace', detectHarness = false } = options
+  const items = []
+  let entries
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return items
+  }
+
+  for (const entry of entries) {
+    const full = path.join(root, entry.name)
+    let stat = null
+    let dangling = false
+    try {
+      stat = fs.statSync(full) // follows symlinks, which most harness links are
+    } catch {
+      dangling = entry.isSymbolicLink()
+      if (!dangling) continue
+    }
+
+    const linkTarget = (() => {
+      try {
+        return entry.isSymbolicLink() ? fs.readlinkSync(full) : ''
+      } catch {
+        return ''
+      }
+    })()
+    const realPath = (() => {
+      try {
+        return fs.realpathSync(full)
+      } catch {
+        return ''
+      }
+    })()
+    const source = detectHarness ? harnessSourceOf(realPath) : null
+
+    if (dangling) {
+      items.push({
+        id: `${harness}:${entry.name}`,
+        name: entry.name,
+        harness,
+        harnessLabel,
+        path: tilde(full),
+        absolutePath: full,
+        sourcePath: linkTarget ? tilde(linkTarget) : '',
+        entry: null,
+        singleFile: false,
+        description: '',
+        version: '',
+        license: '',
+        runtime: '',
+        files: 0,
+        bytes: 0,
+        size: '—',
+        updatedAt: null,
+        link: entry.isSymbolicLink(),
+        copied: false,
+        missing: true,
+      })
+      continue
+    }
+
+    let entryFile = null
+    let skillName = entry.name
+    let singleFile = false
+    if (stat.isDirectory()) {
+      entryFile = findEntryFile(full)
+      if (!entryFile) continue
+    } else if (stat.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+      entryFile = full
+      skillName = entry.name.replace(/\.md$/i, '')
+      singleFile = true
+    } else {
+      continue
+    }
+
+    const meta = readSkillMeta(entryFile, skillName)
+    const files = singleFile ? [{ bytes: stat.size }] : walkFiles(full, { cap: 400, maxDepth: 4 })
+    const bytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
+    const updatedAt = (() => {
+      try {
+        return fs.statSync(entryFile).mtime.toISOString()
+      } catch {
+        return stat.mtime.toISOString()
+      }
+    })()
+
+    const itemHarness = source?.harness || harness
+    items.push({
+      id: `${itemHarness}:${meta.name}`,
+      name: meta.name,
+      harness: itemHarness,
+      harnessLabel: source?.harnessLabel || harnessLabel,
+      path: tilde(full),
+      absolutePath: full,
+      sourcePath: detectHarness ? tilde(realPath) : tilde(full),
+      entry: path.basename(entryFile),
+      singleFile,
+      description: meta.description,
+      version: meta.version,
+      license: meta.license,
+      runtime: meta.runtime,
+      files: files.length,
+      bytes,
+      size: formatBytes(bytes),
+      updatedAt,
+      link: entry.isSymbolicLink(),
+      copied: detectHarness ? !entry.isSymbolicLink() : false,
+      missing: false,
+    })
+  }
+
+  return items
+}
+
 function scanSkillLibrary() {
   const items = []
   const seen = new Set()
@@ -492,81 +582,23 @@ function scanSkillLibrary() {
       displayPath: tilde(root),
       exists: fs.existsSync(root),
     }))
-    let count = 0
 
+    const found = []
     for (const root of roots) {
       if (!root.exists) continue
-      let entries
-      try {
-        entries = fs.readdirSync(root.path, { withFileTypes: true })
-      } catch {
-        continue
-      }
-
-      for (const entry of entries) {
-        const full = path.join(root.path, entry.name)
-        let stat
-        try {
-          stat = fs.statSync(full) // follows symlinks, which most harness links are
-        } catch {
-          continue
-        }
-
-        let entryFile = null
-        let skillName = entry.name
-        let singleFile = false
-        if (stat.isDirectory()) {
-          entryFile = findEntryFile(full)
-          if (!entryFile) continue
-        } else if (stat.isFile() && entry.name.toLowerCase().endsWith('.md')) {
-          entryFile = full
-          skillName = entry.name.replace(/\.md$/i, '')
-          singleFile = true
-        } else {
-          continue
-        }
-
-        const meta = readSkillMeta(entryFile, skillName)
-        const key = `${harness.id}:${meta.name.toLowerCase()}`
+      for (const item of scanSkillDir(root.path, { harness: harness.id, harnessLabel: harness.label })) {
+        const key = `${harness.id}:${item.name.toLowerCase()}`
         if (seen.has(key)) continue
         seen.add(key)
-
-        const files = singleFile ? [{ bytes: stat.size }] : walkFiles(full, { cap: 400, maxDepth: 4 })
-        const bytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
-        const updatedAt = (() => {
-          try {
-            return fs.statSync(entryFile).mtime.toISOString()
-          } catch {
-            return stat.mtime.toISOString()
-          }
-        })()
-
-        items.push({
-          id: `${harness.id}:${meta.name}`,
-          name: meta.name,
-          harness: harness.id,
-          harnessLabel: harness.label,
-          path: tilde(full),
-          absolutePath: full,
-          entry: path.basename(entryFile),
-          singleFile,
-          description: meta.description,
-          version: meta.version,
-          license: meta.license,
-          runtime: meta.runtime,
-          files: files.length,
-          bytes,
-          size: formatBytes(bytes),
-          updatedAt,
-        })
-        count += 1
+        found.push(item)
       }
     }
 
+    items.push(...found)
     harnesses.push({
       id: harness.id,
       label: harness.label,
-      count,
+      count: found.length,
       roots,
     })
   }
@@ -583,18 +615,22 @@ function scanSkillLibrary() {
   }
 }
 
-function readSkillEntry(harnessId, name) {
-  const targetHarness = String(harnessId || '')
-  const targetName = String(name || '').toLowerCase()
+/** Every skill directory this machine knows about, for the attach checklist. */
+function skillSources() {
   const scan = scanSkillLibrary()
-  const item = scan.items.find(
-    (entry) => entry.harness === targetHarness && entry.name.toLowerCase() === targetName,
-  )
-  if (!item) return null
+  return scan.items.map((item) => ({
+    name: item.name,
+    harness: item.harness,
+    harnessLabel: item.harnessLabel,
+    path: item.path,
+    absolutePath: item.absolutePath,
+    description: item.description,
+    version: item.version,
+  }))
+}
 
-  const entryPath = item.singleFile
-    ? item.absolutePath
-    : path.join(item.absolutePath, item.entry)
+function withContents(item) {
+  const entryPath = item.singleFile ? item.absolutePath : path.join(item.absolutePath, item.entry)
   let md = ''
   try {
     md = fs.readFileSync(entryPath, 'utf8').slice(0, 400 * 1024)
@@ -614,11 +650,36 @@ function readSkillEntry(harnessId, name) {
   return { ...item, md, files }
 }
 
+function readSkillEntry(harnessId, name) {
+  const targetHarness = String(harnessId || '')
+  const targetName = String(name || '').toLowerCase()
+  const scan = scanSkillLibrary()
+  const item = scan.items.find(
+    (entry) => entry.harness === targetHarness && entry.name.toLowerCase() === targetName,
+  )
+  return item ? withContents(item) : null
+}
+
+/** Read one skill out of a workspace's `skills/` directory. */
+function readWorkspaceSkill(root, name) {
+  const targetName = String(name || '').toLowerCase()
+  const item = scanSkillDir(root, { detectHarness: true }).find(
+    (entry) => entry.name.toLowerCase() === targetName,
+  )
+  if (!item || item.missing) return null
+  return withContents(item)
+}
+
 module.exports = {
   SSH_CONFIG_PATH,
   HARNESSES,
   readSshHosts,
   probeSshHost,
   scanSkillLibrary,
+  scanSkillDir,
+  skillSources,
+  harnessSourceOf,
   readSkillEntry,
+  readWorkspaceSkill,
+  parseFrontmatter,
 }

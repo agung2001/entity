@@ -1,25 +1,53 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { WORKSPACES } from '@/data/mock'
-import { hub, setWorkspace, workspaceById } from '@/stores/hub'
+import { useRouter } from 'vue-router'
+import { openSettings, openWizard, toast } from '@/stores/hub'
+import { activeWorkspace, openWorkspace, workspaces } from '@/stores/workspaces'
 
 /**
- * entity holds more than one workspace, so the rail card is a switcher rather
- * than a label. The list is sample data: this hub's entities, skills and
- * machines all belong to `sundoro`, and the menu says so instead of pretending
- * a second dataset was loaded.
+ * entity holds more than one workspace, and each is a directory with its own
+ * entities, skills, machines and run history. The list here is read from disk;
+ * switching reloads the scope instead of relabelling it.
  */
+const router = useRouter()
 const open = ref(false)
 const root = ref(null)
-const current = computed(() => workspaceById(hub.workspace))
+const switching = ref('')
+const current = computed(() => activeWorkspace.value)
+
+const list = computed(() => workspaces.items)
 
 function toggle() {
   open.value = !open.value
 }
 
-function pick(id) {
-  setWorkspace(id)
+async function pick(id) {
+  if (switching.value) return
+  if (id === workspaces.active) {
+    open.value = false
+    return
+  }
+  switching.value = id
+  try {
+    const record = await openWorkspace(id)
+    toast(`Opened ${record.label}`)
+    open.value = false
+    if (router.currentRoute.value.name === 'skill') router.push('/skills')
+  } catch (error) {
+    toast(error?.message || 'Could not open that workspace')
+  } finally {
+    switching.value = ''
+  }
+}
+
+function newWorkspace() {
   open.value = false
+  openWizard()
+}
+
+function settings() {
+  open.value = false
+  openSettings('machines')
 }
 
 function onTriggerKey(e) {
@@ -80,7 +108,7 @@ onBeforeUnmount(() => {
       aria-haspopup="listbox"
       :aria-expanded="open ? 'true' : 'false'"
       aria-controls="ws-menu"
-      :aria-label="`Workspace: ${current.label}, ${current.kind}`"
+      :aria-label="`Workspace: ${current?.label || 'none'}, ${current?.kind || 'not created'}`"
       @click="toggle"
       @keydown="onTriggerKey"
     >
@@ -98,8 +126,8 @@ onBeforeUnmount(() => {
         </svg>
       </span>
       <span class="v">
-        <span id="ws-name" class="nm">{{ current.label }}</span>
-        <em id="ws-kind">{{ current.kind }}</em>
+        <span id="ws-name" class="nm">{{ current?.label || 'no workspace' }}</span>
+        <em id="ws-kind">{{ current?.kind || '—' }}</em>
       </span>
     </button>
 
@@ -110,24 +138,44 @@ onBeforeUnmount(() => {
       aria-label="Workspaces"
       @keydown="onMenuKey"
     >
-      <div class="ph">Workspaces</div>
+      <div class="ph">Workspaces · on this machine</div>
       <button
-        v-for="w in WORKSPACES"
+        v-for="w in list"
         :key="w.id"
         class="pickopt"
         type="button"
         role="option"
         :data-ws-id="w.id"
-        :aria-selected="w.id === hub.workspace ? 'true' : 'false'"
+        :aria-selected="w.id === workspaces.active ? 'true' : 'false'"
+        :disabled="switching === w.id"
         @click="pick(w.id)"
       >
         <span class="nm">{{ w.label }}</span>
-        <span class="mt">{{ w.entities }} entities</span>
+        <span class="mt">
+          {{ switching === w.id ? 'opening…' : `${w.counts.entities} entities` }}
+        </span>
         <svg class="ck" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
           <path d="M2 6.4l2.7 2.6L10 3.4" />
         </svg>
       </button>
-      <div class="note">Sample workspaces — this hub’s records live in sundoro.</div>
+      <div class="ws-menu-foot">
+        <button class="pickopt" type="button" @click="settings">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+            <circle cx="8" cy="8" r="2.2" />
+            <path
+              d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1"
+            />
+          </svg>
+          Workspace settings
+        </button>
+        <button class="pickopt" type="button" @click="newWorkspace">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M8 3.2v9.6M3.2 8h9.6" />
+          </svg>
+          New workspace
+        </button>
+      </div>
+      <div v-if="workspaces.error" class="note">{{ workspaces.error }}</div>
     </div>
   </div>
 </template>

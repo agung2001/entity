@@ -1,7 +1,9 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { hub } from '@/stores/hub'
+import { loadWorkspaces, workspaces } from '@/stores/workspaces'
 
 import LoginView from '@/views/LoginView.vue'
+import SetupView from '@/views/SetupView.vue'
 import HubLayout from '@/layouts/HubLayout.vue'
 import OverviewView from '@/views/OverviewView.vue'
 import ChatView from '@/views/ChatView.vue'
@@ -21,6 +23,13 @@ const router = createRouter({
       name: 'login',
       component: LoginView,
       meta: { public: true, title: 'Sign in · entity' },
+    },
+    {
+      /* outside HubLayout on purpose: the rail assumes a workspace exists */
+      path: '/setup',
+      name: 'setup',
+      component: SetupView,
+      meta: { title: 'Create a workspace · entity' },
     },
     {
       path: '/',
@@ -74,15 +83,39 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+/**
+ * Guard order: session → workspace → route.
+ *
+ * The workspace trigger is the directory on disk (`workspace.needsSetup()`), not
+ * a flag someone has to remember to set, so a fresh profile — or a workspace
+ * deleted outside the app — lands on /setup every time. The deep link the user
+ * was trying to reach travels in `?redirect` and is honoured after creation.
+ */
+router.beforeEach(async (to) => {
   if (to.meta.public) {
+    if (to.name !== 'login' || !hub.session) return true
     /* a live session does not need the sign-in screen again */
-    if (to.name === 'login' && hub.session) return { name: 'overview' }
-    return true
+    if (!workspaces.loaded) await loadWorkspaces()
+    return workspaces.items.length ? { name: 'overview' } : { name: 'setup' }
   }
+
   if (!hub.session) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
+
+  if (!workspaces.loaded) await loadWorkspaces()
+
+  if (to.name === 'setup') {
+    /* the setup screen is for a profile with no workspace; adding another one
+       later happens in a modal from the switcher, not by leaving the hub */
+    if (workspaces.items.length) return { name: 'overview' }
+    return true
+  }
+
+  if (!workspaces.items.length) {
+    return { name: 'setup', query: { redirect: to.fullPath } }
+  }
+
   return true
 })
 

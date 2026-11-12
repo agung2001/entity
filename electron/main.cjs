@@ -1,12 +1,13 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
-const localData = require('./local-data.cjs')
+const { createRpc } = require('./rpc.cjs')
 
 // Set by `npm run dev:desktop`; empty when running a built app.
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL
 const isDev = Boolean(RENDERER_URL)
 
 let mainWindow = null
+let rpc = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -56,7 +57,19 @@ function createWindow() {
   })
 }
 
+/** Run events go to every window; they carry their own workspace id. */
+function broadcast(event) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('entity:event', event)
+  }
+}
+
 app.whenReady().then(() => {
+  rpc = createRpc({
+    emit: broadcast,
+    reveal: (file) => shell.showItemInFolder(file),
+  })
+
   ipcMain.handle('app:info', () => ({
     name: app.getName(),
     version: app.getVersion(),
@@ -67,21 +80,26 @@ app.whenReady().then(() => {
     arch: process.arch,
   }))
 
-  /* Local machine data. The renderer never gets a path or a shell — it asks for
-     the parsed ssh config, a probe of one known alias, and the skill libraries. */
-  ipcMain.handle('ssh:hosts', () => localData.readSshHosts())
-  ipcMain.handle('ssh:probe', (_event, alias) => localData.probeSshHost(String(alias || '')))
-  ipcMain.handle('skills:scan', () => localData.scanSkillLibrary())
-  ipcMain.handle('skills:read', (_event, payload) => {
-    const { harness, name } = payload || {}
-    return localData.readSkillEntry(String(harness || ''), String(name || ''))
-  })
+  /* One channel for every local call. The renderer never gets a path or a
+     shell — it asks for a parsed result, and the call table decides what that
+     costs. */
+  ipcMain.handle('entity:call', (_event, payload) => rpc.call(payload?.fn, payload?.args))
 
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+/* A run is a child of this process. Quitting takes it down, which is why a run
+   that outlives the window is reported as canceled on the next boot. */
+app.on('before-quit', () => {
+  try {
+    rpc?.closeAll()
+  } catch {
+    /* quitting anyway */
+  }
 })
 
 app.on('window-all-closed', () => {

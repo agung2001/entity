@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fleet, loadFleet } from '@/stores/fleet'
-import { library, loadLibrary } from '@/stores/library'
+import { loadHosts, workspaces } from '@/stores/workspaces'
 import { hub, initials, openDrawer } from '@/stores/hub'
 
 /**
@@ -14,13 +14,13 @@ const input = ref(null)
 
 onMounted(() => {
   loadFleet()
-  loadLibrary()
+  if (!workspaces.hosts.length) loadHosts()
 })
 
 const items = computed(() => {
   const q = hub.palette.query.trim().toLowerCase()
-  const hosts = fleet.loaded ? fleet.hosts : hub.machines
-  const skills = library.loaded ? library.items : hub.skills
+  const hosts = fleet.loaded ? fleet.hosts : workspaces.hosts
+  const skills = workspaces.skills
   const list = [
     ...hosts.map((m) => ({
       kind: 'machine',
@@ -37,7 +37,12 @@ const items = computed(() => {
           ? router.push({ name: 'skill', params: { name: s.name }, query: { harness: s.harness } })
           : router.push('/skills'),
     })),
-    ...hub.agents.map((a) => ({ kind: 'entity', id: a.id, label: a.name, act: () => openDrawer(a.id) })),
+    ...hub.agents.map((a) => ({
+      kind: 'entity',
+      id: a.id,
+      label: a.name,
+      act: () => openDrawer(a.id),
+    })),
   ]
   return list.filter((i) => i.label.toLowerCase().includes(q))
 })
