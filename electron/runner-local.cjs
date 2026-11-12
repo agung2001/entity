@@ -301,10 +301,10 @@ function createRunner({ emit = () => {} } = {}) {
 
     const dir = entities.resolveDir(entity)
     const record = workspaces.open(workspace)
-    /* `/workspace:<skill>` or `/<harness>:<skill>` is resolved to a path and the
-       prompt becomes `use this skill <path>`; a reference that does not resolve
-       throws here, before a run id is spent */
-    const applied = skillRef.rewrite(record, String(prompt))
+    /* `/workspace:<skill>`, `/<harness>:<skill>` or a bare `/<skill>` is resolved
+       to a path on this machine and the prompt becomes `use this skill <path>`;
+       a reference that does not resolve throws here, before a run id is spent */
+    const applied = skillRef.rewrite(record, String(prompt), { machine: 'local' })
     const runId = newRunId()
     const run = {
       runId,

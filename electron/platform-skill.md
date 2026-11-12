@@ -18,6 +18,12 @@ through the `entity` CLI:
 `--workspace` defaults to `$ENTITY_WORKSPACE` (this one), so you rarely pass it.
 Other workspaces are not reachable from here, by design.
 
+A person points you at a skill by starting a message with `/workspace:<name>`,
+`/<harness>:<name>`, or a bare `/<name>` when exactly one library on this
+machine has it; the app resolves it to a path before you see the prompt. If
+someone asks how to use a skill, that is the answer — `entity skill list` shows
+what this workspace has attached.
+
 - `--help` on any verb beats guessing a flag.
 - A name is not an id: `list` first, then act on what it returned.
 - `--output json` writes to stdout; diagnostics go to stderr. Never merge them.

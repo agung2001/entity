@@ -26,8 +26,8 @@ export const workspaces = reactive({
   mcp: { schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true, path: '' },
   /** the machine-wide skill libraries, for the "attach" lists */
   library: null,
-  /** a names-only index for the slash menu, much cheaper than the full library */
-  skillNames: null,
+  /** machine id → the names-only index for that machine's libraries */
+  skillNamesByMachine: {},
   hosts: [],
   /** the optional sample entities the wizard offers */
   samples: [],
@@ -221,30 +221,52 @@ let libraryPending = null
  * tab, a `/` in the composer, or a library skill page — and the answer is cached
  * for the session. `force` is the "Try again" path after a failed scan.
  */
-let skillNamesPending = null
+const skillNamesPending = new Map()
 
 /**
- * Names-only library scan for the composer. It answers the same references as
- * the full library, but leaves descriptions, byte counts and file trees alone,
- * so typing `/` does not pay for the library page's card data.
+ * Names-only library scan for the composer, per machine.
+ *
+ * It answers the same references as the full library, but leaves descriptions,
+ * byte counts and file trees alone, so typing `/` does not pay for the library
+ * page's card data. A machine that is not this one answers with an empty list
+ * and a note: its libraries cannot be read from here, and a local path would be
+ * a lie about where the harness will look.
  */
-export async function loadSkillNames() {
-  if (skillNamesPending) return skillNamesPending
-  if (workspaces.skillNames) return workspaces.skillNames
-  skillNamesPending = (async () => {
+export async function loadSkillNames({ machine = 'local', force = false } = {}) {
+  const key = String(machine || 'local')
+  if (!force && workspaces.skillNamesByMachine[key]) return workspaces.skillNamesByMachine[key]
+  if (!force && skillNamesPending.has(key)) return skillNamesPending.get(key)
+
+  const task = (async () => {
+    let payload
     try {
-      const data = await call('skills.names')
-      workspaces.skillNames = data || { items: [], count: 0 }
-      applyLibrary(workspaces.skillNames.items)
-    } catch {
-      workspaces.skillNames = null
-      applyLibrary([])
-    } finally {
-      skillNamesPending = null
+      payload =
+        (await call('skills.names', { machine: key })) || {
+          machine: key,
+          items: [],
+          count: 0,
+        }
+    } catch (error) {
+      payload = {
+        machine: key,
+        items: [],
+        count: 0,
+        error: error?.message || 'The skill libraries could not be read.',
+      }
     }
-    return workspaces.skillNames || { items: [], count: 0 }
+    workspaces.skillNamesByMachine = { ...workspaces.skillNamesByMachine, [key]: payload }
+    /* the hub's menu index is this machine's inventory; another machine's empty
+       answer must not wipe it */
+    if (key === 'local') applyLibrary(payload.items || [])
+    return payload
   })()
-  return skillNamesPending
+
+  skillNamesPending.set(key, task)
+  try {
+    return await task
+  } finally {
+    skillNamesPending.delete(key)
+  }
 }
 
 export async function loadLibrary({ force = false } = {}) {

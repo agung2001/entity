@@ -58,8 +58,8 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
       const owner = user ? { name: user.username, email: user.email } : args?.owner || null
       return workspaces.claimOwner({ ...args, owner })
     },
-    'workspace.library': () => localData.scanSkillLibrary(),
-    'skills.names': () => localData.scanSkillNames(),
+    'workspace.library': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
+    'skills.names': ({ machine } = {}) => localData.scanSkillNames({ machine }),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),
@@ -116,6 +116,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'chat.pin': (args) => chats.pin(args),
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
+    'chat.cancel': (args) => chats.cancel(args),
 
     /* harness sessions, read from each CLI's own store */
     'sessions.list': (args) => sessions.list(args),
@@ -148,7 +149,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
       }
       return localData.probeSshHost(target, { configFile })
     },
-    'skills.scan': () => localData.scanSkillLibrary(),
+    'skills.scan': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
     'skills.read': ({ harness, name }) =>
       localData.readSkillEntry(String(harness || ''), String(name || '')),
 

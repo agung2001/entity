@@ -4,7 +4,7 @@ import EntityMark from '@/components/EntityMark.vue'
 import ThreadMinimap from '@/components/ThreadMinimap.vue'
 import MessageBody from '@/components/MessageBody.vue'
 import ChatArtifacts from '@/components/ChatArtifacts.vue'
-import TraceTimeline from '@/components/TraceTimeline.vue'
+import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
 import { credentials, hub, toast } from '@/stores/hub'
 import { gravatarUrl } from '@/lib/gravatar'
@@ -192,7 +192,7 @@ function traceSummary(message) {
       ? `${Math.max(1, Math.round(ms))}ms`
       : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
     : ''
-  return [duration, `${thoughts} thinking`, `${tools} tool${tools === 1 ? '' : 's'}`]
+  return [duration, `${thoughts} reasoning`, `${tools} tool${tools === 1 ? '' : 's'}`]
     .filter(Boolean)
     .join(' · ')
 }
@@ -263,7 +263,7 @@ function traceSummary(message) {
           <span>{{ traceSummary(m) }}</span>
         </summary>
         <div v-if="traceOpen(m, i)" class="msg-trace-body">
-          <TraceTimeline :steps="m.steps" :execution="m.execution" compact />
+          <TraceDigest :steps="m.steps" :execution="m.execution" />
         </div>
       </details>
       <div v-if="m.who !== 'sys'" class="msg-foot" :data-who="m.who">
@@ -320,7 +320,7 @@ function traceSummary(message) {
         <span>{{ live.steps.filter((step) => step.type === 'tool_use').length }} tool calls</span>
       </summary>
       <div class="msg-trace-body">
-        <TraceTimeline :steps="live.steps" :execution="live.execution" compact />
+        <TraceDigest :steps="live.steps" :execution="live.execution" />
       </div>
     </details>
 

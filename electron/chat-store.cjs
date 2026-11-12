@@ -29,12 +29,14 @@ const { createParser } = require('./chat-transcript.cjs')
 const MAX_THREADS_SCANNED = 400
 const MAX_OUTPUT_CHARS = 240_000
 const MAX_PROMPT_CHARS = 48_000
-const HARNESS_TIMEOUT_MS = 10 * 60 * 1000
+const HARNESS_IDLE_MS = 15 * 60 * 1000
 const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
 
 const sending = new Map()
 /** threadId → live harness process, so a quit mid-answer takes it down too */
 const inFlight = new Map()
+/** thread ids the person explicitly stopped; close is not a harness failure */
+const canceling = new Set()
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g
 
 const clean = (value) => String(value || '').replace(ANSI, '').trim()
@@ -204,6 +206,13 @@ function readThread(record, id) {
   return normaliseThread(raw, record)
 }
 
+function stopProcess(child) {
+  if (!child) return
+  killTree(child, 'SIGTERM')
+  const escalate = setTimeout(() => killTree(child, 'SIGKILL'), 3000)
+  if (typeof escalate.unref === 'function') escalate.unref()
+}
+
 function previewOf(thread) {
   const spoken = [...thread.messages].reverse().find((message) => message.who !== 'sys')
   return spoken ? spoken.text.replace(/\s+/g, ' ').trim().slice(0, 180) : ''
@@ -231,6 +240,7 @@ function summarise(thread) {
     queries,
     replies,
     messageCount: queries + replies,
+    working: sending.has(thread.id),
     preview: previewOf(thread),
     /* A summary is a row, not the transcript: do not ship every thinking block
        and tool output through the history list. */
@@ -619,27 +629,33 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
     let settled = false
     inFlight.set(thread.id, child)
 
-    /** Graceful first, then the group, so no helper survives the answer. */
-    const stop = () => {
-      killTree(child, 'SIGTERM')
-      const escalate = setTimeout(() => killTree(child, 'SIGKILL'), 3000)
-      if (typeof escalate.unref === 'function') escalate.unref()
+    let idleTimer = null
+    let timedOut = false
+    const armIdle = () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        timedOut = true
+        stopProcess(child)
+      }, HARNESS_IDLE_MS)
+      if (typeof idleTimer.unref === 'function') idleTimer.unref()
     }
 
     const finish = (code, error) => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      clearTimeout(idleTimer)
       if (inFlight.get(thread.id) === child) inFlight.delete(thread.id)
+      const canceled = canceling.delete(thread.id)
       const parsed = parser.finish()
       const endedAt = now()
-      const failed = error ? String(error?.message || error) : parsed.error
+      const failed = canceled ? '' : error ? String(error?.message || error) : parsed.error
       const exitFailure =
-        !failed && typeof code === 'number' && code !== 0
+        !canceled && !failed && typeof code === 'number' && code !== 0
           ? friendlyError(err || parsed.answer || out, spec.cmd)
           : ''
       resolve({
-        ok: !failed && !exitFailure,
+        ok: !canceled && !failed && !exitFailure,
+        canceled,
         answer: parsed.answer,
         error: failed || exitFailure,
         steps: parsed.steps,
@@ -651,15 +667,12 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
           endedAt,
           ms: Date.now() - startedMs,
           exitCode: typeof code === 'number' ? code : null,
-          status: failed || exitFailure ? 'error' : 'ok',
+          status: canceled ? 'canceled' : failed || exitFailure ? 'error' : 'ok',
         },
       })
     }
 
-    const timer = setTimeout(() => {
-      stop()
-      finish(null, new Error('The harness did not answer within 10 minutes.'))
-    }, HARNESS_TIMEOUT_MS)
+    armIdle()
 
     child.on('error', (error) => {
       finish(
@@ -676,12 +689,19 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
       out += text
       if (out.length > MAX_OUTPUT_CHARS) out = out.slice(-MAX_OUTPUT_CHARS)
       parser.push(text)
+      armIdle()
     })
     child.stderr?.on('data', (chunk) => {
       err += String(chunk)
       if (err.length > MAX_OUTPUT_CHARS) err = err.slice(-MAX_OUTPUT_CHARS)
+      armIdle()
     })
-    child.on('close', (code) => finish(typeof code === 'number' ? code : null))
+    child.on('close', (code) =>
+      finish(
+        typeof code === 'number' ? code : null,
+        timedOut ? new Error('The harness produced no output for 15 minutes.') : null,
+      ),
+    )
 
     child.stdin?.on('error', () => {
       /* a harness that exits before reading stdin is reported by `close` */
@@ -725,10 +745,11 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
     thread.messages.pop()
   } else {
     if (!thread.title) thread.title = titleOf({ messages: [{ who: 'me', text: message }] })
-    /* `/workspace:<skill>` or `/<harness>:<skill>` becomes
-       `use this skill <path>` — resolved before anything is written, so a typo
-       leaves no half-turn in the transcript */
-    const applied = skillRef.rewrite(record, message)
+    /* `/workspace:<skill>`, `/<harness>:<skill>` or a bare `/<skill>` becomes
+       `use this skill <path>` — resolved on the machine this thread is pinned to,
+       before anything is written, so a typo leaves no half-turn in the
+       transcript */
+    const applied = skillRef.rewrite(record, message, { machine: thread.machine })
     thread.messages.push({
       who: 'me',
       text: message,
@@ -812,7 +833,17 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
     const at = now()
     const createdArtifacts = turnArtifacts(record.id, turnStartedMs, run.answer)
     const execution = { ...run.execution, id: messageId, harness: thread.harness }
-    turnMessage = run.ok
+    turnMessage = run.canceled
+      ? {
+          who: 'sys',
+          id: messageId,
+          text: 'Stopped by you.',
+          at,
+          steps: run.steps,
+          execution,
+          ...(createdArtifacts.length ? { artifacts: createdArtifacts } : {}),
+        }
+      : run.ok
       ? {
           who: 'agent',
           id: messageId,
@@ -855,6 +886,17 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
   return thread
 }
 
+function cancel({ workspace, id } = {}) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread) throw new Error('That thread no longer exists.')
+  const child = inFlight.get(thread.id)
+  if (!child) return { canceled: false, reason: 'not running' }
+  canceling.add(thread.id)
+  stopProcess(child)
+  return { canceled: true }
+}
+
 module.exports = {
   list,
   read,
@@ -864,11 +906,13 @@ module.exports = {
   pin,
   remove,
   send,
+  cancel,
   summarise,
   /** Quitting with an answer in flight must not leave the harness running. */
   closeAll: () => {
     for (const child of inFlight.values()) killTree(child, 'SIGTERM')
     inFlight.clear()
+    canceling.clear()
   },
   activeCount: () => inFlight.size,
 }

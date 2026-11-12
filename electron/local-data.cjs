@@ -561,6 +561,9 @@ function scanSkillDir(root, options = {}) {
         harnessLabel: source?.harnessLabel || harnessLabel,
         path: tilde(full),
         absolutePath: full,
+        /* the resolved target, so the composer can tell that a workspace
+           symlink and a harness skill are the same file */
+        realPath: realPath || full,
         entry: path.basename(entryFile),
         singleFile,
         missing: false,
@@ -585,6 +588,7 @@ function scanSkillDir(root, options = {}) {
       harnessLabel: source?.harnessLabel || harnessLabel,
       path: tilde(full),
       absolutePath: full,
+      realPath: realPath || full,
       sourcePath: detectHarness ? tilde(realPath) : tilde(full),
       entry: path.basename(entryFile),
       singleFile,
@@ -610,7 +614,36 @@ function scanSkillDir(root, options = {}) {
  * roots and name resolution as the full library, but skips the file walk and
  * byte count that the library cards need.
  */
-function scanSkillNames() {
+/* ── machine scope ──────────────────────────────────────────────────
+ * A skill reference is resolved on the machine the thread is pinned to. Only
+ * this machine can be read: a harness library on an ssh host is not a local
+ * directory, and inventing a local path for it would hand a remote harness a
+ * file it cannot see. The answer is empty plus a note, never a local fallback. */
+const LOCAL_MACHINE = 'local'
+
+function remoteMachine(machine) {
+  const alias = String(machine || '').trim() || LOCAL_MACHINE
+  const hosts = (() => {
+    try {
+      return readSshHosts().hosts
+    } catch {
+      return []
+    }
+  })()
+  const host = hosts.find((entry) => entry.alias === alias || entry.id === alias)
+  return {
+    machine: alias,
+    host: alias,
+    hostName: host?.hostName || '',
+    remote: true,
+    note: `Skills on ${alias} are not readable yet — send this thread to this machine.`,
+  }
+}
+
+function scanSkillNames({ machine = LOCAL_MACHINE } = {}) {
+  if (machine && machine !== LOCAL_MACHINE) {
+    return { ...remoteMachine(machine), items: [], count: 0 }
+  }
   const items = []
   const seen = new Set()
   for (const harness of HARNESSES) {
@@ -628,6 +661,10 @@ function scanSkillNames() {
           name: item.name,
           harness: item.harness,
           harnessLabel: item.harnessLabel,
+          absolutePath: item.absolutePath,
+          realPath: item.realPath,
+          entry: item.entry,
+          singleFile: item.singleFile,
         })
       }
     }
@@ -635,10 +672,19 @@ function scanSkillNames() {
   items.sort(
     (a, b) => a.name.localeCompare(b.name) || a.harnessLabel.localeCompare(b.harnessLabel),
   )
-  return { items, count: items.length }
+  return {
+    machine: LOCAL_MACHINE,
+    hostname: os.hostname(),
+    remote: false,
+    items,
+    count: items.length,
+  }
 }
 
-function scanSkillLibrary() {
+function scanSkillLibrary({ machine = LOCAL_MACHINE } = {}) {
+  if (machine && machine !== LOCAL_MACHINE) {
+    return { ...remoteMachine(machine), harnesses: [], items: [], count: 0 }
+  }
   const items = []
   const seen = new Set()
   const harnesses = []
@@ -673,9 +719,11 @@ function scanSkillLibrary() {
   items.sort((a, b) => a.name.localeCompare(b.name) || a.harnessLabel.localeCompare(b.harnessLabel))
 
   return {
+    machine: LOCAL_MACHINE,
     hostname: os.hostname(),
     platform: PLATFORM,
     scannedAt: new Date().toISOString(),
+    remote: false,
     harnesses,
     items,
     count: items.length,

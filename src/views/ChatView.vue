@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChatHarnessDialog from '@/components/ChatHarnessDialog.vue'
 import ChatMcpDialog from '@/components/ChatMcpDialog.vue'
@@ -17,11 +17,13 @@ import { HARNESSES } from '@/data/mock'
 import {
   activeThread,
   agentById,
+  cancelChat,
   chatSend,
   ensureChats,
   harnessById,
   hub,
   machineById,
+  renameThread,
   selectThread,
   setThreadContext,
   snippet,
@@ -47,6 +49,9 @@ const mcpOpen = ref(false)
 const composer = ref(null)
 const live = ref(null)
 const focusMessage = ref(-1)
+const titleEditing = ref(false)
+const titleDraft = ref('')
+const titleInput = ref(null)
 let offEvent = null
 
 const isMac =
@@ -140,6 +145,56 @@ const threadTitle = computed(() => {
   const asked = (t.messages || []).find((message) => message.who === 'me')
   return asked ? snippet(asked.text) : `Thread with ${agent.value?.name || 'entity'}`
 })
+
+function startTitleEdit() {
+  if (!thread.value) return
+  titleDraft.value = thread.value.title || threadTitle.value
+  titleEditing.value = true
+  nextTick(() => {
+    titleInput.value?.focus()
+    titleInput.value?.select()
+  })
+}
+
+function cancelTitleEdit() {
+  titleEditing.value = false
+  titleDraft.value = ''
+}
+
+async function saveTitle() {
+  if (!titleEditing.value || !thread.value) return
+  const id = thread.value.id
+  const next = titleDraft.value.trim()
+  titleEditing.value = false
+  if (next === String(thread.value.title || '').trim()) {
+    titleDraft.value = ''
+    return
+  }
+  try {
+    await renameThread(id, next)
+    toast(next ? 'Thread title saved' : 'Thread title cleared')
+  } catch (error) {
+    toast(error?.message || 'The title could not be saved.')
+  } finally {
+    titleDraft.value = ''
+  }
+}
+
+function onTitleKey(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelTitleEdit()
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    saveTitle()
+  }
+}
+
+function onTitleTitleKey(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  startTitleEdit()
+}
 
 const statLabel = computed(
   () =>
@@ -261,6 +316,10 @@ function onCreated(created) {
   if (created?.id && route.query.thread !== created.id) {
     router.replace({ name: 'chat', query: { thread: created.id } })
   }
+}
+
+async function stopTurn() {
+  await cancelChat()
 }
 
 async function send(text) {
@@ -398,6 +457,8 @@ watch(
     helpOpen.value = false
     harnessOpen.value = false
     mcpOpen.value = false
+    titleEditing.value = false
+    titleDraft.value = ''
   },
 )
 
@@ -431,7 +492,32 @@ watch(
           <header class="cp-head">
             <EntityMark :entity="agent.name" />
             <div class="cp-id">
-              <h2>{{ threadTitle }}</h2>
+              <form v-if="titleEditing" class="cp-title-form" @submit.prevent="saveTitle">
+                <input
+                  ref="titleInput"
+                  v-model="titleDraft"
+                  class="cp-title-input"
+                  type="text"
+                  maxlength="120"
+                  aria-label="Thread title"
+                  @keydown="onTitleKey"
+                  @blur="saveTitle"
+                />
+              </form>
+              <h2
+                v-else
+                class="cp-title"
+                role="button"
+                tabindex="0"
+                title="Rename thread"
+                @click="startTitleEdit"
+                @keydown="onTitleTitleKey"
+              >
+                {{ threadTitle }}
+                <svg class="cp-title-pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7zM9.4 3.2l2.4 2.4" />
+                </svg>
+              </h2>
               <p class="cp-id-meta">
                 <span>Last message</span>
                 <time v-if="lastMessageAt" :datetime="lastMessageAt">{{ lastMessageWhen }}</time>
@@ -535,10 +621,14 @@ watch(
                 <SlashComposer
                   ref="composer"
                   :agent="agent"
+                  :machine="ctx.machine || 'local'"
                   :placeholder="`Message ${agent.name}`"
                   :focus-shortcut="focusShortcut"
                   :disabled="hub.chat.sending"
+                  :sending="hub.chat.sending"
+                  :stopping="hub.chat.stopping"
                   @send="send"
+                  @stop="stopTurn"
                 />
               </div>
             </div>
@@ -580,11 +670,11 @@ watch(
           <dl class="help-list">
             <div>
               <dt><kbd>/</kbd></dt>
-              <dd><b>Skills and commands</b><span>Open the menu, then pick a skill or built-in command.</span></dd>
+              <dd><b>Skills</b><span>Open the menu, then pick a skill from any harness on this machine.</span></dd>
             </div>
             <div>
               <dt><kbd>↑</kbd><kbd>↓</kbd></dt>
-              <dd><b>Move through the menu</b><span>Choose the command you want.</span></dd>
+              <dd><b>Move through the menu</b><span>Choose the skill you want.</span></dd>
             </div>
             <div>
               <dt><kbd>tab</kbd></dt>

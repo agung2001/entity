@@ -178,9 +178,19 @@ harness loads. To actually use a skill, start the message with a reference:
 | --- | --- |
 | `/workspace:<name>` | `<ws>/skills/<name>` — attached to this workspace |
 | `/<harness>:<name>` | that harness's own library, e.g. `~/.claude/skills/<name>` |
+| `/<name>` | any library on this machine, when exactly one has that name |
 
-The `/` menu lists both (the entity's own skills first), and inserts the
-reference. The backend resolves it to an absolute path and sends
+The `/` menu is a skill picker and nothing else — there are no built-in
+commands, because every command this app once advertised was either a skill
+reference or a token the harness owns. The menu lists the workspace's skills
+first, then every harness library on the machine, and inserts the reference.
+Picking from the menu always inserts the qualified form; a bare `/<name>` is
+for typing by hand, and is accepted only when one library has it. Two libraries
+with the same name is an error listing both qualified forms, not a guess — the
+wrong library would load the wrong instructions silently.
+
+The backend resolves the reference to an absolute path **on the machine the
+thread is pinned to** and sends
 
 ```
 use this skill /abs/path/to/skill
@@ -188,17 +198,20 @@ use this skill /abs/path/to/skill
 <the rest of the prompt>
 ```
 
-The reference itself is not sent. A reference this app owns that does not
-resolve is an error — a typo should not turn into an answer without the skill it
-named. `/review` (no colon) and `/<unknown>:<name>` are left alone: those belong
-to the harness. This is the one place the workspace's `skills/` directory is
-load-bearing, and it is why a harness-only skill can be used without attaching
-it first.
+Only this machine's libraries can be read, so a thread pinned to an ssh host
+offers no skills and says so; it never hands a remote harness a local path it
+cannot see. The reference itself is not sent. A reference this app owns that
+does not resolve is an error — a typo should not turn into an answer without the
+skill it named. `/review` (no colon, no match) and `/<unknown>:<name>` are left
+alone: those belong to the harness. This is the one place the workspace's
+`skills/` directory is load-bearing, and it is why a harness-only skill can be
+used without attaching it first.
 
 The **Skills** page opens on the workspace's own list. The machine-wide harness
 libraries are a second tab, and they are scanned lazily — on first open of that
-tab (or the first `/` typed in a composer), then cached for the session — so a
-launch does not walk six skill directories nobody asked for.
+tab (or the first `/` typed in a composer for that machine), then cached per
+machine for the session — so a launch does not walk six skill directories nobody
+asked for.
 
 ## Chat transcripts
 
@@ -515,6 +528,9 @@ packaged app renders a blank window.
 - Skills are not sandboxed per workspace at execution time: a harness loads its
   own user-level library. `skills:` is a declaration; the `/workspace:<name>` and
   `/<harness>:<name>` references are what actually point a harness at a skill.
+  A skill reference is resolved on the thread's machine, and only this machine's
+  libraries can be read — remote skill discovery is not implemented, so a remote
+  thread offers none rather than a local path the far side cannot see.
   MCP is enforced for claude only (see above).
 - Remote placement and ssh deploy are not implemented; a directory in Finder is
   still the honest interface for a workspace that needs to be moved by hand.

@@ -1,9 +1,8 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import {
-  ago,
   ensureChats,
   hub,
   pinThread,
@@ -14,10 +13,9 @@ import {
 } from '@/stores/hub'
 
 /**
- * The chat history, folded into the left rail. It is intentionally one line
- * per thread: the character and its mood are the recognisable part, the title
- * names it, the state says whether it is new or how far it has gone, and the
- * three-dot menu keeps the rare actions out of the way.
+ * The rail history is two shelves: WORKING and DONE. Each shelf folds, and
+ * within a shelf the rows are grouped by the day they last changed. The date
+ * header carries the date so a row only needs its query count and time.
  */
 const router = useRouter()
 const editing = ref('')
@@ -26,18 +24,95 @@ const confirming = ref('')
 const menuItem = ref(null)
 const menuPos = ref({ top: 0, left: 0 })
 const hmenu = ref(null)
+const GROUPS_KEY = 'entity.rail.chatGroups'
+
+const collapsed = reactive(readCollapsed())
+
+function readCollapsed() {
+  try {
+    const value = JSON.parse(localStorage.getItem(GROUPS_KEY) || 'null')
+    return { working: Boolean(value?.working), done: Boolean(value?.done) }
+  } catch {
+    return { working: false, done: false }
+  }
+}
+
+function toggleGroup(id) {
+  collapsed[id] = !collapsed[id]
+  try {
+    localStorage.setItem(GROUPS_KEY, JSON.stringify({ working: collapsed.working, done: collapsed.done }))
+  } catch {
+    /* session-only fold state */
+  }
+}
 
 const threads = computed(() => hub.chat.summaries || [])
+
+function isWorking(thread) {
+  return Boolean(thread.working) || (hub.chat.sending && thread.id === hub.chat.active)
+}
 
 function titleOf(thread) {
   return thread.title || (thread.queries ? snippet(thread.preview) : `New thread · ${thread.entity}`)
 }
 
-function stateOf(thread) {
-  if (hub.chat.sending && thread.id === hub.chat.active) return 'Thinking…'
-  if (!thread.queries) return 'New'
-  return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${ago(thread.updatedAt)}`
+function clock(iso) {
+  const date = new Date(iso || '')
+  if (!Number.isFinite(date.getTime())) return 'now'
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
+
+function dayStart(value) {
+  const date = new Date(value || '')
+  if (!Number.isFinite(date.getTime())) return null
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function dateLabel(iso) {
+  const day = dayStart(iso)
+  if (!day) return 'Undated'
+  const today = dayStart(new Date())
+  const diff = Math.round((today - day) / 86_400_000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  return day.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(day.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }),
+  })
+}
+
+function byDate(list) {
+  const groups = new Map()
+  for (const thread of list) {
+    const label = dateLabel(thread.updatedAt)
+    if (!groups.has(label)) groups.set(label, [])
+    groups.get(label).push(thread)
+  }
+  return [...groups.entries()].map(([label, items]) => ({ label, threads: items }))
+}
+
+function stateOf(thread) {
+  if (isWorking(thread)) return 'Working…'
+  if (!thread.queries) return 'New'
+  return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${clock(thread.updatedAt)}`
+}
+
+const sections = computed(() => {
+  const working = []
+  const done = []
+  const ordered = [...threads.value].sort((a, b) =>
+    String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
+  )
+  for (const thread of ordered) {
+    if (isWorking(thread)) working.push(thread)
+    else done.push(thread)
+  }
+  return [
+    { id: 'working', label: 'Working', threads: working, dates: byDate(working) },
+    { id: 'done', label: 'Done', threads: done, dates: byDate(done) },
+  ]
+})
 
 function openThread(thread) {
   menuItem.value = null
@@ -185,71 +260,109 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="rchat-list">
-      <div
-        v-for="thread in threads"
-        :key="thread.id"
-        class="rchat-row"
-        :data-on="thread.id === hub.chat.active ? '1' : '0'"
-        :data-pinned="thread.pinned ? '1' : '0'"
-      >
-        <div
-          class="rchat-open"
-          role="button"
-          tabindex="0"
-          :aria-current="thread.id === hub.chat.active ? 'page' : undefined"
-          :title="titleOf(thread)"
-          @click="openThread(thread)"
-          @keydown.enter="openThread(thread)"
-          @keydown.space.prevent="openThread(thread)"
+      <template v-if="threads.length">
+        <section
+          v-for="section in sections"
+          :key="section.id"
+          class="rchat-section"
+          :data-group="section.id"
         >
-          <EntityMark mini animate :entity="thread.entity" />
-          <span class="rchat-text">
-            <span class="rchat-title">
-              <svg
-                v-if="thread.pinned"
-                class="rchat-pin"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.4"
-                aria-label="Pinned"
-              >
-                <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
-              </svg>
-              <input
-                v-if="editing === thread.id"
-                :id="`rchat-rename-${thread.id}`"
-                v-model="editTitle"
-                class="rchat-rename"
-                type="text"
-                placeholder="Thread title"
-                spellcheck="false"
-                @click.stop
-                @keydown="onRenameKey($event, thread)"
-                @blur="cancelRename"
-              />
-              <b v-else>{{ titleOf(thread) }}</b>
-            </span>
-            <span class="rchat-state">{{ stateOf(thread) }}</span>
-          </span>
-        </div>
-        <button
-          class="rchat-dots"
-          type="button"
-          :aria-expanded="menuItem?.id === thread.id ? 'true' : 'false'"
-          title="Thread actions"
-          aria-label="Thread actions"
-          @click="openRowMenu($event, thread)"
-        >
-          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-            <circle cx="3.2" cy="8" r="1.2" />
-            <circle cx="8" cy="8" r="1.2" />
-            <circle cx="12.8" cy="8" r="1.2" />
-          </svg>
-        </button>
-      </div>
+          <button
+            class="rchat-section-head"
+            type="button"
+            :aria-expanded="collapsed[section.id] ? 'false' : 'true'"
+            @click="toggleGroup(section.id)"
+          >
+            <svg class="rchat-group-chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M4 2l4 4-4 4" />
+            </svg>
+            <span class="rchat-section-label">{{ section.label }}</span>
+            <span class="rchat-section-count">{{ section.threads.length }}</span>
+            <span v-if="section.id === 'working' && section.threads.length" class="rchat-live-dot"></span>
+          </button>
 
-      <p v-if="!threads.length" class="rchat-empty">
+          <div v-show="!collapsed[section.id]" class="rchat-section-body">
+            <p v-if="!section.threads.length" class="rchat-empty">
+              {{ section.id === 'working' ? 'Nothing running.' : 'No finished chats yet.' }}
+            </p>
+            <div v-for="day in section.dates" :key="day.label" class="rchat-day">
+              <div class="rchat-dayhead">
+                <span>{{ day.label }}</span>
+                <span>{{ day.threads.length }}</span>
+              </div>
+              <div
+                v-for="thread in day.threads"
+                :key="thread.id"
+                class="rchat-row"
+                :data-on="thread.id === hub.chat.active ? '1' : '0'"
+                :data-pinned="thread.pinned ? '1' : '0'"
+                :data-working="isWorking(thread) ? '1' : '0'"
+              >
+                <div
+                  class="rchat-open"
+                  role="button"
+                  tabindex="0"
+                  :aria-current="thread.id === hub.chat.active ? 'page' : undefined"
+                  :title="titleOf(thread)"
+                  @click="openThread(thread)"
+                  @keydown.enter="openThread(thread)"
+                  @keydown.space.prevent="openThread(thread)"
+                >
+                  <EntityMark mini animate :entity="thread.entity" />
+                  <span class="rchat-text">
+                    <span class="rchat-title">
+                      <svg
+                        v-if="thread.pinned"
+                        class="rchat-pin"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        aria-label="Pinned"
+                      >
+                        <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
+                      </svg>
+                      <input
+                        v-if="editing === thread.id"
+                        :id="`rchat-rename-${thread.id}`"
+                        v-model="editTitle"
+                        class="rchat-rename"
+                        type="text"
+                        placeholder="Thread title"
+                        spellcheck="false"
+                        @click.stop
+                        @keydown="onRenameKey($event, thread)"
+                        @blur="cancelRename"
+                      />
+                      <b v-else>{{ titleOf(thread) }}</b>
+                    </span>
+                    <span class="rchat-state">
+                      <i v-if="isWorking(thread)" class="rchat-working-dot"></i>
+                      {{ stateOf(thread) }}
+                    </span>
+                  </span>
+                </div>
+                <button
+                  class="rchat-dots"
+                  type="button"
+                  :aria-expanded="menuItem?.id === thread.id ? 'true' : 'false'"
+                  title="Thread actions"
+                  aria-label="Thread actions"
+                  @click="openRowMenu($event, thread)"
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <circle cx="3.2" cy="8" r="1.2" />
+                    <circle cx="8" cy="8" r="1.2" />
+                    <circle cx="12.8" cy="8" r="1.2" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </template>
+
+      <p v-else class="rchat-empty">
         No chats yet. Use + or the top bar to start one.
       </p>
     </div>

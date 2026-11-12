@@ -12,7 +12,7 @@
  */
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'
-import { BUILTIN_CMDS, HARNESSES } from '@/data/mock'
+import { HARNESSES } from '@/data/mock'
 
 const SESSION_KEY = 'entity.session'
 const WORKSPACE_KEY = 'entity.workspace'
@@ -321,6 +321,7 @@ export const hub = reactive({
     threads: {},
     active: '',
     sending: false,
+    stopping: false,
     filters: { entity: 'all', machine: 'all', harness: 'all' },
     last: { entity: '', machine: 'local', harness: 'claude', model: '' },
   },
@@ -351,6 +352,7 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
   hub.chat.threads = {}
   hub.chat.active = ''
   hub.chat.sending = false
+  hub.chat.stopping = false
   hub.chat.filters = { entity: 'all', machine: 'all', harness: 'all' }
   hub.chat.last = {
     entity: agents[0]?.id || '',
@@ -370,6 +372,10 @@ export function applyLibrary(items = []) {
     name: String(item?.name || ''),
     harness: String(item?.harness || ''),
     harnessLabel: String(item?.harnessLabel || item?.harness || ''),
+    /* the resolved target and the entry path, so the composer can tell that a
+       workspace symlink and a harness skill are the same file */
+    absolutePath: String(item?.absolutePath || ''),
+    realPath: String(item?.realPath || item?.absolutePath || ''),
   }))
 }
 
@@ -527,33 +533,47 @@ export const askAgent = () => agentById(askSession().entity)
    in the menu — the backend uses the same grammar and would reject it. */
 const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
 
-/* slash-command menu — one shape for both composers.
+/* slash menu — one shape for both composers.
  *
- * A skill is addressed by where it lives, because that is what the backend has
- * to resolve to a path:
+ * The menu is a skill picker and nothing else. A skill is addressed by where it
+ * lives, because that is what the backend has to resolve to a path:
  *
  *   /workspace:<name>   a skill attached to this workspace
  *   /<harness>:<name>   a skill in that harness's own library
+ *   /<name>             any of them, when exactly one library has that name
  *
  * The entity's own `skills:` come first, then the rest of the workspace, then
- * the harness library — a name attached to the workspace is never also offered
- * as a harness skill, because it is the same file. */
-export function slashMenu(value, agent) {
+ * the harness libraries — and a skill attached to the workspace is not offered
+ * twice when it is the same file as a harness one (deduped on the resolved
+ * path, not the name: a copied skill is a different file and stays visible).
+ *
+ * `machine` is the thread's machine. Only this machine's libraries can be read,
+ * so a thread pinned anywhere else gets an empty menu and the composer's own
+ * one-line explanation instead of a list of local paths. */
+export function slashMenu(value, agent, machine = 'local') {
   const parts = String(value || '').split(/\s/)
   if (!value?.startsWith('/') || parts.length !== 1) return []
+  if (machine && machine !== 'local') return []
+
   const q = parts[0].slice(1).toLowerCase()
   const own = new Set((agent?.skills || []).map((name) => name.toLowerCase()))
 
-  const items = BUILTIN_CMDS.map((command) => ({ ...command, kind: 'command' }))
+  const attachedItems = hub.skills.filter(
+    (skill) => !skill.missing && SKILL_REF_NAME.test(skill.name),
+  )
+  const attached = attachedItems.map((skill) => skill.name)
+  const attachedPaths = new Set(
+    attachedItems
+      .map((skill) => skill.realPath || skill.absolutePath || '')
+      .filter(Boolean),
+  )
 
-  const attached = hub.skills
-    .filter((skill) => !skill.missing && SKILL_REF_NAME.test(skill.name))
-    .map((skill) => skill.name)
-  const ordered = [
+  const items = []
+  const workspaceNames = [
     ...attached.filter((name) => own.has(name.toLowerCase())),
     ...attached.filter((name) => !own.has(name.toLowerCase())),
   ]
-  for (const name of ordered) {
+  for (const name of workspaceNames) {
     items.push({
       name: `/workspace:${name}`,
       desc: own.has(name.toLowerCase())
@@ -574,9 +594,7 @@ export function slashMenu(value, agent) {
   }
   const harnessSkills = hub.harnessSkills
     .filter((skill) => SKILL_REF_NAME.test(skill.name))
-    .filter(
-      (skill) => !ordered.some((name) => name.toLowerCase() === skill.name.toLowerCase()),
-    )
+    .filter((skill) => !attachedPaths.has(skill.realPath || skill.absolutePath || ''))
     .sort(
       (a, b) =>
         rank(a.harness) - rank(b.harness) ||
@@ -592,11 +610,9 @@ export function slashMenu(value, agent) {
     })
   }
 
-  /* A bare `/` should still reach the harness libraries. The old seven-row cap
-     let four commands plus a few workspace skills hide them completely, so the
-     list is long enough to hold a whole machine library and scrolls inside the
-     composer menu. */
-  return items.filter((item) => item.name.slice(1).toLowerCase().startsWith(q)).slice(0, 100)
+  /* A bare `/` should reach the harness libraries, so the cap is high enough to
+     hold a whole machine library; the menu scrolls and offers to expand. */
+  return items.filter((item) => item.name.slice(1).toLowerCase().includes(q)).slice(0, 100)
 }
 
 /* ── chat ─────────────────────────────────────────────────────────── */
@@ -823,6 +839,7 @@ export async function chatSend(text, { retry = false } = {}) {
   }
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: optimistic }
   hub.chat.sending = true
+  hub.chat.stopping = false
   hub.chat.error = ''
 
   try {
@@ -846,6 +863,24 @@ export async function chatSend(text, { retry = false } = {}) {
     }
   } finally {
     hub.chat.sending = false
+    hub.chat.stopping = false
+  }
+}
+
+/** Stop the active turn. The backend marks the turn canceled, not failed. */
+export async function cancelChat() {
+  const thread = activeThread()
+  if (!thread || !hub.chat.sending || hub.chat.stopping) return
+  hub.chat.stopping = true
+  try {
+    const result = await call('chat.cancel', { workspace: hub.workspace, id: thread.id })
+    if (!result?.canceled) {
+      hub.chat.stopping = false
+      toast('That turn is already finishing.')
+    }
+  } catch (error) {
+    hub.chat.stopping = false
+    toast(error?.message || 'The turn could not be stopped.')
   }
 }
 

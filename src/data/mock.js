@@ -1,6 +1,7 @@
 /**
- * The five harnesses this step can run, and the slash commands they all ship
- * with. Everything else the hub shows comes from the workspace on disk.
+ * The five harnesses this step can run. Everything else the hub shows comes from
+ * the workspace on disk; there are no built-in commands, because every command
+ * this app used to advertise was a skill reference or a harness-owned token.
  */
 export const HARNESSES = [
   { id: 'claude', label: 'Claude Code' },
@@ -8,13 +9,6 @@ export const HARNESSES = [
   { id: 'opencode', label: 'opencode' },
   { id: 'pi', label: 'pi' },
   { id: 'gemini', label: 'Gemini CLI' },
-]
-
-export const BUILTIN_CMDS = [
-  { name: '/write', desc: 'Draft a file into the working tree' },
-  { name: '/review', desc: 'Read the diff and report problems' },
-  { name: '/plan', desc: 'Write a plan before touching code' },
-  { name: '/handoff', desc: 'Write the run summary to .entity/run.json' },
 ]
 
 /* Model names are a hint, not a whitelist: the composer accepts free text so a
