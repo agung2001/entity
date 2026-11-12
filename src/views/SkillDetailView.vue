@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { readSkillEntry } from '@/composables/localBridge'
-import { hub, openDrawer, skillOwners, toast } from '@/stores/hub'
+import { hub, skillOwners, toast } from '@/stores/hub'
 import {
   attachSkill,
   detachSkill,
@@ -267,7 +267,7 @@ async function attach() {
                   :key="a.id"
                   class="ent"
                   type="button"
-                  @click="openDrawer(a.id)"
+                  @click="router.push({ name: 'entity', params: { name: a.name } })"
                 >
                   <EntityMark :entity="a.name" />
                   <span class="who">

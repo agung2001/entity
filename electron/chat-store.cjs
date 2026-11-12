@@ -99,6 +99,7 @@ function normaliseThread(raw, record) {
        harness default (or the entity's own model, see runHarness) */
     model: String(raw.model || ''),
     title: String(raw.title || ''),
+    pinned: Boolean(raw.pinned),
     createdAt: raw.createdAt || now(),
     updatedAt: raw.updatedAt || raw.createdAt || now(),
     messages: Array.isArray(raw.messages) ? raw.messages.map(normaliseMessage).filter(Boolean) : [],
@@ -139,6 +140,7 @@ function summarise(thread) {
     harness: thread.harness,
     model: thread.model || '',
     title: thread.title,
+    pinned: Boolean(thread.pinned),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     queries,
@@ -184,7 +186,11 @@ function list({ workspace }) {
       }
     })
     .filter(Boolean)
-    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+    .sort(
+      (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
+        String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
+    )
 }
 
 function read({ workspace, id }) {
@@ -218,6 +224,7 @@ function create({ workspace, entity, machine = 'local', harness, model = '', mes
     harness: checkHarness(harness, agent),
     model: String(model || '').trim(),
     title: '',
+    pinned: false,
     createdAt: now(),
     updatedAt: now(),
     messages: [],
@@ -248,6 +255,27 @@ function update({ workspace, id, entity, machine, harness, model }) {
   /* a model belongs to its harness: changing the harness without naming a new
      model drops the old one instead of passing an incompatible name through */
   else if (thread.harness !== previousHarness) thread.model = ''
+  thread.updatedAt = now()
+  writeThread(record, thread)
+  return thread
+}
+
+/** Renaming and pinning are metadata: they stay editable after the first turn. */
+function rename({ workspace, id, title }) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread) throw new Error('That thread no longer exists.')
+  thread.title = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+  thread.updatedAt = now()
+  writeThread(record, thread)
+  return thread
+}
+
+function pin({ workspace, id, pinned }) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread) throw new Error('That thread no longer exists.')
+  thread.pinned = Boolean(pinned)
   thread.updatedAt = now()
   writeThread(record, thread)
   return thread
@@ -438,6 +466,8 @@ module.exports = {
   read,
   create,
   update,
+  rename,
+  pin,
   remove,
   send,
   summarise,

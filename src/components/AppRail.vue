@@ -11,6 +11,9 @@ const router = useRouter()
 
 const accountOpen = ref(false)
 const accountRoot = ref(null)
+const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+const railShortcut = isMac ? '⌘B' : 'Ctrl+B'
 
 /* the rail folds down to its icons; the choice belongs to the window, not the
    workspace, so it lives beside the other UI preferences */
@@ -52,6 +55,14 @@ function onDocumentClick(event) {
 
 function onDocumentKey(event) {
   if (event.key === 'Escape') accountOpen.value = false
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'b') return
+  const target = event.target
+  const editable =
+    target instanceof HTMLElement &&
+    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+  if (editable) return
+  event.preventDefault()
+  toggleRail()
 }
 
 function openAccountPage() {
@@ -71,6 +82,13 @@ const NAV = [
     /* the workspace's own skills — the page opens on that tab, and counting the
        machine-wide libraries here would mean scanning them on every launch */
     count: () => workspaces.skills.length,
+  },
+  {
+    to: '/mcp',
+    view: 'mcp',
+    label: 'MCP',
+    icon: 'mcp',
+    count: () => Object.keys(workspaces.mcp?.servers || {}).length,
   },
   {
     to: '/machines',
@@ -143,6 +161,11 @@ function leave() {
         <svg v-else-if="item.icon === 'star'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
           <path d="M8 1.8l1.9 4.1 4.3.5-3.2 3 .9 4.3L8 11.5 4.1 13.7l.9-4.3-3.2-3 4.3-.5z" />
         </svg>
+        <svg v-else-if="item.icon === 'mcp'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+          <path d="M4.4 9.2V5.5a1.4 1.4 0 012.8 0v3.4a1.4 1.4 0 002.8 0V5.5a1.4 1.4 0 012.8 0v3.7" />
+          <path d="M3.4 9.2h9.2v1.3a4.6 4.6 0 01-9.2 0z" />
+          <path d="M8 14.3v.8" />
+        </svg>
         <svg v-else-if="item.icon === 'screen'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
           <rect x="1.6" y="2.6" width="12.8" height="8.2" rx="1.6" />
           <path d="M5.4 13.6h5.2" />
@@ -161,13 +184,15 @@ function leave() {
         class="rail-toggle"
         type="button"
         :aria-expanded="collapsed ? 'false' : 'true'"
-        :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        :title="`${collapsed ? 'Expand' : 'Collapse'} sidebar (${railShortcut})`"
+        :aria-label="`${collapsed ? 'Expand' : 'Collapse'} sidebar (${railShortcut})`"
         @click="toggleRail"
       >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
           <path d="M9.6 3.2L5 8l4.6 4.8" />
         </svg>
         <span class="lbl">{{ collapsed ? 'Expand' : 'Collapse' }}</span>
+        <kbd class="rail-kbd">{{ railShortcut }}</kbd>
       </button>
       <div ref="accountRoot" class="account" :data-open="accountOpen ? '1' : '0'">
         <div class="acct-menu" role="menu" aria-label="Account">

@@ -12,7 +12,6 @@ import {
   harnessById,
   hub,
   machineById,
-  openDrawer,
   problemCount,
   snippet,
 } from '@/stores/hub'
@@ -53,7 +52,7 @@ function openChatThread(id) {
 function openFromKeyboard(e, id) {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
-    openDrawer(id)
+    router.push({ name: 'entity', params: { name: id } })
   }
 }
 </script>
@@ -97,7 +96,7 @@ function openFromKeyboard(e, id) {
         class="machine"
         type="button"
         :data-probe="m.missing ? 'fail' : m.thisMachine ? 'ok' : 'idle'"
-        @click="router.push('/machines')"
+        @click="router.push({ name: 'machine', params: { id: m.id } })"
       >
         <div class="row1">
           <span class="nm"><MachineIcon :size="12" />{{ m.label }}</span>
@@ -135,7 +134,7 @@ function openFromKeyboard(e, id) {
         class="tr"
         tabindex="0"
         role="button"
-        @click="openDrawer(a.id)"
+        @click="router.push({ name: 'entity', params: { name: a.id } })"
         @keydown="openFromKeyboard($event, a.id)"
       >
         <span class="cell-agent">
@@ -198,7 +197,7 @@ function openFromKeyboard(e, id) {
         >
           <time>{{ ago(t.updatedAt) }}</time>
           <span class="who"><EntityMark mini :entity="t.entity" />{{ t.entity }}</span>
-          <span class="what"><b>{{ snippet(t.preview) || 'New thread' }}</b></span>
+          <span class="what"><b>{{ t.title || snippet(t.preview) || 'New thread' }}</b></span>
           <span class="where">
             <MachineIcon :size="10" />{{ machineLabel(t.machine) }}
             <span aria-hidden="true">·</span>

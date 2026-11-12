@@ -4,29 +4,35 @@ import { useRoute } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
-import EntityDrawer from '@/components/EntityDrawer.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
-import { closeDrawer, closeWizard, hub, toast } from '@/stores/hub'
+import { closeWizard, hub, toast } from '@/stores/hub'
 
 const route = useRoute()
 
 const isChat = computed(() => route.name === 'chat')
 const isSkill = computed(() => route.name === 'skill')
+const isEntity = computed(() => route.name === 'entity')
+const isMachine = computed(() => route.name === 'machine')
 
-const crumbs = computed(() =>
-  isSkill.value
-    ? [
-        { label: 'library', to: '/' },
-        { label: 'skills', to: '/skills' },
-        { label: route.params.name },
-      ]
-    : null,
-)
+const crumbs = computed(() => {
+  if (isSkill.value) {
+    return [
+      { label: 'library', to: '/' },
+      { label: 'skills', to: '/skills' },
+      { label: route.params.name },
+    ]
+  }
+  if (isEntity.value) {
+    return [{ label: 'entities', to: '/entities' }, { label: route.params.name }]
+  }
+  if (isMachine.value) {
+    return [{ label: 'machines', to: '/machines' }, { label: route.params.id }]
+  }
+  return null
+})
 
-const overlayOpen = computed(
-  () => hub.drawer.open || hub.wizard.open || hub.palette.open,
-)
+const overlayOpen = computed(() => hub.wizard.open || hub.palette.open)
 
 function openPalette() {
   hub.palette.open = true
@@ -38,7 +44,6 @@ function openPalette() {
 function onScrim() {
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
-  else closeDrawer()
 }
 
 function onKey(e) {
@@ -50,7 +55,6 @@ function onKey(e) {
   if (e.key !== 'Escape') return
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
-  else if (hub.drawer.open) closeDrawer()
 }
 
 /** `createWorkspace()` already opened and loaded it — here we only close. */
@@ -90,7 +94,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
     </main>
 
     <div class="scrim" :data-open="overlayOpen ? '1' : '0'" @click="onScrim"></div>
-    <EntityDrawer />
     <div class="modal modal-wizard" :data-open="hub.wizard.open ? '1' : '0'" role="dialog" aria-modal="true" aria-label="New workspace">
       <button class="x mo-x" aria-label="Close" @click="closeWizard">
         <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">

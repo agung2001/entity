@@ -106,6 +106,9 @@
   overflow-y: hidden;
 }
 .sk-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   border: 0;
   padding: 12px 10px 11px;
@@ -127,6 +130,13 @@
   color: var(--ink);
   border-bottom-color: var(--ink);
   font-weight: 500;
+}
+.sk-tabs .harness-icon {
+  flex: none;
+  opacity: 0.7;
+}
+.sk-tabs button[aria-selected='true'] .harness-icon {
+  opacity: 1;
 }
 .sk-tabs .n {
   font-family: var(--mono);

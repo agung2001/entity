@@ -1,12 +1,13 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import { HARNESSES, MODELS } from '@/data/mock'
 import { scaffoldEntity } from '@/stores/entities'
-import { ago, ensureChats, hub, machineById, openDrawer, toast } from '@/stores/hub'
+import { ago, ensureChats, hub, machineById, toast } from '@/stores/hub'
 
 /**
  * The entity table is a directory listing. Every row is a file in
@@ -14,6 +15,7 @@ import { ago, ensureChats, hub, machineById, openDrawer, toast } from '@/stores/
  * never holds an entity that is not on disk.
  */
 const FILTERS = ['all', 'running', 'idle', 'sleep', 'error']
+const router = useRouter()
 
 const adding = ref(false)
 const name = ref('')
@@ -50,7 +52,7 @@ const machineLabel = (id) => machineById(id)?.label || id
 function openFromKeyboard(e, id) {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
-    openDrawer(id)
+    router.push({ name: 'entity', params: { name: id } })
   }
 }
 
@@ -94,7 +96,7 @@ async function create() {
     })
     adding.value = false
     toast(`${created.name}.md created`)
-    openDrawer(created.name, 'overview')
+    router.push({ name: 'entity', params: { name: created.name } })
   } catch (problem) {
     error.value = problem?.message || 'The file could not be created.'
   } finally {
@@ -144,7 +146,7 @@ async function create() {
         class="tr"
         tabindex="0"
         role="button"
-        @click="openDrawer(a.id)"
+        @click="router.push({ name: 'entity', params: { name: a.id } })"
         @keydown="openFromKeyboard($event, a.id)"
       >
         <span class="cell-agent">

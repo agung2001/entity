@@ -14,6 +14,7 @@ const workspaces = require('./workspace-store.cjs')
 const entities = require('./entity-store.cjs')
 const chats = require('./chat-store.cjs')
 const sessions = require('./session-store.cjs')
+const mcpStore = require('./mcp-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
@@ -39,6 +40,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.library': () => localData.scanSkillLibrary(),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
+    'mcp.globals': () => mcpStore.globals(),
 
     /* entity files */
     'entity.list': ({ workspace }) => entities.list(workspace),
@@ -56,6 +58,8 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'chat.read': ({ workspace, id }) => chats.read({ workspace, id }),
     'chat.create': (args) => chats.create(args),
     'chat.update': (args) => chats.update(args),
+    'chat.rename': (args) => chats.rename(args),
+    'chat.pin': (args) => chats.pin(args),
     'chat.send': (args) => chats.send(args),
     'chat.remove': (args) => chats.remove(args),
 

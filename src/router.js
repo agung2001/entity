@@ -8,9 +8,12 @@ import HubLayout from '@/layouts/HubLayout.vue'
 import OverviewView from '@/views/OverviewView.vue'
 import ChatView from '@/views/ChatView.vue'
 import EntitiesView from '@/views/EntitiesView.vue'
+import EntityDetailView from '@/views/EntityDetailView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import SkillDetailView from '@/views/SkillDetailView.vue'
+import McpView from '@/views/McpView.vue'
 import MachinesView from '@/views/MachinesView.vue'
+import MachineDetailView from '@/views/MachineDetailView.vue'
 import ActivityView from '@/views/ActivityView.vue'
 import AccountView from '@/views/AccountView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
@@ -62,6 +65,12 @@ const router = createRouter({
           meta: { crumb: 'entities', title: 'Entities · entity' },
         },
         {
+          path: 'entities/:name',
+          name: 'entity',
+          component: EntityDetailView,
+          meta: { crumb: 'entities', title: 'Entity · entity' },
+        },
+        {
           path: 'skills',
           name: 'skills',
           component: SkillsView,
@@ -74,10 +83,22 @@ const router = createRouter({
           meta: { crumb: 'skills', title: 'Skill · entity' },
         },
         {
+          path: 'mcp',
+          name: 'mcp',
+          component: McpView,
+          meta: { crumb: 'mcp', title: 'MCP · entity' },
+        },
+        {
           path: 'machines',
           name: 'machines',
           component: MachinesView,
           meta: { crumb: 'machines', title: 'Machines · entity' },
+        },
+        {
+          path: 'machines/:id',
+          name: 'machine',
+          component: MachineDetailView,
+          meta: { crumb: 'machines', title: 'Machine · entity' },
         },
         {
           path: 'activity',

@@ -6,23 +6,21 @@ import { toast } from '@/stores/hub'
 import { attachMachine, detachMachine, workspaces } from '@/stores/workspaces'
 
 /**
- * Two lists that answer two different questions: `~/.ssh/config` says which hosts
- * exist on this machine, the workspace says which of them it may use. Attaching
- * rebuilds `machines/CONFIG` and copies the host's key beside it; probing runs
- * ssh against that workspace config, so the test proves what the workspace
- * carries rather than what the user happens to have globally.
+ * Two tabs, like Skills: the machines this workspace has attached, and the
+ * fleet it can attach from. `~/.ssh/config` says which hosts exist; the
+ * workspace says which ones it may use.
  */
 onMounted(loadFleet)
 
+const tab = ref('workspace')
 const busy = ref('')
 
-const localMachine = computed(
-  () => workspaces.machines.find((machine) => machine.thisMachine) || null,
-)
 const attached = computed(() => new Set(workspaces.machines.map((machine) => machine.id)))
 const missingHosts = computed(() => workspaces.machines.filter((machine) => machine.missing))
 const attachedMachine = (alias) =>
   workspaces.machines.find((machine) => machine.id === alias) || null
+const hostFor = (alias) =>
+  fleet.hosts.find((host) => host.alias === alias || host.id === alias || host.aliases?.includes(alias)) || null
 
 const stateOf = (alias) => {
   const state = probeState(alias).state
@@ -52,6 +50,16 @@ async function toggle(alias, isAttached) {
     busy.value = ''
   }
 }
+
+async function test(host) {
+  if (!host || busy.value) return
+  busy.value = `probe:${host.alias}`
+  try {
+    await probeHost(host)
+  } finally {
+    busy.value = ''
+  }
+}
 </script>
 
 <template>
@@ -61,13 +69,10 @@ async function toggle(alias, isAttached) {
         <p class="eyebrow">Fleet · {{ workspaces.active }}</p>
         <h1>Machines</h1>
         <p class="lede">
-          Every host in <code class="mono">{{ fleet.displayPath }}</code>, and the ones this
-          workspace has attached. Discovery reads the ssh config; attaching rebuilds
+          The machines this workspace has attached, and every host in
+          <code class="mono">{{ fleet.displayPath }}</code>. Attaching rebuilds
           <code class="mono">machines/CONFIG</code> and copies the host's key into
-          <code class="mono">machines/</code> (mode 0600). Test ssh through the config that
-          matters: <code class="mono">~/.ssh/config</code> before a host is attached, this
-          workspace's own copy after. Attaching changes what the workspace may use, not
-          what it has deployed.
+          <code class="mono">machines/</code> (mode 0600).
         </p>
       </div>
       <div class="head-actions">
@@ -78,127 +83,208 @@ async function toggle(alias, isAttached) {
       </div>
     </div>
 
-    <div v-if="fleet.loading && !fleet.loaded" class="empty-note">
-      <b>Reading {{ fleet.displayPath }}…</b>
+    <div class="sk-tabs" role="tablist" aria-label="Machine scope">
+      <button
+        role="tab"
+        :aria-selected="tab === 'workspace' ? 'true' : 'false'"
+        @click="tab = 'workspace'"
+      >
+        Workspace <span class="n">{{ workspaces.machines.length }}</span>
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'fleet' ? 'true' : 'false'"
+        @click="tab = 'fleet'"
+      >
+        Fleet <span class="n">{{ fleet.hosts.length }}</span>
+      </button>
     </div>
 
-    <div v-else-if="fleet.error" class="empty-note">
-      <b>{{ fleet.error }}</b>
-      <button class="btn btn-sm" type="button" @click="loadFleet()">Try again</button>
-    </div>
+    <template v-if="tab === 'workspace'">
+      <div class="lib-bar">
+        <span class="lib-meta">
+          The machines this workspace may use. <b>local</b> is always here.
+        </span>
+        <button class="btn btn-sm" type="button" @click="tab = 'fleet'">
+          Attach from the fleet
+        </button>
+      </div>
 
-    <template v-else>
       <div class="mgrid">
-        <div v-if="localMachine" class="mcard" data-probe="ok">
-          <div class="top">
-            <div>
-              <h3>
-                <MachineIcon />
-                {{ localMachine.label }}
-                <span class="tag">this machine</span>
-              </h3>
-              <p class="spec">{{ localMachine.spec }}</p>
-            </div>
-            <span class="state" data-s="ok"><i></i>online</span>
-          </div>
-          <div class="kv">
-            <span>local</span>
-            <span>{{ localMachine.desc }}</span>
-            <span class="mono">{{ localMachine.config }}</span>
-          </div>
-          <p class="probe-msg">Chats happen here in step 1 — no ssh, no daemon.</p>
-        </div>
-
-        <div v-if="!fleet.hosts.length" class="machine-note" style="grid-column: 1 / -1">
-          <b>No hosts in {{ fleet.displayPath }}.</b>
-          <span v-if="!fleet.exists"> The file does not exist on this machine yet.</span>
-          <span v-else> Add a <code class="mono">Host</code> block and reload.</span>
-          <span> This workspace still works locally — that is not an error.</span>
-        </div>
-
-        <div
-          v-for="m in fleet.hosts"
-          :key="m.id"
+        <article
+          v-for="machine in workspaces.machines"
+          :key="machine.id"
           class="mcard"
-          :data-probe="stateOf(m.alias)"
+          :data-probe="machine.thisMachine ? 'ok' : machine.missing ? 'fail' : stateOf(machine.id)"
         >
           <div class="top">
             <div>
               <h3>
                 <MachineIcon />
-                {{ m.label }}
-                <span v-if="m.aliases.length > 1" class="tag">{{ m.aliases.length }} names</span>
-                <span v-if="attached.has(m.alias)" class="tag">attached</span>
+                {{ machine.label }}
+                <span v-if="machine.thisMachine" class="tag">this machine</span>
+                <span v-else-if="machine.missing" class="tag">missing</span>
+                <span v-else class="tag">attached</span>
               </h3>
-              <p class="spec">{{ m.spec }}</p>
+              <p class="spec">{{ machine.spec || machine.id }}</p>
             </div>
-            <span class="state" :data-s="stateOf(m.alias)">
-              <i></i>{{ stateLabel(m.alias) }}
+            <span
+              class="state"
+              :data-s="machine.thisMachine ? 'ok' : machine.missing ? 'sleep' : stateOf(machine.id)"
+            >
+              <i></i>{{ machine.thisMachine ? 'online' : machine.missing ? 'missing' : stateLabel(machine.id) }}
             </span>
           </div>
           <div class="kv">
-            <span :title="m.identityFile || 'ssh uses the default identities'">
-              {{ m.identityFile || 'default key' }}
-            </span>
-            <span>{{ m.source }}</span>
-            <span v-if="m.proxyJump">jump {{ m.proxyJump }}</span>
-            <span v-if="probeMs(m.alias)">{{ probeMs(m.alias) }}</span>
+            <span>{{ machine.source || 'local' }}</span>
+            <span>{{ machine.desc }}</span>
+            <span v-if="probeMs(machine.id)">{{ probeMs(machine.id) }}</span>
             <span
-              v-if="attachedMachine(m.alias)"
+              v-if="machine.keyPresent"
               class="mono"
-              :title="attachedMachine(m.alias).keyNote || attachedMachine(m.alias).key"
+              :title="machine.keyNote || machine.key"
             >
-              {{ attachedMachine(m.alias).keyPresent ? 'key copied' : 'no key copy' }}
+              key copied
+            </span>
+            <span v-else-if="!machine.thisMachine && !machine.missing" class="mono">
+              {{ machine.keyNote || 'no key copy' }}
+            </span>
+          </div>
+          <div class="mcard-actions">
+            <router-link
+              class="btn btn-sm"
+              :to="{ name: 'machine', params: { id: machine.id } }"
+            >
+              Open
+            </router-link>
+            <button
+              v-if="!machine.thisMachine && !machine.missing && hostFor(machine.id)"
+              class="btn btn-sm"
+              type="button"
+              :disabled="busy === `probe:${machine.id}`"
+              @click="test(hostFor(machine.id))"
+            >
+              {{ busy === `probe:${machine.id}` ? 'Testing…' : 'Test ssh' }}
+            </button>
+            <button
+              v-if="!machine.thisMachine"
+              class="btn btn-sm"
+              type="button"
+              :disabled="busy === machine.id"
+              @click="toggle(machine.id, true)"
+            >
+              Detach
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <template v-if="!workspaces.machines.length">
+        <div class="empty-note">
+          <b>No machines attached.</b>
+          <span>Open the Fleet tab to attach a host from ~/.ssh/config.</span>
+        </div>
+      </template>
+
+      <p v-if="missingHosts.length" class="mnote" style="margin-top: 14px">
+        {{ missingHosts.length }} attached {{ missingHosts.length === 1 ? 'host is' : 'hosts are' }}
+        missing from the ssh config. The workspace keeps your intent; detach it or add the
+        Host block back.
+      </p>
+    </template>
+
+    <template v-else>
+      <div class="lib-bar">
+        <span class="lib-meta">
+          Every Host block in <code class="mono">{{ fleet.displayPath }}</code>.
+        </span>
+        <button class="btn btn-sm" type="button" @click="loadFleet()">Reload</button>
+      </div>
+
+      <div v-if="fleet.loading && !fleet.loaded" class="empty-note">
+        <b>Reading {{ fleet.displayPath }}…</b>
+      </div>
+
+      <div v-else-if="fleet.error" class="empty-note">
+        <b>{{ fleet.error }}</b>
+        <button class="btn btn-sm" type="button" @click="loadFleet()">Try again</button>
+      </div>
+
+      <div v-else-if="!fleet.hosts.length" class="empty-note">
+        <b>No hosts in {{ fleet.displayPath }}.</b>
+        <span v-if="!fleet.exists"> The file does not exist on this machine yet.</span>
+        <span v-else> Add a <code class="mono">Host</code> block and reload.</span>
+      </div>
+
+      <div v-else class="mgrid">
+        <article
+          v-for="host in fleet.hosts"
+          :key="host.id"
+          class="mcard"
+          :data-probe="stateOf(host.alias)"
+        >
+          <div class="top">
+            <div>
+              <h3>
+                <MachineIcon />
+                {{ host.label }}
+                <span v-if="host.aliases.length > 1" class="tag">{{ host.aliases.length }} names</span>
+                <span v-if="attached.has(host.alias)" class="tag">attached</span>
+              </h3>
+              <p class="spec">{{ host.spec }}</p>
+            </div>
+            <span class="state" :data-s="stateOf(host.alias)">
+              <i></i>{{ stateLabel(host.alias) }}
+            </span>
+          </div>
+          <div class="kv">
+            <span :title="host.identityFile || 'ssh uses the default identities'">
+              {{ host.identityFile || 'default key' }}
+            </span>
+            <span>{{ host.source }}</span>
+            <span v-if="host.proxyJump">jump {{ host.proxyJump }}</span>
+            <span v-if="probeMs(host.alias)">{{ probeMs(host.alias) }}</span>
+            <span
+              v-if="attachedMachine(host.alias)"
+              class="mono"
+              :title="attachedMachine(host.alias).keyNote || attachedMachine(host.alias).key"
+            >
+              {{ attachedMachine(host.alias).keyPresent ? 'key copied' : 'no key copy' }}
             </span>
           </div>
           <p
-            v-if="stateOf(m.alias) === 'fail'"
+            v-if="stateOf(host.alias) === 'fail'"
             class="probe-msg"
-            :title="probeState(m.alias).message"
+            :title="probeState(host.alias).message"
           >
-            {{ probeState(m.alias).message }}
+            {{ probeState(host.alias).message }}
           </p>
           <div class="mcard-actions">
-            <button class="btn btn-sm" type="button" @click="probeHost(m)">Test ssh</button>
+            <router-link
+              class="btn btn-sm"
+              :to="{ name: 'machine', params: { id: host.alias } }"
+            >
+              Open
+            </router-link>
             <button
               class="btn btn-sm"
               type="button"
-              :disabled="busy === m.alias"
-              @click="toggle(m.alias, attached.has(m.alias))"
+              :disabled="busy === `probe:${host.alias}`"
+              @click="test(host)"
             >
-              {{ attached.has(m.alias) ? 'Detach' : 'Attach to workspace' }}
+              {{ busy === `probe:${host.alias}` ? 'Testing…' : 'Test ssh' }}
+            </button>
+            <button
+              class="btn btn-sm"
+              type="button"
+              :disabled="busy === host.alias"
+              @click="toggle(host.alias, attached.has(host.alias))"
+            >
+              {{ attached.has(host.alias) ? 'Detach' : 'Attach to workspace' }}
             </button>
           </div>
-        </div>
+        </article>
       </div>
-
-      <template v-if="missingHosts.length">
-        <div class="sec-head" style="margin-top: 26px">
-          <h2>Attached but missing</h2>
-          <span class="meta">kept on purpose</span>
-        </div>
-        <div class="tbl">
-          <div v-for="machine in missingHosts" :key="machine.id" class="tr" style="cursor: default">
-            <span class="cell-agent">
-              <MachineIcon />
-              <span>
-                <span class="nm2">{{ machine.id }}</span>
-                <span class="sub2">{{ machine.desc }}</span>
-              </span>
-            </span>
-            <span class="col-state">
-              <span class="state" data-s="sleep"><i></i>missing</span>
-            </span>
-            <span class="col-machines"></span>
-            <span class="num col-skills"></span>
-            <span class="last col-last">{{ machine.source }}</span>
-          </div>
-        </div>
-        <p class="mnote" style="margin-top: 8px">
-          The host disappeared from the ssh config. The workspace keeps your intent; the entity
-          is asleep, not broken.
-        </p>
-      </template>
 
       <p class="mnote" style="margin-top: 18px">
         Step 1 runs on <b>local</b> only. An attached host is the frame the remote runner fills

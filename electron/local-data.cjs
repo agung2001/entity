@@ -305,6 +305,11 @@ const HARNESSES = [
     label: 'Gemini CLI',
     roots: [path.join(HOME, '.gemini', 'skills')],
   },
+  {
+    id: 'agents',
+    label: 'Agents (~/.agents)',
+    roots: [path.join(HOME, '.agents', 'skills')],
+  },
 ]
 
 const TEXT_EXT = new Set([

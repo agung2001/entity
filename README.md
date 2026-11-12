@@ -84,7 +84,8 @@ preselected). The same form is reachable as a modal from the workspace switcher.
 
 Skills are not part of that form: the harness libraries are already on this
 machine, so a skill is attached to a workspace later (one symlink, from the
-Skills view) when it is actually needed.
+Skills view) when it is actually needed. The scan also reads `~/.agents/skills`,
+which several agents share.
 
 ### One file is the entity
 
@@ -153,6 +154,7 @@ electron/
   entity-store.cjs    entities/*.md read/write/scaffold + problems[]
   chat-store.cjs      threads under <ws>/chats, one harness turn per send
   session-store.cjs   each harness's own session store, scoped by entity cwd
+  mcp-store.cjs       MCP config discovery across ~/.claude.json, ~/.codex, ~/.pi, …
   skill-ref.cjs       /workspace:<name> and /<harness>:<name> → `use this skill <path>`
   runner-local.cjs    spawn a harness, stream events, append the run log
   frontmatter.cjs     the flat frontmatter parser shared by entities and skills
@@ -170,34 +172,36 @@ src/
     LoginView.vue     sign in
     SetupView.vue     first run: create the first workspace (no rail, no skip)
     OverviewView.vue  workspace statistics, machines, entities, recent runs
-    ChatView.vue      threads, rebuilt per workspace
+    ChatView.vue      collapsible thread history, search/pin/rename, floating composer
     EntitiesView.vue  the entity table; "Add entity" scaffolds a file
+    EntityDetailView.vue  the entity as a page: identity, skills, ENTITY.md
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
+    McpView.vue       workspace MCP pool + read-only global harness MCP config
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
-    MachinesView.vue  fleet from ~/.ssh/config + workspace attachments
+    MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
+    MachineDetailView.vue  one host: connection, key copy, probe, attachment
     ActivityView.vue  thread journal + one tab per harness session store
   components/
     EntityMark.vue    the animated voxel character
     HarnessIcon.vue   brand marks for the skill filter pills
     MachineIcon.vue   the server glyph on machine cards
     SkillIcon.vue     the medal glyph on skill cards
-    MarkPicker.vue    mood + colour, opened from the drawer
+    MarkPicker.vue    mood + colour, opened on the entity page
     AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
     MessageList / SlashComposer
     PickMenu.vue      the quiet text trigger used for filter axes
-    EntityDrawer.vue  overview, Run, skills, ENTITY.md
     WorkspaceWizard.vue    the create form (setup page and modal)
     WorkspaceStats.vue     the overview's entity / conversation / skill / machine cards
     NewThreadDialog.vue    entity, machine, harness and model before a thread starts
-    CommandPalette.vue
+    CommandPalette.vue    categorized search: workspaces, chat, entities, skills, machines, activity
     ToastHost.vue
   composables/
     entityMark.js     the mark's renderer + one shared rAF loop
     useDesktop.js     wrapper over the preload bridge
     localBridge.js    `call()` and `onRunEvent()`: IPC in Electron, HTTP+SSE in a browser
   stores/
-    hub.js            session, the active workspace's view model, consoles, drawers
+    hub.js            session, the active workspace's view model and chat state
     workspaces.js     list/open/create, machines, skills, mcp; scope loading
     entities.js       entity files mapped onto the table rows
     runs.js           run summaries, live output, stale-event guard
@@ -226,15 +230,18 @@ history mode has no server to resolve a path on reload.
 | `#/` | Overview |
 | `#/chat` | Chat |
 | `#/entities` | Entities |
+| `#/entities/:name` | Entity detail (identity, skills, ENTITY.md) |
 | `#/skills` | Workspace skills |
 | `#/skills/:name` | Skill detail |
+| `#/mcp` | Workspace MCP pool + global harness MCP configs |
 | `#/machines` | Machines |
+| `#/machines/:id` | Machine detail (connection, key copy, probe) |
 | `#/activity` | Activity (journal + harness sessions) |
-| `#/workspace` | Workspace settings (name, id, members, MCP) |
+| `#/workspace` | Workspace settings (general + members) |
 
-Workspace settings are a page (`#/workspace`), not a modal: the name, the
-directory id, the member roster and the MCP pool live there, while entities,
-skills and machines keep their own pages.
+Workspace settings are a page (`#/workspace`), not a modal: General and Members
+are separate tabs for the name, the directory id and the member roster. MCP has
+its own page (`#/mcp`); entities, skills and machines keep theirs.
 
 The guard runs in order: **session → workspace → route**. After sign-in, if
 `~/.entity/workspaces/` holds no readable `workspace.json`, the router sends the

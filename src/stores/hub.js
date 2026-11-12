@@ -215,7 +215,6 @@ export const hub = reactive({
 
   /* --- ui ------------------------------------------------------------ */
   entityFilter: 'all',
-  drawer: { open: false, agentId: '', tab: 'overview' },
   palette: { open: false, query: '', active: 0 },
   wizard: { open: false },
   toast: { open: false, message: '' },
@@ -253,11 +252,6 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
   hub.activity = activity
 
   hub.entityFilter = 'all'
-  if (!agents.some((agent) => agent.id === hub.drawer.agentId)) {
-    hub.drawer.open = false
-    hub.drawer.agentId = agents[0]?.id || ''
-    hub.drawer.tab = 'overview'
-  }
 
   hub.chat.loading = false
   hub.chat.loaded = false
@@ -273,11 +267,6 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
     machine: machines[0]?.id || 'local',
     harness: agents[0]?.harness || 'claude',
     model: agents[0]?.model || '',
-  }
-  if (hub.drawer.agentId) {
-    hub.drawer.agentId = agents.some((a) => a.id === hub.drawer.agentId)
-      ? hub.drawer.agentId
-      : ''
   }
 }
 
@@ -417,18 +406,6 @@ export function signOut() {
   } catch {
     /* nothing to clear */
   }
-}
-
-/* ── entity drawer ────────────────────────────────────────────────── */
-export function openDrawer(agentId, tab = 'overview') {
-  if (!agentById(agentId)) return
-  hub.drawer.agentId = agentId
-  hub.drawer.tab = tab
-  hub.drawer.open = true
-}
-
-export function closeDrawer() {
-  hub.drawer.open = false
 }
 
 /* ── new workspace ────────────────────────────────────────────────── */
@@ -679,6 +656,38 @@ export async function chatFocusEntity(id) {
   const existing = hub.chat.summaries.find((thread) => thread.entity === id)
   if (existing) await openThread(existing.id)
   else await createThread({ entity: id })
+}
+
+/** Title and pin are metadata — editable after the conversation started. */
+export async function renameThread(id, title) {
+  const updated = await call('chat.rename', { workspace: hub.workspace, id, title })
+  /* metadata on an inactive row must not switch the open thread */
+  if (hub.chat.threads[id]) {
+    hub.chat.threads = { ...hub.chat.threads, [id]: updated }
+  }
+  await refreshChatList()
+  return updated
+}
+
+export async function pinThread(id, pinned) {
+  const updated = await call('chat.pin', { workspace: hub.workspace, id, pinned })
+  if (hub.chat.threads[id]) {
+    hub.chat.threads = { ...hub.chat.threads, [id]: updated }
+  }
+  await refreshChatList()
+  return updated
+}
+
+export async function removeThread(id) {
+  await call('chat.remove', { workspace: hub.workspace, id })
+  const nextThreads = { ...hub.chat.threads }
+  delete nextThreads[id]
+  hub.chat.threads = nextThreads
+  if (hub.chat.active === id) hub.chat.active = ''
+  await refreshChatList()
+  if (!hub.chat.active && hub.chat.summaries.length) {
+    await selectThread(hub.chat.summaries[0].id)
+  }
 }
 
 /** Context moves only before the first question. The server enforces the same rule. */

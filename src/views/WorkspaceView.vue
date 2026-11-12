@@ -2,29 +2,20 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ROLES, hub, roleById, toast } from '@/stores/hub'
-import {
-  activeWorkspace,
-  updateWorkspace,
-  workspaces,
-  writeMcp,
-} from '@/stores/workspaces'
+import { activeWorkspace, updateWorkspace, workspaces } from '@/stores/workspaces'
 
 /**
- * Workspace settings are a page, not a modal.
- *
- * Only the workspace's own identity lives here — name, id, member roster and the
- * MCP pool. Entities, skills and machines already have pages, so this page does
- * not grow a second copy of their controls.
+ * Workspace settings are a page, not a modal. General and Members are separate
+ * tabs because they are different jobs: one changes the record, the other
+ * manages who belongs to it.
  */
 const router = useRouter()
 const current = computed(() => activeWorkspace.value)
+const tab = ref('general')
 
 const form = reactive({ label: '', id: '', members: [] })
-const mcpText = ref('')
 const error = ref('')
-const mcpError = ref('')
 const busy = ref('')
-const mcpBusy = ref(false)
 
 const owner = computed(() => roleById(hub.session?.role || 'owner'))
 const idChanged = computed(() => Boolean(current.value) && form.id !== current.value.id)
@@ -52,16 +43,7 @@ function syncForm(record) {
   error.value = ''
 }
 
-function syncMcp() {
-  const servers = workspaces.mcp?.servers || {}
-  mcpText.value = Object.keys(servers).length
-    ? JSON.stringify(servers, null, 2)
-    : '{\n  \n}'
-  mcpError.value = ''
-}
-
 watch(current, syncForm, { immediate: true })
-watch(() => workspaces.mcp, syncMcp, { deep: true, immediate: true })
 
 function addMember() {
   form.members.push({ name: '', email: '', role: 'member' })
@@ -72,7 +54,7 @@ function removeMember(index) {
   form.members.splice(index, 1)
 }
 
-async function saveGeneral() {
+async function save() {
   if (busy.value) return
   error.value = ''
   const label = form.label.trim()
@@ -86,20 +68,23 @@ async function saveGeneral() {
     return
   }
 
-  const members = form.members
-    .map((member) => ({
-      name: String(member.name || '').trim(),
-      email: String(member.email || '').trim(),
-      role: member.role || 'member',
-    }))
-    .filter((member) => member.name || member.email)
+  let members
+  if (tab.value === 'members') {
+    members = form.members
+      .map((member) => ({
+        name: String(member.name || '').trim(),
+        email: String(member.email || '').trim(),
+        role: member.role || 'member',
+      }))
+      .filter((member) => member.name || member.email)
 
-  if (members.length && !members.some((member) => member.role === 'owner')) {
-    error.value = 'Keep at least one owner in the member list.'
-    return
+    if (members.length && !members.some((member) => member.role === 'owner')) {
+      error.value = 'Keep at least one owner in the member list.'
+      return
+    }
   }
 
-  busy.value = 'general'
+  busy.value = tab.value
   try {
     const record = await updateWorkspace({ label, id, members })
     syncForm(record)
@@ -108,27 +93,6 @@ async function saveGeneral() {
     error.value = problem?.message || 'The workspace could not be updated.'
   } finally {
     busy.value = ''
-  }
-}
-
-async function saveMcp() {
-  if (mcpBusy.value) return
-  mcpError.value = ''
-  let servers
-  try {
-    servers = mcpText.value.trim() ? JSON.parse(mcpText.value) : {}
-  } catch {
-    mcpError.value = 'That is not valid JSON.'
-    return
-  }
-  mcpBusy.value = true
-  try {
-    await writeMcp(servers)
-    toast('MCP pool saved')
-  } catch (problem) {
-    mcpError.value = problem?.message || 'The MCP pool could not be saved.'
-  } finally {
-    mcpBusy.value = false
   }
 }
 </script>
@@ -140,9 +104,8 @@ async function saveMcp() {
         <p class="eyebrow">Workspace · {{ current?.label || workspaces.active }}</p>
         <h1>Workspace</h1>
         <p class="lede">
-          The record behind this scope: its name, its directory id, who belongs to it and
-          which MCP servers the workspace carries. Entities, skills and machines stay on their
-          own pages.
+          The record behind this scope: its name, its directory id and who belongs to it.
+          Entities, skills, MCP and machines stay on their own pages.
         </p>
       </div>
       <div class="head-actions">
@@ -150,100 +113,121 @@ async function saveMcp() {
       </div>
     </div>
 
+    <div class="sk-tabs" role="tablist" aria-label="Workspace settings">
+      <button
+        role="tab"
+        :aria-selected="tab === 'general' ? 'true' : 'false'"
+        @click="tab = 'general'; error = ''"
+      >
+        General
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'members' ? 'true' : 'false'"
+        @click="tab = 'members'; error = ''"
+      >
+        Members <span class="n">{{ form.members.length }}</span>
+      </button>
+    </div>
+
     <div class="acct-page ws-page">
-      <form class="acct-card" @submit.prevent="saveGeneral">
-        <div class="acct-card-head">
-          <h2>General</h2>
-          <span class="role-badge">{{ current?.kind || 'local' }}</span>
-        </div>
+      <form class="acct-card" @submit.prevent="save">
+        <template v-if="tab === 'general'">
+          <div class="acct-card-head">
+            <h2>General</h2>
+            <span class="role-badge">{{ current?.kind || 'local' }}</span>
+          </div>
 
-        <div class="fld">
-          <label class="lbl" for="ws-label">Name</label>
-          <input
-            id="ws-label"
-            v-model="form.label"
-            class="acct-input"
-            type="text"
-            spellcheck="false"
-            :disabled="busy === 'general'"
-          />
-          <p class="mnote">The label shown in the rail and page headings.</p>
-        </div>
-
-        <div class="fld">
-          <label class="lbl" for="ws-id">Workspace ID</label>
-          <input
-            id="ws-id"
-            v-model="form.id"
-            class="acct-input mono"
-            type="text"
-            spellcheck="false"
-            :disabled="busy === 'general'"
-          />
-          <p class="mnote">
-            The folder name under <code class="mono">~/.entity/workspaces/</code>.
-            <template v-if="idChanged">
-              Saving moves the directory and updates this window's scope.
-            </template>
-            <template v-else>Changing it moves the whole workspace directory.</template>
-          </p>
-        </div>
-
-        <div class="acct-sep">
-          <span>Members</span>
-          <small>at least one owner</small>
-        </div>
-
-        <div class="member-list">
-          <div v-for="(member, index) in form.members" :key="index" class="member-row">
+          <div class="fld">
+            <label class="lbl" for="ws-label">Name</label>
             <input
-              v-model="member.name"
+              id="ws-label"
+              v-model="form.label"
               class="acct-input"
               type="text"
-              placeholder="Name"
               spellcheck="false"
               :disabled="busy === 'general'"
             />
-            <input
-              v-model="member.email"
-              class="acct-input"
-              type="email"
-              placeholder="email@example.com"
-              spellcheck="false"
-              :disabled="busy === 'general'"
-            />
-            <select v-model="member.role" class="acct-input" :disabled="busy === 'general'">
-              <option v-for="entry in ROLES" :key="entry.id" :value="entry.id">
-                {{ entry.label }}
-              </option>
-            </select>
-            <button
-              class="btn btn-sm btn-ghost"
-              type="button"
-              :disabled="busy === 'general' || form.members.length <= 1"
-              @click="removeMember(index)"
-            >
-              Remove
-            </button>
+            <p class="mnote">The label shown in the rail and page headings.</p>
           </div>
-        </div>
 
-        <button class="btn btn-sm" type="button" :disabled="busy === 'general'" @click="addMember">
-          Add member
-        </button>
-        <p class="mnote" style="margin-top: 8px">
-          This build signs in one account per machine. The roster is stored with the workspace,
-          so a later multi-account step has the roles already in place.
-        </p>
+          <div class="fld">
+            <label class="lbl" for="ws-id">Workspace ID</label>
+            <input
+              id="ws-id"
+              v-model="form.id"
+              class="acct-input mono"
+              type="text"
+              spellcheck="false"
+              :disabled="busy === 'general'"
+            />
+            <p class="mnote">
+              The folder name under <code class="mono">~/.entity/workspaces/</code>.
+              <template v-if="idChanged">
+                Saving moves the directory and updates this window's scope.
+              </template>
+              <template v-else>Changing it moves the whole workspace directory.</template>
+            </p>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="acct-card-head">
+            <h2>Members</h2>
+            <span class="mnote">at least one owner</span>
+          </div>
+
+          <div class="member-list">
+            <div v-for="(member, index) in form.members" :key="index" class="member-row">
+              <input
+                v-model="member.name"
+                class="acct-input"
+                type="text"
+                placeholder="Name"
+                spellcheck="false"
+                :disabled="busy === 'members'"
+              />
+              <input
+                v-model="member.email"
+                class="acct-input"
+                type="email"
+                placeholder="email@example.com"
+                spellcheck="false"
+                :disabled="busy === 'members'"
+              />
+              <select v-model="member.role" class="acct-input" :disabled="busy === 'members'">
+                <option v-for="entry in ROLES" :key="entry.id" :value="entry.id">
+                  {{ entry.label }}
+                </option>
+              </select>
+              <button
+                class="btn btn-sm btn-ghost"
+                type="button"
+                :disabled="busy === 'members' || form.members.length <= 1"
+                @click="removeMember(index)"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+
+          <button class="btn btn-sm" type="button" :disabled="busy === 'members'" @click="addMember">
+            Add member
+          </button>
+          <p class="mnote" style="margin-top: 8px">
+            This build signs in one account per machine. The roster is stored with the
+            workspace, so a later multi-account step has the roles already in place.
+          </p>
+        </template>
 
         <p v-if="error" class="acct-error" role="alert">{{ error }}</p>
 
         <div class="acct-actions">
-          <button class="btn" type="button" :disabled="busy === 'general'" @click="router.push('/')">
+          <button class="btn" type="button" :disabled="busy" @click="router.push('/')">
             Cancel
           </button>
-          <button class="btn btn-ink" type="submit" :disabled="busy === 'general'">
-            {{ busy === 'general' ? 'Saving…' : 'Save changes' }}
+          <button class="btn btn-ink" type="submit" :disabled="busy">
+            {{ busy ? 'Saving…' : tab === 'general' ? 'Save general' : 'Save members' }}
           </button>
         </div>
       </form>
@@ -270,35 +254,5 @@ async function saveMcp() {
         </ul>
       </aside>
     </div>
-
-    <section class="acct-card ws-mcp">
-      <div class="acct-card-head">
-        <h2>MCP pool</h2>
-        <span class="mnote">{{ workspaces.mcp?.path || '' }}</span>
-      </div>
-      <p class="mnote">
-        One pool for the workspace; an entity opts in with <code class="mono">mcp: name</code>.
-        <code class="mono">env</code> holds variable <em>names</em> — values resolve from the
-        environment when a chat starts and are never written here.
-      </p>
-      <textarea
-        v-model="mcpText"
-        class="mcp-editor mono"
-        rows="10"
-        spellcheck="false"
-        :disabled="mcpBusy"
-      ></textarea>
-      <p class="mnote">
-        Enforced for <b>claude</b> conversations only (<code class="mono">--strict-mcp-config</code>:
-        {{ workspaces.mcp.strict ? 'on' : 'off' }}). codex, opencode, pi and gemini manage MCP
-        in their own global config.
-      </p>
-      <p v-if="mcpError" class="acct-error" role="alert">{{ mcpError }}</p>
-      <div class="acct-actions">
-        <button class="btn btn-ink" type="button" :disabled="mcpBusy" @click="saveMcp">
-          {{ mcpBusy ? 'Saving…' : 'Save pool' }}
-        </button>
-      </div>
-    </section>
   </div>
 </template>

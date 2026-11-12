@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
-import SkillIcon from '@/components/SkillIcon.vue'
 import { hub, toast } from '@/stores/hub'
 import { attachSkill, loadLibrary, workspaces } from '@/stores/workspaces'
 
@@ -129,15 +128,7 @@ async function attach(item) {
           :to="{ name: 'skill', params: { name: s.name } }"
         >
           <div class="card-top">
-            <h3><SkillIcon />{{ s.name }}</h3>
-            <span
-              class="tag tag-icon"
-              role="img"
-              :title="s.missing ? 'link target missing' : s.harnessLabel"
-              :aria-label="s.missing ? 'missing' : s.harnessLabel"
-            >
-              <HarnessIcon :name="s.harness" :size="12" />
-            </span>
+            <h3><HarnessIcon :name="s.harness" :size="14" />{{ s.name }}</h3>
           </div>
           <p class="p">{{ s.path }}</p>
           <p v-if="s.missing" class="desc bad">Link target missing — re-attach from the library.</p>
@@ -198,15 +189,7 @@ async function attach(item) {
         <div v-if="visibleLibrary.length" class="grid3">
           <div v-for="s in visibleLibrary" :key="s.id" class="card2">
             <div class="card-top">
-              <h3><SkillIcon />{{ s.name }}</h3>
-              <span
-                class="tag tag-icon"
-                role="img"
-                :title="s.harnessLabel"
-                :aria-label="s.harnessLabel"
-              >
-                <HarnessIcon :name="s.harness" :size="12" />
-              </span>
+              <h3><HarnessIcon :name="s.harness" :size="14" />{{ s.name }}</h3>
             </div>
             <p class="p">{{ s.path }}</p>
             <p v-if="s.description" class="desc">{{ s.description }}</p>

@@ -27,6 +27,8 @@ import {
 const router = useRouter()
 const active = ref('journal')
 const cache = reactive({})
+const sessionQuery = ref('')
+const sessionLimit = ref(50)
 /* a workspace switch invalidates a scan that is still in flight */
 let generation = 0
 
@@ -49,6 +51,28 @@ const state = computed(() => cache[active.value] || {
 
 const titleOf = (session) =>
   session.title || session.preview || `Session ${String(session.id).slice(0, 8)}`
+
+const filteredSessions = computed(() => {
+  const q = sessionQuery.value.trim().toLowerCase()
+  if (!q) return state.value.items
+  return state.value.items.filter((session) =>
+    [
+      session.title,
+      session.preview,
+      session.id,
+      session.dir,
+      session.harnessLabel,
+      ...(session.entities || []),
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(q),
+  )
+})
+
+const shownSessions = computed(() =>
+  filteredSessions.value.slice(0, sessionLimit.value),
+)
 
 function openThread(id) {
   router.push({ name: 'chat', query: { thread: id } })
@@ -84,13 +108,21 @@ async function load(harness, force = false) {
 }
 
 watch(active, (harness) => {
+  sessionQuery.value = ''
+  sessionLimit.value = 50
   if (harness !== 'journal') load(harness)
+})
+
+watch(sessionQuery, () => {
+  sessionLimit.value = 50
 })
 
 watch(
   () => hub.workspace,
   () => {
     generation += 1
+    sessionQuery.value = ''
+    sessionLimit.value = 50
     for (const key of Object.keys(cache)) delete cache[key]
     if (active.value !== 'journal') load(active.value)
   },
@@ -159,6 +191,7 @@ async function copyResume(session) {
         :aria-selected="active === harness.id ? 'true' : 'false'"
         @click="active = harness.id"
       >
+        <HarnessIcon :name="harness.id" :size="13" />
         {{ harness.label }}
         <span v-if="cache[harness.id]?.loaded" class="n">{{ cache[harness.id].count }}</span>
       </button>
@@ -183,7 +216,7 @@ async function copyResume(session) {
             <EntityMark :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
           </span>
           <span class="jrn-act">
-            <b>{{ snippet(thread.preview) || 'New thread' }}</b>
+            <b>{{ thread.title || snippet(thread.preview) || 'New thread' }}</b>
             <template v-if="thread.queries">
               · {{ thread.queries }} {{ thread.queries === 1 ? 'query' : 'queries' }}
             </template>
@@ -234,39 +267,83 @@ async function copyResume(session) {
       </div>
 
       <template v-else>
-        <div class="tbl">
-          <div class="sess-row sess-th">
-            <span>Time</span><span>Session</span><span class="sess-id">Session ID</span
-            ><span class="rt">Resume</span>
-          </div>
-          <div v-for="session in state.items" :key="session.id" class="sess-row">
-            <time>{{ ago(session.updatedAt) }}</time>
-            <span class="sess-main">
-              <b>{{ titleOf(session) }}</b>
-              <span class="sess-meta">
-                <template v-if="session.entities.length">
-                  {{ session.entities.join(', ') }} <span aria-hidden="true">·</span>
-                </template>
-                <span class="mono">{{ session.dir }}</span>
-              </span>
-            </span>
-            <span class="sess-id mono" :title="session.id">{{ session.id }}</span>
-            <span class="sess-actions">
-              <button
-                class="btn btn-sm"
-                type="button"
-                :title="session.resumeCommand"
-                @click="copyResume(session)"
-              >
-                Copy resume
-              </button>
-            </span>
-          </div>
+        <div class="hsearch session-search">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.6" />
+            <path d="M10.5 10.5L14 14" />
+          </svg>
+          <input
+            v-model="sessionQuery"
+            type="text"
+            placeholder="Search sessions by title, ID, entity or path"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search sessions"
+          />
+          <button
+            v-if="sessionQuery"
+            class="hclear"
+            type="button"
+            aria-label="Clear session search"
+            @click="sessionQuery = ''"
+          >
+            ×
+          </button>
         </div>
-        <p v-if="state.count > state.items.length" class="mnote">
-          Showing the newest {{ state.items.length }} of {{ state.count }} sessions.
-        </p>
-        <p v-if="state.note" class="mnote">{{ state.note }}</p>
+
+        <div v-if="!filteredSessions.length" class="empty-note">
+          <b>No sessions match “{{ sessionQuery }}”.</b>
+          <span>Try a session ID, an entity name, or a directory.</span>
+        </div>
+
+        <template v-else>
+          <div class="tbl">
+            <div class="sess-row sess-th">
+              <span>Time</span><span>Session</span><span class="sess-id">Session ID</span
+              ><span class="rt">Resume</span>
+            </div>
+            <div v-for="session in shownSessions" :key="session.id" class="sess-row">
+              <time>{{ ago(session.updatedAt) }}</time>
+              <span class="sess-main">
+                <b>{{ titleOf(session) }}</b>
+                <span class="sess-meta">
+                  <template v-if="session.entities.length">
+                    {{ session.entities.join(', ') }} <span aria-hidden="true">·</span>
+                  </template>
+                  <span class="mono">{{ session.dir }}</span>
+                </span>
+              </span>
+              <span class="sess-id mono" :title="session.id">{{ session.id }}</span>
+              <span class="sess-actions">
+                <button
+                  class="btn btn-sm"
+                  type="button"
+                  :title="session.resumeCommand"
+                  @click="copyResume(session)"
+                >
+                  Copy resume
+                </button>
+              </span>
+            </div>
+          </div>
+          <div class="session-foot">
+            <span class="mnote">
+              Showing {{ shownSessions.length }} of {{ filteredSessions.length }} sessions
+              <template v-if="state.count > state.items.length">
+                · newest {{ state.items.length }} of {{ state.count }}
+              </template>
+            </span>
+            <button
+              v-if="shownSessions.length < filteredSessions.length"
+              class="btn btn-sm"
+              type="button"
+              @click="sessionLimit += 50"
+            >
+              Load more
+            </button>
+          </div>
+          <p v-if="state.note" class="mnote">{{ state.note }}</p>
+        </template>
       </template>
     </template>
   </div>

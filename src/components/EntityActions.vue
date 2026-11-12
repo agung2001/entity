@@ -1,12 +1,12 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { chatFocusEntity, closeDrawer, toast } from '@/stores/hub'
+import { chatFocusEntity, toast } from '@/stores/hub'
 import { revealEntity } from '@/stores/entities'
 
 /**
- * Three quick actions for a table row. The row itself still opens the drawer;
+ * Three quick actions for a table row. The row itself opens the entity page;
  * every control here stops propagation so clicking an action never also opens
- * the detail panel.
+ * the detail page.
  */
 const props = defineProps({
   entity: { type: Object, required: true },
@@ -20,7 +20,6 @@ function stop(event) {
 
 async function chat(event) {
   stop(event)
-  closeDrawer()
   try {
     await chatFocusEntity(props.entity.id)
   } catch (error) {

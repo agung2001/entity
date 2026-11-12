@@ -27,9 +27,9 @@ const { expandHome } = require('./frontmatter.cjs')
 
 const execFileAsync = promisify(execFile)
 const HOME = os.homedir()
-const MAX_ITEMS = 100
+const MAX_ITEMS = 1000
 const MAX_HEAD_BYTES = 256 * 1024
-const MAX_CODEX_FILES = 1200
+const MAX_CODEX_FILES = 2500
 
 const HARNESS_LABELS = {
   claude: 'Claude Code',
@@ -246,7 +246,11 @@ function scopeFor(workspace) {
 /* ── per-harness scanners ─────────────────────────────────────────── */
 
 const claudeProject = (dir) => dir.replace(/[^a-zA-Z0-9]/g, '-')
-const piProject = (dir) => `--${dir.replace(/[^a-zA-Z0-9]/g, '-')}--`
+/* pi keeps the path verbatim apart from the leading slash and separators:
+   spaces, dots and emoji stay, `/` becomes `-`, and the whole thing is wrapped
+   in `--`. Replacing every non-alphanumeric (the claude rule) missed those. */
+const piProject = (dir) =>
+  `--${String(dir).replace(/^\/+/, '').replace(/[\\/]/g, '-')}--`
 
 function scanClaude(dirs) {
   const items = []

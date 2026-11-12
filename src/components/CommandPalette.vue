@@ -1,86 +1,240 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fleet, loadFleet } from '@/stores/fleet'
-import { loadHosts, workspaces } from '@/stores/workspaces'
-import { hub, initials, openDrawer } from '@/stores/hub'
+import { loadLibrary, openWorkspace, workspaces } from '@/stores/workspaces'
+import { ago, ensureChats, hub, initials, snippet, toast } from '@/stores/hub'
 
 /**
- * Jump-to palette. Items are the three things a hub is made of — machines,
- * skills and entities — filtered by label.
+ * Jump-to palette, grouped by the thing being searched.
+ *
+ * The list is a set of categories, not one flat dump: workspace switching,
+ * chat history, entities, skills, machines and activity each get a header and
+ * their own page. Every category is capped and has a "Load more" step, so a
+ * workspace with hundreds of skills does not paint them all on one keystroke.
  */
 const router = useRouter()
 const input = ref(null)
+const limits = reactive({ workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 })
 
-onMounted(() => {
-  loadFleet()
-  if (!workspaces.hosts.length) loadHosts()
-})
+const LIMIT_START = { workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 }
+const LIMIT_STEP = 8
 
-const items = computed(() => {
-  const q = hub.palette.query.trim().toLowerCase()
-  const hosts = fleet.loaded ? fleet.hosts : workspaces.hosts
-  const skills = workspaces.skills
-  const list = [
-    ...hosts.map((m) => ({
-      kind: 'machine',
-      id: m.id || m.alias,
-      label: m.label || m.name,
-      act: () => router.push('/machines'),
-    })),
-    ...skills.map((s) => ({
-      kind: 'skill',
-      id: s.id || s.name,
-      label: s.name,
-      act: () =>
-        s.harness
-          ? router.push({ name: 'skill', params: { name: s.name }, query: { harness: s.harness } })
-          : router.push('/skills'),
-    })),
-    ...hub.agents.map((a) => ({
-      kind: 'entity',
-      id: a.id,
-      label: a.name,
-      act: () => openDrawer(a.id),
-    })),
-  ]
-  return list.filter((i) => i.label.toLowerCase().includes(q))
-})
+/** Hosts are read lazily, the first time the palette is opened. */
+const hosts = computed(() => (fleet.loaded ? fleet.hosts : workspaces.hosts))
+
+function resetLimits() {
+  Object.assign(limits, LIMIT_START)
+}
 
 watch(
   () => hub.palette.open,
   async (open) => {
     if (!open) return
+    hub.palette.query = ''
+    hub.palette.active = 0
+    resetLimits()
     await nextTick()
     input.value?.focus()
+    /* these are all reads; the palette is where they are first needed */
+    ensureChats()
+    if (!fleet.loaded) loadFleet()
   },
 )
+
+/* the harness libraries are the expensive scan; pay for them only once the
+   person starts typing a skill name */
+watch(
+  () => hub.palette.query,
+  (value) => {
+    if (value.trim() && !workspaces.library) loadLibrary()
+  },
+)
+
+const chatLabel = (thread) => thread.title || snippet(thread.preview) || `Thread with ${thread.entity}`
+
+const entityItems = computed(() =>
+  hub.agents.map((agent) => ({
+    id: `entity:${agent.id}`,
+    label: agent.name,
+    meta: `${agent.harnessLabel} · ${agent.skills.length} skills`,
+    act: () => router.push({ name: 'entity', params: { name: agent.name } }),
+  })),
+)
+
+const chatItems = computed(() =>
+  hub.chat.summaries.map((thread) => ({
+    id: `chat:${thread.id}`,
+    label: chatLabel(thread),
+    meta: `${thread.entity} · ${ago(thread.updatedAt)}`,
+    act: () => router.push({ name: 'chat', query: { thread: thread.id } }),
+  })),
+)
+
+const workspaceItems = computed(() =>
+  workspaces.items.map((workspace) => ({
+    id: `workspace:${workspace.id}`,
+    label: workspace.label,
+    meta: `${workspace.id}${workspace.id === workspaces.active ? ' · current' : ''} · ${workspace.counts?.entities || 0} entities`,
+    act: async () => {
+      if (workspace.id === workspaces.active) return
+      const record = await openWorkspace(workspace.id)
+      toast(`Opened ${record.label}`)
+      const route = router.currentRoute.value.name
+      if (route === 'skill') router.push('/skills')
+      else if (route === 'entity') router.push('/entities')
+      else if (route === 'machine') router.push('/machines')
+    },
+  })),
+)
+
+const skillItems = computed(() => {
+  const seen = new Set()
+  const rows = []
+  for (const skill of workspaces.skills) {
+    const key = `${skill.harness || 'workspace'}:${skill.name}`.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push({
+      id: `skill:${key}`,
+      label: skill.name,
+      meta: `${skill.harnessLabel || 'workspace'} · attached`,
+      act: () => router.push({ name: 'skill', params: { name: skill.name } }),
+    })
+  }
+  for (const skill of workspaces.library?.items || []) {
+    const key = `${skill.harness || 'harness'}:${skill.name}`.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push({
+      id: `skill:${key}`,
+      label: skill.name,
+      meta: `${skill.harnessLabel || skill.harness || 'harness'} · library`,
+      act: () =>
+        router.push({
+          name: 'skill',
+          params: { name: skill.name },
+          query: { harness: skill.harness },
+        }),
+    })
+  }
+  return rows
+})
+
+const machineItems = computed(() => {
+  const seen = new Map()
+  for (const machine of workspaces.machines) {
+    seen.set(machine.id, {
+      id: `machine:${machine.id}`,
+      label: machine.label || machine.id,
+      meta: `${machine.thisMachine ? 'local' : 'ssh'} · attached`,
+      act: () => router.push({ name: 'machine', params: { id: machine.id } }),
+    })
+  }
+  for (const host of hosts.value || []) {
+    const id = host.alias || host.id
+    if (!id || seen.has(id)) continue
+    seen.set(id, {
+      id: `machine:${id}`,
+      label: host.label || host.alias || id,
+      meta: `${host.spec || host.hostName || 'ssh'} · fleet`,
+      act: () => router.push({ name: 'machine', params: { id } }),
+    })
+  }
+  return [...seen.values()]
+})
+
+const activityItems = computed(() => [
+  {
+    id: 'activity:open',
+    label: 'Activity',
+    meta: 'Journal and harness sessions',
+    act: () => router.push('/activity'),
+  },
+  {
+    id: 'activity:journal',
+    label: 'Journal',
+    meta: 'Conversation history',
+    act: () => router.push('/activity'),
+  },
+  {
+    id: 'activity:sessions',
+    label: 'Harness sessions',
+    meta: 'Session IDs and resume commands',
+    act: () => router.push('/activity'),
+  },
+  ...hub.runs.map((run) => ({
+    id: `run:${run.id}`,
+    label: `${run.entity || 'Run'} · ${run.status}`,
+    meta: `${run.harness || 'harness'} · ${ago(run.startedAt)}`,
+    act: () => router.push('/activity'),
+  })),
+])
+
+const groups = computed(() => {
+  const q = hub.palette.query.trim().toLowerCase()
+  const make = (id, label, source) => {
+    const matched = q
+      ? source.filter((item) => `${item.label} ${item.meta}`.toLowerCase().includes(q))
+      : source
+    const limit = limits[id] || LIMIT_START[id] || 4
+    return {
+      id,
+      label,
+      items: matched.slice(0, limit),
+      total: matched.length,
+      hasMore: matched.length > limit,
+    }
+  }
+
+  return [
+    make('workspace', 'Workspace', workspaceItems.value),
+    make('chat', 'Chat', chatItems.value),
+    make('entity', 'Entities', entityItems.value),
+    make('skill', 'Skills', skillItems.value),
+    make('machine', 'Machines', machineItems.value),
+    make('activity', 'Activity', activityItems.value),
+  ].filter((group) => group.items.length || (q && group.total))
+})
+
+const flat = computed(() => groups.value.flatMap((group) => group.items))
 
 function close() {
   hub.palette.open = false
 }
 
-function run(item) {
+async function run(item) {
   if (!item) return
   close()
-  item.act()
+  try {
+    await item.act()
+  } catch (error) {
+    toast(error?.message || 'That destination could not be opened.')
+  }
 }
 
-function onInput() {
+function more(id) {
+  limits[id] = (limits[id] || LIMIT_START[id] || 4) + LIMIT_STEP
+}
+
+function onInput(event) {
+  hub.palette.query = event.target.value
   hub.palette.active = 0
+  resetLimits()
 }
 
-function onKey(e) {
-  const list = items.value
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault()
+function onKey(event) {
+  const list = flat.value
+  if (!list.length) return
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
     const next =
-      e.key === 'ArrowDown'
+      event.key === 'ArrowDown'
         ? Math.min(list.length - 1, hub.palette.active + 1)
         : Math.max(0, hub.palette.active - 1)
     hub.palette.active = next
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
     run(list[hub.palette.active])
   }
 }
@@ -99,27 +253,37 @@ function onKey(e) {
       <input
         ref="input"
         :value="hub.palette.query"
-        placeholder="Jump to an entity, skill or machine…"
+        placeholder="Search workspace, chats, entities, skills, machines…"
         autocomplete="off"
         spellcheck="false"
-        @input="hub.palette.query = $event.target.value; onInput()"
+        @input="onInput"
         @keydown="onKey"
       />
       <kbd>esc</kbd>
     </div>
     <div class="plist" role="listbox" aria-label="Results">
-      <template v-if="items.length">
-        <div
-          v-for="(item, i) in items"
-          :key="item.kind + item.id"
-          class="pitem"
-          :data-on="i === hub.palette.active ? '1' : '0'"
-          role="option"
-          :aria-selected="i === hub.palette.active ? 'true' : 'false'"
-          @click="run(item)"
-        >
-          <span class="sq">{{ initials(item.label) }}</span>{{ item.label
-          }}<span class="k">{{ item.kind }}</span>
+      <template v-if="flat.length">
+        <div v-for="group in groups" :key="group.id" class="pgroup">
+          <div class="pgh">
+            <span>{{ group.label }}</span>
+            <span class="pn">{{ group.total }}</span>
+          </div>
+          <div
+            v-for="item in group.items"
+            :key="item.id"
+            class="pitem"
+            :data-on="flat.indexOf(item) === hub.palette.active ? '1' : '0'"
+            role="option"
+            :aria-selected="flat.indexOf(item) === hub.palette.active ? 'true' : 'false'"
+            @click="run(item)"
+          >
+            <span class="sq">{{ initials(item.label) }}</span>
+            <span class="pname">{{ item.label }}</span>
+            <span class="pmet">{{ item.meta }}</span>
+          </div>
+          <button v-if="group.hasMore" class="pmore" type="button" @click="more(group.id)">
+            Load {{ Math.min(LIMIT_STEP, group.total - group.items.length) }} more
+          </button>
         </div>
       </template>
       <div v-else class="pempty">No matches</div>
