@@ -11,6 +11,7 @@ import { call } from '@/composables/localBridge'
 import { applyLibrary, applyScope, hub, toast } from '@/stores/hub'
 import { loadEntities } from '@/stores/entities'
 import { loadRuns, resetRuns, runs } from '@/stores/runs'
+import { loadArtifacts, resetArtifacts } from '@/stores/artifacts'
 
 const WORKSPACE_KEY = 'entity.workspace'
 
@@ -61,6 +62,7 @@ export async function loadScope(id) {
 
   await loadEntities(id)
   await loadRuns(id)
+  await loadArtifacts(id)
 
   applyScope({
     agents: hub.agents,
@@ -96,6 +98,25 @@ export async function updateWorkspace({ label, id, members }) {
   return record
 }
 
+/** A portable JSON snapshot: entities, chats, copied skills and the MCP pool. */
+export async function exportWorkspace(id = workspaces.active) {
+  return call('workspace.export', { id })
+}
+
+/** Import a bundle, refresh the list, and leave the active workspace alone. */
+export async function importWorkspace(bundle) {
+  const result = await call('workspace.import', { bundle })
+  workspaces.items = await call('workspace.list')
+  return result
+}
+
+/** Delete a workspace directory. The caller decides what to open next. */
+export async function removeWorkspace(id) {
+  const result = await call('workspace.remove', { id })
+  await loadWorkspaces()
+  return result
+}
+
 export async function openWorkspace(id) {
   const record = await call('workspace.open', { id })
   workspaces.active = record.id
@@ -127,6 +148,7 @@ export async function loadWorkspaces() {
       hub.workspace = ''
       hub.workspaceLabel = ''
       resetRuns()
+      resetArtifacts()
       applyScope({})
       persist('')
       return items

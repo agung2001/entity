@@ -27,15 +27,76 @@ import {
 const router = useRouter()
 const active = ref('journal')
 const cache = reactive({})
+const journalQuery = ref('')
 const sessionQuery = ref('')
 const sessionLimit = ref(50)
+const SESSION_COUNTS_KEY = 'entity.sessions.counts'
+/* Last known count per harness, so opening the page can paint the tab numbers
+   without re-scanning four stores. Clicking a tab still refreshes its number. */
+const sessionCounts = reactive({})
 /* a workspace switch invalidates a scan that is still in flight */
 let generation = 0
 
-onMounted(ensureChats)
+function readCountStores() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SESSION_COUNTS_KEY) || '{}')
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  } catch {
+    return {}
+  }
+}
+
+function readSessionCounts(workspace = hub.workspace) {
+  for (const key of Object.keys(sessionCounts)) delete sessionCounts[key]
+  if (!workspace) return
+  const bucket = readCountStores()[workspace] || {}
+  for (const [harness, entry] of Object.entries(bucket)) {
+    if (Number.isFinite(entry?.count)) sessionCounts[harness] = entry.count
+  }
+}
+
+function saveSessionCount(harness, count) {
+  if (!hub.workspace) return
+  sessionCounts[harness] = count
+  const stores = readCountStores()
+  stores[hub.workspace] = {
+    ...(stores[hub.workspace] || {}),
+    [harness]: { count, at: new Date().toISOString() },
+  }
+  try {
+    localStorage.setItem(SESSION_COUNTS_KEY, JSON.stringify(stores))
+  } catch {
+    /* session-only counts are still useful */
+  }
+}
+
+onMounted(async () => {
+  readSessionCounts()
+  await ensureChats()
+})
 
 const rows = computed(() => hub.chat.summaries || [])
 const machineLabel = (id) => machineById(id)?.label || id
+
+const filteredJournal = computed(() => {
+  const q = journalQuery.value.trim().toLowerCase()
+  if (!q) return rows.value
+  return rows.value.filter((thread) =>
+    [
+      thread.title,
+      thread.entity,
+      thread.preview,
+      thread.id,
+      thread.harness,
+      thread.machine,
+      machineLabel(thread.machine),
+      snippet(thread.preview),
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(q),
+  )
+})
 
 const labelOf = (harness) =>
   HARNESSES.find((entry) => entry.id === harness)?.label || harness
@@ -86,14 +147,16 @@ async function load(harness, force = false) {
   try {
     const data = await call('sessions.list', { workspace: hub.workspace, harness })
     if (forGeneration !== generation) return
+    const count = data?.count || 0
     cache[harness] = {
       loading: false,
       loaded: true,
       error: '',
       items: data?.items || [],
       note: data?.note || '',
-      count: data?.count || 0,
+      count,
     }
+    saveSessionCount(harness, count)
   } catch (error) {
     if (forGeneration !== generation) return
     cache[harness] = {
@@ -121,9 +184,11 @@ watch(
   () => hub.workspace,
   () => {
     generation += 1
+    journalQuery.value = ''
     sessionQuery.value = ''
     sessionLimit.value = 50
     for (const key of Object.keys(cache)) delete cache[key]
+    readSessionCounts()
     if (active.value !== 'journal') load(active.value)
   },
 )
@@ -193,17 +258,49 @@ async function copyResume(session) {
       >
         <HarnessIcon :name="harness.id" :size="13" />
         {{ harness.label }}
-        <span v-if="cache[harness.id]?.loaded" class="n">{{ cache[harness.id].count }}</span>
+        <span
+          v-if="cache[harness.id]?.loaded || sessionCounts[harness.id] !== undefined"
+          class="n"
+        >{{ cache[harness.id]?.loaded ? cache[harness.id].count : sessionCounts[harness.id] }}</span>
       </button>
     </div>
 
     <template v-if="active === 'journal'">
-      <div class="tbl">
+      <div class="hsearch session-search">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" />
+          <path d="M10.5 10.5L14 14" />
+        </svg>
+        <input
+          v-model="journalQuery"
+          type="text"
+          placeholder="Search the journal by title, entity, or context"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search the journal"
+        />
+        <button
+          v-if="journalQuery"
+          class="hclear"
+          type="button"
+          aria-label="Clear journal search"
+          @click="journalQuery = ''"
+        >
+          ×
+        </button>
+      </div>
+
+      <div v-if="journalQuery && !filteredJournal.length" class="empty-note">
+        <b>No conversations match “{{ journalQuery }}”.</b>
+        <span>Try an entity name, a title, a harness, or part of the preview.</span>
+      </div>
+
+      <div v-else class="tbl">
         <div class="jrn-row jrn-th">
           <span>Time</span><span>Entity</span><span>Conversation</span><span class="rt">Context</span>
         </div>
         <div
-          v-for="thread in rows"
+          v-for="thread in filteredJournal"
           :key="thread.id"
           class="jrn-row jrn-row-btn"
           role="button"
@@ -231,6 +328,9 @@ async function copyResume(session) {
           No conversations yet in this workspace.
         </div>
       </div>
+      <p v-if="journalQuery && filteredJournal.length" class="mnote">
+        {{ filteredJournal.length }} of {{ rows.length }} conversations.
+      </p>
     </template>
 
     <template v-else>

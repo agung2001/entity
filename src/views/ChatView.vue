@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
@@ -8,6 +8,9 @@ import MessageList from '@/components/MessageList.vue'
 import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
+import TranscriptDialog from '@/components/TranscriptDialog.vue'
+import { onRunEvent } from '@/composables/localBridge'
+import { loadArtifacts } from '@/stores/artifacts'
 import { HARNESSES } from '@/data/mock'
 import {
   activeThread,
@@ -45,6 +48,14 @@ const search = ref('')
 const editing = ref('')
 const editTitle = ref('')
 const confirming = ref('')
+const transcriptOpen = ref(false)
+const live = ref(null)
+let offEvent = null
+
+const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+const historyShortcut = isMac ? '⌘⇧B' : 'Ctrl+Shift+B'
+const transcriptShortcut = isMac ? '⌘⇧E' : 'Ctrl+Shift+E'
 
 const HISTORY_KEY = 'entity.chat.history'
 try {
@@ -108,6 +119,16 @@ const statLabel = computed(
     `${counts.value.r} ${counts.value.r === 1 ? 'response' : 'responses'} received`,
 )
 
+const latestTrace = computed(() => {
+  const messages = thread.value?.messages || []
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].execution || messages[i].steps?.length) return messages[i]
+  }
+  return null
+})
+
+const canTranscript = computed(() => Boolean(live.value || latestTrace.value))
+
 const threadLabel = (summary) =>
   summary.title || snippet(summary.preview) || `Thread with ${summary.entity}`
 
@@ -121,6 +142,23 @@ function toggleHistory() {
     localStorage.setItem(HISTORY_KEY, historyOpen.value ? '1' : '0')
   } catch {
     /* session-only */
+  }
+}
+
+function onChatKey(event) {
+  if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey) return
+  const target = event.target
+  const editable =
+    target instanceof HTMLElement &&
+    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+  if (editable) return
+  const key = event.key.toLowerCase()
+  if (key === 'b') {
+    event.preventDefault()
+    toggleHistory()
+  } else if (key === 'e' && canTranscript.value) {
+    event.preventDefault()
+    transcriptOpen.value = true
   }
 }
 
@@ -215,7 +253,57 @@ async function deleteThread(item) {
   }
 }
 
+function onLiveEvent(event) {
+  if (!event || event.kind !== 'chat.turn') return
+  if (event.workspace !== hub.workspace) return
+  if (event.threadId !== hub.chat.active) return
+
+  if (event.phase === 'start') {
+    live.value = {
+      messageId: event.messageId,
+      execution: event.data?.execution || {},
+      steps: live.value?.messageId === event.messageId ? live.value.steps : [],
+    }
+    return
+  }
+
+  if (!live.value || live.value.messageId !== event.messageId) {
+    live.value = {
+      messageId: event.messageId,
+      execution: event.data?.execution || {},
+      steps: [],
+    }
+  }
+
+  if (event.phase === 'step') {
+    const step = event.data?.step
+    if (!step) return
+    const steps = [...live.value.steps]
+    const index = steps.findIndex((entry) => entry.seq === step.seq)
+    if (index >= 0) steps[index] = step
+    else steps.push(step)
+    live.value = { ...live.value, steps }
+    return
+  }
+
+  if (event.phase === 'done') {
+    const message = event.data?.message
+    const current = hub.chat.threads[event.threadId]
+    if (message && current && !current.messages.some((entry) => entry.id === message.id)) {
+      hub.chat.threads = {
+        ...hub.chat.threads,
+        [event.threadId]: { ...current, messages: [...current.messages, message] },
+      }
+    }
+    live.value = null
+    /* an entity may have written a document or screenshot during the turn */
+    loadArtifacts().catch(() => {})
+  }
+}
+
 onMounted(async () => {
+  offEvent = onRunEvent(onLiveEvent)
+  document.addEventListener('keydown', onChatKey)
   await ensureChats()
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   if (wanted) {
@@ -225,12 +313,20 @@ onMounted(async () => {
   if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
 })
 
+onBeforeUnmount(() => {
+  offEvent?.()
+  offEvent = null
+  document.removeEventListener('keydown', onChatKey)
+})
+
 watch(
   () => hub.workspace,
   async () => {
     search.value = ''
     cancelRename()
     confirming.value = ''
+    live.value = null
+    transcriptOpen.value = false
     await ensureChats()
     if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
   },
@@ -240,6 +336,22 @@ watch(
   () => route.query.thread,
   async (id) => {
     if (typeof id === 'string' && id) await pickThread(id)
+  },
+)
+
+watch(
+  () => hub.chat.active,
+  () => {
+    live.value = null
+    transcriptOpen.value = false
+  },
+)
+
+/* a dropped SSE frame must not leave the live trace spinning forever */
+watch(
+  () => hub.chat.sending,
+  (sending) => {
+    if (!sending && live.value) live.value = null
   },
 )
 </script>
@@ -253,8 +365,8 @@ watch(
           type="button"
           :data-open="historyOpen ? '1' : '0'"
           :aria-expanded="historyOpen ? 'true' : 'false'"
-          :title="historyOpen ? 'Collapse history' : 'Open history'"
-          :aria-label="historyOpen ? 'Collapse history' : 'Open history'"
+          :title="`${historyOpen ? 'Collapse history' : 'Open history'} (${historyShortcut})`"
+          :aria-label="`${historyOpen ? 'Collapse history' : 'Open history'} (${historyShortcut})`"
           @click="toggleHistory"
         >
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
@@ -275,6 +387,7 @@ watch(
         <aside v-if="historyOpen" class="chist">
           <div class="hhead">
             <h2>History</h2>
+            <kbd class="panel-kbd">{{ historyShortcut }}</kbd>
             <span class="n">{{ historyNote }}</span>
           </div>
 
@@ -465,14 +578,39 @@ watch(
                 </template>
               </p>
             </div>
-            <span class="ask-stat" :aria-label="statLabel">
-              <span class="u"><b>{{ counts.q }}</b> queries</span>
-              <span class="vs" aria-hidden="true"></span>
-              <span class="u"><b>{{ counts.r }}</b> responses</span>
-            </span>
+            <div class="cp-right">
+              <span class="ask-stat" :aria-label="statLabel">
+                <span class="u"><b>{{ counts.q }}</b> queries</span>
+                <span class="vs" aria-hidden="true"></span>
+                <span class="u"><b>{{ counts.r }}</b> responses</span>
+              </span>
+              <button
+                class="trace-open"
+                type="button"
+                :disabled="!canTranscript"
+                :aria-expanded="transcriptOpen ? 'true' : 'false'"
+                :title="`View execution transcript (${transcriptShortcut})`"
+                :aria-label="`View execution transcript (${transcriptShortcut})`"
+                @click="transcriptOpen = true"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+                  <path d="M3 2.5h10v11H3z" />
+                  <path d="M5.2 5.5h5.6M5.2 8h5.6M5.2 10.5h3.4" />
+                </svg>
+                <span>Transcript</span>
+                <kbd class="trace-kbd">{{ transcriptShortcut }}</kbd>
+              </button>
+            </div>
           </header>
 
-          <MessageList :messages="messages" :chips="chips" list-class="c-thread" @chip="send" />
+          <MessageList
+            :messages="messages"
+            :chips="chips"
+            :live="live"
+            :entity-name="agent.name"
+            list-class="c-thread"
+            @chip="send"
+          />
 
           <div class="cp-dockwrap">
             <div class="cp-dock">
@@ -532,5 +670,11 @@ watch(
     </div>
 
     <NewThreadDialog :open="newOpen" :defaults="ctx" @close="newOpen = false" @created="onCreated" />
+    <TranscriptDialog
+      :open="transcriptOpen"
+      :thread="thread"
+      :live="live"
+      @close="transcriptOpen = false"
+    />
   </div>
 </template>

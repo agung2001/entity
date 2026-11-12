@@ -18,7 +18,9 @@ const { spawn } = require('node:child_process')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
-const { invocation } = require('./runner-local.cjs')
+const { chatInvocation } = require('./runner-local.cjs')
+const artifacts = require('./artifact-store.cjs')
+const { createParser } = require('./chat-transcript.cjs')
 
 /* a generous cap: the renderer only paints the newest turns, but the file is
    the conversation and should survive a long session */
@@ -65,15 +67,56 @@ function threadFile(record, id) {
   return path.join(chatsDir(record), `${assertThreadId(id)}.json`)
 }
 
+function normaliseStep(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+  const type = ['thinking', 'text', 'tool_use', 'tool_result', 'error'].includes(raw.type)
+    ? raw.type
+    : 'text'
+  const step = {
+    seq: Number(raw.seq) || index + 1,
+    type,
+    at: String(raw.at || ''),
+  }
+  for (const key of ['tool', 'callId', 'content', 'output', 'endedAt']) {
+    if (raw[key] !== undefined && raw[key] !== null) step[key] = String(raw[key])
+  }
+  if (raw.input && typeof raw.input === 'object' && !Array.isArray(raw.input)) {
+    step.input = raw.input
+  }
+  if (Number.isFinite(raw.durationMs)) step.durationMs = raw.durationMs
+  if (Number.isFinite(raw.exitCode)) step.exitCode = raw.exitCode
+  if (raw.isError) step.isError = true
+  return step
+}
+
+function normaliseExecution(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const execution = {}
+  for (const key of ['id', 'harness', 'model', 'command', 'cwd', 'startedAt', 'endedAt', 'status']) {
+    if (raw[key] !== undefined && raw[key] !== null) execution[key] = String(raw[key])
+  }
+  for (const key of ['ms', 'exitCode']) {
+    if (Number.isFinite(raw[key])) execution[key] = raw[key]
+  }
+  if (raw.usage && typeof raw.usage === 'object') execution.usage = raw.usage
+  if (Number.isFinite(raw.costUsd)) execution.costUsd = raw.costUsd
+  return Object.keys(execution).length ? execution : null
+}
+
 function normaliseMessage(message) {
   if (!message || typeof message !== 'object') return null
   const who = ['me', 'agent', 'sys'].includes(message.who) ? message.who : 'sys'
   const text = String(message.text || '')
   if (!text) return null
+  const steps = Array.isArray(message.steps)
+    ? message.steps.map(normaliseStep).filter(Boolean)
+    : []
+  const execution = normaliseExecution(message.execution)
   return {
     who,
     text,
     at: message.at || now(),
+    ...(typeof message.id === 'string' && message.id ? { id: message.id } : {}),
     /* a skill reference is resolved once, when it is sent: the transcript keeps
        what was typed, `sent` keeps what the harness received, and a replayed
        turn does not have to resolve a skill that may since have been detached */
@@ -81,6 +124,8 @@ function normaliseMessage(message) {
       ? { sent: message.sent }
       : {}),
     ...(message.error ? { error: true } : {}),
+    ...(steps.length ? { steps } : {}),
+    ...(execution ? { execution } : {}),
   }
 }
 
@@ -147,8 +192,12 @@ function summarise(thread) {
     replies,
     messageCount: queries + replies,
     preview: previewOf(thread),
-    last:
-      [...thread.messages].reverse().find((message) => message.who !== 'sys') || null,
+    /* A summary is a row, not the transcript: do not ship every thinking block
+       and tool output through the history list. */
+    last: (() => {
+      const message = [...thread.messages].reverse().find((entry) => entry.who !== 'sys')
+      return message ? { who: message.who, text: message.text, at: message.at } : null
+    })(),
   }
 }
 
@@ -312,28 +361,67 @@ function promptFor(messages) {
   return text
 }
 
-function runHarness(entity, thread, prompt) {
-  return new Promise((resolve, reject) => {
+/** The command in the transcript is useful; the system prompt in it is not. */
+function commandPreview(spec) {
+  return [spec.cmd, ...spec.argv]
+    .map((arg) => {
+      const text = String(arg)
+      if (text.length > 120 || text.includes('\n')) return '<…>'
+      return /\s/.test(text) ? JSON.stringify(text) : text
+    })
+    .join(' ')
+}
+
+/**
+ * Run one chat turn and keep the stream.
+ *
+ * The return value is deliberate: a failed harness still carries the steps it
+ * managed to produce, so the transcript is available even when the answer is
+ * not. Only an unexpected programming error rejects.
+ */
+function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () => {} } = {}) {
+  return new Promise((resolve) => {
     let dir
     try {
       dir = entities.resolveDir(entity)
     } catch (error) {
-      reject(error)
+      resolve({
+        ok: false,
+        error: String(error?.message || error),
+        answer: '',
+        steps: [],
+        execution: { harness: thread.harness, status: 'error', startedAt: now() },
+      })
       return
     }
 
+    const model = thread.model || (thread.harness === entity.harness ? entity.model : '')
     let spec
     try {
-      /* A model belongs to the harness it was configured for. The thread's own
-         choice wins; an entity model is only a fallback when the thread runs
-         that same harness. */
-      const model =
-        thread.model || (thread.harness === entity.harness ? entity.model : '')
-      spec = invocation(thread.harness, entity.instructions, prompt, '', false, model)
+      const instructions = `${entity.instructions.trim()}\n\n${artifacts.brief(thread.workspace)}`
+      spec = chatInvocation(thread.harness, instructions, prompt, model)
     } catch (error) {
-      reject(error)
+      resolve({
+        ok: false,
+        error: String(error?.message || error),
+        answer: '',
+        steps: [],
+        execution: { harness: thread.harness, status: 'error', startedAt: now() },
+      })
       return
     }
+
+    const startedMs = Date.now()
+    const startedAt = now()
+    const execution = {
+      harness: thread.harness,
+      model: String(model || ''),
+      command: commandPreview(spec),
+      cwd: dir,
+      startedAt,
+      status: 'running',
+    }
+    onStart(execution)
 
     let child
     try {
@@ -345,10 +433,17 @@ function runHarness(entity, thread, prompt) {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
     } catch (error) {
-      reject(error)
+      resolve({
+        ok: false,
+        error: String(error?.message || error),
+        answer: '',
+        steps: [],
+        execution: { ...execution, status: 'error', endedAt: now(), ms: Date.now() - startedMs },
+      })
       return
     }
 
+    const parser = createParser(thread.harness, { onStep })
     let out = ''
     let err = ''
     let settled = false
@@ -357,16 +452,29 @@ function runHarness(entity, thread, prompt) {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      if (error) {
-        reject(error)
-        return
-      }
-      const text = clean(out)
-      if (code === 0) {
-        resolve(text || '(no output)')
-        return
-      }
-      reject(new Error(friendlyError(err || text, spec.cmd)))
+      const parsed = parser.finish()
+      const endedAt = now()
+      const failed = error ? String(error?.message || error) : parsed.error
+      const exitFailure =
+        !failed && typeof code === 'number' && code !== 0
+          ? friendlyError(err || parsed.answer || out, spec.cmd)
+          : ''
+      resolve({
+        ok: !failed && !exitFailure,
+        answer: parsed.answer,
+        error: failed || exitFailure,
+        steps: parsed.steps,
+        execution: {
+          ...execution,
+          model: parsed.model || execution.model,
+          ...(parsed.usage ? { usage: parsed.usage } : {}),
+          ...(Number.isFinite(parsed.costUsd) ? { costUsd: parsed.costUsd } : {}),
+          endedAt,
+          ms: Date.now() - startedMs,
+          exitCode: typeof code === 'number' ? code : null,
+          status: failed || exitFailure ? 'error' : 'ok',
+        },
+      })
     }
 
     const timer = setTimeout(() => {
@@ -389,8 +497,10 @@ function runHarness(entity, thread, prompt) {
       )
     })
     child.stdout?.on('data', (chunk) => {
-      out += String(chunk)
+      const text = String(chunk)
+      out += text
       if (out.length > MAX_OUTPUT_CHARS) out = out.slice(-MAX_OUTPUT_CHARS)
+      parser.push(text)
     })
     child.stderr?.on('data', (chunk) => {
       err += String(chunk)
@@ -410,7 +520,7 @@ function runHarness(entity, thread, prompt) {
   })
 }
 
-async function send({ workspace, id, text }) {
+async function send({ workspace, id, text, emit = () => {} }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread) throw new Error('That thread no longer exists.')
@@ -440,22 +550,113 @@ async function send({ workspace, id, text }) {
   thread.updatedAt = now()
   writeThread(record, thread)
 
+  const messageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const emitTurn = (phase, data) => {
+    try {
+      emit({
+        kind: 'chat.turn',
+        workspace: record.id,
+        threadId: thread.id,
+        messageId,
+        phase,
+        data,
+      })
+    } catch {
+      /* the window may have closed; the thread file is the record */
+    }
+  }
+
+  const baseExecution = {
+    harness: thread.harness,
+    model: thread.model || (thread.harness === entity.harness ? entity.model : ''),
+    startedAt: now(),
+    status: 'running',
+  }
+  /* Token-level streams can emit thousands of updates. Store every step, but
+     paint the live trace at human speed. */
+  let stepEmittedAt = 0
+  let pendingStep = null
+  let stepTimer = null
+  const flushStep = () => {
+    if (stepTimer) {
+      clearTimeout(stepTimer)
+      stepTimer = null
+    }
+    if (pendingStep) {
+      emitTurn('step', pendingStep)
+      pendingStep = null
+      stepEmittedAt = Date.now()
+    }
+  }
+  const onStep = (event) => {
+    const now = Date.now()
+    if (event.action === 'add' || now - stepEmittedAt >= 80) {
+      flushStep()
+      emitTurn('step', event)
+      stepEmittedAt = now
+      return
+    }
+    pendingStep = event
+    if (!stepTimer) {
+      stepTimer = setTimeout(() => {
+        stepTimer = null
+        if (pendingStep) {
+          emitTurn('step', pendingStep)
+          pendingStep = null
+          stepEmittedAt = Date.now()
+        }
+      }, 80)
+    }
+  }
+
   sending.set(thread.id, true)
+  let turnMessage = null
   try {
     const prompt = promptFor(thread.messages)
-    const answer = await runHarness(entity, thread, prompt)
-    thread.messages.push({ who: 'agent', text: answer, at: now() })
+    const run = await runHarness(entity, thread, prompt, {
+      onStart: (execution) => emitTurn('start', { execution }),
+      onStep,
+    })
+    flushStep()
+
+    const at = now()
+    const execution = { ...run.execution, id: messageId, harness: thread.harness }
+    turnMessage = run.ok
+      ? {
+          who: 'agent',
+          id: messageId,
+          text: run.answer || '(no output)',
+          at,
+          steps: run.steps,
+          execution,
+        }
+      : {
+          who: 'sys',
+          id: messageId,
+          text: `Harness error: ${run.error || 'the harness exited without a response.'}`,
+          at,
+          error: true,
+          steps: run.steps,
+          execution,
+        }
+    thread.messages.push(turnMessage)
   } catch (error) {
-    thread.messages.push({
+    turnMessage = {
       who: 'sys',
+      id: messageId,
       text: `Harness error: ${error?.message || error}`,
       at: now(),
       error: true,
-    })
+      steps: [],
+      execution: { ...baseExecution, status: 'error', endedAt: now() },
+    }
+    thread.messages.push(turnMessage)
   } finally {
+    flushStep()
     sending.delete(thread.id)
     thread.updatedAt = now()
     writeThread(record, thread)
+    if (turnMessage) emitTurn('done', { message: turnMessage })
   }
 
   return thread

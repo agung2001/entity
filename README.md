@@ -57,6 +57,7 @@ assume a port.
   machines/CONFIG                  this workspace's ssh_config (Host blocks)
   machines/<host>                  a copy of that host's key, mode 0600
   chats/<threadId>.json            one conversation per file
+  artifacts/<path>                 documents, screenshots and other deliverables
   runs/<runId>.jsonl               append-only run log
 ```
 
@@ -143,6 +144,26 @@ libraries are a second tab, and they are scanned lazily — on first open of tha
 tab (or the first `/` typed in a composer), then cached for the session — so a
 launch does not walk six skill directories nobody asked for.
 
+## Chat transcripts
+
+Each chat turn is still a real harness process, but the CLI now runs in its JSONL
+stream mode (`claude --output-format stream-json`, `pi --mode json`, and the
+equivalents for codex/opencode/gemini). `chat-transcript.cjs` folds that stream
+into thinking blocks, assistant text and one row per tool call with its output.
+The steps and execution metadata (command, cwd, model, duration, usage) live on
+the assistant message in `<ws>/chats/<threadId>.json` — no database, no second
+copy. The chat header opens the full transcript; each answer also carries an
+inline, collapsible reasoning/tool disclosure. Old messages without a transcript
+simply do not show one. Each answer also has copy, share and "save as artifact"
+actions.
+
+### Artifacts in chat
+
+The harness is told that workspace artifacts live in `<ws>/artifacts` and that a
+saved file should be referenced as `artifact://<relative-path>`. The chat renders
+that reference as an image or a download card, and `#/artifacts` is the shelf for
+browsing, uploading, searching, filtering and removing those files.
+
 ## Layout
 
 ```
@@ -153,8 +174,10 @@ electron/
   workspace-store.cjs workspace dirs: create (atomic), list, update, machines, skills, mcp
   entity-store.cjs    entities/*.md read/write/scaffold + problems[]
   chat-store.cjs      threads under <ws>/chats, one harness turn per send
+  chat-transcript.cjs JSONL stream → thinking / text / tool steps for a chat turn
   session-store.cjs   each harness's own session store, scoped by entity cwd
   mcp-store.cjs       MCP config discovery across ~/.claude.json, ~/.codex, ~/.pi, …
+  artifact-store.cjs  <ws>/artifacts: list, read, upload, saveText, remove, prompt brief
   skill-ref.cjs       /workspace:<name> and /<harness>:<name> → `use this skill <path>`
   runner-local.cjs    spawn a harness, stream events, append the run log
   frontmatter.cjs     the flat frontmatter parser shared by entities and skills
@@ -172,15 +195,17 @@ src/
     LoginView.vue     sign in
     SetupView.vue     first run: create the first workspace (no rail, no skip)
     OverviewView.vue  workspace statistics, machines, entities, recent runs
-    ChatView.vue      collapsible thread history, search/pin/rename, floating composer
+    ChatView.vue      collapsible thread history, search/pin/rename, floating composer, transcript
     EntitiesView.vue  the entity table; "Add entity" scaffolds a file
-    EntityDetailView.vue  the entity as a page: identity, skills, ENTITY.md
+    EntityDetailView.vue  the entity as a page: identity, skills, source file card
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
-    McpView.vue       workspace MCP pool + read-only global harness MCP config
+    McpView.vue       workspace MCP pool + global harness MCP config (attach to pool)
+    ArtifactsView.vue  workspace artifact shelf: upload, remove, search, extension filter, sort
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
     MachineDetailView.vue  one host: connection, key copy, probe, attachment
-    ActivityView.vue  thread journal + one tab per harness session store
+    ActivityView.vue  thread journal + one tab per harness session store (cached counts)
+    ManageWorkspacesView.vue  add, settings, export/import JSON, delete
   components/
     EntityMark.vue    the animated voxel character
     HarnessIcon.vue   brand marks for the skill filter pills
@@ -189,11 +214,13 @@ src/
     MarkPicker.vue    mood + colour, opened on the entity page
     AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
-    MessageList / SlashComposer
+    MessageList / MessageBody / SlashComposer
+    ArtifactThumb.vue  lazy image thumbnail for the artifact grid
     PickMenu.vue      the quiet text trigger used for filter axes
     WorkspaceWizard.vue    the create form (setup page and modal)
     WorkspaceStats.vue     the overview's entity / conversation / skill / machine cards
     NewThreadDialog.vue    entity, machine, harness and model before a thread starts
+    TranscriptDialog / TraceTimeline  one execution's command, timing, thinking, tools
     CommandPalette.vue    categorized search: workspaces, chat, entities, skills, machines, activity
     ToastHost.vue
   composables/
@@ -203,6 +230,7 @@ src/
   stores/
     hub.js            session, the active workspace's view model and chat state
     workspaces.js     list/open/create, machines, skills, mcp; scope loading
+    artifacts.js      artifact metadata, upload, save, read, remove
     entities.js       entity files mapped onto the table rows
     runs.js           run summaries, live output, stale-event guard
     fleet.js          ssh hosts from ~/.ssh/config + per-host probe state
@@ -230,18 +258,22 @@ history mode has no server to resolve a path on reload.
 | `#/` | Overview |
 | `#/chat` | Chat |
 | `#/entities` | Entities |
-| `#/entities/:name` | Entity detail (identity, skills, ENTITY.md) |
+| `#/entities/:name` | Entity detail (identity, skills, source file) |
 | `#/skills` | Workspace skills |
 | `#/skills/:name` | Skill detail |
 | `#/mcp` | Workspace MCP pool + global harness MCP configs |
+| `#/artifacts` | Workspace artifacts: upload, preview, remove, search, filter, sort |
 | `#/machines` | Machines |
 | `#/machines/:id` | Machine detail (connection, key copy, probe) |
 | `#/activity` | Activity (journal + harness sessions) |
+| `#/workspaces` | Manage workspaces (add, export/import, delete, settings) |
 | `#/workspace` | Workspace settings (general + members) |
 
 Workspace settings are a page (`#/workspace`), not a modal: General and Members
-are separate tabs for the name, the directory id and the member roster. MCP has
-its own page (`#/mcp`); entities, skills and machines keep theirs.
+are separate tabs for the name, the directory id and the member roster. Managing
+workspaces is its own page (`#/workspaces`): add, export/import one JSON bundle,
+choose settings, or delete. MCP has its own page (`#/mcp`), and workspace
+artifacts have one too (`#/artifacts`); entities, skills and machines keep theirs.
 
 The guard runs in order: **session → workspace → route**. After sign-in, if
 `~/.entity/workspaces/` holds no readable `workspace.json`, the router sends the
@@ -308,6 +340,8 @@ global config, and the UI says so instead of implying enforcement.
   entity and workspace names are `[a-z0-9-]+`, so no path escapes.
 - MCP `env` entries are variable **names**; values resolve from the environment
   at run time and are never written into `mcp.json`.
+- Chat transcripts contain model thinking and tool output. They live only in the
+  workspace's own thread JSON and are never sent anywhere by the hub.
 - External links open in the OS browser; in-app navigation away from the app
   origin is blocked.
 - Dev only: DevTools open detached when `ELECTRON_RENDERER_URL` is set.
@@ -325,8 +359,10 @@ packaged app renders a blank window.
   own user-level library. `skills:` is a declaration; the `/workspace:<name>` and
   `/<harness>:<name>` references are what actually point a harness at a skill.
   MCP is enforced for claude only (see above).
-- Remote placement, ssh deploy and workspace deletion are not implemented; a
-  directory in Finder is the honest interface.
+- Remote placement and ssh deploy are not implemented; a directory in Finder is
+  still the honest interface for a workspace that needs to be moved by hand.
+- Export carries entities, chats, artifacts, copied skills and the MCP pool.
+  Copied private keys, generated ssh config and run logs are deliberately left out.
 - A workspace's `machines/CONFIG` holds absolute `IdentityFile` paths, so moving
   or renaming the directory by hand breaks the key reference. Attach a host again
   after such a move.

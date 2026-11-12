@@ -109,6 +109,7 @@ async function save() {
         </p>
       </div>
       <div class="head-actions">
+        <button class="btn" type="button" @click="router.push('/workspaces')">Manage workspaces</button>
         <button class="btn" type="button" @click="router.push('/')">Back to overview</button>
       </div>
     </div>

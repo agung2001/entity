@@ -1,19 +1,19 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MarkPicker from '@/components/MarkPicker.vue'
 import SkillIcon from '@/components/SkillIcon.vue'
+import { HARNESSES, MODELS } from '@/data/mock'
 import {
   agentById,
   ago,
   chatFocusEntity,
   ensureChats,
-  entityMd,
   hub,
   machineById,
   toast,
 } from '@/stores/hub'
-import { revealEntity } from '@/stores/entities'
+import { findEntity, revealEntity, saveEntity } from '@/stores/entities'
 
 /**
  * The entity is a page, not a drawer. It is the same file the table lists —
@@ -23,6 +23,9 @@ import { revealEntity } from '@/stores/entities'
 const route = useRoute()
 const router = useRouter()
 const tab = ref('overview')
+const saving = ref(false)
+const form = reactive({ harness: '', model: '', instructions: '' })
+const seeding = ref(false)
 
 const agent = computed(
   () => agentById(route.params.name) || hub.agents.find((item) => item.name === route.params.name),
@@ -32,6 +35,63 @@ const lastChat = computed(() => {
   const thread = hub.chat.summaries.find((item) => item.entity === agent.value?.name)
   return thread ? ago(thread.updatedAt) : 'never'
 })
+
+const modelOptions = computed(() => MODELS[form.harness] || [])
+const instructionRows = computed(() =>
+  Math.max(18, String(form.instructions || '').split('\n').length + 2),
+)
+const dirty = computed(
+  () =>
+    Boolean(agent.value) &&
+    (form.harness !== agent.value.harness ||
+      form.model !== (agent.value.model || '') ||
+      form.instructions !== (agent.value.instructions || '')),
+)
+
+function seedForm() {
+  if (!agent.value) return
+  seeding.value = true
+  form.harness = agent.value.harness || 'claude'
+  form.model = agent.value.model || ''
+  form.instructions = agent.value.instructions || ''
+  nextTick(() => {
+    seeding.value = false
+  })
+}
+
+watch(agent, seedForm, { immediate: true })
+
+/* a model belongs to its harness; do not carry an incompatible name across */
+watch(
+  () => form.harness,
+  (harness, previous) => {
+    if (seeding.value || !previous || harness === previous) return
+    if (form.model && !(MODELS[harness] || []).includes(form.model)) form.model = ''
+  },
+)
+
+async function save() {
+  if (!agent.value || saving.value) return
+  const raw = findEntity(agent.value.name)
+  if (!raw) {
+    toast('That entity is no longer in the workspace.')
+    return
+  }
+  saving.value = true
+  try {
+    const saved = await saveEntity({
+      ...raw,
+      harness: form.harness,
+      model: form.model.trim(),
+      instructions: form.instructions,
+    })
+    toast(`${saved.name} saved`)
+  } catch (error) {
+    toast(error?.message || 'The entity file could not be saved.')
+  } finally {
+    saving.value = false
+  }
+}
 
 onMounted(ensureChats)
 
@@ -90,64 +150,102 @@ async function reveal() {
         >
           Skills <span class="n">{{ agent.skills.length }}</span>
         </button>
-        <button
-          role="tab"
-          :aria-selected="tab === 'md' ? 'true' : 'false'"
-          @click="tab = 'md'"
-        >
-          ENTITY.md
-        </button>
       </div>
 
       <template v-if="tab === 'overview'">
-        <div class="grid2">
-          <section class="acct-card">
-            <div class="acct-card-head">
-              <h2>Identity</h2>
+        <section class="acct-card">
+          <div class="acct-card-head">
+            <h2>Identity</h2>
+            <div class="entity-head-actions">
               <span class="state" :data-s="agent.status === 'running' ? 'live' : agent.status === 'error' ? 'fail' : 'idle'">
                 <i></i>{{ agent.status }}
               </span>
+              <button class="btn btn-sm" type="button" :disabled="saving || !dirty" @click="save">
+                {{ saving ? 'Saving…' : 'Save' }}
+              </button>
             </div>
-            <dl class="dl">
-              <dt>Harness</dt>
-              <dd>{{ agent.harnessLabel }}</dd>
-              <dt>Model</dt>
-              <dd>{{ agent.model || 'harness default' }}</dd>
-              <dt>Directory</dt>
-              <dd class="mono">{{ agent.dir || 'not set' }}</dd>
-              <dt>Machines</dt>
-              <dd>
-                <template v-if="agent.machines.length">
-                  {{ agent.machines.map(machineLabel).join(', ') }}
-                </template>
-                <span v-else class="unplaced">nowhere yet</span>
-              </dd>
-              <dt>Last chat</dt>
-              <dd>{{ lastChat }}</dd>
-              <dt>MCP</dt>
-              <dd>{{ agent.mcp.length ? agent.mcp.join(', ') : 'none' }}</dd>
-            </dl>
-          </section>
+          </div>
 
-          <section class="acct-card">
-            <div class="acct-card-head">
-              <h2>The file</h2>
-              <span class="mnote">frontmatter + instructions</span>
+          <div class="entity-edit-grid">
+            <div class="fld">
+              <label class="lbl" for="entity-harness">Default harness</label>
+              <select id="entity-harness" v-model="form.harness" :disabled="saving">
+                <option v-for="harness in HARNESSES" :key="harness.id" :value="harness.id">
+                  {{ harness.label }}
+                </option>
+              </select>
+              <p class="mnote">Used by new threads and by runs from this page.</p>
             </div>
-            <pre class="code">{{ agent.displayPath }}</pre>
-            <p class="dr-note">
-              Frontmatter is the config; the body is what the harness receives as a system
-              prompt (claude, pi) or as prompt text (codex, opencode, gemini).
-            </p>
-            <p v-if="agent.mcp.length" class="dr-note">
-              {{
-                agent.harness === 'claude'
-                  ? `MCP: ${agent.mcp.join(', ')} — injected for a claude conversation only (strict).`
-                  : `MCP applies to claude conversations; ${agent.harness} ignores the list.`
-              }}
-            </p>
-          </section>
-        </div>
+            <div class="fld">
+              <label class="lbl" for="entity-model">Default model</label>
+              <input
+                id="entity-model"
+                v-model="form.model"
+                class="acct-input"
+                type="text"
+                list="entity-models"
+                placeholder="harness default"
+                spellcheck="false"
+                :disabled="saving"
+              />
+              <datalist id="entity-models">
+                <option v-for="model in modelOptions" :key="model" :value="model" />
+              </datalist>
+              <p class="mnote">Leave blank to let the harness choose.</p>
+            </div>
+          </div>
+
+          <dl class="dl">
+            <dt>Directory</dt>
+            <dd class="mono">{{ agent.dir || 'not set' }}</dd>
+            <dt>Machines</dt>
+            <dd>
+              <template v-if="agent.machines.length">
+                {{ agent.machines.map(machineLabel).join(', ') }}
+              </template>
+              <span v-else class="unplaced">nowhere yet</span>
+            </dd>
+            <dt>Last chat</dt>
+            <dd>{{ lastChat }}</dd>
+            <dt>MCP</dt>
+            <dd>{{ agent.mcp.length ? agent.mcp.join(', ') : 'none' }}</dd>
+          </dl>
+        </section>
+
+        <section class="acct-card entity-source">
+          <div class="acct-card-head">
+            <h2>Source file</h2>
+            <span class="mnote">frontmatter + instructions</span>
+          </div>
+          <p class="lbl">Path</p>
+          <pre class="code">{{ agent.displayPath }}</pre>
+          <p class="dr-note">
+            The body below is the full file content the harness receives as a system
+            prompt (claude, pi) or as prompt text (codex, opencode, gemini).
+          </p>
+          <p v-if="agent.mcp.length" class="dr-note">
+            {{
+              agent.harness === 'claude'
+                ? `MCP: ${agent.mcp.join(', ')} — injected for a claude conversation only (strict).`
+                : `MCP applies to claude conversations; ${agent.harness} ignores the list.`
+            }}
+          </p>
+          <label class="lbl" for="entity-instructions">Full instructions</label>
+          <textarea
+            id="entity-instructions"
+            v-model="form.instructions"
+            class="acct-input entity-instructions mono"
+            :rows="instructionRows"
+            spellcheck="false"
+            :disabled="saving"
+          ></textarea>
+          <div class="acct-actions">
+            <span v-if="dirty" class="mnote">Unsaved changes</span>
+            <button class="btn btn-ink" type="button" :disabled="saving || !dirty" @click="save">
+              {{ saving ? 'Saving…' : 'Save entity' }}
+            </button>
+          </div>
+        </section>
 
         <section v-if="agent.problems.length" class="dr-problems" style="margin-top: 16px">
           <p class="lbl">Problems</p>
@@ -207,12 +305,6 @@ async function reveal() {
         </section>
       </template>
 
-      <template v-else>
-        <pre class="md">{{ entityMd(agent) }}</pre>
-        <p class="dr-note">
-          Read from {{ agent.displayPath }} before the harness answers — never copied into the hub.
-        </p>
-      </template>
     </template>
 
     <div v-else class="empty-note">

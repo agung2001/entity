@@ -14,6 +14,7 @@ const tab = ref('workspace')
 const mcpText = ref('')
 const error = ref('')
 const busy = ref(false)
+const attaching = ref('')
 const globals = reactive({ loading: false, loaded: false, error: '', groups: [], count: 0 })
 
 const servers = computed(() =>
@@ -29,6 +30,33 @@ const servers = computed(() =>
 const commandLine = (server) => {
   if (server.command) return [server.command, ...(server.args || [])].join(' ')
   return server.url || '—'
+}
+
+const attachedNames = computed(() => new Set(servers.value.map((server) => server.name)))
+
+async function attachGlobal(server) {
+  if (attaching.value) return
+  if (attachedNames.value.has(server.name)) {
+    toast(`${server.name} is already in this workspace`)
+    return
+  }
+  const definition = server.url
+    ? { url: server.url }
+    : { command: server.command, ...(server.args.length ? { args: [...server.args] } : {}) }
+  if (server.env.length) definition.env = [...server.env]
+  attaching.value = `${server.harness}:${server.name}`
+  try {
+    await writeMcp({ ...(workspaces.mcp?.servers || {}), [server.name]: definition })
+    toast(
+      server.env.length
+        ? `${server.name} attached · set ${server.env.join(', ')} in the environment`
+        : `${server.name} attached to this workspace`,
+    )
+  } catch (problem) {
+    toast(problem?.message || `${server.name} could not be attached.`)
+  } finally {
+    attaching.value = ''
+  }
 }
 
 function syncMcp() {
@@ -225,6 +253,24 @@ watch(tab, (value) => {
               <div class="foot">
                 <span>{{ server.url ? 'remote' : 'local' }}</span>
                 <span class="mono">{{ server.configPath }}</span>
+              </div>
+              <div class="card-actions">
+                <button
+                  class="btn btn-sm"
+                  type="button"
+                  :disabled="Boolean(attaching) || attachedNames.has(server.name) || (!server.command && !server.url)"
+                  :title="attachedNames.has(server.name) ? 'Already in the workspace pool' : 'Attach this server to the workspace'"
+                  @click="attachGlobal(server)"
+                >
+                  {{
+                    attachedNames.has(server.name)
+                      ? 'Attached'
+                      : attaching === `${server.harness}:${server.name}`
+                        ? 'Attaching…'
+                        : 'Attach'
+                  }}
+                </button>
+                <span class="meta">{{ server.harnessLabel }}</span>
               </div>
             </article>
           </div>

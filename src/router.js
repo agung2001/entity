@@ -12,11 +12,13 @@ import EntityDetailView from '@/views/EntityDetailView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import SkillDetailView from '@/views/SkillDetailView.vue'
 import McpView from '@/views/McpView.vue'
+import ArtifactsView from '@/views/ArtifactsView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import MachineDetailView from '@/views/MachineDetailView.vue'
 import ActivityView from '@/views/ActivityView.vue'
 import AccountView from '@/views/AccountView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
+import ManageWorkspacesView from '@/views/ManageWorkspacesView.vue'
 
 /* Clean URLs wherever an HTTP server can resolve a path. The packaged app
    loads `dist/index.html` over `file://`, where there is no server to answer a
@@ -89,6 +91,12 @@ const router = createRouter({
           meta: { crumb: 'mcp', title: 'MCP · entity' },
         },
         {
+          path: 'artifacts',
+          name: 'artifacts',
+          component: ArtifactsView,
+          meta: { crumb: 'artifacts', title: 'Artifacts · entity' },
+        },
+        {
           path: 'machines',
           name: 'machines',
           component: MachinesView,
@@ -105,6 +113,12 @@ const router = createRouter({
           name: 'activity',
           component: ActivityView,
           meta: { crumb: 'activity', title: 'Activity · entity' },
+        },
+        {
+          path: 'workspaces',
+          name: 'workspaces',
+          component: ManageWorkspacesView,
+          meta: { crumb: 'workspaces', title: 'Manage workspaces · entity' },
         },
         {
           path: 'workspace',

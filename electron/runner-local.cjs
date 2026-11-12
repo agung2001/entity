@@ -12,6 +12,7 @@ const { spawn } = require('node:child_process')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
+const artifacts = require('./artifact-store.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
 const COALESCE_MS = 50
@@ -52,6 +53,53 @@ function invocation(harness, instructions, prompt, mcpFile, strict, model = '') 
     case 'gemini': {
       /* `-p/--prompt` is the prompt value; stdin would duplicate it */
       const argv = ['-p', preface]
+      if (chosen) argv.push('-m', chosen)
+      return { cmd: 'gemini', argv, stdin: '', system: false }
+    }
+    default:
+      throw new Error(`The harness "${harness}" has no known invocation.`)
+  }
+}
+
+/**
+ * Chat invocations use each CLI's JSONL stream. The plain `invocation` above is
+ * kept for entity runs, which only need the final text and whose logs are
+ * already append-only run files.
+ */
+function chatInvocation(harness, instructions, prompt, model = '') {
+  const preface = `${instructions.trim()}\n\n---\n\n${prompt}`
+  const chosen = String(model || '').trim()
+  switch (harness) {
+    case 'claude': {
+      const argv = [
+        '-p',
+        '--append-system-prompt',
+        instructions,
+        '--output-format',
+        'stream-json',
+        '--verbose',
+      ]
+      if (chosen) argv.push('--model', chosen)
+      return { cmd: 'claude', argv, stdin: prompt, system: true }
+    }
+    case 'pi': {
+      const argv = ['-p', '--append-system-prompt', instructions, '--mode', 'json']
+      if (chosen) argv.push('--model', chosen)
+      return { cmd: 'pi', argv, stdin: prompt, system: true }
+    }
+    case 'opencode': {
+      const argv = ['run', '--format', 'json', '--thinking']
+      if (chosen) argv.push('-m', chosen)
+      argv.push(preface)
+      return { cmd: 'opencode', argv, stdin: '', system: false }
+    }
+    case 'codex': {
+      const argv = ['exec', '-', '--skip-git-repo-check', '--json']
+      if (chosen) argv.push('-m', chosen)
+      return { cmd: 'codex', argv, stdin: preface, system: false }
+    }
+    case 'gemini': {
+      const argv = ['-p', preface, '--output-format', 'stream-json']
       if (chosen) argv.push('-m', chosen)
       return { cmd: 'gemini', argv, stdin: '', system: false }
     }
@@ -283,9 +331,10 @@ function createRunner({ emit = () => {} } = {}) {
       run.mcpFile = written.file
     }
 
+    const instructions = `${entity.instructions.trim()}\n\n${artifacts.brief(workspace)}`
     const spec = invocation(
       entity.harness,
-      entity.instructions,
+      instructions,
       applied.text,
       mcpFile,
       record.mcpStrict,
@@ -461,4 +510,4 @@ function createRunner({ emit = () => {} } = {}) {
   return { start, cancel, list, latest, snapshot, closeAll, activeCount: () => active.size }
 }
 
-module.exports = { createRunner, invocation, HARNESSES: entities.HARNESSES }
+module.exports = { createRunner, invocation, chatInvocation, HARNESSES: entities.HARNESSES }

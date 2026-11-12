@@ -112,6 +112,13 @@ function writeFileAtomic(file, text) {
   fs.renameSync(tmp, file)
 }
 
+function writeBinaryAtomic(file, buffer) {
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(tmp, buffer)
+  fs.renameSync(tmp, file)
+}
+
 /* ── list / open ──────────────────────────────────────────────────── */
 
 function readRecord(id) {
@@ -814,6 +821,248 @@ function writeMcp({ id, servers }) {
   return mcp(id)
 }
 
+/* ── manage: export / import / delete ─────────────────────────────── */
+
+/*
+ * A workspace bundle is one JSON file. It carries the files that make the
+ * workspace mean something — entities, chats, copied skills, MCP — and leaves
+ * out the machine-local parts: copied private keys, the generated ssh CONFIG,
+ * and run logs. Those are recreated (or deliberately not carried) on import.
+ * Skill symlinks are recorded as name + harness and re-linked against this
+ * machine's libraries.
+ */
+const BUNDLE_KIND = 'entity.workspace'
+const BUNDLE_SCHEMA = 1
+const EXPORT_DIRS = ['entities', 'chats', 'skills', 'artifacts']
+const MAX_BUNDLE_FILE = 25 * 1024 * 1024
+
+function bundlePath(value) {
+  const rel = String(value || '').replace(/\\/g, '/').replace(/^\/+/, '')
+  if (!rel.includes('/') && rel !== 'mcp.json') return ''
+  const parts = rel.split('/').filter(Boolean)
+  if (!parts.length || parts.some((part) => part === '..' || part === '.')) return ''
+  if (rel === 'mcp.json') return rel
+  if (!EXPORT_DIRS.includes(parts[0])) return ''
+  return parts.join('/')
+}
+
+function walkBundleFiles(root, rel, out, allowBinary = false) {
+  let entries = []
+  try {
+    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue
+    const child = `${rel}/${entry.name}`
+    if (entry.isSymbolicLink()) continue
+    if (entry.isDirectory()) {
+      walkBundleFiles(root, child, out)
+      continue
+    }
+    if (!entry.isFile()) continue
+    let stat
+    try {
+      stat = fs.statSync(path.join(root, child))
+    } catch {
+      continue
+    }
+    if (!stat.isFile() || stat.size > MAX_BUNDLE_FILE) continue
+    try {
+      const buffer = fs.readFileSync(path.join(root, child))
+      if (allowBinary) {
+        out[child] = {
+          dataUrl: `data:application/octet-stream;base64,${buffer.toString('base64')}`,
+        }
+        continue
+      }
+      if (buffer.includes(0)) continue
+      out[child] = buffer.toString('utf8')
+    } catch {
+      /* an unreadable file is not worth failing the export over */
+    }
+  }
+}
+
+function exportedSkills(record) {
+  const sources = localData.skillSources()
+  const byReal = new Map()
+  for (const source of sources) {
+    try {
+      byReal.set(fs.realpathSync(source.absolutePath), source)
+    } catch {
+      /* a dangling library entry cannot match a workspace link */
+    }
+  }
+
+  const out = []
+  let entries = []
+  try {
+    entries = fs.readdirSync(skillsDir(record))
+  } catch {
+    return out
+  }
+  for (const name of entries) {
+    const full = path.join(skillsDir(record), name)
+    let stat
+    try {
+      stat = fs.lstatSync(full)
+    } catch {
+      continue
+    }
+    if (!stat.isSymbolicLink()) continue
+    let source = null
+    try {
+      source = byReal.get(fs.realpathSync(full)) || null
+    } catch {
+      /* the link target is gone; keep the name so import can report it */
+    }
+    out.push({ name, harness: source?.harness || '' })
+  }
+  return out
+}
+
+function exportWorkspace({ id } = {}) {
+  const record = open(id)
+  const raw = readJson(path.join(record.path, 'workspace.json'), {}) || {}
+  const files = {}
+  for (const dir of EXPORT_DIRS) {
+    walkBundleFiles(record.path, dir, files, dir === 'artifacts')
+  }
+  try {
+    const mcp = fs.readFileSync(mcpPath(record), 'utf8')
+    if (!mcp.includes('\0') && mcp.length <= MAX_BUNDLE_FILE) files['mcp.json'] = mcp
+  } catch {
+    /* no pool file yet */
+  }
+
+  return {
+    schema: BUNDLE_SCHEMA,
+    kind: BUNDLE_KIND,
+    exportedAt: new Date().toISOString(),
+    workspace: {
+      label: record.label,
+      kind: record.kind,
+      createdAt: record.createdAt,
+      mcpStrict: record.mcpStrict !== false,
+      members: normaliseMembers(raw.members),
+    },
+    files,
+    skills: exportedSkills(record),
+  }
+}
+
+function uniqueImportId(label) {
+  const base = slugify(label) || 'workspace'
+  if (!fs.existsSync(path.join(WORKSPACES_DIR, base))) return base
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${base}-${n}`
+    if (!fs.existsSync(path.join(WORKSPACES_DIR, candidate))) return candidate
+  }
+  throw new Error('Could not find a free workspace id for the import.')
+}
+
+function importWorkspace({ bundle } = {}) {
+  if (!bundle || typeof bundle !== 'object') throw new Error('That is not a workspace bundle.')
+  if (bundle.schema !== BUNDLE_SCHEMA || bundle.kind !== BUNDLE_KIND) {
+    throw new Error('That file is not an entity workspace bundle.')
+  }
+  const label = String(bundle.workspace?.label || 'Imported workspace').trim().slice(0, 80) || 'Imported workspace'
+  const id = uniqueImportId(label)
+  const final = path.join(WORKSPACES_DIR, id)
+  fs.mkdirSync(WORKSPACES_DIR, { recursive: true })
+  const staging = path.join(WORKSPACES_DIR, `.tmp-import-${id}-${process.pid}`)
+  fs.rmSync(staging, { recursive: true, force: true })
+  fs.mkdirSync(staging, { recursive: true })
+
+  const skipped = []
+  try {
+    const createdAt = new Date().toISOString()
+    const members = normaliseMembers(bundle.workspace?.members)
+    writeJson(path.join(staging, 'workspace.json'), {
+      schema: 1,
+      id,
+      label,
+      kind: bundle.workspace?.kind === 'self-hosted' ? 'self-hosted' : 'local',
+      createdAt,
+      mcpStrict: bundle.workspace?.mcpStrict !== false,
+      members,
+    })
+    for (const dir of ['entities', 'chats', 'skills', 'runs', 'artifacts']) {
+      fs.mkdirSync(path.join(staging, dir), { recursive: true })
+    }
+
+    const files = bundle.files && typeof bundle.files === 'object' ? bundle.files : {}
+    for (const [rawPath, rawValue] of Object.entries(files)) {
+      const rel = bundlePath(rawPath)
+      if (!rel || rel === 'workspace.json') continue
+      if (typeof rawValue === 'string') {
+        if (rawValue.length > MAX_BUNDLE_FILE) {
+          skipped.push(`${rel}: file is too large`)
+          continue
+        }
+        writeFileAtomic(path.join(staging, rel), rawValue)
+        continue
+      }
+      if (rawValue && typeof rawValue.dataUrl === 'string') {
+        const match = rawValue.dataUrl.match(/^data:[^,]*;base64,([\s\S]*)$/)
+        if (!match) {
+          skipped.push(`${rel}: unsupported binary entry`)
+          continue
+        }
+        const buffer = Buffer.from(match[1], 'base64')
+        if (buffer.length > MAX_BUNDLE_FILE) {
+          skipped.push(`${rel}: file is too large`)
+          continue
+        }
+        writeBinaryAtomic(path.join(staging, rel), buffer)
+        continue
+      }
+      skipped.push(`${rel}: unsupported file entry`)
+    }
+    if (!fs.existsSync(path.join(staging, 'mcp.json'))) {
+      writeJson(path.join(staging, 'mcp.json'), { schema: 1, servers: {} })
+    }
+
+    writeMachines(
+      {
+        id,
+        label,
+        path: staging,
+        createdAt,
+        mcpStrict: bundle.workspace?.mcpStrict !== false,
+      },
+      ['local'],
+    )
+
+    const wantedSkills = Array.isArray(bundle.skills) ? bundle.skills : []
+    for (const entry of wantedSkills) {
+      const name = typeof entry === 'string' ? entry : entry?.name
+      const harness = typeof entry === 'string' ? '' : entry?.harness
+      if (!name) continue
+      try {
+        attachSkillTo(path.join(staging, 'skills'), name, harness)
+      } catch (error) {
+        skipped.push(`${name}: ${error.message}`)
+      }
+    }
+
+    fs.renameSync(staging, final)
+  } catch (error) {
+    fs.rmSync(staging, { recursive: true, force: true })
+    throw error
+  }
+
+  return { record: withCounts(readRecord(id)), skipped }
+}
+
+function remove({ id } = {}) {
+  const record = open(id)
+  fs.rmSync(record.path, { recursive: true, force: true })
+  return { id: record.id, removed: true }
+}
+
 /* ── create: one atomic call ──────────────────────────────────────── */
 
 function seedEntities(staging, attachedSkills, selected) {
@@ -857,7 +1106,7 @@ function create({
     const chosenMachines = [...new Set(['local', ...attached.map(String)])]
     const kind = chosenMachines.some((entry) => entry !== 'local') ? 'self-hosted' : 'local'
 
-    for (const dir of ['entities', 'skills', 'runs']) {
+    for (const dir of ['entities', 'skills', 'runs', 'artifacts']) {
       fs.mkdirSync(path.join(staging, dir), { recursive: true })
     }
     fs.writeFileSync(
@@ -943,6 +1192,9 @@ module.exports = {
   skillRead,
   mcp,
   writeMcp,
+  exportWorkspace,
+  importWorkspace,
+  remove,
   writeFileAtomic,
   writeJson,
   workspaceDir,

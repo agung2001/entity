@@ -5,6 +5,7 @@ import BrandMark from '@/components/BrandMark.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
 import { hub, initials, roleById, signOut } from '@/stores/hub'
 import { workspaces } from '@/stores/workspaces'
+import { artifacts } from '@/stores/artifacts'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,6 +56,7 @@ function onDocumentClick(event) {
 
 function onDocumentKey(event) {
   if (event.key === 'Escape') accountOpen.value = false
+  if (event.shiftKey || event.altKey) return
   if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'b') return
   const target = event.target
   const editable =
@@ -89,6 +91,13 @@ const NAV = [
     label: 'MCP',
     icon: 'mcp',
     count: () => Object.keys(workspaces.mcp?.servers || {}).length,
+  },
+  {
+    to: '/artifacts',
+    view: 'artifacts',
+    label: 'Artifacts',
+    icon: 'artifact',
+    count: () => artifacts.items.length,
   },
   {
     to: '/machines',
@@ -165,6 +174,10 @@ function leave() {
           <path d="M4.4 9.2V5.5a1.4 1.4 0 012.8 0v3.4a1.4 1.4 0 002.8 0V5.5a1.4 1.4 0 012.8 0v3.7" />
           <path d="M3.4 9.2h9.2v1.3a4.6 4.6 0 01-9.2 0z" />
           <path d="M8 14.3v.8" />
+        </svg>
+        <svg v-else-if="item.icon === 'artifact'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+          <path d="M3 2.4h6l4 4v7.2H3z" />
+          <path d="M9 2.4v4h4M5.4 9.4h5.2M5.4 11.6h3.4" />
         </svg>
         <svg v-else-if="item.icon === 'screen'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
           <rect x="1.6" y="2.6" width="12.8" height="8.2" rx="1.6" />

@@ -45,6 +45,11 @@ function newWorkspace() {
   openWizard()
 }
 
+function manage() {
+  open.value = false
+  router.push('/workspaces')
+}
+
 function settings() {
   open.value = false
   router.push('/workspace')
@@ -159,6 +164,15 @@ onBeforeUnmount(() => {
         </svg>
       </button>
       <div class="ws-menu-foot">
+        <button class="pickopt" type="button" @click="manage">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+            <rect x="2" y="2" width="5" height="5" rx="1" />
+            <rect x="9" y="2" width="5" height="5" rx="1" />
+            <rect x="2" y="9" width="5" height="5" rx="1" />
+            <rect x="9" y="9" width="5" height="5" rx="1" />
+          </svg>
+          Manage workspaces
+        </button>
         <button class="pickopt" type="button" @click="settings">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
             <circle cx="8" cy="8" r="2.2" />

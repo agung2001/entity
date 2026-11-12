@@ -15,6 +15,7 @@ const entities = require('./entity-store.cjs')
 const chats = require('./chat-store.cjs')
 const sessions = require('./session-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
+const artifacts = require('./artifact-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
@@ -28,6 +29,9 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.create': (args) => workspaces.create(args),
     'workspace.update': (args) => workspaces.update(args),
     'workspace.samples': () => workspaces.samples(),
+    'workspace.export': (args) => workspaces.exportWorkspace(args),
+    'workspace.import': (args) => workspaces.importWorkspace(args),
+    'workspace.remove': (args) => workspaces.remove(args),
     'workspace.machines': ({ id }) => workspaces.machines(id),
     'workspace.attachMachine': (args) => workspaces.attachMachine(args),
     'workspace.detachMachine': (args) => workspaces.detachMachine(args),
@@ -41,6 +45,20 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),
+
+    /* workspace artifacts: files beside the entities and chats */
+    'artifact.list': (args) => artifacts.list(args),
+    'artifact.read': (args) => artifacts.read(args),
+    'artifact.download': (args) => artifacts.download(args),
+    'artifact.upload': (args) => artifacts.upload(args),
+    'artifact.saveText': (args) => artifacts.saveText(args),
+    'artifact.remove': (args) => artifacts.remove(args),
+    'artifact.root': (args) => artifacts.rootPath(args),
+    'artifact.reveal': (args) => {
+      const found = artifacts.locate(args)
+      reveal(found.file)
+      return found
+    },
 
     /* entity files */
     'entity.list': ({ workspace }) => entities.list(workspace),
@@ -60,7 +78,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'chat.update': (args) => chats.update(args),
     'chat.rename': (args) => chats.rename(args),
     'chat.pin': (args) => chats.pin(args),
-    'chat.send': (args) => chats.send(args),
+    'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
 
     /* harness sessions, read from each CLI's own store */
