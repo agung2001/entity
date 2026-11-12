@@ -1,10 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import EntityMark from '@/components/EntityMark.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
-import { hub, initials, openAccount, signOut } from '@/stores/hub'
-import { workspaces } from '@/stores/workspaces'
+import { hub, initials, roleById, signOut } from '@/stores/hub'
+import { loadLibrary, workspaces } from '@/stores/workspaces'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,7 +12,27 @@ const router = useRouter()
 const accountOpen = ref(false)
 const accountRoot = ref(null)
 
+/* the rail folds down to its icons; the choice belongs to the window, not the
+   workspace, so it lives beside the other UI preferences */
+const COLLAPSE_KEY = 'entity.rail.collapsed'
+const collapsed = ref(false)
+try {
+  collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1'
+} catch {
+  /* private mode: start expanded */
+}
+
+function toggleRail() {
+  collapsed.value = !collapsed.value
+  try {
+    localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
+  } catch {
+    /* session-only */
+  }
+}
+
 onMounted(() => {
+  loadLibrary()
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKey)
 })
@@ -35,9 +55,9 @@ function onDocumentKey(event) {
   if (event.key === 'Escape') accountOpen.value = false
 }
 
-function openSettings() {
+function openAccountPage() {
   accountOpen.value = false
-  openAccount()
+  router.push('/account')
 }
 
 const NAV = [
@@ -49,7 +69,7 @@ const NAV = [
     view: 'skills',
     label: 'Skills',
     icon: 'star',
-    count: () => workspaces.skills.length,
+    count: () => workspaces.library?.count ?? workspaces.skills.length,
   },
   {
     to: '/machines',
@@ -75,7 +95,8 @@ const displayName = computed(() => {
       .join(' ') || user.value
   )
 })
-const accountEmail = computed(() => hub.session?.email || `${user.value.split('@')[0]}@studio-mac`)
+/* The rail says what this person may do, not where their mail is delivered. */
+const role = computed(() => roleById(hub.session?.role || 'owner'))
 const avatar = computed(() => initials(displayName.value) || 'as')
 
 function leave() {
@@ -86,9 +107,9 @@ function leave() {
 </script>
 
 <template>
-  <aside class="rail">
-    <router-link class="brand" to="/">
-      <EntityMark />
+  <aside class="rail" :data-collapsed="collapsed ? '1' : '0'">
+    <router-link class="brand" to="/" aria-label="entity">
+      <BrandMark />
       <span class="wordmark">entity</span>
     </router-link>
 
@@ -101,6 +122,8 @@ function leave() {
         :key="item.view"
         :to="item.to"
         :aria-current="isActive(item) ? 'page' : undefined"
+        :aria-label="item.label"
+        :title="collapsed ? item.label : undefined"
       >
         <svg v-if="item.icon === 'grid'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
           <rect x="1.5" y="1.5" width="5.4" height="5.4" rx="1.4" />
@@ -127,19 +150,31 @@ function leave() {
           <path d="M2 11.4l3.2-4.5 2.6 2.4L10.6 4l3.4 4.2" />
           <path d="M2 14h12" />
         </svg>
-        {{ item.label }}
+        <span class="lbl">{{ item.label }}</span>
         <span v-if="item.count" class="count">{{ item.count() }}</span>
       </router-link>
     </nav>
 
     <div class="rail-foot">
+      <button
+        class="rail-toggle"
+        type="button"
+        :aria-expanded="collapsed ? 'false' : 'true'"
+        :title="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        @click="toggleRail"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M9.6 3.2L5 8l4.6 4.8" />
+        </svg>
+        <span class="lbl">{{ collapsed ? 'Expand' : 'Collapse' }}</span>
+      </button>
       <div ref="accountRoot" class="account" :data-open="accountOpen ? '1' : '0'">
         <div class="acct-menu" role="menu" aria-label="Account">
           <div class="acct-head">
             <span class="acct-nm">{{ displayName }}</span>
-            <span class="acct-em">{{ accountEmail }}</span>
+            <span class="acct-em">{{ role.label }}</span>
           </div>
-          <button class="pickopt" type="button" role="menuitem" @click="openSettings">
+          <button class="pickopt" type="button" role="menuitem" @click="openAccountPage">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <circle cx="8" cy="8" r="2.2" />
               <path
@@ -168,7 +203,7 @@ function leave() {
           <span class="avatar">{{ avatar }}</span>
           <span class="who">
             {{ displayName }}
-            <span>{{ accountEmail }}</span>
+            <span>{{ role.label }}</span>
           </span>
         </button>
       </div>

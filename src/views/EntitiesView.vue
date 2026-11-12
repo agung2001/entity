@@ -1,10 +1,12 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
+import HarnessIcon from '@/components/HarnessIcon.vue'
+import MachineIcon from '@/components/MachineIcon.vue'
 import { HARNESSES } from '@/data/mock'
 import { scaffoldEntity } from '@/stores/entities'
-import { hub, machineById, openDrawer, toast } from '@/stores/hub'
+import { ago, ensureChats, hub, machineById, openDrawer, toast } from '@/stores/hub'
 
 /**
  * The entity table is a directory listing. Every row is a file in
@@ -16,9 +18,32 @@ const FILTERS = ['all', 'running', 'idle', 'sleep', 'error']
 const adding = ref(false)
 const name = ref('')
 const harness = ref('claude')
+const model = ref('')
 const error = ref('')
 const busy = ref(false)
 const nameInput = ref(null)
+
+/* Models are a hint, not a whitelist: the field is free text so a harness that
+   ships a new model is usable without a release. */
+const MODELS = {
+  claude: ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
+  codex: ['gpt-5-codex', 'gpt-5'],
+  opencode: ['anthropic/claude-sonnet-4', 'openai/gpt-5'],
+  pi: ['claude-sonnet-4-5', 'gpt-5'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+}
+const modelOptions = computed(() => MODELS[harness.value] || [])
+
+const lastChat = (name) => {
+  const thread = hub.chat.summaries.find((item) => item.entity === name)
+  return thread ? ago(thread.updatedAt) : 'never'
+}
+
+onMounted(ensureChats)
+
+watch(harness, () => {
+  model.value = ''
+})
 
 const list = computed(() =>
   hub.entityFilter === 'all'
@@ -50,6 +75,7 @@ async function startAdd() {
   error.value = ''
   name.value = ''
   harness.value = HARNESSES[0].id
+  model.value = ''
   await nextTick()
   nameInput.value?.focus()
 }
@@ -58,6 +84,7 @@ function cancelAdd() {
   adding.value = false
   error.value = ''
   name.value = ''
+  model.value = ''
 }
 
 async function create() {
@@ -69,10 +96,14 @@ async function create() {
   }
   busy.value = true
   try {
-    const created = await scaffoldEntity({ name: slug.value, harness: harness.value })
+    const created = await scaffoldEntity({
+      name: slug.value,
+      harness: harness.value,
+      model: model.value,
+    })
     adding.value = false
     toast(`${created.name}.md created`)
-    openDrawer(created.name, 'run')
+    openDrawer(created.name, 'overview')
   } catch (problem) {
     error.value = problem?.message || 'The file could not be created.'
   } finally {
@@ -89,8 +120,8 @@ async function create() {
         <h1>Entities</h1>
         <p class="lede">
           Every entity this workspace has, one file each in
-          <code class="mono">entities/</code>. Open one to read its instructions or run it
-          on this machine.
+          <code class="mono">entities/</code>. Open one to read its instructions, or start a
+          conversation with it on this machine.
         </p>
       </div>
       <div class="head-actions">
@@ -113,7 +144,7 @@ async function create() {
     <div class="tbl">
       <div class="tr th">
         <span>Entity</span><span>State</span><span class="col-machines">Machines</span>
-        <span class="col-skills">Skills</span><span class="col-last">Last run</span>
+        <span class="col-skills">Skills</span><span class="col-last">Last chat</span>
         <span class="col-actions">Actions</span>
       </div>
       <div
@@ -143,13 +174,18 @@ async function create() {
           <span class="state" :data-s="dotState(a.status)"><i></i>{{ a.status }}</span>
         </span>
         <span class="col-machines">
+          <span class="chipm chipm--harness">
+            <HarnessIcon :name="a.harness" :size="10" />{{ a.harnessLabel }}
+          </span>
           <template v-if="a.machines.length">
-            <span v-for="m in a.machines" :key="m" class="chipm">{{ machineLabel(m) }}</span>
+            <span v-for="m in a.machines" :key="m" class="chipm">
+              <MachineIcon :size="10" />{{ machineLabel(m) }}
+            </span>
           </template>
           <span v-else class="unplaced">nowhere</span>
         </span>
         <span class="num col-skills">{{ a.skills.length }}</span>
-        <span class="last col-last">{{ a.last }}</span>
+        <span class="last col-last">{{ lastChat(a.name) }}</span>
         <EntityActions :entity="a" />
       </div>
       <div
@@ -198,6 +234,25 @@ async function create() {
           <select id="ent-harness" v-model="harness" :disabled="busy">
             <option v-for="h in HARNESSES" :key="h.id" :value="h.id">{{ h.label }}</option>
           </select>
+        </div>
+        <div class="fld">
+          <label class="lbl" for="ent-model">Model</label>
+          <input
+            id="ent-model"
+            v-model="model"
+            type="text"
+            :list="`ent-models-${harness}`"
+            placeholder="harness default"
+            spellcheck="false"
+            :disabled="busy"
+          />
+          <datalist :id="`ent-models-${harness}`">
+            <option v-for="option in modelOptions" :key="option" :value="option" />
+          </datalist>
+          <p class="mnote">
+            Written as <code class="mono">model:</code> in the entity file. Leave blank to let
+            {{ HARNESSES.find((h) => h.id === harness)?.label || harness }} choose.
+          </p>
         </div>
         <p v-if="error" class="run-warn">{{ error }}</p>
         <div class="mo-foot" style="padding: 8px 0 0; border: 0">

@@ -1,12 +1,13 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import MarkPicker from '@/components/MarkPicker.vue'
-import RunPanel from '@/components/RunPanel.vue'
 import SkillIcon from '@/components/SkillIcon.vue'
 import {
   agentById,
+  ago,
   closeDrawer,
+  ensureChats,
   entityMd,
   hub,
   machineById,
@@ -16,13 +17,23 @@ const router = useRouter()
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'run', label: 'Run' },
   { id: 'skills', label: 'Skills' },
   { id: 'md', label: 'ENTITY.md' },
 ]
 
 const agent = computed(() => agentById(hub.drawer.agentId))
 const machineLabel = (id) => machineById(id)?.label || id
+const lastChat = computed(() => {
+  const thread = hub.chat.summaries.find((item) => item.entity === agent.value?.name)
+  return thread ? ago(thread.updatedAt) : 'never'
+})
+
+watch(
+  () => hub.drawer.open,
+  (open) => {
+    if (open) ensureChats()
+  },
+)
 
 function setTab(tab) {
   hub.drawer.tab = tab
@@ -85,8 +96,6 @@ function openSkill(name) {
               <li v-for="problem in agent.problems" :key="problem">{{ problem }}</li>
             </ul>
           </div>
-          <p v-if="agent.runError" class="run-warn">{{ agent.runError }}</p>
-
           <dl class="dl">
             <dt>Harness</dt>
             <dd>{{ agent.harnessLabel }}</dd>
@@ -101,8 +110,8 @@ function openSkill(name) {
               </template>
               <span v-else class="unplaced">nowhere yet</span>
             </dd>
-            <dt>Last run</dt>
-            <dd>{{ agent.last }}</dd>
+            <dt>Last chat</dt>
+            <dd>{{ lastChat }}</dd>
             <dt>Skills</dt>
             <dd>{{ agent.skills.length }} attached</dd>
             <dt>MCP</dt>
@@ -120,14 +129,10 @@ function openSkill(name) {
           <p v-if="agent.mcp.length" class="dr-note">
             {{
               agent.harness === 'claude'
-                ? `MCP: ${agent.mcp.join(', ')} — injected for this run only (strict).`
-                : `MCP applies to claude runs; ${agent.harness} runs ignore the list.`
+                ? `MCP: ${agent.mcp.join(', ')} — injected for a claude conversation only (strict).`
+                : `MCP applies to claude conversations; ${agent.harness} ignores the list.`
             }}
           </p>
-        </template>
-
-        <template v-else-if="hub.drawer.tab === 'run'">
-          <RunPanel :entity="agent" />
         </template>
 
         <template v-else-if="hub.drawer.tab === 'skills'">
@@ -192,7 +197,7 @@ function openSkill(name) {
         <template v-else>
           <pre class="md">{{ entityMd(agent) }}</pre>
           <p class="dr-note">
-            Read from {{ agent.displayPath }} before every run — never copied into the hub.
+            Read from {{ agent.displayPath }} before the harness answers — never copied into the hub.
           </p>
         </template>
       </div>

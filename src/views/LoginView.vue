@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import EntityMark from '@/components/EntityMark.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import { DEFAULT_ADMIN, setPassword, signIn, verifyCredentials } from '@/stores/hub'
 
 /**
@@ -139,7 +139,7 @@ function backToSignIn() {
   <main class="auth">
     <div class="stack">
       <div class="bouncer">
-        <EntityMark class="mark-lg" hop />
+        <BrandMark class="brand-mark--lg" hop />
       </div>
 
       <section class="auth-card">

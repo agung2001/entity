@@ -98,14 +98,14 @@ async function toggle(alias, isAttached) {
             <span>local</span>
             <span>{{ localMachine.desc }}</span>
           </div>
-          <p class="probe-msg">Runs happen here in step 1 — no ssh, no daemon.</p>
+          <p class="probe-msg">Chats happen here in step 1 — no ssh, no daemon.</p>
         </div>
 
         <div v-if="!fleet.hosts.length" class="machine-note" style="grid-column: 1 / -1">
           <b>No hosts in {{ fleet.displayPath }}.</b>
           <span v-if="!fleet.exists"> The file does not exist on this machine yet.</span>
           <span v-else> Add a <code class="mono">Host</code> block and reload.</span>
-          <span> This workspace still runs locally — that is not an error.</span>
+          <span> This workspace still works locally — that is not an error.</span>
         </div>
 
         <div

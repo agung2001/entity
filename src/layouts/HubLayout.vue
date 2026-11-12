@@ -3,14 +3,12 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
-import AccountModal from '@/components/AccountModal.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import EntityDrawer from '@/components/EntityDrawer.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import WorkspaceSettings from '@/components/WorkspaceSettings.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import {
-  closeAccount,
   closeDrawer,
   closeSettings,
   closeWizard,
@@ -34,12 +32,7 @@ const crumbs = computed(() =>
 )
 
 const overlayOpen = computed(
-  () =>
-    hub.drawer.open ||
-    hub.settings.open ||
-    hub.wizard.open ||
-    hub.palette.open ||
-    hub.account.open,
+  () => hub.drawer.open || hub.settings.open || hub.wizard.open || hub.palette.open,
 )
 
 function openPalette() {
@@ -53,7 +46,6 @@ function onScrim() {
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
   else if (hub.settings.open) closeSettings()
-  else if (hub.account.open) closeAccount()
   else closeDrawer()
 }
 
@@ -67,7 +59,6 @@ function onKey(e) {
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
   else if (hub.settings.open) closeSettings()
-  else if (hub.account.open) closeAccount()
   else if (hub.drawer.open) closeDrawer()
 }
 
@@ -118,7 +109,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
       </button>
       <WorkspaceWizard v-if="hub.wizard.open" mode="modal" :open="hub.wizard.open" @created="onCreated" @close="closeWizard" />
     </div>
-    <AccountModal />
     <CommandPalette />
     <ToastHost />
   </div>

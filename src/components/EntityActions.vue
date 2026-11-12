@@ -1,6 +1,6 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { chatFocusEntity, closeDrawer, openDrawer, toast } from '@/stores/hub'
+import { chatFocusEntity, closeDrawer, toast } from '@/stores/hub'
 import { revealEntity } from '@/stores/entities'
 
 /**
@@ -18,15 +18,15 @@ function stop(event) {
   event.stopPropagation()
 }
 
-function run(event) {
-  stop(event)
-  openDrawer(props.entity.id, 'run')
-}
-
-function chat(event) {
+async function chat(event) {
   stop(event)
   closeDrawer()
-  chatFocusEntity(props.entity.id)
+  try {
+    await chatFocusEntity(props.entity.id)
+  } catch (error) {
+    toast(error?.message || `Could not open a thread for ${props.entity.name}`)
+    return
+  }
   router.push('/chat')
 }
 
@@ -34,7 +34,7 @@ async function reveal(event) {
   stop(event)
   try {
     await revealEntity(props.entity.name)
-    toast(`Revealed ${props.entity.name}.md`)
+    toast(`Revealed ${props.entity.displayPath || `${props.entity.name}.md`}`)
   } catch (error) {
     toast(error?.message || 'Could not reveal the file')
   }
@@ -43,17 +43,6 @@ async function reveal(event) {
 
 <template>
   <span class="row-actions" @click.stop @keydown.stop>
-    <button
-      class="row-act"
-      type="button"
-      :title="`Run ${entity.name}`"
-      :aria-label="`Run ${entity.name}`"
-      @click="run"
-    >
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-        <path d="M5.2 3.4l7.2 4.6-7.2 4.6z" />
-      </svg>
-    </button>
     <button
       class="row-act"
       type="button"

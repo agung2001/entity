@@ -575,6 +575,7 @@ main {
   padding: 18px 14px 14px;
   height: 100%;
   background: var(--bg);
+  transition: width 0.16s ease, padding 0.16s ease;
 }
 /* macOS `hiddenInset` puts the traffic lights over this corner. */
 .is-desktop.is-mac .rail {
@@ -587,11 +588,87 @@ main {
   gap: 10px;
   padding: 0 6px 18px;
 }
+/* the brand wears the same animated character as an entity, minus the mood
+   badge: a logo is a character, not a reaction */
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--ink);
+}
 .wordmark {
   font-family: var(--font);
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+/* the rail folds to its icons; the toggle keeps the same slot in both states */
+.rail-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.rail-toggle:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.rail-toggle svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.65;
+  transition: transform 0.16s ease;
+}
+.rail[data-collapsed='1'] .rail-toggle svg {
+  transform: rotate(180deg);
+}
+@media (min-width: 821px) {
+  .rail[data-collapsed='1'] {
+    width: 62px;
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .rail[data-collapsed='1'] .wordmark,
+  .rail[data-collapsed='1'] .rail-toggle .lbl,
+  .rail[data-collapsed='1'] .ws,
+  .rail[data-collapsed='1'] .nav-label,
+  .rail[data-collapsed='1'] .nav .lbl,
+  .rail[data-collapsed='1'] .nav .count,
+  .rail[data-collapsed='1'] .user .who {
+    display: none;
+  }
+  .rail[data-collapsed='1'] .brand {
+    justify-content: center;
+    padding: 0 0 18px;
+  }
+  .rail[data-collapsed='1'] .nav a {
+    justify-content: center;
+    padding: 0;
+  }
+  .rail[data-collapsed='1'] .rail-toggle {
+    justify-content: center;
+    padding: 0;
+  }
+  .rail[data-collapsed='1'] .acct-menu {
+    right: auto;
+    width: 208px;
+  }
+  .rail[data-collapsed='1'] .user {
+    justify-content: center;
+    padding: 6px 0;
+  }
 }
 
 /* workspace switcher — the card itself is the trigger, the menu opens under it */
@@ -682,7 +759,7 @@ main {
   border-radius: 5px;
   padding: 2px 5px;
 }
-.ws-menu {
+.ws .ws-menu {
   left: 0;
   right: auto;
   top: calc(100% + 6px);
@@ -1130,6 +1207,28 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pickbtn > .harness-icon,
+.pickbtn > .machine-icon {
+  flex: none;
+  opacity: 0.68;
+}
+.pickopt > .harness-icon,
+.pickopt > .machine-icon {
+  flex: none;
+  opacity: 0.68;
+}
+.pickwrap[data-locked='1'] .pickbtn {
+  cursor: default;
+  opacity: 0.78;
+}
+.pickwrap[data-locked='1'] .pickbtn:hover {
+  background: none;
+  border-color: transparent;
+  color: var(--ink-2);
+}
+.pickwrap[data-locked='1'] .pickbtn .ch {
+  opacity: 0.4;
+}
 .pickbtn .ct {
   flex: none;
   font-size: 11px;
@@ -1199,6 +1298,47 @@ kbd {
   text-transform: uppercase;
   color: var(--muted);
   padding: 5px 8px 4px;
+}
+.psearch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 4px;
+  padding: 0 7px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.psearch:focus-within {
+  border-color: var(--ink);
+  background: var(--bg);
+}
+.psearch svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.psearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink);
+}
+.psearch input::placeholder {
+  color: var(--muted);
+}
+.pempty {
+  margin: 0;
+  padding: 9px 8px 7px;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 .pickopt {
   display: flex;
@@ -1385,6 +1525,11 @@ kbd {
 }
 .go:active {
   transform: translateY(1px);
+}
+.go[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* the composer's own form, used by both the overview console and the chat panel */
@@ -1728,7 +1873,9 @@ kbd {
   margin-top: 1px;
 }
 .chipm {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--ink-2);
@@ -1737,6 +1884,16 @@ kbd {
   border-radius: 4px;
   padding: 1px 5px;
   margin-right: 4px;
+  vertical-align: middle;
+}
+.chipm .harness-icon,
+.chipm .machine-icon {
+  flex: none;
+  opacity: 0.7;
+}
+.chipm--harness {
+  color: var(--ink);
+  border-color: var(--border-strong);
 }
 .unplaced {
   font-family: var(--mono);
@@ -1836,12 +1993,44 @@ kbd {
   vertical-align: middle;
   margin-right: 7px;
 }
+.log .what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .log .where {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);
   margin-left: auto;
   flex: none;
+  white-space: nowrap;
+}
+.log .where .harness-icon,
+.log .where .machine-icon {
+  flex: none;
+  opacity: 0.65;
+}
+.log li.log-row {
+  cursor: pointer;
+}
+.log li.log-row:hover {
+  background: var(--surface);
+}
+.log li.log-row:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.log .meta a {
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+.log .meta a:hover {
+  color: var(--ink);
 }
 
 /* activity page — the same journal, at full width */
@@ -1905,12 +2094,21 @@ kbd {
   font-weight: 500;
 }
 .jrn-det {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);
   letter-spacing: 0.02em;
   text-align: right;
   white-space: nowrap;
+}
+.jrn-det .harness-icon,
+.jrn-det .machine-icon {
+  flex: none;
+  opacity: 0.65;
 }
 
 /* ── cards grid (skills / machines views) ─────────────────────── */
@@ -2410,22 +2608,26 @@ kbd {
   display: flex;
   align-items: stretch;
 }
+/* the history track keeps its own scroll; the filter menus must be able to
+   escape the rail, so the clipping lives on .hlist instead of here */
 .chist {
   width: 300px;
   flex: none;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
-  padding: 14px 14px 0;
+  padding: 0 14px 0;
   border-right: 1px solid var(--border);
 }
 .chist .hhead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 0 11px;
+  height: 58px;
+  padding: 0;
+  flex: none;
 }
 .chist .hhead h2 {
   font-family: var(--font);
@@ -2443,18 +2645,34 @@ kbd {
 }
 /* the three axes of a run, as quiet text triggers */
 .cfilt {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 1px;
   margin: 0 0 10px;
-  padding-bottom: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.cfilt .pickwrap {
+  position: static;
 }
 .cfilt .pickmenu {
   top: calc(100% + 6px);
   bottom: auto;
+  left: 0;
+  right: auto;
+  width: 232px;
   min-width: 0;
+  max-width: none;
+}
+/* all three menus hang from the same left edge; a right-aligned menu would be
+   clipped by the history column */
+.cfilt .pickwrap:nth-last-child(-n + 2) .pickmenu {
+  left: 0;
+  right: auto;
 }
 .cfilt .pickbtn {
   max-width: 100%;
@@ -2531,7 +2749,9 @@ kbd {
   white-space: nowrap;
 }
 .hrow .hm {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.02em;
@@ -2539,6 +2759,11 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.hrow .hm .harness-icon,
+.hrow .hm .machine-icon {
+  flex: none;
+  opacity: 0.65;
 }
 .hrow[data-on='1'] .hm {
   color: var(--ink-2);
@@ -2595,6 +2820,9 @@ kbd {
   white-space: nowrap;
 }
 .cp-head p {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.03em;
@@ -2603,6 +2831,11 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cp-head p .harness-icon,
+.cp-head p .machine-icon {
+  flex: none;
+  opacity: 0.65;
 }
 .cp-head .ask-stat {
   margin-left: auto;
@@ -2640,14 +2873,17 @@ kbd {
 .cp-picks {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px;
+  align-items: center;
+  gap: 1px 4px;
   flex: none;
-  padding: 8px var(--pad) 0;
+  padding: 8px var(--pad) 12px;
 }
-.cp-foot {
-  flex: none;
-  margin: 0;
-  padding: 7px var(--pad) 12px;
+/* the composer hint shares the context row and sits on the right */
+.cp-picks .cp-foot {
+  margin: 0 0 0 auto;
+  padding: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 /* ── modal ────────────────────────────────────────────────────── */
@@ -2763,6 +2999,114 @@ kbd {
   background: var(--danger-soft);
   border: 1px solid color-mix(in oklab, var(--danger) 22%, #fff);
   border-radius: var(--r-sm);
+}
+
+/* account page — the same form as the old modal, given a page instead */
+.acct-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 292px;
+  gap: 16px;
+  align-items: start;
+  max-width: 860px;
+}
+.acct-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  padding: 20px;
+}
+.acct-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.acct-card-head h2,
+.role-card h2 {
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 100px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 65%, #000);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  flex: none;
+}
+.role-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.acct-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.role-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  padding: 18px;
+}
+.role-card .mnote {
+  margin: 8px 0 14px;
+  line-height: 1.55;
+}
+.role-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.role-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  padding: 9px 10px;
+}
+.role-list li[data-on='1'] {
+  border-color: var(--border-strong);
+  background: var(--accent-soft);
+}
+.role-list b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+.role-list span {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 .fld .lbl {
   font-family: var(--mono);
@@ -3105,6 +3449,9 @@ select:focus-visible {
   .mgrid {
     grid-template-columns: 1fr 1fr;
   }
+  .acct-page {
+    grid-template-columns: 1fr;
+  }
   .tr {
     grid-template-columns: 1.6fr 1fr 0.7fr 76px 100px;
   }
@@ -3150,6 +3497,9 @@ select:focus-visible {
     padding: 0 8px 0 0;
   }
   .ws {
+    display: none;
+  }
+  .rail-toggle {
     display: none;
   }
   .nav {

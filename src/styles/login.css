@@ -45,9 +45,10 @@
   align-items: center;
   margin-bottom: 22px;
 }
-.mark.mark-lg {
+.brand-mark.brand-mark--lg {
   width: 78px;
   height: 78px;
+  color: var(--ink);
 }
 
 .auth-card {
@@ -304,7 +305,7 @@
   .auth .bouncer {
     margin-bottom: 16px;
   }
-  .mark.mark-lg {
+  .brand-mark.brand-mark--lg {
     width: 62px;
     height: 62px;
   }
@@ -322,7 +323,7 @@
   .auth .meta {
     font-size: 10px;
   }
-  .mark.mark-lg {
+  .brand-mark.brand-mark--lg {
     width: 64px;
     height: 64px;
   }

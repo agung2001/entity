@@ -1,6 +1,9 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import HarnessIcon from '@/components/HarnessIcon.vue'
+import MachineIcon from '@/components/MachineIcon.vue'
 import MessageList from '@/components/MessageList.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
@@ -8,31 +11,30 @@ import { HARNESSES } from '@/data/mock'
 import {
   activeThread,
   agentById,
-  buildChat,
+  ago,
   chatSend,
+  createThread,
+  ensureChats,
   harnessById,
   hub,
   machineById,
-  newThread,
   selectThread,
   setChatFilter,
   setThreadContext,
   snippet,
   threadContext,
   threadCounts,
+  threadStarted,
   visibleThreads,
 } from '@/stores/hub'
 
 /**
- * A dedicated surface: the thread on the right, every thread you have run on
- * the left, filterable by the three things a run is made of — entity, machine,
- * harness. Replies come from the same engine the overview console uses.
+ * The chat surface reads its threads from `<workspace>/chats`. The history on
+ * the left is the file list; the panel on the right is one transcript. A send
+ * is a real harness invocation — the backend keeps the transcript and passes it
+ * to the next turn.
  */
-buildChat()
-watch(
-  () => hub.workspace,
-  () => buildChat(),
-)
+const route = useRoute()
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
@@ -54,10 +56,21 @@ const agent = computed(() => agentById(ctx.value.entity) || hub.agents[0])
 const counts = computed(() => threadCounts(thread.value))
 const visible = computed(() => visibleThreads())
 const filtering = computed(() => Object.values(hub.chat.filters).some((v) => v !== 'all'))
+const contextLocked = computed(() => threadStarted(thread.value))
+
+const messages = computed(() => {
+  const t = thread.value
+  if (!t) return []
+  if (!hub.chat.sending || hub.chat.active !== t.id) return t.messages
+  return [
+    ...t.messages,
+    { who: 'sys', text: `Waiting for ${agent.value?.name || 'the entity'}…`, pending: true },
+  ]
+})
 
 const historyNote = computed(() => {
-  if (filtering.value) return `${visible.value.length} of ${hub.chat.sessions.length}`
-  const n = hub.chat.sessions.length
+  if (filtering.value) return `${visible.value.length} of ${hub.chat.summaries.length}`
+  const n = hub.chat.summaries.length
   return `${n} ${n === 1 ? 'thread' : 'threads'}`
 })
 
@@ -67,12 +80,54 @@ const statLabel = computed(
     `${counts.value.r} ${counts.value.r === 1 ? 'response' : 'responses'} received`,
 )
 
-const lastAsked = (t) => {
-  const asked = [...t.msgs].reverse().find((m) => m.who === 'me')
-  return snippet((asked || t.msgs[t.msgs.length - 1])?.text || '')
+const lastAsked = (summary) => snippet(summary.preview) || 'New thread'
+const threadQueries = (summary) => summary.queries || 0
+const threadWhen = (summary) => ago(summary.updatedAt)
+
+async function pickThread(id) {
+  try {
+    await selectThread(id)
+  } catch {
+    await ensureChats()
+  }
 }
 
-const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
+async function startThread() {
+  try {
+    await createThread()
+  } catch (error) {
+    hub.chat.error = error?.message || 'The thread could not be started.'
+  }
+}
+
+async function send(text) {
+  await chatSend(text)
+}
+
+onMounted(async () => {
+  await ensureChats()
+  const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
+  if (wanted) {
+    await pickThread(wanted)
+    return
+  }
+  if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
+})
+
+watch(
+  () => hub.workspace,
+  async () => {
+    await ensureChats()
+    if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
+  },
+)
+
+watch(
+  () => route.query.thread,
+  async (id) => {
+    if (typeof id === 'string' && id) await pickThread(id)
+  },
+)
 </script>
 
 <template>
@@ -80,9 +135,9 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
     <div class="cpage">
       <header class="cbar">
         <h1>Chat</h1>
-        <p class="sub">Every thread you have run, on the machine and harness it ran on.</p>
+        <p class="sub">Every thread in this workspace, pinned to the entity, machine and harness it started on.</p>
         <div class="right">
-          <button class="btn btn-ink" :disabled="!hub.agents.length" @click="newThread()">
+          <button class="btn btn-ink" :disabled="!hub.agents.length" @click="startThread">
             New thread
           </button>
         </div>
@@ -108,6 +163,7 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
               head="Machine"
               all-label="All machines"
               include-all
+              icons="machine"
               :options="filterOptions.machine()"
               :model-value="hub.chat.filters.machine"
               @update:model-value="setChatFilter('machine', $event)"
@@ -116,6 +172,7 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
               head="Harness"
               all-label="All harnesses"
               include-all
+              icons="harness"
               :options="filterOptions.harness()"
               :model-value="hub.chat.filters.harness"
               @update:model-value="setChatFilter('harness', $event)"
@@ -131,25 +188,33 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
                 type="button"
                 :aria-current="t.id === hub.chat.active ? 'true' : 'false'"
                 :data-on="t.id === hub.chat.active ? '1' : '0'"
-                @click="selectThread(t.id)"
+                @click="pickThread(t.id)"
               >
                 <EntityMark mini :entity="t.entity" />
                 <span>
                   <span class="hl">
                     <b>{{ agentById(t.entity)?.name }}</b>
-                    <time>{{ t.when }}</time>
+                    <time>{{ threadWhen(t) }}</time>
                   </span>
                   <span class="hs">{{ lastAsked(t) }}</span>
                   <span class="hm">
-                    {{ machineById(t.machine)?.label }} · {{ harnessById(t.harness).label
-                    }}{{ threadQueries(t) ? '' : ' · new' }}
+                    <MachineIcon :size="10" />
+                    {{ machineById(t.machine)?.label }}
+                    <span aria-hidden="true">·</span>
+                    <HarnessIcon :name="t.harness" :size="10" />
+                    {{ harnessById(t.harness).label }}
+                    <template v-if="!threadQueries(t)"> · new</template>
                   </span>
                 </span>
               </button>
             </template>
             <div v-else class="hempty">
-              <b>No thread matches</b>Nothing has run with this combination yet. Clear a filter,
-              or start a new thread.
+              <b>No thread matches</b>
+              {{
+                hub.chat.summaries.length
+                  ? 'Nothing has started with this combination yet. Clear a filter, or start a new thread.'
+                  : 'No conversation has started in this workspace yet. Open an entity and send the first message.'
+              }}
             </div>
           </div>
         </aside>
@@ -157,7 +222,7 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
         <section v-if="!hub.agents.length" class="cpanel cpanel-empty">
           <div class="empty-note">
             <b>No entity in this workspace yet.</b>
-            <span>A thread is a conversation with one entity's file. Create an entity first.</span>
+            <span>A thread is a real conversation with one entity's file. Create an entity first.</span>
             <router-link to="/entities">Go to entities</router-link>
           </div>
         </section>
@@ -167,7 +232,13 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
             <EntityMark :entity="agent.name" />
             <div class="cp-id">
               <h2>{{ agent.name }}</h2>
-              <p>{{ machineById(ctx.machine)?.label }} · {{ harnessById(ctx.harness).label }}</p>
+              <p>
+                <MachineIcon :size="10" />
+                {{ machineById(ctx.machine)?.label }}
+                <span aria-hidden="true">·</span>
+                <HarnessIcon :name="ctx.harness" :size="10" />
+                {{ harnessById(ctx.harness).label }}
+              </p>
             </div>
             <span class="ask-stat" :aria-label="statLabel">
               <span class="u"><b>{{ counts.q }}</b> queries</span>
@@ -176,15 +247,15 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
             </span>
           </header>
 
-          <MessageList
-            :messages="thread.msgs"
-            :chips="chips"
-            list-class="c-thread"
-            @chip="chatSend"
-          />
+          <MessageList :messages="messages" :chips="chips" list-class="c-thread" @chip="send" />
 
           <div class="cp-compose">
-            <SlashComposer :agent="agent" :placeholder="`Message ${agent.name}`" @send="chatSend" />
+            <SlashComposer
+              :agent="agent"
+              :placeholder="`Message ${agent.name}`"
+              :disabled="hub.chat.sending"
+              @send="send"
+            />
           </div>
 
           <div class="cp-picks" role="group" aria-label="Thread context">
@@ -193,27 +264,41 @@ const threadQueries = (t) => t.msgs.filter((m) => m.who === 'me').length
               :options="contextOptions.entity()"
               :model-value="ctx.entity"
               :count="agent.skills.length"
+              :disabled="contextLocked"
               @update:model-value="setThreadContext('entity', $event)"
             />
             <PickMenu
               head="Machine"
+              icons="machine"
               :options="contextOptions.machine()"
               :model-value="ctx.machine"
+              :disabled="contextLocked"
               @update:model-value="setThreadContext('machine', $event)"
             />
             <PickMenu
               head="Harness"
+              icons="harness"
               :options="contextOptions.harness()"
               :model-value="ctx.harness"
+              :disabled="contextLocked"
               @update:model-value="setThreadContext('harness', $event)"
             />
+            <p class="cp-foot">
+              <kbd>/</kbd> commands <span aria-hidden="true">·</span>
+              <kbd>tab</kbd> complete <span aria-hidden="true">·</span>
+              <kbd>enter</kbd> send
+            </p>
           </div>
+        </section>
 
-          <p class="cp-foot">
-            <kbd>/</kbd> commands <span aria-hidden="true">·</span>
-            <kbd>tab</kbd> complete <span aria-hidden="true">·</span>
-            <kbd>enter</kbd> send
-          </p>
+        <section v-else class="cpanel cpanel-empty">
+          <div class="empty-note">
+            <b>No thread open.</b>
+            <span>Start one to talk to an entity on this machine through its harness.</span>
+            <button class="btn btn-ink" type="button" :disabled="!hub.agents.length" @click="startThread">
+              New thread
+            </button>
+          </div>
         </section>
       </div>
     </div>

@@ -6,31 +6,52 @@ import { hub, toast } from '@/stores/hub'
 import { attachSkill, loadLibrary, workspaces } from '@/stores/workspaces'
 
 /**
- * The workspace's own skill catalog: one directory per attached skill, usually a
- * symlink into a harness library. The link's target is why a skill can be
- * `missing` — the harness removed it and the workspace kept its intent.
+ * Two scopes, one page.
  *
- * The list below the grid is the machine's libraries (discovery); attaching is
- * one symlink (intent).
+ * `library` is discovery: every skill each harness on this machine already
+ * carries, read from `~/.pi`, `~/.claude`, `~/.codex`, … — the same reading as
+ * before workspaces existed, with the harness as the filter axis.
+ *
+ * `workspace` is intent: the symlinks this workspace owns. Attaching is one
+ * symlink from the library, so an update in the library flows through here.
  */
-const adding = ref(false)
+const tab = ref('library')
+const harness = ref('all')
 const busy = ref('')
 
 onMounted(loadLibrary)
 
+const library = computed(() => workspaces.library)
 const items = computed(() => workspaces.skills)
 
-const attached = computed(() => new Set(items.value.map((item) => item.name.toLowerCase())))
+const attachedNames = computed(
+  () => new Set(items.value.map((item) => item.name.toLowerCase())),
+)
+
+const filters = computed(() => [
+  { id: 'all', label: 'All', count: library.value?.count || 0 },
+  ...(library.value?.harnesses || [])
+    .filter((entry) => entry.count > 0)
+    .map((entry) => ({ id: entry.id, label: entry.label, count: entry.count })),
+])
+
+const visibleLibrary = computed(() => {
+  const all = library.value?.items || []
+  if (harness.value === 'all') return all
+  return all.filter((item) => item.harness === harness.value)
+})
 
 const available = computed(() => {
   const seen = new Set()
-  return (workspaces.library?.items || []).filter((item) => {
+  return (library.value?.items || []).filter((item) => {
     const key = item.name.toLowerCase()
-    if (attached.value.has(key) || seen.has(key)) return false
+    if (attachedNames.value.has(key) || seen.has(key)) return false
     seen.add(key)
     return true
   })
 })
+
+const isAttached = (item) => attachedNames.value.has(item.name.toLowerCase())
 
 const when = (iso) => {
   if (!iso) return 'unknown'
@@ -59,71 +80,161 @@ async function attach(item) {
   <div class="view">
     <div class="page-head">
       <div>
-        <p class="eyebrow">Workspace · {{ hub.workspaceLabel || hub.workspace }}</p>
+        <p class="eyebrow">Skills · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Skills</h1>
         <p class="lede">
-          The skills this workspace has. Each entry is a symlink into the harness library
-          that already holds it, so an update in the library shows up here — nothing is
-          copied, and nothing is hidden behind a list.
+          Every skill installed on this machine, read from each harness’s own library, plus
+          the ones this workspace has attached. The same skill can live in more than one
+          place, so filter by harness to see the copy that runtime actually loads.
         </p>
       </div>
       <div class="head-actions">
-        <button class="btn" type="button" @click="adding = !adding">
-          {{ adding ? 'Close' : 'Attach a skill' }}
+        <button
+          class="btn"
+          type="button"
+          @click="tab = tab === 'workspace' ? 'library' : 'workspace'"
+        >
+          {{ tab === 'workspace' ? 'Browse library' : 'Workspace skills' }}
         </button>
       </div>
     </div>
 
-    <div class="lib-bar">
-      <span class="lib-meta">
-        {{ items.length }} attached
-        <template v-if="workspaces.library"> · {{ workspaces.library.count }} on this machine</template>
-        <template v-if="hub.agents.length"> · {{ hub.agents.length }} entities can name them</template>
-      </span>
-      <span class="lib-meta mono">{{ workspaces.mcp.path ? workspaces.mcp.path.replace(/mcp\.json$/, 'skills/') : '' }}</span>
-    </div>
-
-    <div v-if="items.length" class="grid3">
-      <router-link
-        v-for="s in items"
-        :key="s.name"
-        class="card2"
-        :to="{ name: 'skill', params: { name: s.name } }"
+    <div class="sk-tabs" role="tablist" aria-label="Skill scope">
+      <button
+        role="tab"
+        :aria-selected="tab === 'library' ? 'true' : 'false'"
+        @click="tab = 'library'"
       >
-        <div class="card-top">
-          <h3><SkillIcon />{{ s.name }}</h3>
-          <span
-            class="tag tag-icon"
-            role="img"
-            :title="s.missing ? 'link target missing' : s.harnessLabel"
-            :aria-label="s.missing ? 'missing' : s.harnessLabel"
+        Library <span class="n">{{ library?.count ?? 0 }}</span>
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'workspace' ? 'true' : 'false'"
+        @click="tab = 'workspace'"
+      >
+        Workspace <span class="n">{{ items.length }}</span>
+      </button>
+    </div>
+
+    <template v-if="tab === 'library'">
+      <div v-if="!library" class="empty-note">
+        <b>Scanning the harness skill libraries…</b>
+      </div>
+
+      <div v-else-if="library.error" class="empty-note">
+        <b>{{ library.error }}</b>
+        <button class="btn btn-sm" type="button" @click="loadLibrary()">Try again</button>
+      </div>
+
+      <template v-else>
+        <div class="lib-bar">
+          <div class="hints" aria-label="Filter by harness">
+            <button
+              v-for="f in filters"
+              :key="f.id"
+              class="hint"
+              type="button"
+              :aria-pressed="harness === f.id ? 'true' : 'false'"
+              @click="harness = f.id"
+            >
+              <HarnessIcon :name="f.id" />
+              {{ f.label }} <span class="hint-n">{{ f.count }}</span>
+            </button>
+          </div>
+          <span class="lib-meta">
+            {{ visibleLibrary.length }} of {{ library.count }}
+            <template v-if="library.hostname"> · {{ library.hostname }}</template>
+          </span>
+        </div>
+
+        <div v-if="visibleLibrary.length" class="grid3">
+          <router-link
+            v-for="s in visibleLibrary"
+            :key="s.id"
+            class="card2"
+            :to="{ name: 'skill', params: { name: s.name }, query: { harness: s.harness } }"
           >
-            <HarnessIcon :name="s.harness" :size="12" />
-          </span>
+            <div class="card-top">
+              <h3><SkillIcon />{{ s.name }}</h3>
+              <span
+                class="tag tag-icon"
+                role="img"
+                :title="s.harnessLabel"
+                :aria-label="s.harnessLabel"
+              >
+                <HarnessIcon :name="s.harness" :size="12" />
+              </span>
+            </div>
+            <p class="p">{{ s.path }}</p>
+            <p v-if="s.description" class="desc">{{ s.description }}</p>
+            <div class="foot">
+              <span>
+                {{ s.files }} {{ s.files === 1 ? 'file' : 'files' }} · {{ s.size }}
+                <template v-if="isAttached(s)"> · attached</template>
+              </span>
+              <span>{{ s.version || when(s.updatedAt) }}</span>
+            </div>
+          </router-link>
         </div>
-        <p class="p">{{ s.path }}</p>
-        <p v-if="s.missing" class="desc bad">Link target missing — re-attach from the library.</p>
-        <p v-else-if="s.description" class="desc">{{ s.description }}</p>
-        <div class="foot">
-          <span>
-            {{ s.missing ? '0 files' : `${s.files} ${s.files === 1 ? 'file' : 'files'} · ${s.size}` }}
-          </span>
-          <span>{{ s.version || (s.updatedAt ? when(s.updatedAt) : 'missing') }}</span>
+
+        <div v-else class="empty-note">
+          <b>No skills in this harness library.</b>
+          <span v-if="harness !== 'all'">Switch to All, or add a skill directory for it.</span>
+          <span v-else>No harness skill directories were found on this machine.</span>
         </div>
-      </router-link>
-    </div>
+      </template>
+    </template>
 
-    <div v-else class="empty-note">
-      <b>No skills in this workspace.</b>
-      <span>Attach one from the harness libraries on this machine — it is a symlink, not a copy.</span>
-    </div>
+    <template v-else>
+      <div class="lib-bar">
+        <span class="lib-meta">
+          {{ items.length }} attached
+          <template v-if="library"> · {{ library.count }} on this machine</template>
+          <template v-if="hub.agents.length"> · {{ hub.agents.length }} entities can name them</template>
+        </span>
+        <span class="lib-meta mono">{{ workspaces.mcp.path ? workspaces.mcp.path.replace(/mcp\.json$/, 'skills/') : '' }}</span>
+      </div>
 
-    <template v-if="adding">
+      <div v-if="items.length" class="grid3">
+        <router-link
+          v-for="s in items"
+          :key="s.name"
+          class="card2"
+          :to="{ name: 'skill', params: { name: s.name } }"
+        >
+          <div class="card-top">
+            <h3><SkillIcon />{{ s.name }}</h3>
+            <span
+              class="tag tag-icon"
+              role="img"
+              :title="s.missing ? 'link target missing' : s.harnessLabel"
+              :aria-label="s.missing ? 'missing' : s.harnessLabel"
+            >
+              <HarnessIcon :name="s.harness" :size="12" />
+            </span>
+          </div>
+          <p class="p">{{ s.path }}</p>
+          <p v-if="s.missing" class="desc bad">Link target missing — re-attach from the library.</p>
+          <p v-else-if="s.description" class="desc">{{ s.description }}</p>
+          <div class="foot">
+            <span>
+              {{ s.missing ? '0 files' : `${s.files} ${s.files === 1 ? 'file' : 'files'} · ${s.size}` }}
+            </span>
+            <span>{{ s.version || (s.updatedAt ? when(s.updatedAt) : 'missing') }}</span>
+          </div>
+        </router-link>
+      </div>
+
+      <div v-else class="empty-note">
+        <b>No skills in this workspace.</b>
+        <span>Attach one from the harness libraries on this machine — it is a symlink, not a copy.</span>
+      </div>
+
       <div class="sec-head" style="margin-top: 26px">
-        <h2>On this machine</h2>
+        <h2>Attach from this machine</h2>
         <span class="meta">{{ available.length }}</span>
       </div>
-      <p v-if="!workspaces.library" class="machine-note">Reading the harness skill libraries…</p>
+      <p v-if="!library" class="machine-note">Reading the harness skill libraries…</p>
       <div v-else-if="available.length" class="picks picks--scroll">
         <button
           v-for="item in available"

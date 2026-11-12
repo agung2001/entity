@@ -23,7 +23,13 @@ const mark = computed(() => markFor(props.workspace || hub.workspace, props.enti
 
 function mount() {
   if (!el.value) return
-  hydrateMark(el.value, { mini: props.mini, hop: props.hop, mark: mark.value })
+  hydrateMark(el.value, {
+    mini: props.mini,
+    hop: props.hop,
+    mark: mark.value,
+    /* the brand mark is a logo; entity marks keep their mood badge */
+    badge: Boolean(props.entity),
+  })
 }
 
 function remount() {

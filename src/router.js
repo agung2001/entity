@@ -1,4 +1,4 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { hub } from '@/stores/hub'
 import { loadWorkspaces, workspaces } from '@/stores/workspaces'
 
@@ -12,11 +12,18 @@ import SkillsView from '@/views/SkillsView.vue'
 import SkillDetailView from '@/views/SkillDetailView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import ActivityView from '@/views/ActivityView.vue'
+import AccountView from '@/views/AccountView.vue'
 
-/* Hash history: the packaged app loads over `file://`, where history mode has
-   no server to resolve a path on reload. */
+/* Clean URLs wherever an HTTP server can resolve a path. The packaged app
+   loads `dist/index.html` over `file://`, where there is no server to answer a
+   reload on `/skills/x`, so that mode keeps the hash. */
+const history =
+  typeof window !== 'undefined' && /^https?:$/.test(window.location.protocol)
+    ? createWebHistory()
+    : createWebHashHistory()
+
 const router = createRouter({
-  history: createWebHashHistory(),
+  history,
   routes: [
     {
       path: '/login',
@@ -76,6 +83,12 @@ const router = createRouter({
           name: 'activity',
           component: ActivityView,
           meta: { crumb: 'activity', title: 'Activity · entity' },
+        },
+        {
+          path: 'account',
+          name: 'account',
+          component: AccountView,
+          meta: { crumb: 'account', title: 'Account · entity' },
         },
       ],
     },

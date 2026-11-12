@@ -1,5 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { createRequire } from 'node:module'
+import path from 'node:path'
+import { spawn } from 'node:child_process'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -18,6 +20,28 @@ const RPC_PATH = require.resolve('./electron/rpc.cjs')
  * These routes exist only in the dev/preview server; a static deploy has none of
  * them, and the renderer shows an honest empty state instead of inventing data.
  */
+/**
+ * In a browser there is no Electron shell, so the dev server performs the same
+ * "reveal in file manager" action the desktop app does. Without this the
+ * Reveal button looked alive but had nowhere to go.
+ */
+function revealFile(file) {
+  const target = path.resolve(String(file || ''))
+  const open = (cmd, args) => {
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+      /* a missing file-manager binary must not take the dev server down */
+      child.on('error', () => {})
+      child.unref()
+    } catch {
+      /* the toast still reports the path */
+    }
+  }
+  if (process.platform === 'darwin') return open('open', ['-R', target])
+  if (process.platform === 'win32') return open('explorer.exe', ['/select,', target])
+  return open('xdg-open', [path.dirname(target)])
+}
+
 function localDataPlugin() {
   /** live SSE responses — one per open window */
   const clients = new Set()
@@ -37,7 +61,7 @@ function localDataPlugin() {
           }
         }
       },
-      reveal: () => {},
+      reveal: revealFile,
     })
     return rpc
   }

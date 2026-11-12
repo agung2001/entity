@@ -12,6 +12,7 @@
 const localData = require('./local-data.cjs')
 const workspaces = require('./workspace-store.cjs')
 const entities = require('./entity-store.cjs')
+const chats = require('./chat-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
@@ -47,6 +48,14 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
       reveal(file)
       return { file }
     },
+
+    /* conversations */
+    'chat.list': ({ workspace }) => chats.list({ workspace }),
+    'chat.read': ({ workspace, id }) => chats.read({ workspace, id }),
+    'chat.create': (args) => chats.create(args),
+    'chat.update': (args) => chats.update(args),
+    'chat.send': (args) => chats.send(args),
+    'chat.remove': (args) => chats.remove(args),
 
     /* runs */
     'run.start': (args) => runner.start(args),

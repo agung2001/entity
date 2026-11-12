@@ -221,11 +221,11 @@ async function saveMcp() {
         <p class="mnote">
           One pool for the workspace; an entity opts in with <code class="mono">mcp: name</code>.
           <code class="mono">env</code> holds variable <em>names</em> — values resolve from the
-          environment at run time and are never written here.
+          environment when a chat starts and are never written here.
         </p>
         <textarea v-model="mcpText" class="mcp-editor mono" rows="10" spellcheck="false"></textarea>
         <p class="mnote">
-          Enforced for <b>claude</b> runs only (<code class="mono">--strict-mcp-config</code>:
+          Enforced for <b>claude</b> conversations only (<code class="mono">--strict-mcp-config</code>:
           {{ workspaces.mcp.strict ? 'on' : 'off' }}). codex, opencode, pi and gemini manage
           MCP in their own global config.
         </p>

@@ -130,14 +130,21 @@ export async function loadWorkspaces() {
 }
 
 /** The machine-wide harness libraries — discovery, not intent. */
+let libraryPending = null
 export async function loadLibrary() {
-  try {
-    workspaces.library = await call('workspace.library')
+  /* the rail and the skills page both mount at once; scan the machine once */
+  if (libraryPending) return libraryPending
+  libraryPending = (async () => {
+    try {
+      workspaces.library = await call('workspace.library')
+    } catch (error) {
+      workspaces.library = { items: [], harnesses: [], count: 0, error: error?.message || '' }
+    } finally {
+      libraryPending = null
+    }
     return workspaces.library
-  } catch (error) {
-    workspaces.library = { items: [], harnesses: [], count: 0, error: error?.message || '' }
-    return workspaces.library
-  }
+  })()
+  return libraryPending
 }
 
 export async function loadSamples() {

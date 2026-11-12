@@ -191,7 +191,7 @@ function write(entity) {
   return read(entity.workspace, name)
 }
 
-function scaffold({ workspace, name, harness = 'claude' }) {
+function scaffold({ workspace, name, harness = 'claude', model = '' }) {
   const safe = safeName(name)
   const file = entityPath(workspace, safe)
   if (fs.existsSync(file)) throw new Error(`${safe}.md already exists in this workspace.`)
@@ -199,8 +199,8 @@ function scaffold({ workspace, name, harness = 'claude' }) {
   return write({
     workspace,
     name: safe,
-    harness,
-    model: '',
+    harness: HARNESSES.includes(harness) ? harness : 'claude',
+    model: String(model || '').trim(),
     dir: '~',
     skills: [],
     mcp: [],

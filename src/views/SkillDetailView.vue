@@ -2,21 +2,48 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import { readSkillEntry } from '@/composables/localBridge'
 import { hub, openDrawer, skillOwners, toast } from '@/stores/hub'
-import { detachSkill, readWorkspaceSkill, workspaces } from '@/stores/workspaces'
+import {
+  attachSkill,
+  detachSkill,
+  loadLibrary,
+  readWorkspaceSkill,
+  workspaces,
+} from '@/stores/workspaces'
 
 /**
- * A skill page for a real directory in the workspace. Everything on it —
- * description, entry file, file list, which entities name it — is read from disk.
- * A dangling symlink is shown as missing rather than as a broken page, because
- * that is exactly how a machine loses a skill.
+ * One skill page for two scopes. An attached skill is read from the workspace's
+ * own `skills/` directory; a skill opened from the library is read through the
+ * harness that carries it. `?harness=` selects the copy when several harnesses
+ * hold the same name.
  */
 const route = useRoute()
 const router = useRouter()
 const name = computed(() => String(route.params.name || ''))
+const wantedHarness = computed(() => String(route.query.harness || ''))
 
-const item = computed(
+const workspaceItem = computed(
   () => workspaces.skills.find((skill) => skill.name.toLowerCase() === name.value.toLowerCase()) || null,
+)
+
+const libraryItem = computed(() => {
+  const target = name.value.toLowerCase()
+  const items = workspaces.library?.items || []
+  if (wantedHarness.value) {
+    return (
+      items.find(
+        (item) => item.harness === wantedHarness.value && item.name.toLowerCase() === target,
+      ) || null
+    )
+  }
+  return items.find((item) => item.name.toLowerCase() === target) || null
+})
+
+const item = computed(() => workspaceItem.value || libraryItem.value)
+const inWorkspace = computed(() => Boolean(workspaceItem.value))
+const attached = computed(() =>
+  workspaces.skills.some((skill) => skill.name.toLowerCase() === name.value.toLowerCase()),
 )
 
 const entry = ref(null)
@@ -53,12 +80,15 @@ async function load() {
   fileIndex.value = 0
   entry.value = null
   error.value = ''
+  if (!workspaces.library) await loadLibrary()
   if (!item.value || missing.value) return
 
   const ticket = ++token
   loading.value = true
   try {
-    const data = await readWorkspaceSkill(item.value.name)
+    const data = inWorkspace.value
+      ? await readWorkspaceSkill(item.value.name)
+      : await readSkillEntry(item.value.harness, item.value.name)
     if (ticket !== token) return
     entry.value = data
   } catch (problem) {
@@ -69,7 +99,7 @@ async function load() {
   }
 }
 
-watch([name, () => workspaces.active], load, { immediate: true })
+watch([name, wantedHarness, () => workspaces.active], load, { immediate: true })
 
 function copyMd() {
   const text = entry.value?.md || ''
@@ -84,13 +114,26 @@ function copyMd() {
 }
 
 async function detach() {
-  if (busy.value || !item.value) return
+  if (busy.value || !workspaceItem.value) return
   busy.value = true
   try {
-    await detachSkill(item.value.name)
+    await detachSkill(workspaceItem.value.name)
     router.push('/skills')
   } catch (problem) {
     toast(problem?.message || 'Could not detach that skill')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function attach() {
+  if (busy.value || !libraryItem.value) return
+  busy.value = true
+  try {
+    await attachSkill({ name: libraryItem.value.name, harness: libraryItem.value.harness })
+    router.push({ name: 'skill', params: { name: libraryItem.value.name } })
+  } catch (problem) {
+    toast(problem?.message || 'Could not attach that skill')
   } finally {
     busy.value = false
   }
@@ -103,7 +146,8 @@ async function detach() {
       <header class="sk-head">
         <div>
           <p class="eyebrow">
-            Skill <span class="sep">·</span> {{ hub.workspaceLabel || hub.workspace }}
+            Skill <span class="sep">·</span>
+            {{ inWorkspace ? hub.workspaceLabel || hub.workspace : 'library · this machine' }}
           </p>
           <div class="sk-title">
             <h1>{{ item.name }}</h1>
@@ -121,8 +165,17 @@ async function detach() {
           </p>
         </div>
         <div class="sk-actions">
-          <button class="btn" type="button" :disabled="busy" @click="detach">
+          <button v-if="inWorkspace" class="btn" type="button" :disabled="busy" @click="detach">
             {{ busy ? 'Detaching…' : 'Detach from workspace' }}
+          </button>
+          <button
+            v-else
+            class="btn btn-ink"
+            type="button"
+            :disabled="busy || attached"
+            @click="attach"
+          >
+            {{ attached ? 'Already attached' : busy ? 'Attaching…' : 'Attach to workspace' }}
           </button>
         </div>
       </header>
@@ -177,10 +230,17 @@ async function detach() {
             </div>
 
             <div class="blk">
-              <h2>Attached here <span class="k">— workspace link</span></h2>
+              <h2>
+                {{ inWorkspace ? 'Attached here' : 'In the harness library' }}
+                <span class="k">— {{ inWorkspace ? 'workspace link' : item.harnessLabel }}</span>
+              </h2>
               <p v-if="missing" class="bad">
                 The symlink is still in the workspace, but its target is gone. That is the
                 truthful state: re-attach it when the harness library has it again.
+              </p>
+              <p v-else-if="!inWorkspace">
+                This copy lives in {{ item.harnessLabel }}’s own library. Attach it to this
+                workspace to add a symlink here — the files stay where they are.
               </p>
               <p v-else>
                 {{ item.copied ? 'This is a copy, because this filesystem cannot symlink.' : 'This is a symlink into the harness library, so updates flow through.' }}
@@ -230,7 +290,7 @@ async function detach() {
               <dl class="kv">
                 <dt>Requires</dt><dd>{{ item.runtime || 'not recorded' }}</dd>
                 <dt>Harness</dt><dd>{{ item.missing ? '—' : item.harnessLabel }}</dd>
-                <dt>Scope</dt><dd>this workspace</dd>
+                <dt>Scope</dt><dd>{{ inWorkspace ? 'this workspace' : 'this machine' }}</dd>
               </dl>
             </div>
           </aside>
@@ -288,14 +348,18 @@ async function detach() {
       </section>
 
       <p class="page-foot">
-        <span>{{ item.name }}{{ version ? ` ${version}` : '' }} · workspace skill</span>
+        <span>{{ item.name }}{{ version ? ` ${version}` : '' }} · {{ inWorkspace ? 'workspace skill' : 'library skill' }}</span>
         <span>{{ hub.agents.length }} entities · {{ workspaces.skills.length }} skills in this workspace</span>
       </p>
     </template>
 
+    <div v-else-if="!workspaces.library" class="empty-note">
+      <b>Reading the harness libraries…</b>
+    </div>
+
     <div v-else class="empty-note">
-      <b>No skill called “{{ name }}” in this workspace.</b>
-      <span>It may be attached to another workspace, or still only in a harness library.</span>
+      <b>No skill called “{{ name }}” on this machine.</b>
+      <span>It may live in a different harness library, or the workspace link may be stale.</span>
       <router-link to="/skills">Back to skills</router-link>
     </div>
   </div>

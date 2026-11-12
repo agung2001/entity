@@ -1,20 +1,32 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
-import { ago, hub, openDrawer } from '@/stores/hub'
-import { runs } from '@/stores/runs'
+import HarnessIcon from '@/components/HarnessIcon.vue'
+import MachineIcon from '@/components/MachineIcon.vue'
+import {
+  ago,
+  ensureChats,
+  harnessById,
+  hub,
+  machineById,
+  snippet,
+} from '@/stores/hub'
 
 /**
- * The journal is the run log, not a separate event feed. Every line is a real
- * `<ws>/runs/<runId>.jsonl` file, so the page can be checked against the
- * directory.
+ * The journal is the conversation history, not a separate event feed. Every
+ * line is a real `<ws>/chats/<threadId>.json` file, so the page can be checked
+ * against the directory.
  */
-const rows = computed(() => runs.history || [])
+const router = useRouter()
 
-const detail = (run) => {
-  if (run.status === 'running') return `${run.harness} · running`
-  if (run.status === 'canceled') return run.note || 'canceled'
-  return `${run.harness} · exit ${run.exitCode ?? '—'}${run.ms ? ` · ${run.ms} ms` : ''}`
+onMounted(ensureChats)
+
+const rows = computed(() => hub.chat.summaries || [])
+const machineLabel = (id) => machineById(id)?.label || id
+
+function openThread(id) {
+  router.push({ name: 'chat', query: { thread: id } })
 }
 </script>
 
@@ -25,35 +37,43 @@ const detail = (run) => {
         <p class="eyebrow">Journal · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Activity</h1>
         <p class="lede">
-          Every run in this workspace, read from its own log file. Newest first. Nothing is
-          uploaded; a workspace that is deleted takes its history with it.
+          Every conversation in this workspace, read from its own thread file. Newest first.
+          Nothing is uploaded; a workspace that is deleted takes its history with it.
         </p>
       </div>
     </div>
 
     <div class="tbl">
       <div class="jrn-row jrn-th">
-        <span>Time</span><span>Entity</span><span>Event</span><span class="rt">Detail</span>
+        <span>Time</span><span>Entity</span><span>Conversation</span><span class="rt">Context</span>
       </div>
       <div
-        v-for="run in rows"
-        :key="run.id"
+        v-for="thread in rows"
+        :key="thread.id"
         class="jrn-row jrn-row-btn"
         role="button"
         tabindex="0"
-        @click="openDrawer(run.entity, 'run')"
-        @keydown.enter="openDrawer(run.entity, 'run')"
+        @click="openThread(thread.id)"
+        @keydown.enter="openThread(thread.id)"
       >
-        <time>{{ ago(run.startedAt) }}</time>
-        <span class="jrn-ent"><EntityMark :entity="run.entity" /><span class="nm2">{{ run.entity }}</span></span>
-        <span class="jrn-act">
-          <b>{{ run.status }}</b>
-          <template v-if="run.prompt"> · {{ run.prompt.slice(0, 60) }}</template>
+        <time>{{ ago(thread.updatedAt) }}</time>
+        <span class="jrn-ent">
+          <EntityMark :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
         </span>
-        <span class="jrn-det">{{ detail(run) }}</span>
+        <span class="jrn-act">
+          <b>{{ snippet(thread.preview) || 'New thread' }}</b>
+          <template v-if="thread.queries">
+            · {{ thread.queries }} {{ thread.queries === 1 ? 'query' : 'queries' }}
+          </template>
+        </span>
+        <span class="jrn-det">
+          <MachineIcon :size="10" />{{ machineLabel(thread.machine) }}
+          <span aria-hidden="true">·</span>
+          <HarnessIcon :name="thread.harness" :size="10" />{{ harnessById(thread.harness).label }}
+        </span>
       </div>
       <div v-if="!rows.length" class="jrn-row" style="color: var(--muted); font-size: 12.5px">
-        No runs yet in this workspace.
+        No conversations yet in this workspace.
       </div>
     </div>
   </div>

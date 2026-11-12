@@ -11,6 +11,7 @@
  * sample data, it is a hub that should be at /setup.
  */
 import { reactive } from 'vue'
+import { call } from '@/composables/localBridge'
 import { BUILTIN_CMDS, HARNESSES } from '@/data/mock'
 
 const SESSION_KEY = 'entity.session'
@@ -28,6 +29,29 @@ export const DEFAULT_ADMIN = { username: 'admin', password: '123456' }
 /* sha256('123456') — the seed is compared as a hash, never as plain text */
 const DEFAULT_ADMIN_HASH = '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92'
 const DEFAULT_EMAIL = 'admin@studio-mac'
+
+/* Three levels, one account on this machine. The role travels with the session
+   so the rail can say what this person may do without showing an email. */
+export const ROLES = [
+  {
+    id: 'owner',
+    label: 'Owner',
+    desc: 'Created this workspace. Full control: entities, machines, skills and account.',
+  },
+  {
+    id: 'admin',
+    label: 'Admin',
+    desc: 'Manages the workspace — machines, skills, MCP servers and account settings.',
+  },
+  {
+    id: 'member',
+    label: 'Member',
+    desc: 'Uses entities and chats with them, but cannot delete or change workspace settings.',
+  },
+]
+
+export const roleById = (id) => ROLES.find((role) => role.id === id) || ROLES[0]
+export const roleLabel = (id) => roleById(id).label
 
 function storeCredentials(record) {
   try {
@@ -49,12 +73,10 @@ export function credentials() {
   try {
     const raw = JSON.parse(localStorage.getItem(CREDENTIALS_KEY) || 'null')
     if (raw && typeof raw.username === 'string' && typeof raw.hash === 'string') {
-      /* records written before the account menu shipped have no email */
-      if (typeof raw.email !== 'string') {
-        raw.email = `${raw.username}@studio-mac`
-        storeCredentials(raw)
-      }
-      return raw
+      /* records written before the account menu shipped have no email or role */
+      if (typeof raw.email !== 'string') raw.email = `${raw.username}@studio-mac`
+      if (!ROLES.some((role) => role.id === raw.role)) raw.role = 'owner'
+      return storeCredentials(raw)
     }
   } catch {
     /* unreadable record — reseed below */
@@ -62,6 +84,7 @@ export function credentials() {
   return storeCredentials({
     username: DEFAULT_ADMIN.username,
     email: DEFAULT_EMAIL,
+    role: 'owner',
     hash: DEFAULT_ADMIN_HASH,
     mustChange: true,
     updatedAt: null,
@@ -81,6 +104,7 @@ export async function verifyCredentials(handle, password) {
     ok: true,
     username: record.username,
     email: record.email,
+    role: record.role || 'owner',
     mustChange: Boolean(record.mustChange),
   }
 }
@@ -108,7 +132,7 @@ export function updateAccount({ username, email }) {
     updatedAt: new Date().toISOString(),
   })
   if (hub.session) {
-    const session = { ...hub.session, user: next.username, email: next.email }
+    const session = { ...hub.session, user: next.username, email: next.email, role: next.role }
     hub.session = session
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -150,6 +174,7 @@ function readSession() {
     const record = credentials()
     if (raw.user.toLowerCase() !== record.username.toLowerCase()) return null
     if (typeof raw.email !== 'string' || !raw.email) raw.email = record.email || ''
+    if (!ROLES.some((role) => role.id === raw.role)) raw.role = record.role || 'owner'
     return raw
   } catch {
     return null
@@ -190,18 +215,22 @@ export const hub = reactive({
   entityFilter: 'all',
   drawer: { open: false, agentId: '', tab: 'overview' },
   palette: { open: false, query: '', active: 0 },
-  account: { open: false },
   settings: { open: false, tab: 'machines' },
   wizard: { open: false },
   toast: { open: false, message: '' },
 
   /* --- consoles ------------------------------------------------------ */
-  ask: { threads: {}, counts: {} },
+  /* Chat threads are files in the workspace. `summaries` is the history list;
+     `threads` holds the full transcript of anything opened in this session. */
   chat: {
-    built: false,
-    sessions: [],
-    active: null,
-    seq: 0,
+    loading: false,
+    loaded: false,
+    error: '',
+    workspace: '',
+    summaries: [],
+    threads: {},
+    active: '',
+    sending: false,
     filters: { entity: 'all', machine: 'all', harness: 'all' },
     last: { entity: '', machine: 'local', harness: 'claude' },
   },
@@ -229,12 +258,14 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
     hub.drawer.tab = 'overview'
   }
 
-  hub.ask.threads = {}
-  hub.ask.counts = {}
-  hub.chat.built = false
-  hub.chat.sessions = []
-  hub.chat.active = null
-  hub.chat.seq = 0
+  hub.chat.loading = false
+  hub.chat.loaded = false
+  hub.chat.error = ''
+  hub.chat.workspace = ''
+  hub.chat.summaries = []
+  hub.chat.threads = {}
+  hub.chat.active = ''
+  hub.chat.sending = false
   hub.chat.filters = { entity: 'all', machine: 'all', harness: 'all' }
   hub.chat.last = {
     entity: agents[0]?.id || '',
@@ -242,7 +273,11 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
     harness: agents[0]?.harness || 'claude',
   }
 
-  if (hub.drawer.agentId) hub.drawer.agentId = agents.some((a) => a.id === hub.drawer.agentId) ? hub.drawer.agentId : ''
+  if (hub.drawer.agentId) {
+    hub.drawer.agentId = agents.some((a) => a.id === hub.drawer.agentId)
+      ? hub.drawer.agentId
+      : ''
+  }
 }
 
 /** The run table paints its own state; this is where it lands on the entity. */
@@ -344,8 +379,12 @@ export function toast(message) {
 }
 
 /* ── session ──────────────────────────────────────────────────────── */
-export function signIn(user = credentials().username, email = credentials().email) {
-  const session = { user, email, at: new Date().toISOString() }
+export function signIn(
+  user = credentials().username,
+  email = credentials().email,
+  role = credentials().role,
+) {
+  const session = { user, email, role: role || 'owner', at: new Date().toISOString() }
   hub.session = session
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
@@ -397,15 +436,6 @@ export function closeWizard() {
   hub.wizard.open = false
 }
 
-/* ── account settings ─────────────────────────────────────────────── */
-export function openAccount() {
-  hub.account.open = true
-}
-
-export function closeAccount() {
-  hub.account.open = false
-}
-
 /* ── the console: a reader over the entity's own record ───────────── */
 function defaultAsk() {
   const agent = hub.agents[0]
@@ -423,92 +453,7 @@ export function askSession() {
   }
 }
 
-export const askKey = () => {
-  const s = askSession()
-  return `${s.entity}|${s.machine}|${s.harness}`
-}
-
 export const askAgent = () => agentById(askSession().entity)
-export const askMachine = () => machineById(askSession().machine) || hub.machines[0] || null
-export const askHarnessFn = () => harnessById(askSession().harness)
-
-export function greeting(agent) {
-  if (!agent) return 'No entity yet. Create one in this workspace to give the console a subject.'
-  const rules = mdRules(agent).length
-  return `${agent.desc || 'No description in the file yet.'} ${agent.skills.length} ${
-    agent.skills.length === 1 ? 'skill' : 'skills'
-  } and ENTITY.md (${rules} ${rules === 1 ? 'rule' : 'rules'}) travel with me.`
-}
-
-export function askThread() {
-  const key = askKey()
-  const agent = askAgent()
-  if (!hub.ask.threads[key]) {
-    hub.ask.threads[key] = [
-      { who: 'sys', text: `run → ${askMachine()?.label || 'local'} · ${askHarnessFn().label}` },
-      { who: 'agent', text: greeting(agent) },
-    ]
-  }
-  return hub.ask.threads[key]
-}
-
-export function askCounts() {
-  const key = askKey()
-  if (!hub.ask.counts[key]) hub.ask.counts[key] = { sent: 0, got: 0 }
-  return hub.ask.counts[key]
-}
-
-export function askSend(text) {
-  const agent = askAgent()
-  if (!agent) return
-  const log = askThread()
-  log.push({ who: 'me', text })
-  log.push({ who: 'agent', text: askReply(agent, askMachine(), askHarnessFn(), text) })
-  const counts = askCounts()
-  counts.sent += 1
-  counts.got += 1
-}
-
-/**
- * A deterministic answer read out of the entity's own file. It is not a model
- * call: the hub does not pretend to be the harness. `run.start` is where real
- * work happens.
- */
-export function askReply(agent, machine, harness, question) {
-  const rules = mdRules(agent)
-  const guard = rules.length
-    ? `ENTITY.md guard: ${rules[0]}`
-    : 'ENTITY.md has no guards written yet.'
-  const t = String(question || '').toLowerCase()
-  const where = agent.machines.length
-    ? agent.machines.map((id) => machineById(id)?.label || id).join(' and ')
-    : 'no machine'
-
-  if (String(question).startsWith('/')) {
-    const name = String(question).split(/\s+/)[0]
-    const skill = name.slice(1)
-    if (BUILTIN_CMDS.some((c) => c.name === name))
-      return `${name} → ${agent.name} · ${machine?.label || 'local'} · ${harness.label}.\nBuilt into ${harness.label}, so there is nothing to install. ${guard}`
-    if (agent.skills.includes(skill))
-      return `${name} → ${agent.name} · ${machine?.label || 'local'} · ${harness.label}.\n${skill} is attached to this workspace, so the harness can load it from its own library. ${guard}`
-    return `No command or skill called ${name} on ${agent.name}.\nAttached: ${agent.skills
-      .map((s) => '/' + s)
-      .join(', ') || 'none'}. Built in: ${BUILTIN_CMDS.map((c) => c.name).join(', ')}.`
-  }
-  if (/where|machine|server|local|host/.test(t))
-    return `I run on ${where}. Working directory: ${agent.dir || 'not set'}. This session is ${harness.label}.`
-  if (/skill|carry|tool|able/.test(t))
-    return agent.skills.length
-      ? `This workspace attaches ${agent.skills.length}: ${agent.skills.join(', ')}. Type / here to run one.`
-      : 'No skills attached to this entity yet — attach them to the workspace first.'
-  if (/entity|\.md|instruction|rule/.test(t))
-    return `ENTITY.md is ${agent.displayPath}. ${rules.length} rules. ${guard}`
-  if (/model|runtime|size|harness|dir/.test(t))
-    return `${agent.harness} · ${agent.model || 'harness default model'} · in ${agent.dir || 'an unset directory'}.`
-  if (/^(hi|hello|hey)\b/.test(t))
-    return `I am ${agent.name} on ${machine?.label || 'local'}. Ask about my skills, my ENTITY.md, or where I run.`
-  return `I only answer from my own record: ${agent.name}, ${agent.skills.length} skills, ${agent.dir || 'no dir'}. Try “where do you run”, “what do you carry”, or type / for a command.`
-}
 
 /* slash-command menu — one shape for both composers */
 export function slashMenu(value, agent) {
@@ -522,135 +467,203 @@ export function slashMenu(value, agent) {
 }
 
 /* ── chat ─────────────────────────────────────────────────────────── */
-export function buildChat() {
-  if (hub.chat.built) return
-  hub.chat.sessions = hub.agents.map((agent) => ({
-    id: `t-${agent.id}`,
-    entity: agent.id,
-    machine: hub.machines[0]?.id || 'local',
-    harness: agent.harness,
-    when: agent.last && agent.last !== 'never' ? agent.last : 'never',
-    msgs: [{ who: 'agent', text: greeting(agent) }],
-  }))
-  hub.chat.active = hub.chat.sessions[0]?.id || null
-  if (hub.chat.sessions[0]) {
-    const first = hub.chat.sessions[0]
-    hub.chat.last = { entity: first.entity, machine: first.machine, harness: first.harness }
+/* Threads live in <workspace>/chats. The renderer keeps the summaries for the
+   history list and lazily reads one full transcript when it is opened. */
+
+async function refreshChatList() {
+  if (!hub.workspace) return []
+  hub.chat.summaries = await call('chat.list', { workspace: hub.workspace })
+  return hub.chat.summaries
+}
+
+export async function loadChats(workspaceId = hub.workspace) {
+  if (!workspaceId) {
+    hub.chat.summaries = []
+    hub.chat.threads = {}
+    hub.chat.active = ''
+    hub.chat.loaded = true
+    hub.chat.workspace = ''
+    return []
   }
-  hub.chat.built = true
+  hub.chat.loading = true
+  hub.chat.error = ''
+  try {
+    const list = await call('chat.list', { workspace: workspaceId })
+    hub.chat.workspace = workspaceId
+    hub.chat.summaries = list
+    hub.chat.loaded = true
+    if (hub.chat.active && !list.some((thread) => thread.id === hub.chat.active)) {
+      hub.chat.active = ''
+    }
+    return list
+  } catch (error) {
+    hub.chat.error = error?.message || 'Could not read the conversation history.'
+    hub.chat.summaries = []
+    hub.chat.loaded = false
+    return []
+  } finally {
+    hub.chat.loading = false
+  }
+}
+
+export async function ensureChats() {
+  if (hub.chat.loaded && hub.chat.workspace === hub.workspace) return hub.chat.summaries
+  return loadChats()
 }
 
 export const visibleThreads = () => {
   const f = hub.chat.filters
-  return hub.chat.sessions.filter(
-    (s) =>
-      (f.entity === 'all' || s.entity === f.entity) &&
-      (f.machine === 'all' || s.machine === f.machine) &&
-      (f.harness === 'all' || s.harness === f.harness),
+  return hub.chat.summaries.filter(
+    (thread) =>
+      (f.entity === 'all' || thread.entity === f.entity) &&
+      (f.machine === 'all' || thread.machine === f.machine) &&
+      (f.harness === 'all' || thread.harness === f.harness),
   )
 }
 
-export const activeThread = () =>
-  hub.chat.sessions.find((s) => s.id === hub.chat.active) || null
+export const activeThread = () => hub.chat.threads[hub.chat.active] || null
 
 export const threadContext = () => {
-  const s = activeThread()
-  return s ? { entity: s.entity, machine: s.machine, harness: s.harness } : hub.chat.last
+  const thread = activeThread()
+  return thread
+    ? { entity: thread.entity, machine: thread.machine, harness: thread.harness }
+    : hub.chat.last
 }
 
-export function selectThread(id) {
-  const s = hub.chat.sessions.find((x) => x.id === id)
-  if (!s) return
-  hub.chat.active = s.id
-  hub.chat.last = { entity: s.entity, machine: s.machine, harness: s.harness }
+export const threadStarted = (thread = activeThread()) =>
+  Boolean(thread?.messages?.some((message) => message.who === 'me'))
+
+export const summaryFor = (id) => hub.chat.summaries.find((thread) => thread.id === id) || null
+
+export async function openThread(id) {
+  if (!id || !hub.workspace) return null
+  const thread = await call('chat.read', { workspace: hub.workspace, id })
+  if (!thread) throw new Error('That thread no longer exists.')
+  hub.chat.threads = { ...hub.chat.threads, [thread.id]: thread }
+  hub.chat.active = thread.id
+  hub.chat.last = { entity: thread.entity, machine: thread.machine, harness: thread.harness }
+  return thread
+}
+
+export async function selectThread(id) {
+  return openThread(id)
 }
 
 export function setChatFilter(kind, value) {
   hub.chat.filters[kind] = value
 }
 
-export function setThreadContext(kind, value) {
-  const s = activeThread()
-  if (!s) return
-  if (kind === 'entity') {
-    if (s.entity === value) return
-    const existing = hub.chat.sessions.find((x) => x.entity === value)
-    if (existing) {
-      selectThread(existing.id)
-    } else {
-      newThread({ entity: value })
-    }
-    return
-  }
-  if (kind === 'machine' && s.machine !== value) {
-    s.machine = value
-    s.msgs.push({
-      who: 'sys',
-      text: `machine → ${machineById(value)?.label || value} · ${harnessById(s.harness).label}`,
-    })
-  }
-  if (kind === 'harness' && s.harness !== value) {
-    s.harness = value
-    s.msgs.push({
-      who: 'sys',
-      text: `harness → ${harnessById(value).label} · ${machineById(s.machine)?.label || s.machine}`,
-    })
-  }
-  hub.chat.last = { entity: s.entity, machine: s.machine, harness: s.harness }
+function remember(thread) {
+  hub.chat.threads = { ...hub.chat.threads, [thread.id]: thread }
+  hub.chat.active = thread.id
+  hub.chat.last = { entity: thread.entity, machine: thread.machine, harness: thread.harness }
 }
 
-export function newThread(overrides = {}) {
-  const prev = hub.chat.last
-  const entity = overrides.entity || prev.entity
-  const machine = overrides.machine || prev.machine
-  const harness = overrides.harness || prev.harness
-  hub.chat.seq += 1
-  const thread = {
-    id: `n${hub.chat.seq}`,
+export async function createThread(overrides = {}) {
+  const previous = hub.chat.last || {}
+  const entity = overrides.entity || previous.entity || hub.agents[0]?.id
+  if (!entity) throw new Error('Create an entity before starting a chat.')
+  const machine = overrides.machine || previous.machine || hub.machines[0]?.id || 'local'
+  const harness =
+    overrides.harness || previous.harness || agentById(entity)?.harness || 'claude'
+  const thread = await call('chat.create', {
+    workspace: hub.workspace,
     entity,
     machine,
     harness,
-    when: 'now',
-    msgs: [{ who: 'agent', text: greeting(agentById(entity)) }],
-  }
-  hub.chat.sessions.unshift(thread)
-  hub.chat.active = thread.id
-  hub.chat.last = { entity, machine, harness }
+  })
+  remember(thread)
+  await refreshChatList()
   return thread
 }
 
-/** Route into an entity's thread — opens the one it already has, or starts one. */
-export function chatFocusEntity(id) {
-  buildChat()
-  const existing = hub.chat.sessions.find((s) => s.entity === id)
-  if (existing) selectThread(existing.id)
-  else newThread({ entity: id })
+/* kept for the views that used the old in-memory name */
+export const newThread = createThread
+
+/** Route into an entity's thread — opens the newest one, or starts a fresh one. */
+export async function chatFocusEntity(id) {
+  await ensureChats()
+  const existing = hub.chat.summaries.find((thread) => thread.entity === id)
+  if (existing) await openThread(existing.id)
+  else await createThread({ entity: id })
 }
 
-export function chatSend(text) {
-  const s = activeThread()
-  if (!s) return
-  const agent = agentById(s.entity)
-  if (!agent) return
-  s.msgs.push({ who: 'me', text })
-  s.msgs.push({
-    who: 'agent',
-    text: askReply(agent, machineById(s.machine), harnessById(s.harness), text),
-  })
-  s.when = 'now'
-  hub.chat.last = { entity: s.entity, machine: s.machine, harness: s.harness }
+/** Context moves only before the first question. The server enforces the same rule. */
+export async function setThreadContext(kind, value) {
+  const thread = activeThread()
+  if (!thread || threadStarted(thread)) return
+  const next = {
+    entity: thread.entity,
+    machine: thread.machine,
+    harness: thread.harness,
+    [kind]: value,
+  }
+  try {
+    const updated = await call('chat.update', {
+      workspace: hub.workspace,
+      id: thread.id,
+      entity: next.entity,
+      machine: next.machine,
+      harness: next.harness,
+    })
+    remember(updated)
+    await refreshChatList()
+  } catch (error) {
+    toast(error?.message || 'The thread context could not be changed.')
+  }
+}
+
+export async function chatSend(text) {
+  const thread = activeThread()
+  if (!thread || hub.chat.sending) return
+  const message = String(text || '').trim()
+  if (!message) return
+
+  /* paint the question immediately; the harness answer arrives when it arrives */
+  const optimistic = {
+    ...thread,
+    messages: [
+      ...thread.messages,
+      { who: 'me', text: message, at: new Date().toISOString() },
+    ],
+  }
+  hub.chat.threads = { ...hub.chat.threads, [thread.id]: optimistic }
+  hub.chat.sending = true
+  hub.chat.error = ''
+
+  try {
+    const updated = await call('chat.send', {
+      workspace: hub.workspace,
+      id: thread.id,
+      text: message,
+    })
+    remember(updated)
+    await refreshChatList()
+    return updated
+  } catch (error) {
+    hub.chat.error = error?.message || 'The message could not be sent.'
+    toast(hub.chat.error)
+    try {
+      await openThread(thread.id)
+      await refreshChatList()
+    } catch {
+      /* the list keeps the last readable state */
+    }
+  } finally {
+    hub.chat.sending = false
+  }
 }
 
 export const threadCounts = (thread) => {
   if (!thread) return { q: 0, r: 0 }
+  const messages = thread.messages || []
   return {
-    q: thread.msgs.filter((m) => m.who === 'me').length,
-    /* every thread opens with one greeting — that is the opening line, not a reply */
-    r: Math.max(0, thread.msgs.filter((m) => m.who === 'agent').length - 1),
+    q: messages.filter((message) => message.who === 'me').length,
+    r: messages.filter((message) => message.who === 'agent').length,
   }
 }
 
 export const snippet = (text) => {
-  const s = String(text).replace(/\s+/g, ' ').trim()
+  const s = String(text || '').replace(/\s+/g, ' ').trim()
   return s.length > 74 ? s.slice(0, 73) + '…' : s
 }

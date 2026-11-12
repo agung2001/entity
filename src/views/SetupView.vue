@@ -1,6 +1,6 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
-import EntityMark from '@/components/EntityMark.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import { toast } from '@/stores/hub'
 
@@ -24,7 +24,7 @@ function landed(record) {
   <main class="auth setup">
     <div class="stack">
       <div class="bouncer">
-        <EntityMark class="mark-lg" hop />
+        <BrandMark class="brand-mark--lg" hop />
       </div>
       <section class="auth-card setup-card">
         <WorkspaceWizard mode="page" @created="landed" />

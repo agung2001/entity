@@ -92,8 +92,13 @@ export async function saveEntity(entity) {
   return saved
 }
 
-export async function scaffoldEntity({ name, harness }) {
-  const created = await call('entity.scaffold', { workspace: hub.workspace, name, harness })
+export async function scaffoldEntity({ name, harness, model = '' }) {
+  const created = await call('entity.scaffold', {
+    workspace: hub.workspace,
+    name,
+    harness,
+    model,
+  })
   await loadEntities(hub.workspace)
   return created
 }

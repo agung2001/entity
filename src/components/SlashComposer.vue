@@ -10,6 +10,8 @@ import { slashMenu } from '@/stores/hub'
 const props = defineProps({
   agent: { type: Object, required: true },
   placeholder: { type: String, default: 'Ask anything, or type / for a skill' },
+  /* a thread answers one turn at a time; the composer waits for it */
+  disabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['send'])
 
@@ -21,6 +23,7 @@ const input = ref(null)
 const open = computed(() => menu.value.length > 0)
 
 function refresh() {
+  if (props.disabled) return
   menu.value = slashMenu(draft.value, props.agent)
   if (active.value > menu.value.length - 1) active.value = 0
 }
@@ -30,6 +33,7 @@ function closeMenu() {
 }
 
 function submit() {
+  if (props.disabled) return
   const text = draft.value.trim()
   if (!text) return
   emit('send', text)
@@ -103,12 +107,15 @@ function onBlur() {
           autocomplete="off"
           spellcheck="false"
           aria-label="Message"
+          :disabled="disabled"
           @input="refresh"
           @keydown="onKey"
           @blur="onBlur"
         />
       </label>
-      <button class="go" type="submit">Send</button>
+      <button class="go" type="submit" :disabled="disabled">
+        {{ disabled ? 'Working…' : 'Send' }}
+      </button>
     </form>
   </div>
 </template>

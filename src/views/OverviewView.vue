@@ -4,15 +4,26 @@ import { useRouter } from 'vue-router'
 import AskConsole from '@/components/AskConsole.vue'
 import EntityActions from '@/components/EntityActions.vue'
 import EntityMark from '@/components/EntityMark.vue'
+import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
-import { ago, hub, openDrawer, openSettings, problemCount } from '@/stores/hub'
-import { runs } from '@/stores/runs'
+import {
+  ago,
+  ensureChats,
+  harnessById,
+  hub,
+  machineById,
+  openDrawer,
+  openSettings,
+  problemCount,
+  snippet,
+} from '@/stores/hub'
 import { loadHosts, workspaces } from '@/stores/workspaces'
 
 const router = useRouter()
 
 onMounted(() => {
   if (!workspaces.hosts.length) loadHosts()
+  ensureChats()
 })
 
 const running = computed(() => hub.agents.filter((a) => a.status === 'running').length)
@@ -27,7 +38,18 @@ const agentsOn = (machineId) => hub.agents.filter((a) => a.machines.includes(mac
 const dotState = (status) =>
   ({ running: 'live', idle: 'idle', sleep: 'sleep', error: 'fail' })[status] || 'idle'
 
-const recent = computed(() => (runs.history || []).slice(0, 5))
+const recentThreads = computed(() => (hub.chat.summaries || []).slice(0, 15))
+
+const machineLabel = (id) => machineById(id)?.label || id
+
+const lastChat = (name) => {
+  const thread = hub.chat.summaries.find((item) => item.entity === name)
+  return thread ? ago(thread.updatedAt) : 'never'
+}
+
+function openChatThread(id) {
+  router.push({ name: 'chat', query: { thread: id } })
+}
 
 function openFromKeyboard(e, id) {
   if (e.key === 'Enter' || e.key === ' ') {
@@ -93,7 +115,7 @@ function openFromKeyboard(e, id) {
       <button class="machine add-machine" type="button" @click="openSettings('machines')">
         <div class="row1"><span class="nm">Attach a machine</span></div>
         <p class="spec">From ~/.ssh/config</p>
-        <div class="foot"><span>workspace scope</span><span>local only runs today</span></div>
+        <div class="foot"><span>workspace scope</span><span>local only today</span></div>
       </button>
       <p v-if="workspaces.error" class="machine-note">{{ workspaces.error }}</p>
     </div>
@@ -105,7 +127,7 @@ function openFromKeyboard(e, id) {
     <div class="tbl">
       <div class="tr th">
         <span>Entity</span><span>State</span><span class="col-machines">Machines</span>
-        <span class="col-skills">Skills</span><span class="col-last">Last run</span>
+        <span class="col-skills">Skills</span><span class="col-last">Last chat</span>
         <span class="col-actions">Actions</span>
       </div>
       <div
@@ -133,13 +155,18 @@ function openFromKeyboard(e, id) {
           <span class="state" :data-s="dotState(a.status)"><i></i>{{ a.status }}</span>
         </span>
         <span class="col-machines">
+          <span class="chipm chipm--harness">
+            <HarnessIcon :name="a.harness" :size="10" />{{ a.harnessLabel }}
+          </span>
           <template v-if="a.machines.length">
-            <span v-for="m in a.machines" :key="m" class="chipm">{{ m }}</span>
+            <span v-for="m in a.machines" :key="m" class="chipm">
+              <MachineIcon :size="10" />{{ machineLabel(m) }}
+            </span>
           </template>
           <span v-else class="unplaced">nowhere</span>
         </span>
         <span class="num col-skills">{{ a.skills.length }}</span>
-        <span class="last col-last">{{ a.last }}</span>
+        <span class="last col-last">{{ lastChat(a.name) }}</span>
         <EntityActions :entity="a" />
       </div>
       <div
@@ -152,16 +179,36 @@ function openFromKeyboard(e, id) {
     </div>
 
     <div class="log">
-      <div class="sec-head"><h2>Runs</h2><span class="meta">newest first</span></div>
+      <div class="sec-head">
+        <h2>Conversations</h2>
+        <span class="meta">
+          newest first ·
+          <router-link to="/chat">{{ recentThreads.length ? 'all threads' : 'open chat' }}</router-link>
+        </span>
+      </div>
       <ol>
-        <li v-for="run in recent" :key="run.id">
-          <time>{{ ago(run.startedAt) }}</time>
-          <span class="who"><EntityMark mini :entity="run.entity" />{{ run.entity }}</span>
-          <span class="what"><b>{{ run.status }}</b> · {{ run.harness }}</span>
-          <span class="where">exit {{ run.exitCode ?? '—' }}</span>
+        <li
+          v-for="t in recentThreads"
+          :key="t.id"
+          class="log-row"
+          tabindex="0"
+          role="button"
+          @click="openChatThread(t.id)"
+          @keydown.enter="openChatThread(t.id)"
+          @keydown.space.prevent="openChatThread(t.id)"
+        >
+          <time>{{ ago(t.updatedAt) }}</time>
+          <span class="who"><EntityMark mini :entity="t.entity" />{{ t.entity }}</span>
+          <span class="what"><b>{{ snippet(t.preview) || 'New thread' }}</b></span>
+          <span class="where">
+            <MachineIcon :size="10" />{{ machineLabel(t.machine) }}
+            <span aria-hidden="true">·</span>
+            <HarnessIcon :name="t.harness" :size="10" />{{ harnessById(t.harness).label }}
+          </span>
         </li>
-        <li v-if="!recent.length" class="log-empty">
-          Nothing has run in this workspace yet. Open an entity and use its Run tab.
+        <li v-if="!recentThreads.length" class="log-empty">
+          No conversations yet. Open an entity and start a chat.
+          <router-link to="/entities">Go to entities</router-link>
         </li>
       </ol>
     </div>

@@ -544,15 +544,23 @@ function start() {
   raf = requestAnimationFrame(tick)
 }
 
-/** Mount a mark into an element. Safe to call twice on the same element. */
-export function hydrateMark(el, { mini = false, hop = false, mark = markSettings } = {}) {
+/**
+ * Mount a mark into an element. Safe to call twice on the same element.
+ * `badge` is off for the brand mark: the logo is a character, not an emoji.
+ */
+export function hydrateMark(
+  el,
+  { mini = false, hop = false, mark = markSettings, badge = true } = {},
+) {
   if (!el || el.dataset.ready === '1') return
   el.dataset.ready = '1'
   el.innerHTML = SVG
-  const badge = document.createElement('span')
-  badge.className = 'mood'
-  badge.setAttribute('aria-hidden', 'true')
-  el.appendChild(badge)
+  if (badge) {
+    const pin = document.createElement('span')
+    pin.className = 'mood'
+    pin.setAttribute('aria-hidden', 'true')
+    el.appendChild(pin)
+  }
   applyMark(el, mark)
 
   const idx = seq++

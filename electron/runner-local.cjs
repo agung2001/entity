@@ -20,23 +20,40 @@ const MAX_RUNS_SCANNED = 400
 
 /* Each harness takes instructions differently. Only claude and pi have a real
    system prompt; the rest get the file prepended to the prompt text. */
-function invocation(harness, instructions, prompt, mcpFile, strict) {
+function invocation(harness, instructions, prompt, mcpFile, strict, model = '') {
   const preface = `${instructions.trim()}\n\n---\n\n${prompt}`
+  const chosen = String(model || '').trim()
   switch (harness) {
     case 'claude': {
       const argv = ['-p', '--append-system-prompt', instructions]
+      if (chosen) argv.push('--model', chosen)
       if (mcpFile) argv.push('--mcp-config', mcpFile)
       if (mcpFile && strict) argv.push('--strict-mcp-config')
       return { cmd: 'claude', argv, stdin: prompt, system: true }
     }
-    case 'pi':
-      return { cmd: 'pi', argv: ['-p', '--append-system-prompt', instructions], stdin: prompt, system: true }
-    case 'opencode':
-      return { cmd: 'opencode', argv: ['run'], stdin: preface, system: false }
-    case 'codex':
-      return { cmd: 'codex', argv: ['exec', '-'], stdin: preface, system: false }
-    case 'gemini':
-      return { cmd: 'gemini', argv: ['-p'], stdin: preface, system: false }
+    case 'pi': {
+      const argv = ['-p', '--append-system-prompt', instructions]
+      if (chosen) argv.push('--model', chosen)
+      return { cmd: 'pi', argv, stdin: prompt, system: true }
+    }
+    case 'opencode': {
+      /* `opencode run` takes the message as a positional argument */
+      const argv = ['run']
+      if (chosen) argv.push('-m', chosen)
+      argv.push(preface)
+      return { cmd: 'opencode', argv, stdin: '', system: false }
+    }
+    case 'codex': {
+      const argv = ['exec', '-', '--skip-git-repo-check']
+      if (chosen) argv.push('-m', chosen)
+      return { cmd: 'codex', argv, stdin: preface, system: false }
+    }
+    case 'gemini': {
+      /* `-p/--prompt` is the prompt value; stdin would duplicate it */
+      const argv = ['-p', preface]
+      if (chosen) argv.push('-m', chosen)
+      return { cmd: 'gemini', argv, stdin: '', system: false }
+    }
     default:
       throw new Error(`The harness "${harness}" has no known invocation.`)
   }
@@ -260,7 +277,14 @@ function createRunner({ emit = () => {} } = {}) {
       run.mcpFile = written.file
     }
 
-    const spec = invocation(entity.harness, entity.instructions, String(prompt), mcpFile, record.mcpStrict)
+    const spec = invocation(
+      entity.harness,
+      entity.instructions,
+      String(prompt),
+      mcpFile,
+      record.mcpStrict,
+      entity.model,
+    )
     locks.set(key, runId)
     active.set(runId, run)
 
