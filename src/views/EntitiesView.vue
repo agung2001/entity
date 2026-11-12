@@ -176,7 +176,7 @@ async function create() {
 
     <div v-if="list.length" class="edir-table">
       <div class="edir-head-row">
-        <span>Entity</span><span>State</span><span>Machines</span><span>Skills</span><span>Conversations</span><span></span>
+        <span>Entity</span><span>State</span><span>Machines</span><span>Conversations</span><span class="edir-actions-head">Actions</span>
       </div>
       <template v-for="a in list" :key="a.id">
         <div
@@ -203,7 +203,6 @@ async function create() {
             <span v-for="m in a.machines" :key="m" class="chipm"><MachineIcon :size="10" />{{ machineLabel(m) }}</span>
             <span v-if="!a.machines.length" class="unplaced">nowhere</span>
           </span>
-          <span class="num">{{ a.skills.length }}</span>
           <button
             class="edir-thrcell"
             type="button"

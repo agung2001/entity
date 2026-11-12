@@ -18,21 +18,265 @@ const U = 4
 const N = 9
 const O = -18
 
-const FACE = [
-  '011111110',
-  '111111111',
-  '111111111',
-  '111111111',
-  '111111111',
-  '111111111',
-  '111111111',
-  '111111111',
-  '011111110',
-]
 const EYES = [
   [2, 3],
   [5, 3],
 ]
+
+/**
+ * Twenty-five silhouettes, all on the same 9 × 9 pixel field so the face,
+ * blink, gaze and breathing stay intact. They are hand-drawn masks rather than
+ * vector paths: a missing pixel is as meaningful as a filled one, and an arch
+ * or a sparkle can keep a hole without changing the animation pipeline.
+ */
+export const SHAPES = [
+  {
+    id: 'squircle',
+    name: 'Squircle',
+    /* The original nine-row face. The logo and every entity that never picked
+       a silhouette keep exactly the shape and animation they had before the
+       shape picker existed. */
+    mask: [
+      '011111110', '111111111', '111111111', '111111111', '111111111',
+      '111111111', '111111111', '111111111', '011111110',
+    ],
+  },
+  {
+    id: 'blob',
+    name: 'Blob',
+    mask: [
+      '001111000', '011111100', '111111110', '111111111', '111111111',
+      '111111110', '111111100', '011111000', '001110000',
+    ],
+  },
+  {
+    id: 'pebble',
+    name: 'Pebble',
+    mask: [
+      '000000000', '001111000', '011111100', '111111110', '111111111',
+      '111111110', '011111100', '001111000', '000000000',
+    ],
+  },
+  {
+    id: 'bean',
+    name: 'Bean',
+    mask: [
+      '001110000', '011111100', '111111110', '111111110', '111111110',
+      '111111100', '111111000', '011110000', '001100000',
+    ],
+  },
+  {
+    id: 'egg',
+    name: 'Egg',
+    mask: [
+      '000111000', '001111100', '011111110', '011111110', '111111110',
+      '111111110', '111111100', '011111100', '001111000',
+    ],
+  },
+  {
+    id: 'tablet',
+    name: 'Tablet',
+    mask: [
+      '000000000', '011111110', '011111110', '011111110', '011111110',
+      '011111110', '011111110', '011111110', '000000000',
+    ],
+  },
+  {
+    id: 'capsule',
+    name: 'Capsule',
+    mask: [
+      '000000000', '001111000', '011111110', '111111111', '111111111',
+      '111111111', '011111110', '001111000', '000000000',
+    ],
+  },
+  {
+    id: 'cylinder',
+    name: 'Cylinder',
+    mask: [
+      '000000000', '001111100', '011111110', '011111110', '011111110',
+      '011111110', '011111110', '001111100', '000000000',
+    ],
+  },
+  {
+    id: 'hex',
+    name: 'Hex',
+    mask: [
+      '000111000', '001111100', '011111110', '111111111', '111111111',
+      '111111111', '011111110', '001111100', '000111000',
+    ],
+  },
+  {
+    id: 'gem',
+    name: 'Gem',
+    mask: [
+      '000011000', '000111100', '001111110', '011111110', '011111110',
+      '001111100', '000111000', '000010000', '000000000',
+    ],
+  },
+  {
+    id: 'crystal',
+    name: 'Crystal',
+    mask: [
+      '000011000', '000111100', '001111110', '001111110', '011111110',
+      '011111110', '001111110', '000111100', '000011000',
+    ],
+  },
+  {
+    id: 'wedge',
+    name: 'Wedge',
+    mask: [
+      '000010000', '000111000', '001111100', '011111110', '011111110',
+      '111111110', '111111110', '011111110', '001111100',
+    ],
+  },
+  {
+    id: 'shield',
+    name: 'Shield',
+    mask: [
+      '000000000', '111111111', '111111111', '111111111', '111111111',
+      '011111110', '011111110', '001111100', '000111000',
+    ],
+  },
+  {
+    id: 'dome',
+    name: 'Dome',
+    mask: [
+      '000000000', '001111100', '011111110', '111111111', '111111111',
+      '111111111', '111111111', '111111111', '000000000',
+    ],
+  },
+  {
+    id: 'arch',
+    name: 'Arch',
+    mask: [
+      '000000000', '001111100', '011111110', '111111111', '111111111',
+      '111001111', '111001111', '111001111', '111001111',
+    ],
+  },
+  {
+    id: 'cloud',
+    name: 'Cloud',
+    mask: [
+      '000110000', '001111100', '011111110', '111111111', '111111111',
+      '111111111', '111111111', '011111110', '001111000',
+    ],
+  },
+  {
+    id: 'teardrop',
+    name: 'Drop',
+    mask: [
+      '000010000', '000111000', '001111100', '001111100', '011111110',
+      '011111110', '011111110', '001111100', '000111000',
+    ],
+  },
+  {
+    id: 'leaf',
+    name: 'Leaf',
+    mask: [
+      '000110000', '001111000', '001111100', '011111110', '011111110',
+      '011111100', '001111000', '000110000', '000000000',
+    ],
+  },
+  {
+    id: 'square',
+    name: 'Square',
+    mask: [
+      '000000000', '011111110', '011111110', '011111110', '011111110',
+      '011111110', '011111110', '011111110', '000000000',
+    ],
+  },
+  {
+    id: 'sparkle',
+    name: 'Sparkle',
+    mask: [
+      '000010000', '000111000', '001111100', '111111111', '111111111',
+      '111111111', '001111100', '000111000', '000010000',
+    ],
+  },
+  {
+    id: 'clover',
+    name: 'Clover',
+    mask: [
+      '001100110', '011111110', '111111111', '111111111', '011111110',
+      '011111110', '111111111', '111111111', '001100110',
+    ],
+  },
+  {
+    id: 'flower',
+    name: 'Flower',
+    mask: [
+      '000010000', '001111100', '011011110', '111111111', '111111111',
+      '111111111', '011011110', '001111100', '000010000',
+    ],
+  },
+  {
+    id: 'heart',
+    name: 'Heart',
+    mask: [
+      '000000000', '001111100', '011111110', '111111111', '111111111',
+      '011111110', '001111100', '000111000', '000010000',
+    ],
+  },
+  {
+    id: 'house',
+    name: 'House',
+    mask: [
+      '000010000', '000111000', '001111100', '011111110', '111111110',
+      '111111110', '111111110', '111111110', '000000000',
+    ],
+  },
+  {
+    id: 'star',
+    name: 'Star',
+    mask: [
+      '000010000', '000111000', '001111100', '111111111', '011111110',
+      '001111100', '001111100', '011101110', '010000010',
+    ],
+  },
+  {
+    id: 'pentagon',
+    name: 'Pentagon',
+    mask: [
+      '000010000', '000111000', '001111100', '011111110', '111111111',
+      '111111111', '111111111', '011111110', '000000000',
+    ],
+  },
+  {
+    id: 'octagon',
+    name: 'Octagon',
+    mask: [
+      '001111100', '011111110', '111111111', '111111111', '111111111',
+      '111111111', '111111111', '011111110', '001111100',
+    ],
+  },
+  {
+    id: 'diamond',
+    name: 'Diamond',
+    mask: [
+      '000010000', '000111000', '001111100', '011111110', '111111111',
+      '011111110', '001111100', '000111000', '000010000',
+    ],
+  },
+  {
+    id: 'bowl',
+    name: 'Bowl',
+    mask: [
+      '000000000', '111111111', '111111111', '111111111', '111111111',
+      '011111110', '001111100', '000111000', '000000000',
+    ],
+  },
+  {
+    id: 'tag',
+    name: 'Tag',
+    mask: [
+      '000000000', '111111100', '111111110', '111111111', '111111110',
+      '111111100', '011111000', '001110000', '000100000',
+    ],
+  },
+]
+
+const DEFAULT_SHAPE = 'squircle'
+export const shapeById = (id) => SHAPES.find((shape) => shape.id === id) || SHAPES[0]
 
 /* One cadence for every mark. How far the gaze travels, how often it re-aims,
    how often the lids close, how greedy a wink is and how slow the breath is. */
@@ -218,22 +462,70 @@ const EMOJI_BY_GLYPH = new Map(
 )
 
 export const COLORS = [
-  { id: 'sun', name: 'Sun', v: 'var(--accent)', h: 78 },
-  { id: 'ember', name: 'Ember', v: 'oklch(72% 0.16 42)', h: 42 },
-  { id: 'lime', name: 'Lime', v: 'oklch(85% 0.17 128)', h: 128 },
-  { id: 'mint', name: 'Mint', v: 'oklch(84% 0.13 175)', h: 175 },
-  { id: 'sky', name: 'Sky', v: 'oklch(80% 0.13 240)', h: 240 },
-  { id: 'orchid', name: 'Orchid', v: 'oklch(78% 0.15 310)', h: 310 },
+  { id: 'sun', name: 'Sun', v: 'var(--accent)', h: 78, hex: '#f8b956' },
+  { id: 'ember', name: 'Ember', v: 'oklch(72% 0.16 42)', h: 42, hex: '#ec8b55' },
+  { id: 'lime', name: 'Lime', v: 'oklch(85% 0.17 128)', h: 128, hex: '#cfe36f' },
+  { id: 'mint', name: 'Mint', v: 'oklch(84% 0.13 175)', h: 175, hex: '#8adfc6' },
+  { id: 'sky', name: 'Sky', v: 'oklch(80% 0.13 240)', h: 240, hex: '#8db6ed' },
+  { id: 'orchid', name: 'Orchid', v: 'oklch(78% 0.15 310)', h: 310, hex: '#d59aeb' },
 ]
+
+const clamp = (n, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, n))
+const hex2 = (n) => Math.round(clamp(n) * 255).toString(16).padStart(2, '0')
+
+/** HSL → #rrggbb. The wheel uses this; CSS custom properties accept either. */
+export function hslToHex(h, s, l) {
+  const hue = ((Number(h) % 360) + 360) % 360
+  const sat = clamp(Number(s))
+  const light = clamp(Number(l))
+  const c = (1 - Math.abs(2 * light - 1)) * sat
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1))
+  const m = light - c / 2
+  let r = 0
+  let g = 0
+  let b = 0
+  if (hue < 60) [r, g, b] = [c, x, 0]
+  else if (hue < 120) [r, g, b] = [x, c, 0]
+  else if (hue < 180) [r, g, b] = [0, c, x]
+  else if (hue < 240) [r, g, b] = [0, x, c]
+  else if (hue < 300) [r, g, b] = [x, 0, c]
+  else [r, g, b] = [c, 0, x]
+  return `#${hex2(r + m)}${hex2(g + m)}${hex2(b + m)}`
+}
+
+/** The reverse, used only to place the wheel marker on an existing colour. */
+export function hexToHsl(hex) {
+  const value = String(hex || '').replace('#', '')
+  if (!/^[0-9a-f]{6}$/i.test(value)) return { h: 78, s: 0.72, l: 0.62 }
+  const r = parseInt(value.slice(0, 2), 16) / 255
+  const g = parseInt(value.slice(2, 4), 16) / 255
+  const b = parseInt(value.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  const l = (max + min) / 2
+  let h = 0
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const s = d ? d / (1 - Math.abs(2 * l - 1)) : 0
+  return { h, s, l }
+}
 
 const STORE_KEY = 'entity.mark'
 
-export const markSettings = reactive({ mood: 'none', color: 'sun' })
+export const markSettings = reactive({ mood: 'none', color: 'sun', shape: DEFAULT_SHAPE, custom: '' })
 
 try {
   const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null')
   if (saved?.mood) markSettings.mood = saved.mood
   if (saved?.color) markSettings.color = saved.color
+  if (saved?.shape) markSettings.shape = shapeById(saved.shape).id
+  if (/^#[0-9a-f]{6}$/i.test(String(saved?.custom || ''))) markSettings.custom = saved.custom
 } catch {
   /* a bad stored value just means the defaults */
 }
@@ -246,10 +538,15 @@ export function moodById(id) {
   return { id, name: emoji?.name || 'Custom', glyph: id }
 }
 export const moodGlyph = (id) => moodById(id).glyph
-export const colorById = (id) => COLORS.find((c) => c.id === id) || COLORS[0]
+export const colorById = (id, custom = '') => {
+  if (id === 'custom' && /^#[0-9a-f]{6}$/i.test(String(custom || ''))) {
+    return { id: 'custom', name: 'Custom', v: custom, h: hexToHsl(custom).h, hex: custom }
+  }
+  return COLORS.find((c) => c.id === id) || COLORS[0]
+}
 
 function applyColor() {
-  const c = colorById(markSettings.color)
+  const c = colorById(markSettings.color, markSettings.custom)
   const root = document.documentElement
   root.style.setProperty('--mk', c.v)
   root.style.setProperty('--mk-h', String(c.h))
@@ -283,6 +580,8 @@ export function markFor(workspace, entity) {
     mark = reactive({
       mood: saved?.mood || 'none',
       color: saved?.color || 'sun',
+      shape: shapeById(saved?.shape).id,
+      custom: /^#[0-9a-f]{6}$/i.test(String(saved?.custom || '')) ? saved.custom : '',
     })
     entityMarks.set(key, mark)
   }
@@ -291,22 +590,23 @@ export function markFor(workspace, entity) {
 
 /** Colour and badge are element-local, so two entities never share a colour. */
 function applyMark(el, mark) {
-  const c = colorById(mark.color)
+  const c = colorById(mark.color, mark.custom)
   el.style.setProperty('--mk', c.v)
   el.style.setProperty('--mk-h', String(c.h))
   const badge = el.querySelector('.mood')
   if (badge) badge.textContent = moodGlyph(mark.mood)
 }
 
-const on = (r, c) => r >= 0 && r < N && c >= 0 && c < N && FACE[r].charAt(c) === '1'
+const on = (mask, r, c) =>
+  r >= 0 && r < N && c >= 0 && c < N && mask[r].charAt(c) === '1'
 
 /* Light falls from the top-left: the top row and left column are the lit
    faces, the bottom row and right column fall into the extrusion shadow. */
-function cell(r, c) {
-  const up = !on(r - 1, c)
-  const left = !on(r, c - 1)
-  const down = !on(r + 1, c)
-  const right = !on(r, c + 1)
+function cell(mask, r, c) {
+  const up = !on(mask, r - 1, c)
+  const left = !on(mask, r, c - 1)
+  const down = !on(mask, r + 1, c)
+  const right = !on(mask, r, c + 1)
   if (up) return 'hi'
   if (left && !down) return 'hi'
   if (down || right || left) return 'sh'
@@ -314,18 +614,18 @@ function cell(r, c) {
 }
 
 /* Merge cells into runs so the surface has no seams and the DOM stays small. */
-function runs(d, fixed) {
+function runs(mask, d, fixed) {
   let s = ''
   for (let r = 0; r < N; r++) {
     let c = 0
     while (c < N) {
-      if (!on(r, c)) {
+      if (!on(mask, r, c)) {
         c++
         continue
       }
-      const k = fixed || cell(r, c)
+      const k = fixed || cell(mask, r, c)
       let e = c
-      while (e + 1 < N && on(r, e + 1) && (fixed || cell(r, e + 1) === k)) e++
+      while (e + 1 < N && on(mask, r, e + 1) && (fixed || cell(mask, r, e + 1) === k)) e++
       const x = O + c * U + d
       const y = O + r * U + d
       const w = (e - c + 1) * U
@@ -336,27 +636,36 @@ function runs(d, fixed) {
   return s
 }
 
-const eyes = EYES.map((p, i) => {
-  const x = O + p[0] * U
-  const y = O + p[1] * U
-  const w = U * 2
-  return (
-    '<g class="ey">' +
-    `<rect class="eye" x="${x}" y="${y}" width="${w}" height="${w}"/>` +
-    `<rect class="glint" x="${x}" y="${y}" width="${U}" height="${U}"/>` +
-    `<rect class="lid${i ? ' b' : ''}" x="${x}" y="${y}" width="${w}" height="${w}"/>` +
-    '</g>'
-  )
-}).join('')
+function eyesFor(row) {
+  return EYES.map((p, i) => {
+    const x = O + p[0] * U
+    const w = U * 2
+    return (
+      '<g class="ey">' +
+      `<rect class="eye" x="${x}" y="${O + row * U}" width="${w}" height="${w}"/>` +
+      `<rect class="glint" x="${x}" y="${O + row * U}" width="${U}" height="${U}"/>` +
+      `<rect class="lid${i ? ' b' : ''}" x="${x}" y="${O + row * U}" width="${w}" height="${w}"/>` +
+      '</g>'
+    )
+  }).join('')
+}
 
-const SVG =
-  '<svg viewBox="-21 -21 50 50" shape-rendering="crispEdges" aria-hidden="true" focusable="false">' +
-  '<g class="hd"><g class="bd">' +
-  runs(U * 2, 'dx2') +
-  runs(U, 'dx1') +
-  runs(0) +
-  eyes +
-  '</g></g></svg>'
+const svgCache = new Map()
+function svgFor(shapeId) {
+  const shape = shapeById(shapeId)
+  if (svgCache.has(shape.id)) return svgCache.get(shape.id)
+  const mask = shape.mask
+  const svg =
+    '<svg viewBox="-21 -21 50 50" shape-rendering="crispEdges" aria-hidden="true" focusable="false">' +
+    '<g class="hd"><g class="bd">' +
+    runs(mask, U * 2, 'dx2') +
+    runs(mask, U, 'dx1') +
+    runs(mask, 0) +
+    eyesFor(3) +
+    '</g></g></svg>'
+  svgCache.set(shape.id, svg)
+  return svg
+}
 
 const reduced =
   typeof window !== 'undefined' &&
@@ -387,26 +696,45 @@ export function syncMarkBadges() {
  * Set the mark for one entity. Omitting `entity` edits the hub's brand mark.
  * Other entities are untouched: their mood and colour live in their own record.
  */
-export function setMark({ mood, color, workspace = '', entity = '' } = {}) {
+export function setMark({
+  mood,
+  color,
+  shape,
+  custom,
+  workspace = '',
+  entity = '',
+  persist = true,
+} = {}) {
   const target = entity ? markFor(workspace, entity) : markSettings
   if (mood !== undefined) target.mood = mood
   if (color) target.color = color
+  if (shape !== undefined) target.shape = shapeById(shape).id
+  if (custom !== undefined) target.custom = custom
 
   if (entity) {
-    try {
-      localStorage.setItem(
-        entityStoreKey(workspace, entity),
-        JSON.stringify({ mood: target.mood, color: target.color }),
-      )
-    } catch {
-      /* private mode — the setting still holds for this session */
+    if (persist) {
+      try {
+        localStorage.setItem(
+          entityStoreKey(workspace, entity),
+          JSON.stringify({
+            mood: target.mood,
+            color: target.color,
+            shape: target.shape,
+            custom: target.custom,
+          }),
+        )
+      } catch {
+        /* private mode — the setting still holds for this session */
+      }
     }
   } else {
     applyColor()
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(markSettings))
-    } catch {
-      /* private mode — the setting still holds for this session */
+    if (persist) {
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(markSettings))
+      } catch {
+        /* private mode — the setting still holds for this session */
+      }
     }
   }
   syncMarkBadges()
@@ -555,11 +883,11 @@ function start() {
  */
 export function hydrateMark(
   el,
-  { mini = false, hop = false, animate = false, mark = markSettings, badge = true } = {},
+  { mini = false, hop = false, animate = false, mark = markSettings, shape = '', badge = true } = {},
 ) {
   if (!el || el.dataset.ready === '1') return
   el.dataset.ready = '1'
-  el.innerHTML = SVG
+  el.innerHTML = svgFor(shape || mark.shape || DEFAULT_SHAPE)
   if (badge) {
     const pin = document.createElement('span')
     pin.className = 'mood'

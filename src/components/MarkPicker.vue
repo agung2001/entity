@@ -1,15 +1,19 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import {
   COLORS,
   EMOJI_GROUPS,
   MOODS,
+  SHAPES,
   colorById,
+  hexToHsl,
+  hslToHex,
   markFor,
   moodById,
   moodGlyph,
   setMark,
+  shapeById,
 } from '@/composables/entityMark'
 import { hub } from '@/stores/hub'
 
@@ -32,11 +36,51 @@ const query = ref('')
 const group = ref('all')
 const root = ref(null)
 const searchInput = ref(null)
+const wheel = ref(null)
+const dragging = ref(false)
+const wheelHue = ref(78)
+const wheelSat = ref(0.78)
+const wheelLight = ref(0.62)
 
 const mark = computed(() => markFor(hub.workspace, props.entity))
 const activeGlyph = computed(() => moodGlyph(mark.value.mood))
+const activeShape = computed(() => shapeById(mark.value.shape))
+const currentColor = computed(() => colorById(mark.value.color, mark.value.custom))
 const sub = computed(
-  () => `${moodById(mark.value.mood).name} · ${colorById(mark.value.color).name}`,
+  () =>
+    `${activeShape.value.name} · ${moodById(mark.value.mood).name} · ${currentColor.value.name}`,
+)
+const wheelHex = computed(() => hslToHex(wheelHue.value, wheelSat.value, wheelLight.value))
+const wheelDot = computed(() => {
+  const radians = (wheelHue.value * Math.PI) / 180
+  const radius = wheelSat.value * 43
+  return {
+    left: `${50 + Math.cos(radians) * radius}%`,
+    top: `${50 + Math.sin(radians) * radius}%`,
+    background: wheelHex.value,
+  }
+})
+
+function syncWheel() {
+  if (dragging.value) return
+  if (mark.value.color === 'custom' && mark.value.custom) {
+    const hsl = hexToHsl(mark.value.custom)
+    wheelHue.value = hsl.h
+    wheelSat.value = hsl.s
+    wheelLight.value = hsl.l
+    return
+  }
+  const preset = colorById(mark.value.color, mark.value.custom)
+  const hsl = hexToHsl(preset.hex)
+  wheelHue.value = hsl.h
+  wheelSat.value = hsl.s
+  wheelLight.value = hsl.l
+}
+
+watch(
+  () => [mark.value.color, mark.value.custom],
+  syncWheel,
+  { immediate: true },
 )
 
 const groups = computed(() => [
@@ -78,6 +122,60 @@ function chooseMood(id) {
 function chooseEmoji(item) {
   const builtin = MOODS.find((m) => m.glyph === item.glyph)
   chooseMood(builtin ? builtin.id : item.glyph)
+}
+
+function chooseShape(id) {
+  setMark({ shape: id, workspace: hub.workspace, entity: props.entity })
+}
+
+function applyWheel(persist = true) {
+  setMark({
+    color: 'custom',
+    custom: wheelHex.value,
+    workspace: hub.workspace,
+    entity: props.entity,
+    persist,
+  })
+}
+
+function setFromWheel(event) {
+  const el = wheel.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const x = event.clientX - (rect.left + rect.width / 2)
+  const y = event.clientY - (rect.top + rect.height / 2)
+  const max = rect.width / 2 - 8
+  wheelHue.value = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
+  wheelSat.value = Math.min(1, Math.max(0, Math.hypot(x, y) / max))
+  applyWheel(false)
+}
+
+function onWheelDown(event) {
+  event.preventDefault()
+  dragging.value = true
+  wheel.value?.setPointerCapture?.(event.pointerId)
+  setFromWheel(event)
+}
+
+function onWheelMove(event) {
+  if (!dragging.value) return
+  setFromWheel(event)
+}
+
+function onWheelUp(event) {
+  if (!dragging.value) return
+  dragging.value = false
+  wheel.value?.releasePointerCapture?.(event.pointerId)
+  applyWheel(true)
+}
+
+function onLight(event) {
+  wheelLight.value = Number(event.target.value) / 100
+  applyWheel(false)
+}
+
+function onLightCommit() {
+  applyWheel(true)
 }
 
 function onDocumentClick(e) {
@@ -124,7 +222,7 @@ onBeforeUnmount(() => {
       type="button"
       :aria-expanded="open ? 'true' : 'false'"
       aria-controls="mkpop"
-      aria-label="Entity mark — mood and colour"
+      aria-label="Entity mark — shape, mood and colour"
       @click="toggle"
     >
       <EntityMark :entity="entity" />
@@ -137,6 +235,24 @@ onBeforeUnmount(() => {
           <h3>Entity mark</h3>
           <p>{{ sub }}</p>
         </div>
+      </div>
+
+      <p class="lbl">Shape</p>
+      <div class="mk-shapes" role="radiogroup" aria-label="Shape" @keydown="arrowNav($event, '.mk-shape')">
+        <button
+          v-for="s in SHAPES"
+          :key="s.id"
+          class="mk-shape"
+          type="button"
+          role="radio"
+          :aria-checked="activeShape.id === s.id ? 'true' : 'false'"
+          :aria-label="s.name"
+          :title="s.name"
+          @click="chooseShape(s.id)"
+        >
+          <EntityMark mini :entity="entity" :shape="s.id" :badge="false" />
+          <span>{{ s.name }}</span>
+        </button>
       </div>
 
       <div class="mk-mood-head">
@@ -263,11 +379,47 @@ onBeforeUnmount(() => {
         ></button>
       </div>
 
+      <div class="mk-wheel-row">
+        <div
+          ref="wheel"
+          class="mk-wheel"
+          role="slider"
+          tabindex="0"
+          aria-label="Custom colour wheel"
+          aria-valuemin="0"
+          aria-valuemax="360"
+          :aria-valuenow="Math.round(wheelHue)"
+          @pointerdown="onWheelDown"
+          @pointermove="onWheelMove"
+          @pointerup="onWheelUp"
+          @pointercancel="onWheelUp"
+        >
+          <span class="mk-wheel-dot" :style="wheelDot"></span>
+        </div>
+        <div class="mk-wheel-side">
+          <span class="mk-wheel-hex">{{ wheelHex }}</span>
+          <label class="mk-light">
+            <span>Light</span>
+            <input
+              type="range"
+              min="20"
+              max="85"
+              :value="Math.round(wheelLight * 100)"
+              :style="{ accentColor: wheelHex }"
+              aria-label="Colour lightness"
+              @input="onLight"
+              @change="onLightCommit"
+            />
+          </label>
+          <button class="mk-wheel-use" type="button" @click="applyWheel(true)">Use colour</button>
+        </div>
+      </div>
+
       <p class="note">
         {{
           entity
-            ? 'This mood and colour belong to this entity only. Other entities keep their own.'
-            : 'The hub brand mark. Entities keep their own mood and colour.'
+            ? 'Shape, mood and colour belong to this entity only. Other entities keep their own.'
+            : 'The hub brand mark. Entities keep their own shape, mood and colour.'
         }}
       </p>
     </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MarkPicker from '@/components/MarkPicker.vue'
 import HarnessPaths from '@/components/HarnessPaths.vue'
@@ -32,6 +32,8 @@ const router = useRouter()
 const saving = ref(false)
 const form = reactive({ harness: '', model: '', instructions: '' })
 const seeding = ref(false)
+const configOpen = ref(false)
+const configRoot = ref(null)
 
 const agent = computed(
   () => agentById(route.params.name) || hub.agents.find((item) => item.name === route.params.name),
@@ -86,6 +88,7 @@ const dirty = computed(
 
 function seedForm() {
   if (!agent.value) return
+  configOpen.value = false
   seeding.value = true
   form.harness = agent.value.harness || 'claude'
   form.model = agent.value.model || ''
@@ -136,11 +139,24 @@ async function save() {
   }
 }
 
+function toggleConfig() {
+  configOpen.value = !configOpen.value
+}
+
+function onDocumentClick(event) {
+  if (!configOpen.value || configRoot.value?.contains(event.target)) return
+  if (event.target instanceof Element && event.target.closest('.entp-fact-btn')) return
+  configOpen.value = false
+}
+
 onMounted(() => {
   ensureChats()
   loadHarnesses().catch(() => {})
   loadModels(form.harness).catch(() => {})
+  document.addEventListener('click', onDocumentClick)
 })
+
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 async function chat() {
   if (!agent.value) return
@@ -272,49 +288,6 @@ async function copyPath() {
 
           <section class="entp-sec">
             <div class="entp-sec-head">
-              <h2>Configuration</h2>
-              <span class="n">defaults for new threads</span>
-            </div>
-            <div class="entp-config">
-              <div class="fld">
-                <span class="lbl">Default harness</span>
-                <PickMenu
-                  class="field-select"
-                  head="Default harness"
-                  icons="harness"
-                  :options="harnessOptions"
-                  :model-value="form.harness"
-                  :disabled="saving"
-                  @update:model-value="form.harness = $event"
-                />
-              </div>
-              <div class="fld">
-                <span class="lbl">Default model</span>
-                <ModelInput
-                  :model-value="form.model"
-                  :options="modelOptions"
-                  :loading="modelLoading"
-                  :disabled="saving"
-                  label="Default model"
-                  :placeholder="modelData?.default || 'harness default'"
-                  @update:model-value="form.model = $event"
-                />
-              </div>
-            </div>
-            <HarnessPaths :active="form.harness" />
-            <div class="entp-savebar">
-              <span v-if="dirty" class="entp-dirty"><i></i> Unsaved changes</span>
-              <span v-else class="entp-saved">Configuration is saved with the entity file.</span>
-              <span class="r">
-                <button class="btn btn-ink btn-sm" type="button" :disabled="saving || !dirty" @click="save">
-                  {{ saving ? 'Saving…' : 'Save entity' }}
-                </button>
-              </span>
-            </div>
-          </section>
-
-          <section class="entp-sec">
-            <div class="entp-sec-head">
               <h2>Skills</h2>
               <span class="n">{{ declaredSkills.length }} declared · {{ hub.skills.length }} in this workspace</span>
             </div>
@@ -339,14 +312,83 @@ async function copyPath() {
         <aside class="entp-rail">
           <p class="entp-rail-h">This entity</p>
           <dl class="entp-facts">
-            <div><dt>Harness</dt><dd>{{ agent.harnessLabel }}</dd></div>
-            <div><dt>Model</dt><dd class="mono">{{ agent.model || 'default' }}</dd></div>
+            <div>
+              <dt>Harness</dt>
+              <dd>
+                <button
+                  class="entp-fact-btn"
+                  type="button"
+                  :aria-expanded="configOpen ? 'true' : 'false'"
+                  title="Change the default harness"
+                  @click.stop="toggleConfig"
+                >
+                  {{ agent.harnessLabel }}
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 4l3 3 3-3" /></svg>
+                </button>
+              </dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd class="mono">
+                <button
+                  class="entp-fact-btn"
+                  type="button"
+                  :aria-expanded="configOpen ? 'true' : 'false'"
+                  title="Change the default model"
+                  @click.stop="toggleConfig"
+                >
+                  {{ agent.model || 'default' }}
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 4l3 3 3-3" /></svg>
+                </button>
+              </dd>
+            </div>
             <div><dt>Machines</dt><dd>{{ agent.machines.length ? agent.machines.map(machineLabel).join(', ') : 'nowhere' }}</dd></div>
             <div><dt>Directory</dt><dd class="mono" :title="agent.dir">{{ agent.dir || 'not set' }}</dd></div>
             <div><dt>MCP</dt><dd>{{ agent.mcp.length ? agent.mcp.join(', ') : 'none' }}</dd></div>
             <div><dt>File</dt><dd class="mono" :title="agent.displayPath">{{ agent.displayPath }}</dd></div>
             <div><dt>Last chat</dt><dd>{{ lastChat }}</dd></div>
           </dl>
+
+          <div v-if="configOpen" ref="configRoot" class="entp-config-pop" @click.stop>
+            <div class="entp-config-head">
+              <h3>Configuration</h3>
+              <button class="x" type="button" aria-label="Close configuration" @click="configOpen = false">
+                <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+              </button>
+            </div>
+            <div class="fld">
+              <span class="lbl">Default harness</span>
+              <PickMenu
+                class="field-select"
+                head="Default harness"
+                icons="harness"
+                :options="harnessOptions"
+                :model-value="form.harness"
+                :disabled="saving"
+                @update:model-value="form.harness = $event"
+              />
+            </div>
+            <div class="fld">
+              <span class="lbl">Default model</span>
+              <ModelInput
+                :model-value="form.model"
+                :options="modelOptions"
+                :loading="modelLoading"
+                :disabled="saving"
+                label="Default model"
+                :placeholder="modelData?.default || 'harness default'"
+                @update:model-value="form.model = $event"
+              />
+            </div>
+            <HarnessPaths :active="form.harness" />
+            <div class="entp-config-foot">
+              <span v-if="dirty" class="entp-dirty"><i></i> Unsaved changes</span>
+              <span v-else class="entp-saved">Saved with the entity file.</span>
+              <button class="btn btn-ink btn-sm" type="button" :disabled="saving || !dirty" @click="save">
+                {{ saving ? 'Saving…' : 'Save entity' }}
+              </button>
+            </div>
+          </div>
           <div class="entp-rail-actions">
             <button type="button" @click="copyPath">Copy file path <span>file</span></button>
             <button type="button" @click="chat">Open chat <span>↵</span></button>

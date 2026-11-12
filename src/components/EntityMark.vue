@@ -17,6 +17,8 @@ const props = defineProps({
   hop: { type: Boolean, default: false },
   entity: { type: String, default: '' },
   workspace: { type: String, default: '' },
+  shape: { type: String, default: '' },
+  badge: { type: Boolean, default: true },
 })
 
 const el = ref(null)
@@ -29,8 +31,9 @@ function mount() {
     hop: props.hop,
     animate: props.animate,
     mark: mark.value,
+    shape: props.shape,
     /* the brand mark is a logo; entity marks keep their mood badge */
-    badge: Boolean(props.entity),
+    badge: props.badge && Boolean(props.entity),
   })
 }
 
@@ -43,7 +46,10 @@ function remount() {
 }
 
 onMounted(mount)
-watch([() => props.entity, () => props.workspace, () => hub.workspace], remount)
+watch(
+  [() => props.entity, () => props.workspace, () => props.shape, () => mark.value.shape, () => hub.workspace],
+  remount,
+)
 onBeforeUnmount(() => releaseMark(el.value))
 </script>
 

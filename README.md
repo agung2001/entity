@@ -286,7 +286,7 @@ src/
     HarnessIcon.vue   brand marks for the skill filter pills
     MachineIcon.vue   the server glyph on machine cards
     SkillIcon.vue     the medal glyph on skill cards
-    MarkPicker.vue    mood + colour, opened on the entity page
+    MarkPicker.vue    shape + mood + colour, opened on the entity page
     AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
     MessageList / MessageBody / SlashComposer
@@ -304,7 +304,7 @@ src/
     CommandPalette.vue    categorized search: workspaces, chat, entities, skills, machines, activity
     ToastHost.vue
   composables/
-    entityMark.js     the mark's renderer + one shared rAF loop
+    entityMark.js     30 pixel silhouettes, renderer, colour wheel + one shared rAF loop
     useDesktop.js     wrapper over the preload bridge
     localBridge.js    `call()` and `onRunEvent()`: IPC in Electron, HTTP+SSE in a browser
   stores/
@@ -351,12 +351,15 @@ history mode has no server to resolve a path on reload.
 | `#/workspace` | Workspace tabs: General, Members, Skills, MCP, Machines, Activity |
 | `#/account` | Account profile and MCP server management |
 
-The rail keeps Overview, Chat, Entities and Artifacts in the main list.
-Skills, MCP, Machines and Activity live as individual tabs on `#/workspace`, so
-the everyday surface stays small. Click the entity logo to fold or unfold the
-rail (`⌘B` still works), and the light/dark switch sits beside the topbar search
-(`⌘⇧L` in the desktop app, `⌥⇧L` in a browser). New thread is `⌘N` in the
-desktop app and `⌥⇧N` in a browser.
+The rail keeps Overview, Entities and Artifacts in the main list, then folds
+the chat history underneath them: one animated mark, title, state and menu per
+thread. There is no separate Chat page column and no Chat nav item. Skills, MCP,
+Machines and Activity live as individual tabs on `#/workspace`, so the everyday
+surface stays small. Click the entity logo to fold or unfold the rail (`⌘B`
+still works), drag the rail's right edge to resize it (double-click resets), and
+the light/dark switch sits beside the topbar search (`⌘⇧L` in
+the desktop app, `⌥⇧L` in a browser). New thread is a yellow topbar action;
+`⌘N` in the desktop app and `⌥⇧N` in a browser.
 
 Workspace settings are a page (`#/workspace`), not a modal: General, Members,
 Skills, MCP, Machines and Activity are tabs for the record, roster, working

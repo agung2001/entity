@@ -116,7 +116,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>
-  <div ref="root" class="model-input" :data-open="open ? '1' : '0'">
+  <div ref="root" class="model-input" :data-open="open ? '1' : '0'" :aria-busy="loading ? 'true' : undefined">
     <svg class="model-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
       <circle cx="7" cy="7" r="4.4" />
       <path d="M10.3 10.3L13.6 13.6" />
@@ -136,6 +136,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       @input="onInput"
       @keydown="onKey"
     />
+    <span v-if="loading" class="model-spin" role="status" aria-label="Loading models"></span>
     <button
       v-if="draft"
       class="model-clear"
@@ -175,7 +176,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           <path d="M2 5.4l2 2 4-4.8" fill="none" stroke="currentColor" stroke-width="1.5" />
         </svg>
       </button>
-      <p v-if="loading && !visible.length" class="pempty">Detecting models…</p>
+      <p v-if="loading && !visible.length" class="pempty pempty-loading"><span class="model-spin" aria-hidden="true"></span> Detecting models…</p>
       <p v-else-if="!visible.length" class="pempty">
         Keep typing a custom model name, or clear the search.
       </p>

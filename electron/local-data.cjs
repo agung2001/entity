@@ -472,7 +472,7 @@ function harnessSourceOf(realPath) {
  * target is gone becomes `missing: true` instead of disappearing.
  */
 function scanSkillDir(root, options = {}) {
-  const { harness = 'workspace', harnessLabel = 'Workspace', detectHarness = false } = options
+  const { harness = 'workspace', harnessLabel = 'Workspace', detectHarness = false, namesOnly = false } = options
   const items = []
   let entries
   try {
@@ -549,6 +549,24 @@ function scanSkillDir(root, options = {}) {
     }
 
     const meta = readSkillMeta(entryFile, skillName)
+    /* The slash menu only needs the reference name and harness. Reading file
+       trees for the library card can be hundreds of stats per skill, so the
+       names scan stops here instead. */
+    if (namesOnly) {
+      const itemHarness = source?.harness || harness
+      items.push({
+        id: `${itemHarness}:${meta.name}`,
+        name: meta.name,
+        harness: itemHarness,
+        harnessLabel: source?.harnessLabel || harnessLabel,
+        path: tilde(full),
+        absolutePath: full,
+        entry: path.basename(entryFile),
+        singleFile,
+        missing: false,
+      })
+      continue
+    }
     const files = singleFile ? [{ bytes: stat.size }] : walkFiles(full, { cap: 400, maxDepth: 4 })
     const bytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
     const updatedAt = (() => {
@@ -585,6 +603,39 @@ function scanSkillDir(root, options = {}) {
   }
 
   return items
+}
+
+/**
+ * A names-only scan for the composer's slash menu. It keeps the same harness
+ * roots and name resolution as the full library, but skips the file walk and
+ * byte count that the library cards need.
+ */
+function scanSkillNames() {
+  const items = []
+  const seen = new Set()
+  for (const harness of HARNESSES) {
+    for (const root of harness.roots) {
+      if (!fs.existsSync(root)) continue
+      for (const item of scanSkillDir(root, {
+        harness: harness.id,
+        harnessLabel: harness.label,
+        namesOnly: true,
+      })) {
+        const key = `${item.harness}:${item.name.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        items.push({
+          name: item.name,
+          harness: item.harness,
+          harnessLabel: item.harnessLabel,
+        })
+      }
+    }
+  }
+  items.sort(
+    (a, b) => a.name.localeCompare(b.name) || a.harnessLabel.localeCompare(b.harnessLabel),
+  )
+  return { items, count: items.length }
 }
 
 function scanSkillLibrary() {
@@ -693,6 +744,7 @@ module.exports = {
   readSshHosts,
   probeSshHost,
   scanSkillLibrary,
+  scanSkillNames,
   scanSkillDir,
   skillSources,
   harnessSourceOf,

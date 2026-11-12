@@ -26,6 +26,8 @@ export const workspaces = reactive({
   mcp: { schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true, path: '' },
   /** the machine-wide skill libraries, for the "attach" lists */
   library: null,
+  /** a names-only index for the slash menu, much cheaper than the full library */
+  skillNames: null,
   hosts: [],
   /** the optional sample entities the wizard offers */
   samples: [],
@@ -219,6 +221,32 @@ let libraryPending = null
  * tab, a `/` in the composer, or a library skill page — and the answer is cached
  * for the session. `force` is the "Try again" path after a failed scan.
  */
+let skillNamesPending = null
+
+/**
+ * Names-only library scan for the composer. It answers the same references as
+ * the full library, but leaves descriptions, byte counts and file trees alone,
+ * so typing `/` does not pay for the library page's card data.
+ */
+export async function loadSkillNames() {
+  if (skillNamesPending) return skillNamesPending
+  if (workspaces.skillNames) return workspaces.skillNames
+  skillNamesPending = (async () => {
+    try {
+      const data = await call('skills.names')
+      workspaces.skillNames = data || { items: [], count: 0 }
+      applyLibrary(workspaces.skillNames.items)
+    } catch {
+      workspaces.skillNames = null
+      applyLibrary([])
+    } finally {
+      skillNamesPending = null
+    }
+    return workspaces.skillNames || { items: [], count: 0 }
+  })()
+  return skillNamesPending
+}
+
 export async function loadLibrary({ force = false } = {}) {
   /* the rail and the skills page both mount at once; scan the machine once */
   if (libraryPending) return libraryPending

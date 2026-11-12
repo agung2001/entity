@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
@@ -16,24 +16,18 @@ import { HARNESSES } from '@/data/mock'
 import {
   activeThread,
   agentById,
-  ago,
   chatSend,
   ensureChats,
   harnessById,
   hub,
   machineById,
-  pinThread,
-  removeThread,
-  renameThread,
   selectThread,
-  setChatFilter,
   setThreadContext,
   snippet,
   threadContext,
   threadCounts,
   threadStarted,
   toast,
-  visibleThreads,
 } from '@/stores/hub'
 
 /**
@@ -44,17 +38,9 @@ import {
 const route = useRoute()
 const router = useRouter()
 const newOpen = ref(false)
-const historyOpen = ref(true)
-const search = ref('')
-const editing = ref('')
-const editTitle = ref('')
-const confirming = ref('')
 const transcriptOpen = ref(false)
 const helpOpen = ref(false)
 const live = ref(null)
-const menuItem = ref(null)
-const menuPos = ref({ top: 0, left: 0 })
-const hmenu = ref(null)
 const focusMessage = ref(-1)
 let offEvent = null
 
@@ -64,13 +50,6 @@ const isDesktop = hasDesktopBridge()
 /* Browser chrome owns several Cmd/Ctrl+Shift combinations. In a browser use
    Option/Alt+Shift instead, while the packaged app keeps the native-looking
    shortcut. Both are accepted by the handler. */
-const historyShortcut = isDesktop
-  ? isMac
-    ? '⌘⇧B'
-    : 'Ctrl+Shift+B'
-  : isMac
-    ? '⌥⇧B'
-    : 'Alt+Shift+B'
 const transcriptShortcut = isDesktop
   ? isMac
     ? '⌘⇧E'
@@ -78,35 +57,9 @@ const transcriptShortcut = isDesktop
   : isMac
     ? '⌥⇧E'
     : 'Alt+Shift+E'
-const newChatShortcut = isDesktop
-  ? isMac
-    ? '⌘N'
-    : 'Ctrl+N'
-  : isMac
-    ? '⌥⇧N'
-    : 'Alt+Shift+N'
 const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
 
-const HISTORY_KEY = 'entity.chat.history'
-try {
-  historyOpen.value = localStorage.getItem(HISTORY_KEY) !== '0'
-} catch {
-  /* session-only */
-}
-
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
-
-const filterOptions = {
-  entity: () =>
-    hub.agents.map((a) => ({
-      id: a.id,
-      label: a.name,
-      meta: `${a.skills.length} skills`,
-      glyph: moodGlyph(markFor(hub.workspace, a.id).mood),
-    })),
-  machine: () => hub.machines.map((m) => ({ id: m.id, label: m.label, meta: m.thisMachine ? 'local' : 'remote' })),
-  harness: () => HARNESSES.map((h) => ({ id: h.id, label: h.label })),
-}
 
 const contextOptions = {
   entity: () =>
@@ -123,26 +76,7 @@ const thread = computed(() => activeThread())
 const ctx = computed(() => threadContext())
 const agent = computed(() => agentById(ctx.value.entity) || hub.agents[0])
 const counts = computed(() => threadCounts(thread.value))
-const filtering = computed(() => Object.values(hub.chat.filters).some((v) => v !== 'all'))
 const contextLocked = computed(() => threadStarted(thread.value))
-
-const visible = computed(() => {
-  const rows = visibleThreads()
-  const q = search.value.trim().toLowerCase()
-  if (!q) return rows
-  return rows.filter((item) =>
-    [item.title, item.entity, item.harness, item.machine, snippet(item.preview)]
-      .join(' ')
-      .toLowerCase()
-      .includes(q),
-  )
-})
-
-const historyNote = computed(() => {
-  const total = hub.chat.summaries.length
-  if (search.value.trim() || filtering.value) return `${visible.value.length} of ${total}`
-  return `${total} ${total === 1 ? 'thread' : 'threads'}`
-})
 
 const messages = computed(() => {
   const t = thread.value
@@ -195,55 +129,21 @@ const latestTrace = computed(() => {
 
 const canTranscript = computed(() => Boolean(live.value || latestTrace.value))
 
-const threadLabel = (summary) =>
-  summary.title ||
-  (summary.queries ? snippet(summary.preview) : `New thread · ${summary.entity}`)
-
-const lastAsked = (summary) => (summary.queries ? snippet(summary.preview) : 'No question yet')
-const threadQueries = (summary) => summary.queries || 0
-const threadWhen = (summary) => ago(summary.updatedAt)
-
-function toggleHistory() {
-  historyOpen.value = !historyOpen.value
-  try {
-    localStorage.setItem(HISTORY_KEY, historyOpen.value ? '1' : '0')
-  } catch {
-    /* session-only */
-  }
+function startThread() {
+  if (!hub.agents.length) return
+  newOpen.value = true
 }
 
 function onChatKey(event) {
-  if (event.key === 'Escape' && menuItem.value) {
-    menuItem.value = null
-    return
-  }
   if (event.key === 'Escape' && helpOpen.value) {
     helpOpen.value = false
     return
   }
   const key = event.key.toLowerCase()
-  const code = event.code
   const shiftPrimary = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
   const alternate = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
-  const barePrimary = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
 
-  /* Cmd/Ctrl+N belongs to the browser shell, so only the desktop build claims
-     it; the dev server exposes the same action as Option/Alt+Shift+N. */
-  if (
-    ((isDesktop && barePrimary) || shiftPrimary || alternate) &&
-    (key === 'n' || code === 'KeyN')
-  ) {
-    event.preventDefault()
-    event.stopPropagation()
-    startThread()
-    return
-  }
-  if (!shiftPrimary && !alternate) return
-  if (key === 'b' || code === 'KeyB') {
-    event.preventDefault()
-    event.stopPropagation()
-    toggleHistory()
-  } else if ((key === 'e' || code === 'KeyE') && canTranscript.value) {
+  if ((shiftPrimary || alternate) && (key === 'e' || event.code === 'KeyE') && canTranscript.value) {
     event.preventDefault()
     event.stopPropagation()
     transcriptOpen.value = true
@@ -290,11 +190,6 @@ async function retryFailed(message) {
   await chatSend(question.text, { retry: true })
 }
 
-function startThread() {
-  if (!hub.agents.length) return
-  newOpen.value = true
-}
-
 function onCreated(created) {
   newOpen.value = false
   if (created?.id && route.query.thread !== created.id) {
@@ -304,110 +199,6 @@ function onCreated(created) {
 
 async function send(text) {
   await chatSend(text)
-}
-
-function openRowMenu(event, item) {
-  event?.stopPropagation?.()
-  if (menuItem.value?.id === item.id) {
-    menuItem.value = null
-    return
-  }
-  const rect = event.currentTarget.getBoundingClientRect()
-  const width = 178
-  const height = 122
-  const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8)
-  let top = rect.bottom + 6
-  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6)
-  menuPos.value = { top: `${top}px`, left: `${left}px` }
-  menuItem.value = item
-  nextTick(() => hmenu.value?.querySelector('button')?.focus())
-}
-
-function menuPin() {
-  const item = menuItem.value
-  menuItem.value = null
-  if (item) togglePin(item)
-}
-
-function menuRename() {
-  const item = menuItem.value
-  menuItem.value = null
-  if (item) startRename(item)
-}
-
-async function menuDelete() {
-  const item = menuItem.value
-  if (!item) return
-  const final = confirming.value === item.id
-  await deleteThread(item)
-  if (final && menuItem.value?.id === item.id) menuItem.value = null
-}
-
-function startRename(item) {
-  editing.value = item.id
-  editTitle.value = item.title || ''
-  nextTick(() => document.getElementById(`rename-${item.id}`)?.focus())
-}
-
-function cancelRename() {
-  editing.value = ''
-  editTitle.value = ''
-}
-
-async function saveRename(item) {
-  if (editing.value !== item.id) return
-  const title = editTitle.value.trim()
-  try {
-    await renameThread(item.id, title)
-    toast(title ? 'Thread title saved' : 'Thread title cleared')
-    cancelRename()
-  } catch (error) {
-    toast(error?.message || 'The title could not be saved.')
-  }
-}
-
-function onRenameKey(event, item) {
-  event.stopPropagation()
-  if (event.key === 'Enter') {
-    event.preventDefault()
-    saveRename(item)
-  } else if (event.key === 'Escape') {
-    event.preventDefault()
-    cancelRename()
-  }
-}
-
-async function togglePin(item) {
-  try {
-    await pinThread(item.id, !item.pinned)
-    toast(item.pinned ? 'Thread unpinned' : 'Thread pinned')
-  } catch (error) {
-    toast(error?.message || 'The thread could not be pinned.')
-  }
-}
-
-async function deleteThread(item) {
-  if (confirming.value !== item.id) {
-    confirming.value = item.id
-    setTimeout(() => {
-      if (confirming.value === item.id) confirming.value = ''
-    }, 2600)
-    return
-  }
-  confirming.value = ''
-  const wasActive = hub.chat.active === item.id
-  try {
-    await removeThread(item.id)
-    if (wasActive) {
-      router.replace({
-        name: 'chat',
-        query: hub.chat.active ? { thread: hub.chat.active } : {},
-      })
-    }
-    toast('Thread deleted')
-  } catch (error) {
-    toast(error?.message || 'The thread could not be deleted.')
-  }
 }
 
 function onLiveEvent(event) {
@@ -458,37 +249,35 @@ function onLiveEvent(event) {
   }
 }
 
-function onDocumentClick(event) {
-  if (!menuItem.value) return
-  const target = event.target
-  if (target instanceof Element && target.closest('.hrow-menu, .hact-menu')) return
-  menuItem.value = null
+/* The topbar's New thread sends us here with ?new=1. Opening the dialog is
+   local state, so consume the flag before the address bar keeps showing it. */
+function consumeNewQuery() {
+  if (route.query.new !== '1') return
+  startThread()
+  const query = { ...route.query }
+  delete query.new
+  router.replace({ name: 'chat', query })
 }
 
 onMounted(async () => {
   offEvent = onRunEvent(onLiveEvent)
   window.addEventListener('keydown', onChatKey, true)
-  document.addEventListener('click', onDocumentClick)
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   await openInitialThread(wanted)
+  consumeNewQuery()
 })
 
 onBeforeUnmount(() => {
   offEvent?.()
   offEvent = null
   window.removeEventListener('keydown', onChatKey, true)
-  document.removeEventListener('click', onDocumentClick)
 })
 
 watch(
   () => hub.workspace,
   async () => {
-    search.value = ''
-    cancelRename()
-    confirming.value = ''
     live.value = null
     transcriptOpen.value = false
-    menuItem.value = null
     await openInitialThread()
   },
 )
@@ -506,6 +295,11 @@ watch(
     if (previous && previous !== id) delete query.msg
     router.replace({ name: 'chat', query })
   },
+)
+
+watch(
+  () => route.query.new,
+  () => consumeNewQuery(),
 )
 
 watch(
@@ -527,7 +321,6 @@ watch(
     live.value = null
     transcriptOpen.value = false
     helpOpen.value = false
-    menuItem.value = null
   },
 )
 
@@ -544,179 +337,11 @@ watch(
   <div class="view view--chat">
     <div class="cpage">
       <header class="cbar">
-        <button
-          class="chat-hist-toggle"
-          type="button"
-          :data-open="historyOpen ? '1' : '0'"
-          :aria-expanded="historyOpen ? 'true' : 'false'"
-          :title="`${historyOpen ? 'Collapse history' : 'Open history'} (${historyShortcut})`"
-          :aria-label="`${historyOpen ? 'Collapse history' : 'Open history'} (${historyShortcut})`"
-          @click="toggleHistory"
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-            <rect x="1.7" y="2.3" width="12.6" height="11.4" rx="1.7" />
-            <path d="M5.9 2.3v11.4" />
-          </svg>
-        </button>
         <h1>Chat</h1>
         <p class="sub">Every thread in this workspace, pinned to the entity, machine and harness it started on.</p>
-        <div class="right">
-          <button class="btn btn-ink" :disabled="!hub.agents.length" @click="startThread">
-            New thread
-            <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
-          </button>
-        </div>
       </header>
 
       <div class="cbody">
-        <aside v-if="historyOpen" class="chist">
-          <div class="hhead">
-            <h2>History</h2>
-            <kbd class="panel-kbd">{{ historyShortcut }}</kbd>
-            <span class="n">{{ historyNote }}</span>
-          </div>
-
-          <div class="cfilt" role="group" aria-label="Filter history">
-            <PickMenu
-              head="Entity"
-              icons="entity"
-              all-label="All entities"
-              include-all
-              :options="filterOptions.entity()"
-              :model-value="hub.chat.filters.entity"
-              @update:model-value="setChatFilter('entity', $event)"
-            />
-            <PickMenu
-              head="Machine"
-              all-label="All machines"
-              include-all
-              icons="machine"
-              :options="filterOptions.machine()"
-              :model-value="hub.chat.filters.machine"
-              @update:model-value="setChatFilter('machine', $event)"
-            />
-            <PickMenu
-              head="Harness"
-              all-label="All harnesses"
-              include-all
-              icons="harness"
-              :options="filterOptions.harness()"
-              :model-value="hub.chat.filters.harness"
-              @update:model-value="setChatFilter('harness', $event)"
-            />
-          </div>
-
-          <div class="hsearch">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.6" />
-              <path d="M10.5 10.5L14 14" />
-            </svg>
-            <input
-              v-model="search"
-              type="text"
-              placeholder="Search threads by title"
-              autocomplete="off"
-              spellcheck="false"
-              aria-label="Search threads by title"
-            />
-            <button
-              v-if="search"
-              class="hclear"
-              type="button"
-              aria-label="Clear search"
-              @click="search = ''"
-            >
-              ×
-            </button>
-          </div>
-
-          <div class="hlist" role="group" aria-label="History" @scroll="menuItem = null">
-            <template v-if="visible.length">
-              <div
-                v-for="t in visible"
-                :key="t.id"
-                class="hrow"
-                :data-on="t.id === hub.chat.active ? '1' : '0'"
-                :data-pinned="t.pinned ? '1' : '0'"
-              >
-                <EntityMark mini :entity="t.entity" />
-                <div
-                  class="hrow-main"
-                  role="button"
-                  tabindex="0"
-                  @click="pickThread(t.id)"
-                  @keydown.enter="pickThread(t.id)"
-                  @keydown.space.prevent="pickThread(t.id)"
-                >
-                  <span class="hl">
-                    <svg
-                      v-if="t.pinned"
-                      class="pin-ic"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.4"
-                      aria-label="Pinned"
-                    >
-                      <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
-                    </svg>
-                    <template v-if="editing === t.id">
-                      <input
-                        :id="`rename-${t.id}`"
-                        v-model="editTitle"
-                        class="hrename"
-                        type="text"
-                        placeholder="Thread title"
-                        spellcheck="false"
-                        @click.stop
-                        @keydown="onRenameKey($event, t)"
-                        @blur="cancelRename"
-                      />
-                    </template>
-                    <b v-else>{{ threadLabel(t) }}</b>
-                  </span>
-                  <span class="hs">{{ lastAsked(t) }}</span>
-                  <span class="hm">
-                    <MachineIcon :size="10" />
-                    {{ machineById(t.machine)?.label }}
-                    <span aria-hidden="true">·</span>
-                    <HarnessIcon :name="t.harness" :size="10" />
-                    {{ harnessById(t.harness).label }}
-                    <template v-if="!threadQueries(t)"> · new</template>
-                    <time class="hm-time">{{ threadWhen(t) }}</time>
-                  </span>
-                </div>
-                <span class="hrow-acts" @click.stop>
-                  <button
-                    class="hact hact-menu"
-                    type="button"
-                    :aria-expanded="menuItem?.id === t.id ? 'true' : 'false'"
-                    title="Thread actions"
-                    aria-label="Thread actions"
-                    @click="openRowMenu($event, t)"
-                  >
-                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                      <circle cx="3.2" cy="8" r="1.25" />
-                      <circle cx="8" cy="8" r="1.25" />
-                      <circle cx="12.8" cy="8" r="1.25" />
-                    </svg>
-                  </button>
-                </span>
-              </div>
-            </template>
-            <div v-else class="hempty">
-              <b>No thread matches</b>
-              {{
-                search
-                  ? 'Try a different title, entity or preview.'
-                  : hub.chat.summaries.length
-                    ? 'Nothing has started with this combination yet. Clear a filter, or start a new thread.'
-                    : 'No conversation has started in this workspace yet. Open an entity and send the first message.'
-              }}
-            </div>
-          </div>
-        </aside>
-
         <section v-if="!hub.agents.length" class="cpanel cpanel-empty">
           <div class="empty-note">
             <b>No entity in this workspace yet.</b>
@@ -846,52 +471,14 @@ watch(
           <div class="empty-note">
             <b>No thread open.</b>
             <span>Start one to talk to an entity on this machine through its harness.</span>
-            <button class="btn btn-ink" type="button" :disabled="!hub.agents.length" @click="startThread">
-              New thread
-              <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
-            </button>
+            <router-link
+              class="empty-link"
+              :to="{ name: 'chat', query: { ...route.query, new: '1' } }"
+            >New thread</router-link>
           </div>
         </section>
       </div>
     </div>
-
-    <Teleport to="body">
-      <div
-        v-if="menuItem"
-        ref="hmenu"
-        class="hrow-menu"
-        role="menu"
-        aria-label="Thread actions"
-        :style="{ top: menuPos.top, left: menuPos.left }"
-        @click.stop
-      >
-        <button class="hmenu-item" type="button" role="menuitem" @click="menuPin">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-            <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
-          </svg>
-          {{ menuItem.pinned ? 'Unpin thread' : 'Pin thread' }}
-        </button>
-        <button class="hmenu-item" type="button" role="menuitem" @click="menuRename">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-            <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7z" />
-            <path d="M9.4 3.2l2.4 2.4" />
-          </svg>
-          Rename thread
-        </button>
-        <button
-          class="hmenu-item hmenu-danger"
-          type="button"
-          role="menuitem"
-          :class="{ confirming: confirming === menuItem.id }"
-          @click="menuDelete"
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-            <path d="M3.2 4.4h9.6M6.1 4.4V2.8h3.8v1.6M4.4 4.4l.6 8.8h6l.6-8.8" />
-          </svg>
-          {{ confirming === menuItem.id ? 'Click again to delete' : 'Delete thread' }}
-        </button>
-      </div>
-    </Teleport>
 
     <Teleport to="body">
       <div class="scrim" :data-open="helpOpen ? '1' : '0'" @click="helpOpen = false"></div>

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { slashMenu } from '@/stores/hub'
-import { loadLibrary, workspaces } from '@/stores/workspaces'
+import { loadSkillNames, workspaces } from '@/stores/workspaces'
 
 /**
  * The composer, with the `/` menu above it. Commands are the four harness
@@ -21,6 +21,8 @@ const draft = ref('')
 const menu = ref([])
 const active = ref(0)
 const input = ref(null)
+const scanning = ref(false)
+const expanded = ref(false)
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
@@ -28,24 +30,44 @@ const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
 let libraryAsked = false
 
 const open = computed(() => menu.value.length > 0)
+const shown = computed(() => (expanded.value ? menu.value : menu.value.slice(0, 5)))
 
-function refresh() {
-  if (props.disabled) return
-  menu.value = slashMenu(draft.value, props.agent)
-  if (active.value > menu.value.length - 1) active.value = 0
-  /* the harness libraries are the expensive half of the menu; they are read the
-     first time a `/` is typed, not when the page mounts. A failed scan gets one
-     retry — repeating it on every keystroke would spawn a scan per character. */
-  if (draft.value.startsWith('/') && !libraryAsked) {
-    libraryAsked = true
-    if (!workspaces.library) loadLibrary()
-    else if (workspaces.library.error) loadLibrary({ force: true })
+function toggleExpanded() {
+  expanded.value = !expanded.value
+  active.value = 0
+}
+
+async function scanNames() {
+  if (workspaces.library || workspaces.skillNames) return
+  scanning.value = true
+  try {
+    await loadSkillNames()
+  } finally {
+    scanning.value = false
   }
 }
 
-/* the scan is async: when it lands, fill in the menu for the draft on screen */
+function refresh() {
+  if (props.disabled) return
+  expanded.value = false
+  menu.value = slashMenu(draft.value, props.agent)
+  if (active.value > menu.value.length - 1) active.value = 0
+  /* The names-only scan is the expensive half of the menu; it starts the first
+     time a `/` is typed, never on mount, and never repeats per keystroke. The
+     full library is only read when the Skills page asks for it. */
+  if (draft.value.startsWith('/') && !libraryAsked) {
+    libraryAsked = true
+    if (workspaces.library) return
+    if (workspaces.skillNames) {
+      if (!workspaces.skillNames.error) return
+    }
+    scanNames()
+  }
+}
+
+/* both scans are async: when either lands, fill in the draft on screen */
 watch(
-  () => workspaces.library,
+  () => [workspaces.library, workspaces.skillNames],
   () => {
     if (draft.value.startsWith('/')) refresh()
   },
@@ -102,13 +124,13 @@ function onKey(e) {
     e.preventDefault()
     active.value =
       e.key === 'ArrowDown'
-        ? Math.min(menu.value.length - 1, active.value + 1)
+        ? Math.min(shown.value.length - 1, active.value + 1)
         : Math.max(0, active.value - 1)
   } else if (e.key === 'Tab') {
     e.preventDefault()
-    pick(menu.value[active.value])
+    pick(shown.value[active.value])
   } else if (e.key === 'Enter') {
-    const item = menu.value[active.value]
+    const item = shown.value[active.value]
     if (item && draft.value.trim() !== item.name) {
       e.preventDefault()
       pick(item)
@@ -127,8 +149,12 @@ function onBlur() {
 <template>
   <div class="slash-compose">
     <div class="ask-cmdbox" :data-open="open ? '1' : '0'" role="listbox" aria-label="Slash commands">
+      <div v-if="scanning" class="ask-cmd-loading" role="status">
+        <span class="model-spin" aria-hidden="true"></span>
+        Scanning skill libraries…
+      </div>
       <button
-        v-for="(c, i) in menu"
+        v-for="(c, i) in shown"
         :key="c.name"
         class="ask-cmd"
         type="button"
@@ -141,6 +167,15 @@ function onBlur() {
         <span class="name">{{ c.name }}</span>
         <span class="desc">{{ c.desc }}</span>
         <span class="k">{{ c.kind || 'command' }}</span>
+      </button>
+      <button
+        v-if="menu.length > 5"
+        class="ask-cmd-more"
+        type="button"
+        @mousedown.prevent
+        @click="toggleExpanded"
+      >
+        {{ expanded ? 'Show top 5 results' : `Show all ${menu.length} results` }}
       </button>
     </div>
 

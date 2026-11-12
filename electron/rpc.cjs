@@ -58,6 +58,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
       return workspaces.claimOwner({ ...args, owner })
     },
     'workspace.library': () => localData.scanSkillLibrary(),
+    'skills.names': () => localData.scanSkillNames(),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),

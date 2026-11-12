@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '@/components/BrandMark.vue'
+import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
 import { hub, initials, roleById, signOut } from '@/stores/hub'
@@ -16,6 +17,84 @@ const accountRoot = ref(null)
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 const railShortcut = isMac ? '⌘B' : 'Ctrl+B'
+
+/* The rail is a working surface, not a fixed chrome strip: some histories need
+   more width than others. The width belongs to the window, like the fold. */
+const WIDTH_KEY = 'entity.rail.width'
+const MIN_WIDTH = 190
+const MAX_WIDTH = 360
+const DEFAULT_WIDTH = 228
+const railWidth = ref(DEFAULT_WIDTH)
+const resizing = ref(false)
+let resizeStartX = 0
+let resizeStartWidth = DEFAULT_WIDTH
+
+try {
+  const stored = localStorage.getItem(WIDTH_KEY)
+  if (stored !== null) {
+    const saved = Number(stored)
+    if (Number.isFinite(saved)) railWidth.value = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, saved))
+  }
+} catch {
+  /* private mode: keep the default */
+}
+
+const railStyle = computed(() =>
+  collapsed.value ? null : { width: `${railWidth.value}px` },
+)
+
+function storeWidth() {
+  try {
+    localStorage.setItem(WIDTH_KEY, String(railWidth.value))
+  } catch {
+    /* session-only */
+  }
+}
+
+function startResize(event) {
+  if (collapsed.value || event.button !== 0) return
+  event.preventDefault()
+  resizing.value = true
+  resizeStartX = event.clientX
+  resizeStartWidth = railWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', stopResize)
+}
+
+function onResizeMove(event) {
+  if (!resizing.value) return
+  railWidth.value = Math.min(
+    MAX_WIDTH,
+    Math.max(MIN_WIDTH, resizeStartWidth + event.clientX - resizeStartX),
+  )
+}
+
+function stopResize() {
+  if (!resizing.value) return
+  resizing.value = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', stopResize)
+  storeWidth()
+}
+
+function nudgeResize(event) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  railWidth.value = Math.min(
+    MAX_WIDTH,
+    Math.max(MIN_WIDTH, railWidth.value + (event.key === 'ArrowRight' ? 8 : -8)),
+  )
+  storeWidth()
+}
+
+function resetWidth() {
+  railWidth.value = DEFAULT_WIDTH
+  storeWidth()
+}
 
 /* the rail folds down to its icons; the choice belongs to the window, not the
    workspace, so it lives beside the other UI preferences */
@@ -44,6 +123,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   document.removeEventListener('keydown', onDocumentKey)
+  stopResize()
 })
 
 function toggleAccount() {
@@ -80,7 +160,6 @@ function openAccountPage() {
 
 const NAV = [
   { to: '/', view: 'overview', label: 'Overview', icon: 'grid' },
-  { to: '/chat', view: 'chat', label: 'Chat', icon: 'chat' },
   { to: '/entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
   {
     to: '/artifacts',
@@ -118,7 +197,7 @@ function leave() {
 </script>
 
 <template>
-  <aside class="rail" :data-collapsed="collapsed ? '1' : '0'">
+  <aside class="rail" :data-collapsed="collapsed ? '1' : '0'" :data-resizing="resizing ? '1' : '0'" :style="railStyle">
     <div class="rail-top">
       <button
         class="brand"
@@ -151,6 +230,8 @@ function leave() {
       </router-link>
 
     </nav>
+
+    <ChatHistoryRail />
 
     <div class="rail-foot">
       <div ref="accountRoot" class="account" :data-open="accountOpen ? '1' : '0'">
@@ -194,5 +275,20 @@ function leave() {
         </button>
       </div>
     </div>
+
+    <button
+      class="rail-resize"
+      type="button"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-label="`Resize sidebar, ${railWidth} pixels`"
+      :aria-valuemin="MIN_WIDTH"
+      :aria-valuemax="MAX_WIDTH"
+      :aria-valuenow="railWidth"
+      title="Drag to resize sidebar · double-click to reset"
+      @pointerdown="startResize"
+      @keydown="nudgeResize"
+      @dblclick="resetWidth"
+    ></button>
   </aside>
 </template>
