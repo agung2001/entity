@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 
 /**
- * A two-lane wall-clock view of one run: model time and tool time. Model time
- * is the complement of tool intervals — that is the only honest span we have
- * from a stream that stamps arrivals, not token spans.
+ * A compact Gantt of one run. A stream only stamps arrivals, so a step with no
+ * explicit `endedAt` ends where the next step begins; tool calls that do carry
+ * an end use it. The longest bar is marked, which is the useful answer to
+ * "what took the time?" without guessing at token-level timing.
  */
 const props = defineProps({
   steps: { type: Array, default: () => [] },
@@ -43,59 +44,58 @@ const totalMs = computed(() =>
   startMs.value === null || endMs.value === null ? 0 : Math.max(0, endMs.value - startMs.value),
 )
 
-const tools = computed(() => {
-  if (startMs.value === null) return []
-  const runs = []
-  for (const step of ordered.value) {
-    if (step.type !== 'tool_use' && step.type !== 'tool_result') continue
-    const start = timeOf(step.at)
-    if (start === null) continue
+function labelOf(step) {
+  if (step.type === 'thinking') return 'Thinking'
+  if (step.type === 'text') return 'Response'
+  if (step.type === 'tool_use') return step.tool || 'Tool'
+  if (step.type === 'tool_result') return `${step.tool || 'Tool'} result`
+  return 'Error'
+}
+
+function typeOf(step) {
+  if (step.type === 'thinking') return 'thinking'
+  if (step.type === 'text') return 'text'
+  if (step.type === 'error' || step.isError) return 'error'
+  return 'tool'
+}
+
+const bars = computed(() => {
+  const startAll = startMs.value
+  const endAll = endMs.value
+  if (startAll === null || endAll === null || endAll <= startAll) return []
+  const list = ordered.value
+  const out = []
+  for (let index = 0; index < list.length; index += 1) {
+    const step = list[index]
+    const at = timeOf(step.at)
+    if (at === null) continue
+    const start = Math.max(startAll, Math.min(endAll, at))
     let end = timeOf(step.endedAt)
     if (end === null && Number.isFinite(step.durationMs)) end = start + step.durationMs
-    if (end === null || end <= start) continue
-    runs.push({
-      start: Math.max(startMs.value, start),
-      end: Math.min(endMs.value, end),
+    if (end === null) {
+      const next = list
+        .slice(index + 1)
+        .map((entry) => timeOf(entry.at))
+        .find((value) => value !== null && value > start)
+      end = next === undefined ? endAll : Math.min(endAll, next)
+    }
+    end = Math.min(endAll, Math.max(start + 1, end))
+    out.push({
       seq: step.seq,
-      label: step.tool || 'tool',
+      label: labelOf(step),
+      type: typeOf(step),
+      start,
+      end,
+      ms: end - start,
+      error: step.type === 'error' || Boolean(step.isError),
     })
   }
-  runs.sort((a, b) => a.start - b.start)
-  const merged = []
-  for (const run of runs) {
-    const last = merged[merged.length - 1]
-    if (last && run.start <= last.end) {
-      last.end = Math.max(last.end, run.end)
-      if (!last.labels.includes(run.label)) last.labels.push(run.label)
-      continue
-    }
-    merged.push({ ...run, labels: [run.label] })
-  }
-  return merged
+  if (!out.length) return []
+  const longest = out.reduce((best, bar) => (bar.ms > best.ms ? bar : best), out[0])
+  return out.map((bar) => ({ ...bar, longest: bar.seq === longest.seq }))
 })
 
-const model = computed(() => {
-  if (!totalMs.value) return []
-  const out = []
-  let cursor = startMs.value
-  for (const tool of tools.value) {
-    if (tool.start > cursor) {
-      out.push({ start: cursor, end: tool.start })
-    }
-    cursor = Math.max(cursor, tool.end)
-  }
-  if (cursor < endMs.value) out.push({ start: cursor, end: endMs.value })
-  return out
-})
-
-const modelMs = computed(() => model.value.reduce((sum, part) => sum + (part.end - part.start), 0))
-const toolMs = computed(() => tools.value.reduce((sum, part) => sum + (part.end - part.start), 0))
-const selectedOffset = computed(() => {
-  const step = ordered.value.find((entry) => entry.seq === props.selectedSeq)
-  const at = timeOf(step?.at)
-  if (at === null || !totalMs.value) return null
-  return Math.max(0, Math.min(totalMs.value, at - startMs.value))
-})
+const longestBar = computed(() => bars.value.find((bar) => bar.longest) || null)
 
 function formatMs(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return '0s'
@@ -110,65 +110,57 @@ function percent(value) {
   return `${(value / totalMs.value) * 100}%`
 }
 
-function toolTitle(part) {
-  const names = [...new Set(part.labels)].join(', ')
-  return `${names} · ${formatMs(part.end - part.start)}`
-}
-
-function selectTool(part) {
-  if (Number.isFinite(part.seq)) emit('select', part.seq)
+function titleOf(bar) {
+  return `${bar.label} · ${formatMs(bar.ms)}${bar.longest ? ' · longest step' : ''}`
 }
 </script>
 
 <template>
-  <div class="xtl" :data-empty="totalMs ? '0' : '1'">
-    <div class="xtl-head">
+  <div class="gt" :data-empty="bars.length ? '0' : '1'">
+    <div class="gt-head">
       <span>Where the time went</span>
       <b>{{ formatMs(totalMs) }}</b>
     </div>
-    <template v-if="totalMs">
-      <div class="xtl-lane">
-        <span class="xtl-lb">Model <b>{{ formatMs(modelMs) }}</b></span>
-        <div class="xtl-track">
-          <span
-            v-for="(part, index) in model"
-            :key="`m-${index}`"
-            class="xtl-seg xtl-model"
-            :style="{ left: percent(part.start - startMs), width: percent(part.end - part.start) }"
-          ></span>
-          <i
-            v-if="selectedOffset !== null"
-            class="xtl-cursor"
-            :style="{ left: `${(selectedOffset / totalMs) * 100}%` }"
-          ></i>
-        </div>
+    <template v-if="bars.length">
+      <div class="gt-meta">
+        <span>{{ bars.length }} {{ bars.length === 1 ? 'step' : 'steps' }}</span>
+        <span v-if="longestBar">
+          longest · <b>{{ longestBar.label }}</b> {{ formatMs(longestBar.ms) }}
+        </span>
       </div>
-      <div class="xtl-lane">
-        <span class="xtl-lb">Tools <b>{{ formatMs(toolMs) }}</b></span>
-        <div class="xtl-track">
-          <button
-            v-for="(part, index) in tools"
-            :key="`t-${index}`"
-            class="xtl-seg xtl-tool"
-            type="button"
-            :style="{ left: percent(part.start - startMs), width: percent(part.end - part.start) }"
-            :title="toolTitle(part)"
-            :aria-label="toolTitle(part)"
-            @click="selectTool(part)"
-          ></button>
-          <i
-            v-if="selectedOffset !== null"
-            class="xtl-cursor"
-            :style="{ left: `${(selectedOffset / totalMs) * 100}%` }"
-          ></i>
-        </div>
+      <div class="gt-list" role="list" aria-label="Step durations">
+        <button
+          v-for="bar in bars"
+          :key="bar.seq"
+          class="gt-row"
+          type="button"
+          role="listitem"
+          :data-selected="selectedSeq === bar.seq ? '1' : '0'"
+          :data-longest="bar.longest ? '1' : '0'"
+          :title="titleOf(bar)"
+          :aria-label="titleOf(bar)"
+          @click="emit('select', bar.seq)"
+        >
+          <span class="gt-label">
+            {{ bar.label }}
+            <em v-if="bar.longest">longest</em>
+          </span>
+          <span class="gt-track">
+            <i
+              :data-type="bar.type"
+              :data-error="bar.error ? '1' : '0'"
+              :style="{ left: percent(bar.start - startMs), width: percent(bar.end - bar.start) }"
+            ></i>
+          </span>
+          <span class="gt-dur">{{ formatMs(bar.ms) }}</span>
+        </button>
       </div>
-      <div class="xtl-legend">
-        <span><i class="lg-model"></i>model time</span>
-        <span><i class="lg-tool"></i>tool time</span>
-        <span v-if="selectedOffset !== null" class="xtl-playhead-note">selected step</span>
+      <div class="gt-legend">
+        <span><i class="lg-model"></i>thinking</span>
+        <span><i class="lg-text"></i>response</span>
+        <span><i class="lg-tool"></i>tool</span>
       </div>
     </template>
-    <p v-else class="xtl-empty">No timing was recorded for this run.</p>
+    <p v-else class="gt-empty">No timing was recorded for this run.</p>
   </div>
 </template>

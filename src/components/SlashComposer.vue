@@ -14,6 +14,7 @@ const props = defineProps({
   placeholder: { type: String, default: 'Ask anything, or type / for a skill' },
   /* a thread answers one turn at a time; the composer waits for it */
   disabled: { type: Boolean, default: false },
+  focusShortcut: { type: String, default: '' },
 })
 const emit = defineEmits(['send'])
 
@@ -144,6 +145,12 @@ function onKey(e) {
 function onBlur() {
   setTimeout(closeMenu, 120)
 }
+
+function focus() {
+  nextTick(() => input.value?.focus())
+}
+
+defineExpose({ focus })
 </script>
 
 <template>
@@ -189,6 +196,7 @@ function onBlur() {
         autocomplete="off"
         spellcheck="false"
         aria-label="Message"
+        :title="focusShortcut ? `Message (${focusShortcut} to focus)` : 'Message'"
         :disabled="disabled"
         @input="refresh"
         @keydown="onKey"
@@ -199,6 +207,7 @@ function onBlur() {
         <button
           class="go"
           type="submit"
+          data-sfx="off"
           :disabled="disabled || !draft.trim()"
           :title="disabled ? 'Sending…' : `Send message (${sendShortcut})`"
           :aria-label="disabled ? 'Sending message' : 'Send message'"

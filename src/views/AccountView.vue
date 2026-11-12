@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import McpAccountPanel from '@/components/McpAccountPanel.vue'
+import SfxSettings from '@/components/SfxSettings.vue'
 import {
   changePassword,
   credentials,
@@ -122,6 +123,13 @@ async function save() {
         @click="tab = 'profile'"
       >
         Profile
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'sound' ? 'true' : 'false'"
+        @click="tab = 'sound'"
+      >
+        Sound
       </button>
       <button
         role="tab"
@@ -249,6 +257,7 @@ async function save() {
       </aside>
     </div>
 
+    <SfxSettings v-else-if="tab === 'sound'" />
     <McpAccountPanel v-else />
   </div>
 </template>

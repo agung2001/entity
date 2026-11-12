@@ -1,16 +1,17 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ChatHarnessDialog from '@/components/ChatHarnessDialog.vue'
+import ChatMcpDialog from '@/components/ChatMcpDialog.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
-import MachineIcon from '@/components/MachineIcon.vue'
 import MessageList from '@/components/MessageList.vue'
 import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
-import TranscriptDialog from '@/components/TranscriptDialog.vue'
+import TimelineDialog from '@/components/TimelineDialog.vue'
 import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
-import { markFor, moodGlyph } from '@/composables/entityMark'
+import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
 import { HARNESSES } from '@/data/mock'
 import {
@@ -29,6 +30,7 @@ import {
   threadStarted,
   toast,
 } from '@/stores/hub'
+import { workspaces } from '@/stores/workspaces'
 
 /**
  * The chat surface reads its threads from `<workspace>/chats`. History is a
@@ -38,8 +40,11 @@ import {
 const route = useRoute()
 const router = useRouter()
 const newOpen = ref(false)
-const transcriptOpen = ref(false)
+const timelineOpen = ref(false)
 const helpOpen = ref(false)
+const harnessOpen = ref(false)
+const mcpOpen = ref(false)
+const composer = ref(null)
 const live = ref(null)
 const focusMessage = ref(-1)
 let offEvent = null
@@ -50,7 +55,7 @@ const isDesktop = hasDesktopBridge()
 /* Browser chrome owns several Cmd/Ctrl+Shift combinations. In a browser use
    Option/Alt+Shift instead, while the packaged app keeps the native-looking
    shortcut. Both are accepted by the handler. */
-const transcriptShortcut = isDesktop
+const timelineShortcut = isDesktop
   ? isMac
     ? '⌘⇧E'
     : 'Ctrl+Shift+E'
@@ -58,18 +63,18 @@ const transcriptShortcut = isDesktop
     ? '⌥⇧E'
     : 'Alt+Shift+E'
 const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
+const focusShortcut = isDesktop
+  ? isMac
+    ? '⌘⇧M'
+    : 'Ctrl+Shift+M'
+  : isMac
+    ? '⌥⇧M'
+    : 'Alt+Shift+M'
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
 const contextOptions = {
-  entity: () =>
-    hub.agents.map((a) => ({
-      id: a.id,
-      label: a.name,
-      glyph: moodGlyph(markFor(hub.workspace, a.id, a.mark).mood),
-    })),
   machine: () => hub.machines.map((m) => ({ id: m.id, label: m.label, meta: m.thisMachine ? 'local' : 'remote' })),
-  harness: () => HARNESSES.map((h) => ({ id: h.id, label: h.label })),
 }
 
 const thread = computed(() => activeThread())
@@ -77,6 +82,29 @@ const ctx = computed(() => threadContext())
 const agent = computed(() => agentById(ctx.value.entity) || hub.agents[0])
 const counts = computed(() => threadCounts(thread.value))
 const contextLocked = computed(() => threadStarted(thread.value))
+const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
+
+const lastMessageAt = computed(() => {
+  const list = thread.value?.messages || []
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    if (list[index]?.at) return list[index].at
+  }
+  return thread.value?.updatedAt || ''
+})
+
+const lastMessageWhen = computed(() => {
+  const stamp = lastMessageAt.value
+  if (!stamp) return 'No messages yet'
+  const when = new Date(stamp)
+  if (!Number.isFinite(when.getTime())) return 'No messages yet'
+  return when.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: when.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+})
 
 const messages = computed(() => {
   const t = thread.value
@@ -127,7 +155,7 @@ const latestTrace = computed(() => {
   return null
 })
 
-const canTranscript = computed(() => Boolean(live.value || latestTrace.value))
+const canTimeline = computed(() => Boolean(live.value || latestTrace.value))
 
 function startThread() {
   if (!hub.agents.length) return
@@ -135,19 +163,56 @@ function startThread() {
 }
 
 function onChatKey(event) {
-  if (event.key === 'Escape' && helpOpen.value) {
-    helpOpen.value = false
-    return
+  if (event.key === 'Escape') {
+    if (harnessOpen.value) {
+      harnessOpen.value = false
+      return
+    }
+    if (mcpOpen.value) {
+      mcpOpen.value = false
+      return
+    }
+    if (helpOpen.value) {
+      helpOpen.value = false
+      return
+    }
   }
   const key = event.key.toLowerCase()
   const shiftPrimary = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
   const alternate = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
+  if (!shiftPrimary && !alternate) return
 
-  if ((shiftPrimary || alternate) && (key === 'e' || event.code === 'KeyE') && canTranscript.value) {
+  if (
+    (key === 'm' || event.code === 'KeyM') &&
+    !newOpen.value &&
+    !timelineOpen.value &&
+    !helpOpen.value &&
+    !harnessOpen.value &&
+    !mcpOpen.value
+  ) {
     event.preventDefault()
     event.stopPropagation()
-    transcriptOpen.value = true
+    composer.value?.focus()
+    return
   }
+
+  if ((key === 'e' || event.code === 'KeyE') && canTimeline.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    timelineOpen.value = true
+  }
+}
+
+function openHarness() {
+  helpOpen.value = false
+  mcpOpen.value = false
+  harnessOpen.value = true
+}
+
+function openMcp() {
+  helpOpen.value = false
+  harnessOpen.value = false
+  mcpOpen.value = true
 }
 
 async function pickThread(id) {
@@ -191,6 +256,7 @@ async function retryFailed(message) {
 }
 
 function onCreated(created) {
+  playSfx('success')
   newOpen.value = false
   if (created?.id && route.query.thread !== created.id) {
     router.replace({ name: 'chat', query: { thread: created.id } })
@@ -198,7 +264,13 @@ function onCreated(created) {
 }
 
 async function send(text) {
-  await chatSend(text)
+  playSfx('send')
+  try {
+    await chatSend(text)
+  } catch (error) {
+    playSfx('error')
+    throw error
+  }
 }
 
 function onLiveEvent(event) {
@@ -244,6 +316,7 @@ function onLiveEvent(event) {
       }
     }
     live.value = null
+    playSfx(message?.error ? 'error' : 'receive')
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})
   }
@@ -277,7 +350,9 @@ watch(
   () => hub.workspace,
   async () => {
     live.value = null
-    transcriptOpen.value = false
+    timelineOpen.value = false
+    harnessOpen.value = false
+    mcpOpen.value = false
     await openInitialThread()
   },
 )
@@ -319,8 +394,10 @@ watch(
   () => hub.chat.active,
   () => {
     live.value = null
-    transcriptOpen.value = false
+    timelineOpen.value = false
     helpOpen.value = false
+    harnessOpen.value = false
+    mcpOpen.value = false
   },
 )
 
@@ -355,22 +432,10 @@ watch(
             <EntityMark :entity="agent.name" />
             <div class="cp-id">
               <h2>{{ threadTitle }}</h2>
-              <p>
-                <router-link
-                  class="cp-entity"
-                  :to="{ name: 'entity', params: { name: agent.name } }"
-                  :title="`Open ${agent.name}`"
-                >{{ agent.name }}</router-link>
-                <span aria-hidden="true">·</span>
-                <MachineIcon :size="10" />
-                {{ machineById(ctx.machine)?.label }}
-                <span aria-hidden="true">·</span>
-                <HarnessIcon :name="ctx.harness" :size="10" />
-                {{ harnessById(ctx.harness).label }}
-                <template v-if="ctx.model">
-                  <span aria-hidden="true">·</span>
-                  <span class="mono">{{ ctx.model }}</span>
-                </template>
+              <p class="cp-id-meta">
+                <span>Last message</span>
+                <time v-if="lastMessageAt" :datetime="lastMessageAt">{{ lastMessageWhen }}</time>
+                <span v-else>{{ lastMessageWhen }}</span>
               </p>
             </div>
             <div class="cp-right">
@@ -382,18 +447,18 @@ watch(
               <button
                 class="trace-open"
                 type="button"
-                :disabled="!canTranscript"
-                :aria-expanded="transcriptOpen ? 'true' : 'false'"
-                :title="`View execution transcript (${transcriptShortcut})`"
-                :aria-label="`View execution transcript (${transcriptShortcut})`"
-                @click="transcriptOpen = true"
+                :disabled="!canTimeline"
+                :aria-expanded="timelineOpen ? 'true' : 'false'"
+                :title="`View execution timeline (${timelineShortcut})`"
+                :aria-label="`View execution timeline (${timelineShortcut})`"
+                @click="timelineOpen = true"
               >
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
                   <path d="M3 2.5h10v11H3z" />
                   <path d="M5.2 5.5h5.6M5.2 8h5.6M5.2 10.5h3.4" />
                 </svg>
-                <span>Transcript</span>
-                <kbd class="trace-kbd">{{ transcriptShortcut }}</kbd>
+                <span>Timeline</span>
+                <kbd class="trace-kbd">{{ timelineShortcut }}</kbd>
               </button>
             </div>
           </header>
@@ -415,15 +480,6 @@ watch(
             <div class="cp-dock">
               <div class="cp-picks" role="group" aria-label="Thread context">
                 <PickMenu
-                  head="Entity"
-                  icons="entity"
-                  :options="contextOptions.entity()"
-                  :model-value="ctx.entity"
-                  :count="agent.skills.length"
-                  :disabled="contextLocked"
-                  @update:model-value="setThreadContext('entity', $event)"
-                />
-                <PickMenu
                   head="Machine"
                   icons="machine"
                   :options="contextOptions.machine()"
@@ -431,14 +487,34 @@ watch(
                   :disabled="contextLocked"
                   @update:model-value="setThreadContext('machine', $event)"
                 />
-                <PickMenu
-                  head="Harness"
-                  icons="harness"
-                  :options="contextOptions.harness()"
-                  :model-value="ctx.harness"
-                  :disabled="contextLocked"
-                  @update:model-value="setThreadContext('harness', $event)"
-                />
+                <button
+                  class="pickbtn cp-ctx-btn"
+                  type="button"
+                  aria-haspopup="dialog"
+                  :aria-expanded="harnessOpen ? 'true' : 'false'"
+                  :title="`${harnessById(ctx.harness).label}${ctx.model ? ` · ${ctx.model}` : ''}`"
+                  @click="openHarness"
+                >
+                  <HarnessIcon :name="ctx.harness" :size="12" />
+                  <span class="nm">{{ harnessById(ctx.harness).label }}</span>
+                  <svg class="ch" viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </svg>
+                </button>
+                <button
+                  class="pickbtn cp-ctx-btn"
+                  type="button"
+                  aria-haspopup="dialog"
+                  :aria-expanded="mcpOpen ? 'true' : 'false'"
+                  title="Workspace MCP servers"
+                  @click="openMcp"
+                >
+                  <span class="nm">MCP</span>
+                  <span class="ct">{{ mcpCount }}</span>
+                  <svg class="ch" viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </svg>
+                </button>
                 <button
                   class="compose-help"
                   type="button"
@@ -457,8 +533,10 @@ watch(
               </div>
               <div class="cp-compose">
                 <SlashComposer
+                  ref="composer"
                   :agent="agent"
                   :placeholder="`Message ${agent.name}`"
+                  :focus-shortcut="focusShortcut"
                   :disabled="hub.chat.sending"
                   @send="send"
                 />
@@ -513,6 +591,10 @@ watch(
               <dd><b>Complete</b><span>Insert the highlighted command.</span></dd>
             </div>
             <div>
+              <dt><kbd>{{ focusShortcut }}</kbd></dt>
+              <dd><b>Focus message</b><span>Jump back into the composer from anywhere in chat.</span></dd>
+            </div>
+            <div>
               <dt><kbd>{{ sendShortcut }}</kbd></dt>
               <dd><b>Send</b><span>Send the message to the entity.</span></dd>
             </div>
@@ -532,12 +614,19 @@ watch(
       </div>
     </Teleport>
 
+    <ChatHarnessDialog
+      :open="harnessOpen"
+      :harness="ctx.harness"
+      :model="ctx.model"
+      @close="harnessOpen = false"
+    />
+    <ChatMcpDialog :open="mcpOpen" @close="mcpOpen = false" />
     <NewThreadDialog :open="newOpen" :defaults="ctx" @close="newOpen = false" @created="onCreated" />
-    <TranscriptDialog
-      :open="transcriptOpen"
+    <TimelineDialog
+      :open="timelineOpen"
       :thread="thread"
       :live="live"
-      @close="transcriptOpen = false"
+      @close="timelineOpen = false"
     />
   </div>
 </template>

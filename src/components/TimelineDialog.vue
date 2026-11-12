@@ -217,11 +217,11 @@ function onKey(event) {
   }
 }
 
-async function copyTranscript() {
+async function copyTimeline() {
   if (!selected.value) return
   const entry = selected.value
   const lines = [
-    `Execution transcript · ${props.thread?.entity || 'workspace'}`,
+    `Execution timeline · ${props.thread?.entity || 'workspace'}`,
     `Query: ${entry.query || '—'}`,
     `Status: ${entry.live ? 'running' : entry.execution.status || 'done'}`,
     `When: ${when(entry) || '—'}`,
@@ -240,9 +240,9 @@ async function copyTranscript() {
   ]
   try {
     await navigator.clipboard.writeText(lines.join('\n\n'))
-    toast('Transcript copied')
+    toast('Timeline copied')
   } catch {
-    toast('The transcript could not be copied.')
+    toast('The timeline could not be copied.')
   }
 }
 
@@ -278,23 +278,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
   <div class="scrim" :data-open="open ? '1' : '0'" @click="emit('close')"></div>
   <div
-    class="modal modal-transcript td"
+    class="modal modal-timeline td"
     :data-open="open ? '1' : '0'"
     role="dialog"
     aria-modal="true"
-    aria-label="Execution transcript"
+    aria-label="Execution timeline"
   >
     <header class="td-head">
       <div class="td-top">
         <EntityMark :entity="thread?.entity || ''" />
         <div class="td-id">
           <h2>
-            Execution transcript
+            Execution timeline
             <span class="td-sub">{{ thread?.entity || 'workspace' }} · {{ entries.length }} turns</span>
           </h2>
         </div>
         <span class="td-hint"><kbd>↑</kbd><kbd>↓</kbd> steps <span aria-hidden="true">·</span> <kbd>esc</kbd> close</span>
-        <button class="x mo-x" aria-label="Close transcript" @click="emit('close')">
+        <button class="x mo-x" aria-label="Close timeline" @click="emit('close')">
           <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
             <path d="M2 2l8 8M10 2l-8 8" />
           </svg>
@@ -416,7 +416,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <footer class="td-foot">
         <p>{{ thread?.entity || 'workspace' }} · {{ entries.length }} {{ entries.length === 1 ? 'turn' : 'turns' }} · {{ selected.execution.harness || 'harness' }}</p>
         <div class="td-foot-actions">
-          <button type="button" @click="copyTranscript">Copy transcript</button>
+          <button type="button" @click="copyTimeline">Copy timeline</button>
           <button class="td-done" type="button" @click="emit('close')">Done</button>
         </div>
       </footer>
@@ -425,7 +425,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <div v-else class="td-empty">
       <div class="empty-note">
         <b>No execution recorded yet.</b>
-        <span>Send a message; the next turn's transcript appears here.</span>
+        <span>Send a message; the next turn's timeline appears here.</span>
       </div>
     </div>
   </div>

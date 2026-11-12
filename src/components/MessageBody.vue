@@ -1,5 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, watch } from 'vue'
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
 import { downloadArtifact, readArtifact } from '@/stores/artifacts'
 import { hub } from '@/stores/hub'
 
@@ -17,6 +19,21 @@ const props = defineProps({
 
 const cache = new Map()
 const resolved = reactive({})
+
+/* Harness replies are Markdown. Keep links safe and open them outside the app. */
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName !== 'A') return
+  node.setAttribute('target', '_blank')
+  node.setAttribute('rel', 'noreferrer noopener')
+})
+
+function renderMarkdown(text) {
+  const html = marked.parse(String(text || ''), { gfm: true, breaks: true })
+  return DOMPurify.sanitize(String(html), {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
+  })
+}
 
 const TOKEN =
   /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|artifact:\/\/([^\s<>()]+)|(https?:\/\/[^\s<>()]+\.(?:png|jpe?g|gif|webp|avif|bmp|ico|svg)(?:\?[^\s<>()]*)?)/gi
@@ -136,7 +153,7 @@ watch(() => props.text, resolve)
 <template>
   <div class="msg-body">
     <template v-for="(segment, index) in segments" :key="index">
-      <span v-if="segment.type === 'text'" class="msg-text">{{ segment.text }}</span>
+      <div v-if="segment.type === 'text'" class="msg-md" v-html="renderMarkdown(segment.text)"></div>
       <template v-else>
         <img
           v-if="segment.artifact ? resolved[segment.id]?.kind === 'image' && imageSource(segment) : true"

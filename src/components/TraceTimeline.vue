@@ -131,7 +131,7 @@ function outputSize(text) {
     </div>
 
     <p v-if="!visible.length" class="tr-muted tr-empty">
-      {{ compact ? 'No tool calls or thinking in this run.' : 'No transcript steps were recorded.' }}
+      {{ compact ? 'No tool calls or thinking in this run.' : 'No timeline steps were recorded.' }}
     </p>
   </div>
 </template>
