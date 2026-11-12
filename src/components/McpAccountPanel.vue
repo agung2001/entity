@@ -12,7 +12,7 @@ import { setMcpEnabled, workspaces } from '@/stores/workspaces'
  * definition into this workspace's pool, which is the only MCP scope the app
  * owns.
  */
-const globals = reactive({ loading: true, loaded: false, error: '', groups: [] })
+const globals = reactive({ loading: false, loaded: false, error: '', groups: [] })
 const tools = reactive({})
 const busy = ref('')
 

@@ -15,9 +15,9 @@ import { ago, ensureChats, hub, initials, snippet, toast } from '@/stores/hub'
  */
 const router = useRouter()
 const input = ref(null)
-const limits = reactive({ workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 })
+const limits = reactive({ navigation: 6, workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 })
 
-const LIMIT_START = { workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 }
+const LIMIT_START = { navigation: 6, workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 }
 const LIMIT_STEP = 8
 
 /** Hosts are read lazily, the first time the palette is opened. */
@@ -52,6 +52,71 @@ watch(
 )
 
 const chatLabel = (thread) => thread.title || snippet(thread.preview) || `Thread with ${thread.entity}`
+
+/* Destinations, not just records: the palette is also how someone jumps to
+   Account, Manage workspaces, or workspace settings without hunting the rail. */
+const navigationItems = computed(() => [
+  {
+    id: 'nav:overview',
+    label: 'Overview',
+    meta: 'Workspace dashboard',
+    act: () => router.push('/'),
+  },
+  {
+    id: 'nav:workspaces',
+    label: 'Manage workspaces',
+    meta: 'Open, import, export and delete workspaces',
+    act: () => router.push('/workspaces'),
+  },
+  {
+    id: 'nav:workspace',
+    label: 'Workspace settings',
+    meta: 'General, members, skills, MCP, machines',
+    act: () => router.push('/workspace'),
+  },
+  {
+    id: 'nav:account',
+    label: 'Account settings',
+    meta: 'Profile, password and MCP tab',
+    act: () => router.push('/account'),
+  },
+  {
+    id: 'nav:entities',
+    label: 'Entities',
+    meta: 'Entity directory',
+    act: () => router.push('/entities'),
+  },
+  {
+    id: 'nav:artifacts',
+    label: 'Artifacts',
+    meta: 'Files in this workspace',
+    act: () => router.push('/artifacts'),
+  },
+  {
+    id: 'nav:skills',
+    label: 'Skills',
+    meta: 'Workspace skills and harness libraries',
+    act: () => router.push('/skills'),
+  },
+  {
+    id: 'nav:mcp',
+    label: 'MCP',
+    meta: 'Workspace pool and global configs',
+    act: () => router.push('/mcp'),
+  },
+  {
+    id: 'nav:machines',
+    label: 'Machines',
+    meta: 'Attached machines and the fleet',
+    act: () => router.push('/machines'),
+  },
+  {
+    id: 'nav:activity',
+    label: 'Activity',
+    meta: 'Journal and harness sessions',
+    act: () => router.push('/workspace?tab=activity'),
+  },
+])
 
 const entityItems = computed(() =>
   hub.agents.map((agent) => ({
@@ -188,6 +253,7 @@ const groups = computed(() => {
   }
 
   return [
+    make('navigation', 'Go to', navigationItems.value),
     make('workspace', 'Workspace', workspaceItems.value),
     make('chat', 'Chat', chatItems.value),
     make('entity', 'Entities', entityItems.value),
@@ -253,7 +319,7 @@ function onKey(event) {
       <input
         ref="input"
         :value="hub.palette.query"
-        placeholder="Search workspace, chats, entities, skills, machines…"
+        placeholder="Search pages, workspaces, chats, entities, skills, machines…"
         autocomplete="off"
         spellcheck="false"
         @input="onInput"

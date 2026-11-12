@@ -10,7 +10,7 @@ import {
   updateAccount,
 } from '@/stores/hub'
 import { displayNameFrom, gravatarUrl } from '@/lib/gravatar'
-import { activeWorkspace } from '@/stores/workspaces'
+import { workspaces } from '@/stores/workspaces'
 
 /**
  * Account is a page, not a modal. The handle and email identify this hub; the
@@ -34,28 +34,6 @@ const displayName = computed(() =>
   displayNameFrom(username.value || email.value, username.value || 'Account'),
 )
 const avatarUrl = computed(() => gravatarUrl(email.value || record.email, 112))
-
-const people = computed(() => {
-  const members = activeWorkspace.value?.members || []
-  if (members.length) return members
-  return [{ name: username.value || record.username, email: email.value || record.email, role: record.role }]
-})
-const peopleStats = computed(() => ({
-  total: people.value.length,
-  owners: people.value.filter((person) => person.role === 'owner').length,
-  admins: people.value.filter((person) => person.role === 'admin').length,
-  members: people.value.filter((person) => person.role === 'member').length,
-}))
-const personName = (person) => person.name || displayNameFrom(person.email, 'Member')
-const personInitials = (person) =>
-  personName(person)
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || '?'
-const personAvatar = (person) => gravatarUrl(person.email, 56)
 
 function cancel() {
   router.push('/')
@@ -252,27 +230,21 @@ async function save() {
         </div>
       </form>
 
-      <aside class="role-card people-card">
-        <h2>People</h2>
-        <p class="mnote">Members recorded in this workspace.</p>
-        <div class="people-stats">
-          <div><b>{{ peopleStats.total }}</b><span>members</span></div>
-          <div><b>{{ peopleStats.owners }}</b><span>owners</span></div>
-          <div><b>{{ peopleStats.admins }}</b><span>admins</span></div>
-        </div>
-        <ul class="people-list">
-          <li v-for="person in people" :key="person.email || person.name">
-            <img v-if="personAvatar(person)" class="people-avatar" :src="personAvatar(person)" alt="" />
-            <span v-else class="people-avatar people-avatar--text">{{ personInitials(person) }}</span>
-            <span class="people-id">
-              <b>{{ personName(person) }}</b>
-              <span>{{ person.email || 'no email' }}</span>
-            </span>
-            <span class="role-badge">{{ roleById(person.role).label }}</span>
-          </li>
-        </ul>
-        <p v-if="!activeWorkspace?.members?.length" class="mnote people-note">
-          This workspace has no members file yet. The signed-in account is shown.
+      <aside class="role-card account-card">
+        <h2>This account</h2>
+        <dl class="ws-meta">
+          <dt>Handle</dt>
+          <dd>{{ username || '—' }}</dd>
+          <dt>Email</dt>
+          <dd>{{ email || '—' }}</dd>
+          <dt>Role</dt>
+          <dd>{{ role.label }}</dd>
+          <dt>Workspaces</dt>
+          <dd>{{ workspaces.items.length }}</dd>
+        </dl>
+        <p class="mnote account-card-note">
+          Workspace membership is managed in <b>Workspace → Members</b>. This page only
+          changes the account signed in on this machine.
         </p>
       </aside>
     </div>

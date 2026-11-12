@@ -14,6 +14,7 @@ const router = useRouter()
 
 const accountOpen = ref(false)
 const accountRoot = ref(null)
+const railEl = ref(null)
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 const railShortcut = isMac ? '⌘B' : 'Ctrl+B'
@@ -28,6 +29,8 @@ const railWidth = ref(DEFAULT_WIDTH)
 const resizing = ref(false)
 let resizeStartX = 0
 let resizeStartWidth = DEFAULT_WIDTH
+let resizeWidth = DEFAULT_WIDTH
+let resizeFrame = 0
 
 try {
   const stored = localStorage.getItem(WIDTH_KEY)
@@ -57,6 +60,7 @@ function startResize(event) {
   resizing.value = true
   resizeStartX = event.clientX
   resizeStartWidth = railWidth.value
+  resizeWidth = railWidth.value
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   window.addEventListener('pointermove', onResizeMove)
@@ -65,19 +69,31 @@ function startResize(event) {
 
 function onResizeMove(event) {
   if (!resizing.value) return
-  railWidth.value = Math.min(
+  /* Width is written straight to the rail while dragging. Updating a reactive
+     value here re-rendered the whole rail on every pointer sample, and pointer
+     devices can sample faster than the screen paints. */
+  resizeWidth = Math.min(
     MAX_WIDTH,
     Math.max(MIN_WIDTH, resizeStartWidth + event.clientX - resizeStartX),
   )
+  if (resizeFrame) return
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0
+    if (railEl.value) railEl.value.style.width = `${resizeWidth}px`
+  })
 }
 
 function stopResize() {
   if (!resizing.value) return
+  if (resizeFrame) cancelAnimationFrame(resizeFrame)
+  resizeFrame = 0
   resizing.value = false
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
   window.removeEventListener('pointermove', onResizeMove)
   window.removeEventListener('pointerup', stopResize)
+  if (railEl.value) railEl.value.style.width = `${resizeWidth}px`
+  railWidth.value = resizeWidth
   storeWidth()
 }
 
@@ -197,7 +213,7 @@ function leave() {
 </script>
 
 <template>
-  <aside class="rail" :data-collapsed="collapsed ? '1' : '0'" :data-resizing="resizing ? '1' : '0'" :style="railStyle">
+  <aside ref="railEl" class="rail" :data-collapsed="collapsed ? '1' : '0'" :data-resizing="resizing ? '1' : '0'" :style="railStyle">
     <div class="rail-top">
       <button
         class="brand"

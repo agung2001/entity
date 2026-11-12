@@ -53,7 +53,20 @@ const createdLabel = computed(() =>
 )
 
 function seedMembers(record) {
-  if (record?.members?.length) return record.members.map((member) => ({ ...member }))
+  if (record?.members?.length) {
+    const members = record.members.map((member) => ({ ...member }))
+    /* Older workspaces were created under the bootstrap admin identity before
+       this machine had a real account. Once someone is signed in, show them as
+       the owner rather than carrying that placeholder into the members form. */
+    const bootstrap =
+      members.length === 1 &&
+      members[0].name === 'admin' &&
+      members[0].email === 'admin@studio-mac'
+    if (bootstrap && hub.session?.email && hub.session.email !== members[0].email) {
+      return [{ name: hub.session.user, email: hub.session.email, role: 'owner' }]
+    }
+    return members
+  }
   return [
     {
       name: hub.session?.user || record?.label || 'owner',
@@ -289,25 +302,30 @@ async function save() {
       </form>
 
       <aside class="role-card">
-        <h2>Workspace record</h2>
-        <dl class="ws-meta">
-          <dt>Path</dt>
-          <dd class="mono">{{ current?.displayPath || '—' }}</dd>
-          <dt>Kind</dt>
-          <dd>{{ current?.kind || 'local' }}</dd>
-          <dt>Created</dt>
-          <dd>{{ createdLabel }}</dd>
-          <dt>Your role</dt>
-          <dd>{{ owner.label }}</dd>
-        </dl>
+        <template v-if="tab === 'general'">
+          <h2>Workspace record</h2>
+          <dl class="ws-meta">
+            <dt>Path</dt>
+            <dd class="mono">{{ current?.displayPath || '—' }}</dd>
+            <dt>Kind</dt>
+            <dd>{{ current?.kind || 'local' }}</dd>
+            <dt>Created</dt>
+            <dd>{{ createdLabel }}</dd>
+            <dt>Your role</dt>
+            <dd>{{ owner.label }}</dd>
+          </dl>
+        </template>
 
-        <div class="acct-sep"><span>Roles</span></div>
-        <ul class="role-list">
-          <li v-for="entry in ROLES" :key="entry.id" :data-on="entry.id === owner.id ? '1' : '0'">
-            <b>{{ entry.label }}</b>
-            <span>{{ entry.desc }}</span>
-          </li>
-        </ul>
+        <template v-else>
+          <h2>Roles</h2>
+          <p class="mnote">What each role may change in this workspace.</p>
+          <ul class="role-list">
+            <li v-for="entry in ROLES" :key="entry.id" :data-on="entry.id === owner.id ? '1' : '0'">
+              <b>{{ entry.label }}</b>
+              <span>{{ entry.desc }}</span>
+            </li>
+          </ul>
+        </template>
       </aside>
     </div>
 
