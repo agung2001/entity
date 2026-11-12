@@ -10,7 +10,7 @@
  * Nothing secret is returned: env values are never included in the response,
  * and stderr is reduced to the last line of a failure.
  */
-const { spawn } = require('node:child_process')
+const { spawnTracked, killTree } = require('./child-registry.cjs')
 const workspaces = require('./workspace-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
 
@@ -103,11 +103,13 @@ function stdioTools(definition) {
   return new Promise((resolve, reject) => {
     let child
     try {
-      child = spawn(String(definition.command), (definition.args || []).map(String), {
+      /* An MCP server may itself fork helpers; the tree is ours to close. */
+      child = spawnTracked(String(definition.command), (definition.args || []).map(String), {
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: false,
         windowsHide: true,
+        kind: 'mcp',
+        label: String(definition.name || definition.command || 'mcp'),
       })
     } catch (error) {
       reject(error)
@@ -124,11 +126,7 @@ function stdioTools(definition) {
       if (done) return
       done = true
       clearTimeout(timer)
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        /* already gone */
-      }
+      killTree(child, 'SIGTERM')
       if (error) reject(error)
       else resolve(value)
     }

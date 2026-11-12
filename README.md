@@ -422,6 +422,33 @@ entity's `mcp:` list, written to a temporary `--mcp-config` file and deleted whe
 the run ends. `codex`, `opencode`, `pi` and `gemini` manage MCP in their own
 global config, and the UI says so instead of implying enforcement.
 
+## Child processes
+
+A harness is not one process. `claude`, `pi` and the rest start MCP servers,
+shells, and sometimes a headless browser. `child.kill()` reaches only the leader,
+so helpers survived their parent, escaped to PPID 1 and kept spending CPU after
+the window was gone.
+
+`electron/child-registry.cjs` is now the only `spawn` in the app for work that
+outlives a request:
+
+- the child is a **process-group leader** on POSIX (`detached`), and a stop
+  signals the group (`-pid`), so harness, MCP servers and browser die together.
+  Windows has no group signal, so `taskkill /T` walks the tree;
+- every live child is written to a **pid journal** in the temp directory
+  (`entity-children-<uid>-<pid>.json`). A hard kill runs no handler, so the next
+  boot reaps what the last one left — after proving the pid is still the process
+  we started (still a group leader, command line still matches), or, when the
+  leader is gone, that the surviving group is ours by uid and start time;
+- shutdown is **SIGTERM, then SIGKILL after 3 s on the whole group**, and the
+  quit waits for it. Electron's `before-quit`, the Vite dev server's `close`,
+  `scripts/dev-desktop.mjs` and a `process.on('exit')` backstop all route through
+  the same stop, so however the app ends, nothing is left running.
+
+A dev-server reload (`electron/*.cjs` edit) stops the old call table's children
+too: new module instances have no handle on them, and a harness leaked per edit
+is the same bug as a harness leaked per quit.
+
 ## Security notes
 
 - Renderer runs **sandboxed** with context isolation, and a CSP is declared in

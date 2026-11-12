@@ -8,7 +8,7 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
@@ -376,12 +376,15 @@ function createRunner({ emit = () => {} } = {}) {
 
     let child
     try {
-      child = spawn(spec.cmd, spec.argv, {
+      /* Tracked, not merely spawned: a harness brings its own MCP servers and
+         helper processes, and all of them have to die with the run. */
+      child = spawnTracked(spec.cmd, spec.argv, {
         cwd: dir,
         env: { ...process.env, ...platform.env({ record, entity }) },
-        shell: false,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
+        kind: 'run',
+        label: `${entity.name} · ${entity.harness}`,
       })
     } catch (error) {
       finish(run, { error: String(error?.message || error) })
@@ -436,19 +439,11 @@ function createRunner({ emit = () => {} } = {}) {
     if (!run || !run.child) return { canceled: false, reason: 'not running' }
     if (run.canceled) return { canceled: true, reason: 'already stopping' }
     run.canceled = true
-    try {
-      run.child.kill('SIGTERM')
-    } catch {
-      /* the process may have exited between the check and the signal */
-    }
+    /* The group, not the leader: a harness's MCP servers and browsers are
+       children of the harness, and killing only the harness orphans them. */
+    killTree(run.child, 'SIGTERM')
     clearTimeout(run.killTimer)
-    run.killTimer = setTimeout(() => {
-      try {
-        run.child.kill('SIGKILL')
-      } catch {
-        /* already gone */
-      }
-    }, KILL_AFTER_MS)
+    run.killTimer = setTimeout(() => killTree(run.child, 'SIGKILL'), KILL_AFTER_MS)
     publish(run, 'state', { status: 'canceled', note: 'SIGTERM' })
     return { canceled: true }
   }
@@ -509,11 +504,7 @@ function createRunner({ emit = () => {} } = {}) {
 
   function closeAll() {
     for (const run of active.values()) {
-      try {
-        run.child?.kill('SIGTERM')
-      } catch {
-        /* quitting anyway */
-      }
+      killTree(run.child, 'SIGTERM')
       cleanup(run)
     }
   }

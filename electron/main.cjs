@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
+const registry = require('./child-registry.cjs')
 const workspaces = require('./workspace-store.cjs')
 
 // Set by `npm run dev:desktop`; empty when running a built app.
@@ -68,6 +69,16 @@ function broadcast(event) {
 }
 
 app.whenReady().then(() => {
+  /* Anything a previous instance left behind — a crash runs no handler — is
+     still running and still spending the machine's CPU. Kill it before the
+     window opens, not after the user notices the fan. */
+  try {
+    const reaped = registry.reapOrphans({ log: (line) => console.log(`[entity] ${line}`) })
+    if (reaped.length) console.log(`[entity] reaped ${reaped.length} orphaned child process(es)`)
+  } catch {
+    /* an unreadable temp directory is not a reason to refuse to start */
+  }
+
   rpc = createRpc({
     emit: broadcast,
     reveal: (file) => shell.showItemInFolder(file),
@@ -101,19 +112,51 @@ app.whenReady().then(() => {
 })
 
 /* A run is a child of this process. Quitting takes it down, which is why a run
-   that outlives the window is reported as canceled on the next boot. */
-app.on('before-quit', () => {
+   that outlives the window is reported as canceled on the next boot.
+
+   The quit is deferred until the children are actually gone: SIGTERM first so a
+   harness can flush its transcript, SIGKILL on the whole process group after a
+   short grace period. Otherwise the app closes and the tree keeps running. */
+let stopping = false
+app.on('before-quit', async (event) => {
+  if (stopping) return
+  stopping = true
+  event.preventDefault()
+
   try {
     watcher?.close()
   } catch {
     /* quitting anyway */
   }
+
   try {
     rpc?.closeAll()
   } catch {
     /* quitting anyway */
   }
+
+  try {
+    await registry.stopAll({ graceMs: 3000 })
+  } catch {
+    /* the sync handler below is the backstop */
+  } finally {
+    app.quit()
+  }
 })
+
+/* `process.exit` and hard kills skip the promise above. This handler cannot
+   await, so it only has the last resort: SIGKILL on each group. */
+process.on('exit', () => {
+  try {
+    registry.stopAllSync()
+  } catch {
+    /* nothing left to do on the way out */
+  }
+})
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => app.quit())
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

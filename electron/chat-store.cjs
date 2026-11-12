@@ -14,7 +14,7 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
@@ -33,6 +33,8 @@ const HARNESS_TIMEOUT_MS = 10 * 60 * 1000
 const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
 
 const sending = new Map()
+/** threadId → live harness process, so a quit mid-answer takes it down too */
+const inFlight = new Map()
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g
 
 const clean = (value) => String(value || '').replace(ANSI, '').trim()
@@ -447,12 +449,14 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
 
     let child
     try {
-      child = spawn(spec.cmd, spec.argv, {
+      /* Same contract as a run: tracked, and its whole tree is ours to stop. */
+      child = spawnTracked(spec.cmd, spec.argv, {
         cwd: dir,
         env: { ...process.env, ...platform.env({ record, entity }) },
-        shell: false,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
+        kind: 'chat',
+        label: `${entity.name} · ${thread.harness}`,
       })
     } catch (error) {
       resolve({
@@ -469,11 +473,20 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
     let out = ''
     let err = ''
     let settled = false
+    inFlight.set(thread.id, child)
+
+    /** Graceful first, then the group, so no helper survives the answer. */
+    const stop = () => {
+      killTree(child, 'SIGTERM')
+      const escalate = setTimeout(() => killTree(child, 'SIGKILL'), 3000)
+      if (typeof escalate.unref === 'function') escalate.unref()
+    }
 
     const finish = (code, error) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (inFlight.get(thread.id) === child) inFlight.delete(thread.id)
       const parsed = parser.finish()
       const endedAt = now()
       const failed = error ? String(error?.message || error) : parsed.error
@@ -500,11 +513,7 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
     }
 
     const timer = setTimeout(() => {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        /* already gone */
-      }
+      stop()
       finish(null, new Error('The harness did not answer within 10 minutes.'))
     }, HARNESS_TIMEOUT_MS)
 
@@ -708,4 +717,10 @@ module.exports = {
   remove,
   send,
   summarise,
+  /** Quitting with an answer in flight must not leave the harness running. */
+  closeAll: () => {
+    for (const child of inFlight.values()) killTree(child, 'SIGTERM')
+    inFlight.clear()
+  },
+  activeCount: () => inFlight.size,
 }

@@ -168,8 +168,18 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
   return {
     call,
     runner,
-    closeAll: () => runner.closeAll(),
-    activeCount: () => runner.activeCount(),
+    /* Both halves: a run and a chat answer each hold a harness process, and a
+       quit that only stopped runs would leave the chat answering into a
+       window that no longer exists. */
+    closeAll: () => {
+      try {
+        chats.closeAll()
+      } catch {
+        /* the runner still has children to stop */
+      }
+      runner.closeAll()
+    },
+    activeCount: () => runner.activeCount() + chats.activeCount(),
   }
 }
 

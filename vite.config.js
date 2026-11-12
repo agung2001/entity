@@ -12,6 +12,13 @@ const ELECTRON_DIR = fileURLToPath(new URL('./electron/', import.meta.url))
 const RPC_PATH = require.resolve('./electron/rpc.cjs')
 const WATCH_PATH = require.resolve('./electron/workspace-watch.cjs')
 const STORE_PATH = require.resolve('./electron/workspace-store.cjs')
+const REGISTRY_PATH = require.resolve('./electron/child-registry.cjs')
+
+/** Resolved each time: the dev server drops `electron/*.cjs` from the module
+    cache on edit, and a cached registry would forget processes it still owns. */
+function registry() {
+  return require(REGISTRY_PATH)
+}
 
 /**
  * Local data for `npm run dev` (and `npm run preview`).
@@ -80,15 +87,25 @@ function localDataPlugin() {
     watcher = watchWorkspaces({ root: WORKSPACES_DIR, emit: push })
   }
 
-  function resetRpc() {
+  async function resetRpc() {
     try {
       rpc?.closeAll()
     } catch {
       /* the dev server is reloading anyway */
     }
     rpc = null
+    /* A reload must also take down what the old call table started: the new
+       module instances have no handle on those children, and a dev server that
+       leaks a harness per edit is the same bug as leaking one per quit. */
+    try {
+      await registry().stopAll({ graceMs: 1500 })
+    } catch {
+      /* the next spawn still journals, so a crash is covered */
+    }
     for (const key of Object.keys(require.cache)) {
-      if (key.startsWith(ELECTRON_DIR)) delete require.cache[key]
+      /* The registry keeps the live-child map; re-requiring it would start a new
+         instance that does not know which pids this process still owns. */
+      if (key.startsWith(ELECTRON_DIR) && key !== REGISTRY_PATH) delete require.cache[key]
     }
   }
 
@@ -182,20 +199,56 @@ function localDataPlugin() {
     })
   }
 
+  /**
+   * Whatever ends the process — Ctrl-C, a restart, `server.close()`, a crash
+   * that still runs exit handlers — stops the children this server started.
+   * The journal covers the case where none of that runs.
+   */
+  function installShutdown(server, logger) {
+    try {
+      const reaped = registry().reapOrphans({ log: (line) => logger.info(`[entity] ${line}`) })
+      if (reaped.length) logger.info(`[entity] reaped ${reaped.length} orphaned child process(es)`)
+    } catch {
+      /* an unreadable temp directory is not a reason to refuse to serve */
+    }
+
+    const shutdown = () => {
+      try {
+        rpc?.closeAll()
+      } catch {
+        /* still stop what the registry knows about */
+      }
+      try {
+        registry().stopAllSync()
+      } catch {
+        /* nothing left to stop */
+      }
+    }
+    server.httpServer?.once('close', shutdown)
+    /* Vite's CLI owns SIGINT/SIGTERM and closes the server; this handler is the
+       path that survives even when the event loop is being torn down. */
+    process.once('exit', shutdown)
+  }
+
   return {
     name: 'entity-local-data',
     configureServer(server) {
       mount(server.middlewares)
       startWatcher()
+      installShutdown(server, server.config.logger)
+
       /* electron/*.cjs sits outside the module graph; drop it when it changes so
          `/__entity/*` reflects the edit without restarting the server. */
       server.watcher.add(ELECTRON_DIR)
       server.watcher.on('change', (file) => {
-        if (file.startsWith(ELECTRON_DIR)) resetRpc()
+        if (file.startsWith(ELECTRON_DIR)) void resetRpc()
       })
     },
     configurePreviewServer(server) {
       mount(server.middlewares)
+      /* `npm run preview` runs the same call table, so it can start the same
+         harnesses. It gets the same cleanup, not a lesser one. */
+      installShutdown(server, server.config.logger)
     },
   }
 }
