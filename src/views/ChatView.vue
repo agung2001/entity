@@ -9,7 +9,7 @@ import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TranscriptDialog from '@/components/TranscriptDialog.vue'
-import { onRunEvent } from '@/composables/localBridge'
+import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
 import { loadArtifacts } from '@/stores/artifacts'
 import { HARNESSES } from '@/data/mock'
 import {
@@ -50,12 +50,31 @@ const editTitle = ref('')
 const confirming = ref('')
 const transcriptOpen = ref(false)
 const live = ref(null)
+const menuItem = ref(null)
+const menuPos = ref({ top: 0, left: 0 })
+const hmenu = ref(null)
 let offEvent = null
 
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
-const historyShortcut = isMac ? '⌘⇧B' : 'Ctrl+Shift+B'
-const transcriptShortcut = isMac ? '⌘⇧E' : 'Ctrl+Shift+E'
+const isDesktop = hasDesktopBridge()
+/* Browser chrome owns several Cmd/Ctrl+Shift combinations. In a browser use
+   Option/Alt+Shift instead, while the packaged app keeps the native-looking
+   shortcut. Both are accepted by the handler. */
+const historyShortcut = isDesktop
+  ? isMac
+    ? '⌘⇧B'
+    : 'Ctrl+Shift+B'
+  : isMac
+    ? '⌥⇧B'
+    : 'Alt+Shift+B'
+const transcriptShortcut = isDesktop
+  ? isMac
+    ? '⌘⇧E'
+    : 'Ctrl+Shift+E'
+  : isMac
+    ? '⌥⇧E'
+    : 'Alt+Shift+E'
 
 const HISTORY_KEY = 'entity.chat.history'
 try {
@@ -113,6 +132,14 @@ const messages = computed(() => {
   ]
 })
 
+const threadTitle = computed(() => {
+  const t = thread.value
+  if (!t) return 'New thread'
+  if (t.title) return t.title
+  const asked = [...(t.messages || [])].reverse().find((message) => message.who === 'me')
+  return asked ? snippet(asked.text) : `Thread with ${agent.value?.name || 'entity'}`
+})
+
 const statLabel = computed(
   () =>
     `This thread: ${counts.value.q} ${counts.value.q === 1 ? 'query' : 'queries'} sent, ` +
@@ -146,18 +173,22 @@ function toggleHistory() {
 }
 
 function onChatKey(event) {
-  if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey) return
-  const target = event.target
-  const editable =
-    target instanceof HTMLElement &&
-    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-  if (editable) return
+  if (event.key === 'Escape' && menuItem.value) {
+    menuItem.value = null
+    return
+  }
+  const primary = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
+  const alternate = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
+  if (!primary && !alternate) return
   const key = event.key.toLowerCase()
-  if (key === 'b') {
+  const code = event.code
+  if (key === 'b' || code === 'KeyB') {
     event.preventDefault()
+    event.stopPropagation()
     toggleHistory()
-  } else if (key === 'e' && canTranscript.value) {
+  } else if ((key === 'e' || code === 'KeyE') && canTranscript.value) {
     event.preventDefault()
+    event.stopPropagation()
     transcriptOpen.value = true
   }
 }
@@ -301,9 +332,17 @@ function onLiveEvent(event) {
   }
 }
 
+function onDocumentClick(event) {
+  if (!menuItem.value) return
+  const target = event.target
+  if (target instanceof Element && target.closest('.hrow-menu, .hact-menu')) return
+  menuItem.value = null
+}
+
 onMounted(async () => {
   offEvent = onRunEvent(onLiveEvent)
-  document.addEventListener('keydown', onChatKey)
+  window.addEventListener('keydown', onChatKey, true)
+  document.addEventListener('click', onDocumentClick)
   await ensureChats()
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   if (wanted) {
@@ -316,7 +355,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   offEvent?.()
   offEvent = null
-  document.removeEventListener('keydown', onChatKey)
+  window.removeEventListener('keydown', onChatKey, true)
+  document.removeEventListener('click', onDocumentClick)
 })
 
 watch(
@@ -327,6 +367,7 @@ watch(
     confirming.value = ''
     live.value = null
     transcriptOpen.value = false
+    menuItem.value = null
     await ensureChats()
     if (!hub.chat.active && hub.chat.summaries.length) await pickThread(hub.chat.summaries[0].id)
   },
@@ -344,6 +385,7 @@ watch(
   () => {
     live.value = null
     transcriptOpen.value = false
+    menuItem.value = null
   },
 )
 
@@ -444,7 +486,7 @@ watch(
             />
           </div>
 
-          <div class="hlist" role="group" aria-label="History">
+          <div class="hlist" role="group" aria-label="History" @scroll="menuItem = null">
             <template v-if="visible.length">
               <div
                 v-for="t in visible"
@@ -488,7 +530,6 @@ watch(
                       />
                     </template>
                     <b v-else>{{ threadLabel(t) }}</b>
-                    <time>{{ threadWhen(t) }}</time>
                   </span>
                   <span class="hs">{{ lastAsked(t) }}</span>
                   <span class="hm">
@@ -498,50 +539,29 @@ watch(
                     <HarnessIcon :name="t.harness" :size="10" />
                     {{ harnessById(t.harness).label }}
                     <template v-if="!threadQueries(t)"> · new</template>
+                    <time class="hm-time">{{ threadWhen(t) }}</time>
                   </span>
                 </div>
                 <span class="hrow-acts" @click.stop>
                   <button
-                    class="hact"
+                    class="hact hact-menu"
                     type="button"
-                    :title="t.pinned ? 'Unpin thread' : 'Pin thread'"
-                    :aria-label="t.pinned ? 'Unpin thread' : 'Pin thread'"
-                    @click="togglePin(t)"
+                    :aria-expanded="menuItem?.id === t.id ? 'true' : 'false'"
+                    title="Thread actions"
+                    aria-label="Thread actions"
+                    @click="openRowMenu($event, t)"
                   >
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                      <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <circle cx="3.2" cy="8" r="1.25" />
+                      <circle cx="8" cy="8" r="1.25" />
+                      <circle cx="12.8" cy="8" r="1.25" />
                     </svg>
-                  </button>
-                  <button
-                    class="hact"
-                    type="button"
-                    title="Edit title"
-                    aria-label="Edit title"
-                    @click="startRename(t)"
-                  >
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                      <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7z" />
-                      <path d="M9.4 3.2l2.4 2.4" />
-                    </svg>
-                  </button>
-                  <button
-                    class="hact hact--danger"
-                    type="button"
-                    :class="{ confirming: confirming === t.id }"
-                    :title="confirming === t.id ? 'Click again to delete' : 'Delete thread'"
-                    :aria-label="confirming === t.id ? 'Click again to delete' : 'Delete thread'"
-                    @click="deleteThread(t)"
-                  >
-                    <svg v-if="confirming !== t.id" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                      <path d="M3.2 4.4h9.6M6.1 4.4V2.8h3.8v1.6M4.4 4.4l.6 8.8h6l.6-8.8" />
-                    </svg>
-                    <span v-else class="hconfirm">Delete?</span>
                   </button>
                 </span>
               </div>
             </template>
             <div v-else class="hempty">
-              <b>{{ search ? 'No thread matches' : 'No thread matches' }}</b>
+              <b>No thread matches</b>
               {{
                 search
                   ? 'Try a different title, entity or preview.'
@@ -565,8 +585,10 @@ watch(
           <header class="cp-head">
             <EntityMark :entity="agent.name" />
             <div class="cp-id">
-              <h2>{{ agent.name }}</h2>
+              <h2>{{ threadTitle }}</h2>
               <p>
+                <span class="cp-entity">{{ agent.name }}</span>
+                <span aria-hidden="true">·</span>
                 <MachineIcon :size="10" />
                 {{ machineById(ctx.machine)?.label }}
                 <span aria-hidden="true">·</span>
@@ -668,6 +690,44 @@ watch(
         </section>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="menuItem"
+        ref="hmenu"
+        class="hrow-menu"
+        role="menu"
+        aria-label="Thread actions"
+        :style="{ top: menuPos.top, left: menuPos.left }"
+        @click.stop
+      >
+        <button class="hmenu-item" type="button" role="menuitem" @click="menuPin">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
+          </svg>
+          {{ menuItem.pinned ? 'Unpin thread' : 'Pin thread' }}
+        </button>
+        <button class="hmenu-item" type="button" role="menuitem" @click="menuRename">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7z" />
+            <path d="M9.4 3.2l2.4 2.4" />
+          </svg>
+          Rename thread
+        </button>
+        <button
+          class="hmenu-item hmenu-danger"
+          type="button"
+          role="menuitem"
+          :class="{ confirming: confirming === menuItem.id }"
+          @click="menuDelete"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M3.2 4.4h9.6M6.1 4.4V2.8h3.8v1.6M4.4 4.4l.6 8.8h6l.6-8.8" />
+          </svg>
+          {{ confirming === menuItem.id ? 'Click again to delete' : 'Delete thread' }}
+        </button>
+      </div>
+    </Teleport>
 
     <NewThreadDialog :open="newOpen" :defaults="ctx" @close="newOpen = false" @created="onCreated" />
     <TranscriptDialog

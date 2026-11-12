@@ -16,6 +16,7 @@ const chats = require('./chat-store.cjs')
 const sessions = require('./session-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
 const artifacts = require('./artifact-store.cjs')
+const harnesses = require('./harness-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
@@ -45,6 +46,9 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),
+    'harness.list': () => harnesses.list(),
+    'harness.models': (args) => harnesses.models(args),
+    'harness.setPath': (args) => harnesses.setPath(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),

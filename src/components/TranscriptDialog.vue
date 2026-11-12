@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import TraceTimeline from '@/components/TraceTimeline.vue'
+import EntityMark from '@/components/EntityMark.vue'
+import ExecutionTimeline from '@/components/ExecutionTimeline.vue'
+import { toast } from '@/stores/hub'
 
 /**
- * The full execution record for one chat turn. The header answers "what ran,
- * how long did it take, on which model"; the list below is the harness stream:
- * thinking, tool calls, their output, and the answer.
+ * The full execution record for one chat turn. The header carries the turns
+ * and the wall clock; the body is an outline plus one expanded step, so a long
+ * run stays browsable instead of becoming a single wall of text.
  */
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -15,6 +17,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const selectedKey = ref('')
+const selectedSeq = ref(-1)
 
 const entries = computed(() => {
   const rows = []
@@ -48,14 +51,31 @@ const selected = computed(
   () => entries.value.find((entry) => entry.key === selectedKey.value) || entries.value.at(-1) || null,
 )
 
+const steps = computed(() => {
+  if (!selected.value) return []
+  const base = selected.value.steps?.length
+    ? selected.value.steps
+    : selected.value.message?.text
+      ? [
+          {
+            seq: 0,
+            type: selected.value.message.who === 'sys' ? 'error' : 'text',
+            content: selected.value.message.text,
+            at: selected.value.execution.startedAt,
+          },
+        ]
+      : []
+  return [...base].sort((a, b) => a.seq - b.seq)
+})
+
+const selectedIndex = computed(() => steps.value.findIndex((step) => step.seq === selectedSeq.value))
+const selectedStep = computed(() => steps.value[selectedIndex.value] || null)
+
 const status = computed(() => {
   if (!selected.value) return ''
   if (selected.value.live) return 'running'
   return selected.value.execution.status || 'done'
 })
-
-const hasText = computed(() => selected.value?.steps?.some((step) => step.type === 'text'))
-const answerLabel = computed(() => (selected.value?.message?.who === 'sys' ? 'Error' : 'Answer'))
 
 const usageText = computed(() => {
   const usage = selected.value?.execution?.usage
@@ -102,16 +122,128 @@ function when(entry) {
     : ''
 }
 
-function turnLabel(entry, index) {
-  const whenText = when(entry)
-  const query = String(entry.query || '').replace(/\s+/g, ' ').trim()
-  const suffix = query ? ` · ${query.length > 42 ? `${query.slice(0, 41)}…` : query}` : ''
-  return `${index + 1}. ${whenText || 'turn'}${suffix}`
+function offset(at) {
+  const start = Date.parse(selected.value?.execution?.startedAt || '')
+  const ms = Date.parse(at || '')
+  if (!Number.isFinite(start) || !Number.isFinite(ms)) return ''
+  const total = Math.max(0, Math.floor((ms - start) / 1000))
+  return `+${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+function duration(step) {
+  let ms = step.durationMs
+  if (!Number.isFinite(ms) && step.at && step.endedAt) {
+    const start = Date.parse(step.at)
+    const end = Date.parse(step.endedAt)
+    if (Number.isFinite(start) && Number.isFinite(end)) ms = end - start
+  }
+  return Number.isFinite(ms) ? formatMs(ms) : ''
+}
+
+function kindLabel(step) {
+  if (step.type === 'thinking') return 'Thinking'
+  if (step.type === 'text') return 'Response'
+  if (step.type === 'tool_use') return step.tool || 'Tool'
+  if (step.type === 'tool_result') return step.tool || 'Tool result'
+  return 'Error'
+}
+
+function toolSummary(step) {
+  const input = step.input
+  if (!input || typeof input !== 'object') return ''
+  if (typeof input.command === 'string') return input.command
+  if (typeof input.cmd === 'string') return input.cmd
+  if (Array.isArray(input.changes)) return `${input.changes.length} file${input.changes.length === 1 ? '' : 's'} changed`
+  if (typeof input.file_path === 'string') return input.file_path
+  if (typeof input.path === 'string') return input.path
+  if (typeof input.query === 'string') return input.query
+  try {
+    const text = JSON.stringify(input)
+    return text.length > 180 ? `${text.slice(0, 177)}…` : text
+  } catch {
+    return ''
+  }
+}
+
+function stepSummary(step) {
+  if (step.type === 'thinking') return String(step.content || '').replace(/\s+/g, ' ').slice(0, 120)
+  if (step.type === 'text') return String(step.content || '').replace(/\s+/g, ' ').slice(0, 120)
+  if (step.type === 'tool_use' || step.type === 'tool_result') {
+    return toolSummary(step) || step.output?.replace(/\s+/g, ' ').slice(0, 120) || 'tool call'
+  }
+  return String(step.content || step.output || 'error').replace(/\s+/g, ' ').slice(0, 120)
+}
+
+function prettyInput(step) {
+  if (!step.input) return ''
+  try {
+    return JSON.stringify(step.input, null, 2)
+  } catch {
+    return String(step.input)
+  }
+}
+
+function selectStep(seq) {
+  selectedSeq.value = seq
+}
+
+function stepBy(delta) {
+  if (!steps.value.length) return
+  const next = Math.min(Math.max(0, (selectedIndex.value < 0 ? 0 : selectedIndex.value) + delta), steps.value.length - 1)
+  selectedSeq.value = steps.value[next].seq
+}
+
+function firstSeq(entry) {
+  const list = entry?.steps?.length
+    ? [...entry.steps].sort((a, b) => a.seq - b.seq)
+    : entry?.message?.text
+      ? [{ seq: 0 }]
+      : []
+  return list[0]?.seq ?? -1
 }
 
 function onKey(event) {
   if (!props.open) return
-  if (event.key === 'Escape') emit('close')
+  if (event.key === 'Escape') {
+    emit('close')
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    stepBy(1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    stepBy(-1)
+  }
+}
+
+async function copyTranscript() {
+  if (!selected.value) return
+  const entry = selected.value
+  const lines = [
+    `Execution transcript · ${props.thread?.entity || 'workspace'}`,
+    `Query: ${entry.query || '—'}`,
+    `Status: ${entry.live ? 'running' : entry.execution.status || 'done'}`,
+    `When: ${when(entry) || '—'}`,
+    `Duration: ${elapsed(entry)}`,
+    `Model: ${entry.execution.model || 'harness default'}`,
+    `Harness: ${entry.execution.harness || '—'}`,
+    '',
+    ...steps.value.map((step) => {
+      const head = `[${offset(step.at) || '+00:00'}] ${kindLabel(step)}${duration(step) ? ` (${duration(step)})` : ''}`
+      const body =
+        step.type === 'tool_use' || step.type === 'tool_result'
+          ? [toolSummary(step), prettyInput(step), step.output].filter(Boolean).join('\n')
+          : step.content || step.output || ''
+      return `${head}\n${body}`.trim()
+    }),
+  ]
+  try {
+    await navigator.clipboard.writeText(lines.join('\n\n'))
+    toast('Transcript copied')
+  } catch {
+    toast('The transcript could not be copied.')
+  }
 }
 
 watch(
@@ -119,6 +251,7 @@ watch(
   (open) => {
     if (!open) return
     selectedKey.value = props.live ? 'live' : entries.value.at(-1)?.key || ''
+    selectedSeq.value = firstSeq(entries.value.find((entry) => entry.key === selectedKey.value))
   },
   { immediate: true },
 )
@@ -130,100 +263,167 @@ watch(entries, (list) => {
   }
 })
 
-onMounted(() => document.addEventListener('keydown', onKey))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
+watch(selectedKey, () => {
+  selectedSeq.value = firstSeq(selected.value)
+})
+
+watch(steps, (list) => {
+  if (!list.some((step) => step.seq === selectedSeq.value)) selectedSeq.value = list[0]?.seq ?? -1
+})
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
   <div class="scrim" :data-open="open ? '1' : '0'" @click="emit('close')"></div>
   <div
-    class="modal modal-transcript"
+    class="modal modal-transcript td"
     :data-open="open ? '1' : '0'"
     role="dialog"
     aria-modal="true"
     aria-label="Execution transcript"
   >
-    <div class="mo-head">
-      <h2>Execution transcript</h2>
-      <p>
-        What the harness actually ran for this turn, with the model's reasoning and
-        every tool call it made.
-      </p>
-      <button class="x mo-x" aria-label="Close transcript" @click="emit('close')">
-        <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
-          <path d="M2 2l8 8M10 2l-8 8" />
-        </svg>
-      </button>
-    </div>
+    <header class="td-head">
+      <div class="td-top">
+        <EntityMark :entity="thread?.entity || ''" />
+        <div class="td-id">
+          <h2>
+            Execution transcript
+            <span class="td-sub">{{ thread?.entity || 'workspace' }} · {{ entries.length }} turns</span>
+          </h2>
+        </div>
+        <span class="td-hint"><kbd>↑</kbd><kbd>↓</kbd> steps <span aria-hidden="true">·</span> <kbd>esc</kbd> close</span>
+        <button class="x mo-x" aria-label="Close transcript" @click="emit('close')">
+          <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 2l8 8M10 2l-8 8" />
+          </svg>
+        </button>
+      </div>
 
-    <div v-if="entries.length > 1" class="tr-pick">
-      <label class="lbl" for="tr-turn">Turn</label>
-      <select id="tr-turn" v-model="selectedKey">
-        <option v-for="(entry, index) in entries" :key="entry.key" :value="entry.key">
-          {{ turnLabel(entry, index) }}
-        </option>
-      </select>
-    </div>
+      <div v-if="entries.length" class="td-trails" role="tablist" aria-label="Turns">
+        <button
+          v-for="(entry, index) in entries"
+          :key="entry.key"
+          class="td-trail"
+          type="button"
+          role="tab"
+          :aria-selected="selectedKey === entry.key ? 'true' : 'false'"
+          @click="selectedKey = entry.key"
+        >
+          <span>Turn {{ index + 1 }}</span>
+          <span class="n">{{ elapsed(entry) }}</span>
+          <span v-if="entry.live" class="td-live-dot" aria-label="running"></span>
+          <span v-else-if="entry.execution.status === 'error'" class="td-err-dot" aria-label="failed"></span>
+        </button>
+      </div>
+    </header>
 
-    <div class="mo-body tr-body">
-      <template v-if="selected">
-        <section class="tr-meta">
-          <div class="tr-meta-head">
-            <span class="state" :data-s="status === 'error' || status === 'canceled' ? 'fail' : 'live'">
-              <i></i>{{ status }}
-            </span>
-            <span v-if="selected.live" class="tr-live">streaming…</span>
-            <span class="tr-when">{{ when(selected) }}</span>
-          </div>
-          <dl class="tr-grid">
-            <div>
-              <dt>Duration</dt>
-              <dd>{{ elapsed(selected) }}</dd>
-            </div>
-            <div>
-              <dt>Model</dt>
-              <dd class="mono">{{ selected.execution.model || 'harness default' }}</dd>
-            </div>
-            <div>
-              <dt>Harness</dt>
-              <dd>{{ selected.execution.harness || '—' }}</dd>
-            </div>
-            <div>
-              <dt>Exit</dt>
-              <dd class="mono">
-                {{ Number.isFinite(selected.execution.exitCode) ? selected.execution.exitCode : '—' }}
-              </dd>
-            </div>
-            <div v-if="usageText">
-              <dt>Tokens</dt>
-              <dd class="mono">{{ usageText }}</dd>
-            </div>
+    <template v-if="selected">
+      <section class="td-sum">
+        <div class="td-q">
+          <p>{{ selected.query || 'No question recorded.' }}</p>
+          <dl>
+            <div><dt>Status</dt><dd><span class="state" :data-s="status === 'error' || status === 'canceled' ? 'fail' : 'live'"><i></i>{{ status }}</span></dd></div>
+            <div><dt>When</dt><dd>{{ when(selected) || '—' }}</dd></div>
+            <div><dt>Tokens</dt><dd>{{ usageText || '—' }}</dd></div>
+            <div><dt>Model</dt><dd class="mono">{{ selected.execution.model || 'harness default' }}</dd></div>
+            <div><dt>Exit</dt><dd class="mono">{{ Number.isFinite(selected.execution.exitCode) ? selected.execution.exitCode : '—' }}</dd></div>
           </dl>
-
-          <p v-if="selected.query" class="tr-query">“{{ selected.query }}”</p>
-
-          <div v-if="selected.execution.command" class="tr-line">
+          <div v-if="selected.execution.command" class="td-runmeta">
             <span>Command</span>
             <code>{{ selected.execution.command }}</code>
           </div>
-          <div v-if="selected.execution.cwd" class="tr-line">
+          <div v-if="selected.execution.cwd" class="td-runmeta">
             <span>Directory</span>
             <code>{{ selected.execution.cwd }}</code>
           </div>
-        </section>
+        </div>
+        <ExecutionTimeline
+          :steps="steps"
+          :execution="selected.execution"
+          :selected-seq="selectedSeq"
+          @select="selectStep"
+        />
+      </section>
 
-        <TraceTimeline :steps="selected.steps" :execution="selected.execution" />
+      <div class="td-body">
+        <nav class="td-outline" aria-label="Steps">
+          <div class="td-grp">Steps <span>{{ steps.length }}</span></div>
+          <button
+            v-for="(step, index) in steps"
+            :key="step.seq"
+            class="td-orow"
+            type="button"
+            :aria-current="selectedSeq === step.seq ? 'true' : 'false'"
+            :data-error="step.isError || step.type === 'error' ? '1' : '0'"
+            @click="selectedSeq = step.seq"
+          >
+            <span class="td-off">{{ offset(step.at) }}</span>
+            <span class="td-ot">
+              <span class="td-kind">{{ kindLabel(step) }}</span>
+              <span class="td-osm">{{ stepSummary(step) }}</span>
+            </span>
+            <span class="td-od">{{ duration(step) }}</span>
+          </button>
+          <p v-if="!steps.length" class="td-empty-note">No steps were recorded for this turn.</p>
+        </nav>
 
-        <section
-          v-if="selected.message?.text && (!hasText || selected.message.who === 'sys')"
-          class="tr-answer"
-        >
-          <h3>{{ answerLabel }}</h3>
-          <p>{{ selected.message.text }}</p>
-        </section>
-      </template>
+        <div class="td-pane">
+          <template v-if="selectedStep">
+            <div class="td-phead">
+              <span class="td-kind">{{ kindLabel(selectedStep) }}</span>
+              <span class="td-off">{{ offset(selectedStep.at) }}</span>
+              <span v-if="duration(selectedStep)" class="td-od">{{ duration(selectedStep) }}</span>
+              <span class="td-pos">{{ selectedIndex + 1 }} / {{ steps.length }}</span>
+            </div>
+            <div class="td-pbody">
+              <template v-if="selectedStep.type === 'thinking' || selectedStep.type === 'text'">
+                <pre class="td-text" :data-kind="selectedStep.type">{{ selectedStep.content }}</pre>
+              </template>
+              <template v-else-if="selectedStep.type === 'tool_use' || selectedStep.type === 'tool_result'">
+                <div v-if="toolSummary(selectedStep)" class="td-command">
+                  <span>Command / arguments</span>
+                  <code>{{ toolSummary(selectedStep) }}</code>
+                </div>
+                <details v-if="selectedStep.input" class="td-detail" open>
+                  <summary>Input</summary>
+                  <pre>{{ prettyInput(selectedStep) }}</pre>
+                </details>
+                <details v-if="selectedStep.output" class="td-detail" open>
+                  <summary>{{ selectedStep.isError ? 'Error output' : 'Output' }}</summary>
+                  <pre>{{ selectedStep.output }}</pre>
+                </details>
+                <p v-if="!selectedStep.input && !selectedStep.output" class="td-empty-note">
+                  No input or output was recorded for this tool call.
+                </p>
+              </template>
+              <pre v-else class="td-error">{{ selectedStep.content || selectedStep.output || 'The harness reported an error.' }}</pre>
+            </div>
+            <div class="td-nav">
+              <button type="button" :disabled="selectedIndex <= 0" @click="stepBy(-1)">← Previous step</button>
+              <button type="button" :disabled="selectedIndex >= steps.length - 1" @click="stepBy(1)">Next step →</button>
+              <span class="td-posn">{{ selectedIndex + 1 }} / {{ steps.length }}</span>
+            </div>
+          </template>
+          <div v-else class="empty-note">
+            <b>No steps were recorded for this turn.</b>
+            <span>The answer is shown in the chat; the harness did not emit a stream.</span>
+          </div>
+        </div>
+      </div>
 
-      <div v-else class="empty-note">
+      <footer class="td-foot">
+        <p>{{ thread?.entity || 'workspace' }} · {{ entries.length }} {{ entries.length === 1 ? 'turn' : 'turns' }} · {{ selected.execution.harness || 'harness' }}</p>
+        <div class="td-foot-actions">
+          <button type="button" @click="copyTranscript">Copy transcript</button>
+          <button class="td-done" type="button" @click="emit('close')">Done</button>
+        </div>
+      </footer>
+    </template>
+
+    <div v-else class="td-empty">
+      <div class="empty-note">
         <b>No execution recorded yet.</b>
         <span>Send a message; the next turn's transcript appears here.</span>
       </div>

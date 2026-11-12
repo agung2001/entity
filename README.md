@@ -61,6 +61,8 @@ assume a port.
   runs/<runId>.jsonl               append-only run log
 ```
 
+`~/.entity/harnesses.json` holds the optional machine-wide binary path overrides (`{ "paths": { "claude": "/opt/.../claude" } }`).
+
 `machines/CONFIG` is in `ssh_config` grammar and is rebuilt from `~/.ssh/config`
 on every attach and detach; `# entity-machines: [...]` on its fourth line is the
 attached list (ssh ignores comments), which is how a host that disappeared from
@@ -153,9 +155,10 @@ into thinking blocks, assistant text and one row per tool call with its output.
 The steps and execution metadata (command, cwd, model, duration, usage) live on
 the assistant message in `<ws>/chats/<threadId>.json` — no database, no second
 copy. The chat header opens the full transcript; each answer also carries an
-inline, collapsible reasoning/tool disclosure. Old messages without a transcript
-simply do not show one. Each answer also has copy, share and "save as artifact"
-actions.
+inline, collapsible process fold. The transcript dialog itself is a detail view:
+turn tabs, a two-lane wall-clock timeline, a step outline and one expanded step.
+Old messages without a transcript simply do not show one. Each answer also has
+copy, share and "save as artifact" actions.
 
 ### Artifacts in chat
 
@@ -178,6 +181,7 @@ electron/
   session-store.cjs   each harness's own session store, scoped by entity cwd
   mcp-store.cjs       MCP config discovery across ~/.claude.json, ~/.codex, ~/.pi, …
   artifact-store.cjs  <ws>/artifacts: list, read, upload, saveText, remove, prompt brief
+  harness-store.cjs   installed CLI paths, ~/.entity/harnesses.json, detected model hints
   skill-ref.cjs       /workspace:<name> and /<harness>:<name> → `use this skill <path>`
   runner-local.cjs    spawn a harness, stream events, append the run log
   frontmatter.cjs     the flat frontmatter parser shared by entities and skills
@@ -195,9 +199,9 @@ src/
     LoginView.vue     sign in
     SetupView.vue     first run: create the first workspace (no rail, no skip)
     OverviewView.vue  workspace statistics, machines, entities, recent runs
-    ChatView.vue      collapsible thread history, search/pin/rename, floating composer, transcript
+    ChatView.vue      collapsible thread history, row action menu, searchable filters, transcript
     EntitiesView.vue  the entity table; "Add entity" scaffolds a file
-    EntityDetailView.vue  the entity as a page: identity, skills, source file card
+    EntityDetailView.vue  entity page: editable harness/model, harness paths, Markdown instructions
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
     McpView.vue       workspace MCP pool + global harness MCP config (attach to pool)
     ArtifactsView.vue  workspace artifact shelf: upload, remove, search, extension filter, sort
@@ -215,11 +219,14 @@ src/
     AppRail.vue       brand, workspace switcher, nav, account menu
     AppTopbar.vue     breadcrumbs + view tools
     MessageList / MessageBody / SlashComposer
+    ModelInput.vue     free-text model field with detected suggestions
+    MarkdownEditor.vue Write/Review Markdown editor with a sanitized preview
+    HarnessPaths.vue   machine-wide executable overrides for the five harnesses
     ArtifactThumb.vue  lazy image thumbnail for the artifact grid
     PickMenu.vue      the quiet text trigger used for filter axes
     WorkspaceWizard.vue    the create form (setup page and modal)
     WorkspaceStats.vue     the overview's entity / conversation / skill / machine cards
-    NewThreadDialog.vue    entity, machine, harness and model before a thread starts
+    NewThreadDialog.vue    searchable entity/harness picks, detected models before a thread starts
     TranscriptDialog / TraceTimeline  one execution's command, timing, thinking, tools
     CommandPalette.vue    categorized search: workspaces, chat, entities, skills, machines, activity
     ToastHost.vue
@@ -231,6 +238,7 @@ src/
     hub.js            session, the active workspace's view model and chat state
     workspaces.js     list/open/create, machines, skills, mcp; scope loading
     artifacts.js      artifact metadata, upload, save, read, remove
+    harnesses.js      installed harness paths and detected models
     entities.js       entity files mapped onto the table rows
     runs.js           run summaries, live output, stale-event guard
     fleet.js          ssh hosts from ~/.ssh/config + per-host probe state

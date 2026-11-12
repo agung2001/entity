@@ -18,6 +18,8 @@
     "package": "npm run build && electron-builder"
   },
   "dependencies": {
+    "dompurify": "^3.4.17",
+    "marked": "^18.2.0",
     "vue": "^3.5.45",
     "vue-router": "^4.6.4"
   },

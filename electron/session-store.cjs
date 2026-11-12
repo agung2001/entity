@@ -23,6 +23,7 @@ const { execFile } = require('node:child_process')
 const { promisify } = require('node:util')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
+const harnesses = require('./harness-store.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
 const execFileAsync = promisify(execFile)
@@ -156,8 +157,11 @@ function shellQuote(value) {
 }
 
 function commandFor(harness, id, dir) {
-  const parts = RESUME[harness]
-  if (!parts || !id) return ''
+  const base = RESUME[harness]
+  if (!base || !id) return ''
+  const parts = [...base]
+  const binary = harnesses.binary(harness) || parts[0]
+  parts[0] = /\s/.test(binary) ? shellQuote(binary) : binary
   const cd = dir
     ? process.platform === 'win32'
       ? `cd /d ${shellQuote(dir)} && `

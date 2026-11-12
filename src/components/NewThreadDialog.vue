@@ -1,7 +1,11 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import ModelInput from '@/components/ModelInput.vue'
+import PickMenu from '@/components/PickMenu.vue'
 import { HARNESSES, MODELS } from '@/data/mock'
+import { markFor, moodGlyph } from '@/composables/entityMark'
 import { agentById, createThread, hub } from '@/stores/hub'
+import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 
 /**
  * A thread is pinned to four choices, so they are asked once, up front: which
@@ -26,8 +30,30 @@ const machines = computed(() =>
     : [{ id: 'local', label: 'This machine', thisMachine: true }],
 )
 const agent = computed(() => agentById(form.entity))
-const modelOptions = computed(() => MODELS[form.harness] || [])
 const machine = computed(() => machines.value.find((item) => item.id === form.machine) || null)
+const modelData = computed(() => harnesses.models[form.harness] || null)
+const modelOptions = computed(() => [
+  ...new Set([...(modelData.value?.models || []), ...(MODELS[form.harness] || [])]),
+])
+const modelLoading = computed(() => Boolean(modelData.value?.loading))
+const entityOptions = computed(() =>
+  hub.agents.map((item) => ({
+    id: item.id,
+    label: item.name,
+    meta: item.harnessLabel,
+    glyph: moodGlyph(markFor(hub.workspace, item.id).mood),
+  })),
+)
+const harnessOptions = computed(() =>
+  HARNESSES.map((item) => {
+    const found = harnesses.items.find((entry) => entry.id === item.id)
+    return {
+      id: item.id,
+      label: item.label,
+      meta: found ? (found.installed ? 'installed' : 'not found') : '',
+    }
+  }),
+)
 const remote = computed(() => Boolean(machine.value && !machine.value.thisMachine))
 
 function reset() {
@@ -46,6 +72,8 @@ function reset() {
     (agent.value?.harness === form.harness ? agent.value.model || '' : '') ||
     ''
   error.value = ''
+  loadHarnesses().catch(() => {})
+  loadModels(form.harness).catch(() => {})
   nextTick(() => {
     resetting.value = false
   })
@@ -67,6 +95,7 @@ watch(
     if (!chosen) return
     form.harness = chosen.harness || form.harness
     form.model = chosen.model || ''
+    loadModels(form.harness).catch(() => {})
   },
 )
 
@@ -76,6 +105,7 @@ watch(
     if (resetting.value) return
     const chosen = agent.value
     form.model = chosen && chosen.harness === form.harness ? chosen.model || '' : ''
+    loadModels(form.harness).catch(() => {})
   },
 )
 
@@ -131,14 +161,18 @@ async function submit() {
       </button>
     </div>
 
-    <form class="mo-body" @submit.prevent="submit">
+    <form class="mo-body thread-body" @submit.prevent="submit">
       <div class="fld">
-        <label class="lbl" for="thread-entity">Entity</label>
-        <select id="thread-entity" v-model="form.entity" :disabled="busy">
-          <option v-for="item in hub.agents" :key="item.id" :value="item.id">
-            {{ item.name }} — {{ item.harnessLabel }}
-          </option>
-        </select>
+        <span class="lbl">Entity</span>
+        <PickMenu
+          class="field-select"
+          head="Entity"
+          icons="entity"
+          :options="entityOptions"
+          :model-value="form.entity"
+          :disabled="busy"
+          @update:model-value="form.entity = $event"
+        />
       </div>
 
       <div class="fld">
@@ -154,31 +188,35 @@ async function submit() {
       </div>
 
       <div class="fld">
-        <label class="lbl" for="thread-harness">Harness</label>
-        <select id="thread-harness" v-model="form.harness" :disabled="busy">
-          <option v-for="harness in HARNESSES" :key="harness.id" :value="harness.id">
-            {{ harness.label }}
-          </option>
-        </select>
+        <span class="lbl">Harness</span>
+        <PickMenu
+          class="field-select"
+          head="Harness"
+          icons="harness"
+          :options="harnessOptions"
+          :model-value="form.harness"
+          :disabled="busy"
+          @update:model-value="form.harness = $event"
+        />
       </div>
 
       <div class="fld">
-        <label class="lbl" for="thread-model">Model</label>
-        <input
-          id="thread-model"
-          v-model="form.model"
-          class="acct-input"
-          type="text"
-          :list="`thread-models-${form.harness}`"
-          placeholder="harness default"
-          spellcheck="false"
+        <span class="lbl">Model</span>
+        <ModelInput
+          :model-value="form.model"
+          :options="modelOptions"
+          :loading="modelLoading"
           :disabled="busy"
+          label="Model"
+          :placeholder="modelData?.default || 'harness default'"
+          @update:model-value="form.model = $event"
         />
-        <datalist :id="`thread-models-${form.harness}`">
-          <option v-for="option in modelOptions" :key="option" :value="option" />
-        </datalist>
         <p class="mnote">
-          Free text. Leave blank to use the harness default or the entity's own
+          <template v-if="modelData?.detected">
+            Detected from {{ form.harness }}<template v-if="modelData.default"> · default
+            <code class="mono">{{ modelData.default }}</code></template>.
+          </template>
+          Leave blank to use the harness default or the entity's own
           <code class="mono">model:</code>.
         </p>
       </div>

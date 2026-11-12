@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 
@@ -37,7 +38,9 @@ const visibleItems = computed(() => {
   const needle = query.value.trim().toLowerCase()
   if (!needle) return items.value
   return items.value.filter((entry) =>
-    `${entry.label} ${entry.meta || ''}`.toLowerCase().includes(needle),
+    `${entry.label} ${entry.meta || ''} ${entry.id || ''} ${entry.glyph || ''}`
+      .toLowerCase()
+      .includes(needle),
   )
 })
 
@@ -143,6 +146,10 @@ onBeforeUnmount(() => {
         :name="current ? current.id : 'all'"
         :size="12"
       />
+      <template v-else-if="icons === 'entity'">
+        <EntityMark v-if="current" mini :entity="current.id" />
+        <span v-if="current?.glyph" class="pick-glyph" aria-hidden="true">{{ current.glyph }}</span>
+      </template>
       <MachineIcon v-else-if="icons === 'machine'" :size="12" />
       <span class="nm">{{ display }}</span>
       <span v-if="countLabel" class="ct">{{ countLabel }}</span>
@@ -178,6 +185,10 @@ onBeforeUnmount(() => {
         @click="pick(o.id)"
       >
         <HarnessIcon v-if="icons === 'harness'" :name="o.id" :size="12" />
+        <template v-else-if="icons === 'entity'">
+          <EntityMark mini :entity="o.id" />
+          <span v-if="o.glyph" class="pick-glyph" aria-hidden="true">{{ o.glyph }}</span>
+        </template>
         <MachineIcon v-else-if="icons === 'machine'" :size="12" />
         <span class="nm">{{ o.label }}</span>
         <span v-if="o.meta" class="mt">{{ o.meta }}</span>

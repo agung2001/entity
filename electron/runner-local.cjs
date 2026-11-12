@@ -13,6 +13,7 @@ const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
 const artifacts = require('./artifact-store.cjs')
+const harnesses = require('./harness-store.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
 const COALESCE_MS = 50
@@ -340,6 +341,7 @@ function createRunner({ emit = () => {} } = {}) {
       record.mcpStrict,
       entity.model,
     )
+    spec.cmd = harnesses.binary(entity.harness) || spec.cmd
     locks.set(key, runId)
     active.set(runId, run)
 

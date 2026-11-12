@@ -20,6 +20,7 @@ const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const artifacts = require('./artifact-store.cjs')
+const harnesses = require('./harness-store.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 
 /* a generous cap: the renderer only paints the newest turns, but the file is
@@ -400,6 +401,7 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
     try {
       const instructions = `${entity.instructions.trim()}\n\n${artifacts.brief(thread.workspace)}`
       spec = chatInvocation(thread.harness, instructions, prompt, model)
+      spec.cmd = harnesses.binary(thread.harness) || spec.cmd
     } catch (error) {
       resolve({
         ok: false,

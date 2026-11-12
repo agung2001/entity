@@ -136,15 +136,17 @@ function traceSummary(message) {
       <div v-else class="msg" :data-who="m.who">
         <MessageBody :text="m.text" />
       </div>
-      <div v-if="hasTrace(m)" class="msg-trace" :data-who="m.who">
-        <div class="msg-trace-head">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
-            <path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h9" />
+      <details v-if="hasTrace(m)" class="msg-trace" :data-who="m.who">
+        <summary class="msg-trace-head">
+          <svg class="trace-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M6 3.5L10.5 8 6 12.5" />
           </svg>
           <span>{{ traceSummary(m) }}</span>
+        </summary>
+        <div class="msg-trace-body">
+          <TraceTimeline :steps="m.steps" :execution="m.execution" compact />
         </div>
-        <TraceTimeline :steps="m.steps" :execution="m.execution" compact />
-      </div>
+      </details>
       <div v-if="m.who === 'agent'" class="msg-foot" :data-who="m.who">
         <span v-if="elapsed(m)" class="msg-replied">Replied in {{ elapsed(m) }}</span>
         <button class="msg-act" type="button" title="Copy response" aria-label="Copy response" @click="copyMessage(m)">
@@ -177,13 +179,18 @@ function traceSummary(message) {
       </div>
     </template>
 
-    <div v-if="hasTrace(live)" class="msg-trace msg-trace--live">
-      <div class="msg-trace-head">
+    <details v-if="hasTrace(live)" class="msg-trace msg-trace--live" open>
+      <summary class="msg-trace-head">
+        <svg class="trace-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M6 3.5L10.5 8 6 12.5" />
+        </svg>
         <span class="tr-live">Working…</span>
         <span>{{ live.steps.filter((step) => step.type === 'tool_use').length }} tool calls</span>
+      </summary>
+      <div class="msg-trace-body">
+        <TraceTimeline :steps="live.steps" :execution="live.execution" compact />
       </div>
-      <TraceTimeline :steps="live.steps" :execution="live.execution" compact />
-    </div>
+    </details>
 
     <div v-if="chips.length && !messages.some((m) => m.who === 'me')" class="chips">
       <button v-for="q in chips" :key="q" class="pick" type="button" @click="emit('chip', q)">

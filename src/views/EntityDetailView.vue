@@ -2,6 +2,10 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MarkPicker from '@/components/MarkPicker.vue'
+import HarnessPaths from '@/components/HarnessPaths.vue'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import ModelInput from '@/components/ModelInput.vue'
+import PickMenu from '@/components/PickMenu.vue'
 import SkillIcon from '@/components/SkillIcon.vue'
 import { HARNESSES, MODELS } from '@/data/mock'
 import {
@@ -14,6 +18,7 @@ import {
   toast,
 } from '@/stores/hub'
 import { findEntity, revealEntity, saveEntity } from '@/stores/entities'
+import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 
 /**
  * The entity is a page, not a drawer. It is the same file the table lists —
@@ -36,7 +41,21 @@ const lastChat = computed(() => {
   return thread ? ago(thread.updatedAt) : 'never'
 })
 
-const modelOptions = computed(() => MODELS[form.harness] || [])
+const modelData = computed(() => harnesses.models[form.harness] || null)
+const modelOptions = computed(() => [
+  ...new Set([...(modelData.value?.models || []), ...(MODELS[form.harness] || [])]),
+])
+const modelLoading = computed(() => Boolean(modelData.value?.loading))
+const harnessOptions = computed(() =>
+  HARNESSES.map((item) => {
+    const found = harnesses.items.find((entry) => entry.id === item.id)
+    return {
+      id: item.id,
+      label: item.label,
+      meta: found ? (found.installed ? 'installed' : 'not found') : '',
+    }
+  }),
+)
 const instructionRows = computed(() =>
   Math.max(18, String(form.instructions || '').split('\n').length + 2),
 )
@@ -54,6 +73,7 @@ function seedForm() {
   form.harness = agent.value.harness || 'claude'
   form.model = agent.value.model || ''
   form.instructions = agent.value.instructions || ''
+  loadModels(form.harness).catch(() => {})
   nextTick(() => {
     seeding.value = false
   })
@@ -66,7 +86,13 @@ watch(
   () => form.harness,
   (harness, previous) => {
     if (seeding.value || !previous || harness === previous) return
-    if (form.model && !(MODELS[harness] || []).includes(form.model)) form.model = ''
+    const known = [
+      ...(harnesses.models[harness]?.models || []),
+      ...(MODELS[harness] || []),
+    ]
+    if (form.model && !known.includes(form.model)) form.model = ''
+    loadModels(harness).catch(() => {})
+    loadHarnesses().catch(() => {})
   },
 )
 
@@ -93,7 +119,11 @@ async function save() {
   }
 }
 
-onMounted(ensureChats)
+onMounted(() => {
+  ensureChats()
+  loadHarnesses().catch(() => {})
+  loadModels(form.harness).catch(() => {})
+})
 
 async function chat() {
   if (!agent.value) return
@@ -168,32 +198,40 @@ async function reveal() {
 
           <div class="entity-edit-grid">
             <div class="fld">
-              <label class="lbl" for="entity-harness">Default harness</label>
-              <select id="entity-harness" v-model="form.harness" :disabled="saving">
-                <option v-for="harness in HARNESSES" :key="harness.id" :value="harness.id">
-                  {{ harness.label }}
-                </option>
-              </select>
+              <span class="lbl">Default harness</span>
+              <PickMenu
+                class="field-select"
+                head="Default harness"
+                icons="harness"
+                :options="harnessOptions"
+                :model-value="form.harness"
+                :disabled="saving"
+                @update:model-value="form.harness = $event"
+              />
               <p class="mnote">Used by new threads and by runs from this page.</p>
             </div>
             <div class="fld">
-              <label class="lbl" for="entity-model">Default model</label>
-              <input
-                id="entity-model"
-                v-model="form.model"
-                class="acct-input"
-                type="text"
-                list="entity-models"
-                placeholder="harness default"
-                spellcheck="false"
+              <span class="lbl">Default model</span>
+              <ModelInput
+                :model-value="form.model"
+                :options="modelOptions"
+                :loading="modelLoading"
                 :disabled="saving"
+                label="Default model"
+                :placeholder="modelData?.default || 'harness default'"
+                @update:model-value="form.model = $event"
               />
-              <datalist id="entity-models">
-                <option v-for="model in modelOptions" :key="model" :value="model" />
-              </datalist>
-              <p class="mnote">Leave blank to let the harness choose.</p>
+              <p class="mnote">
+                <template v-if="modelData?.detected">
+                  Detected from {{ form.harness }}<template v-if="modelData.default"> · default
+                  <code class="mono">{{ modelData.default }}</code></template>.
+                </template>
+                Leave blank to let the harness choose.
+              </p>
             </div>
           </div>
+
+          <HarnessPaths :active="form.harness" />
 
           <dl class="dl">
             <dt>Directory</dt>
@@ -230,15 +268,13 @@ async function reveal() {
                 : `MCP applies to claude conversations; ${agent.harness} ignores the list.`
             }}
           </p>
-          <label class="lbl" for="entity-instructions">Full instructions</label>
-          <textarea
-            id="entity-instructions"
+          <span class="lbl">Full instructions</span>
+          <MarkdownEditor
             v-model="form.instructions"
-            class="acct-input entity-instructions mono"
             :rows="instructionRows"
-            spellcheck="false"
             :disabled="saving"
-          ></textarea>
+            placeholder="Write the entity instructions in Markdown…"
+          />
           <div class="acct-actions">
             <span v-if="dirty" class="mnote">Unsaved changes</span>
             <button class="btn btn-ink" type="button" :disabled="saving || !dirty" @click="save">
