@@ -17,6 +17,7 @@
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "vite build",
     "preview": "vite preview",
+    "clean:dev": "bash scripts/clean-dev.sh",
     "start": "electron .",
     "test": "node --test \"electron/**/*.test.cjs\"",
     "package": "npm run build && electron-builder"

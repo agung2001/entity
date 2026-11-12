@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { slashMenu } from '@/stores/hub'
 import { loadLibrary, workspaces } from '@/stores/workspaces'
 
@@ -21,6 +21,9 @@ const draft = ref('')
 const menu = ref([])
 const active = ref(0)
 const input = ref(null)
+const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
 /* one library read per composer mount, even if the scan fails */
 let libraryAsked = false
 
@@ -52,6 +55,20 @@ function closeMenu() {
   menu.value = []
 }
 
+/* A textarea that grows with the draft, then scrolls at a sane ceiling. The
+   border belongs to the dock, not to this field, so there is only one box. */
+function grow() {
+  const el = input.value
+  if (!el) return
+  el.style.height = 'auto'
+  const next = Math.min(el.scrollHeight, 108)
+  el.style.height = `${next}px`
+  el.style.overflowY = el.scrollHeight > 108 ? 'auto' : 'hidden'
+}
+
+watch(draft, () => nextTick(grow))
+onMounted(() => nextTick(grow))
+
 function submit() {
   if (props.disabled) return
   const text = draft.value.trim()
@@ -59,7 +76,10 @@ function submit() {
   emit('send', text)
   draft.value = ''
   closeMenu()
-  input.value?.focus()
+  nextTick(() => {
+    grow()
+    input.value?.focus()
+  })
 }
 
 function pick(cmd) {
@@ -70,6 +90,13 @@ function pick(cmd) {
 }
 
 function onKey(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault()
+    submit()
+    return
+  }
+  /* Shift+Enter is always a newline, including while the command menu is up. */
+  if (e.key === 'Enter' && e.shiftKey) return
   if (!open.value) return
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault()
@@ -118,24 +145,34 @@ function onBlur() {
     </div>
 
     <form class="slash-form" @submit.prevent="submit">
-      <label class="prompt">
-        <span>›</span>
-        <input
-          ref="input"
-          v-model="draft"
-          :placeholder="placeholder"
-          autocomplete="off"
-          spellcheck="false"
-          aria-label="Message"
-          :disabled="disabled"
-          @input="refresh"
-          @keydown="onKey"
-          @blur="onBlur"
-        />
-      </label>
-      <button class="go" type="submit" :disabled="disabled">
-        {{ disabled ? 'Working…' : 'Send' }}
-      </button>
+      <textarea
+        ref="input"
+        v-model="draft"
+        class="slash-input"
+        rows="1"
+        :placeholder="placeholder"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Message"
+        :disabled="disabled"
+        @input="refresh"
+        @keydown="onKey"
+        @blur="onBlur"
+      ></textarea>
+      <div class="slash-actions">
+        <span class="slash-hint"><kbd>{{ sendShortcut }}</kbd> to send</span>
+        <button
+          class="go"
+          type="submit"
+          :disabled="disabled || !draft.trim()"
+          :title="disabled ? 'Sending…' : `Send message (${sendShortcut})`"
+          :aria-label="disabled ? 'Sending message' : 'Send message'"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 13V3M4 7l4-4 4 4" />
+          </svg>
+        </button>
+      </div>
     </form>
   </div>
 </template>

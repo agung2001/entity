@@ -5,6 +5,12 @@ import { call } from '@/composables/localBridge'
 import { hub, toast } from '@/stores/hub'
 import { workspaces, writeMcp } from '@/stores/workspaces'
 
+const props = defineProps({
+  /* Rendered inside Workspace → MCP; the parent owns the page head. */
+  embedded: { type: Boolean, default: false },
+})
+
+
 /**
  * MCP is its own page now: the workspace pool on one tab, and the servers each
  * harness already has configured on the other. The globals tab is read-only —
@@ -114,8 +120,8 @@ watch(tab, (value) => {
 </script>
 
 <template>
-  <div class="view">
-    <div class="page-head">
+  <div :class="props.embedded ? 'ws-embed' : 'view'">
+    <div v-if="!props.embedded" class="page-head">
       <div>
         <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>MCP</h1>

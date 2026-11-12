@@ -15,23 +15,17 @@ import {
   problemCount,
   snippet,
 } from '@/stores/hub'
-import { loadHosts, workspaces } from '@/stores/workspaces'
+import { workspaces } from '@/stores/workspaces'
 
 const router = useRouter()
 
 onMounted(() => {
-  if (!workspaces.hosts.length) loadHosts()
   ensureChats()
 })
 
 const running = computed(() => hub.agents.filter((a) => a.status === 'running').length)
 const problems = computed(() => problemCount())
 const machineCount = computed(() => workspaces.machines.length)
-const otherHosts = computed(() =>
-  Math.max(0, workspaces.hosts.length - (workspaces.machines.length - 1)),
-)
-
-const agentsOn = (machineId) => hub.agents.filter((a) => a.machines.includes(machineId)).length
 
 const dotState = (status) =>
   ({ running: 'live', idle: 'idle', sleep: 'sleep', error: 'fail' })[status] || 'idle'
@@ -81,42 +75,6 @@ function openFromKeyboard(e, id) {
     </div>
 
     <WorkspaceStats />
-
-    <div class="sec-head">
-      <h2>Machines</h2>
-      <span class="meta">
-        {{ machineCount }} attached
-        <template v-if="otherHosts"> · {{ otherHosts }} more in {{ workspaces.hosts.length ? '~/.ssh/config' : 'the fleet' }}</template>
-      </span>
-    </div>
-    <div class="machines">
-      <button
-        v-for="m in workspaces.machines"
-        :key="m.id"
-        class="machine"
-        type="button"
-        :data-probe="m.missing ? 'fail' : m.thisMachine ? 'ok' : 'idle'"
-        @click="router.push({ name: 'machine', params: { id: m.id } })"
-      >
-        <div class="row1">
-          <span class="nm"><MachineIcon :size="12" />{{ m.label }}</span>
-          <span class="state" :data-s="m.missing ? 'fail' : m.thisMachine ? 'ok' : 'idle'">
-            <i></i>{{ m.missing ? 'missing' : m.thisMachine ? 'this machine' : 'attached' }}
-          </span>
-        </div>
-        <p class="spec">{{ m.spec || m.id }}</p>
-        <div class="foot">
-          <span>{{ m.source }}</span>
-          <span>{{ agentsOn(m.id) }} {{ agentsOn(m.id) === 1 ? 'entity' : 'entities' }}</span>
-        </div>
-      </button>
-      <button class="machine add-machine" type="button" @click="router.push('/machines')">
-        <div class="row1"><span class="nm">Attach a machine</span></div>
-        <p class="spec">From ~/.ssh/config</p>
-        <div class="foot"><span>workspace scope</span><span>local only today</span></div>
-      </button>
-      <p v-if="workspaces.error" class="machine-note">{{ workspaces.error }}</p>
-    </div>
 
     <div class="sec-head">
       <h2>Entities</h2>

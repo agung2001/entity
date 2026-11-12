@@ -1,6 +1,10 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import ActivityView from '@/views/ActivityView.vue'
+import SkillsView from '@/views/SkillsView.vue'
+import McpView from '@/views/McpView.vue'
+import MachinesView from '@/views/MachinesView.vue'
 import { ROLES, hub, roleById, toast } from '@/stores/hub'
 import { activeWorkspace, updateWorkspace, workspaces } from '@/stores/workspaces'
 
@@ -10,14 +14,37 @@ import { activeWorkspace, updateWorkspace, workspaces } from '@/stores/workspace
  * manages who belongs to it.
  */
 const router = useRouter()
+const route = useRoute()
 const current = computed(() => activeWorkspace.value)
-const tab = ref('general')
+const TABS = ['general', 'members', 'skills', 'mcp', 'machines', 'activity']
+const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
+
+/* The tab is part of the URL, so a link can land on Activity and Back works. */
+function setTab(next) {
+  tab.value = next
+  error.value = ''
+  const query = { ...route.query }
+  if (next === 'general') delete query.tab
+  else query.tab = next
+  router.replace({ query })
+}
+
+watch(
+  () => route.query.tab,
+  (value) => {
+    const next = TABS.includes(String(value)) ? String(value) : 'general'
+    if (next !== tab.value) tab.value = next
+  },
+)
 
 const form = reactive({ label: '', id: '', members: [] })
 const error = ref('')
 const busy = ref('')
 
 const owner = computed(() => roleById(hub.session?.role || 'owner'))
+
+const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
+
 const idChanged = computed(() => Boolean(current.value) && form.id !== current.value.id)
 const createdLabel = computed(() =>
   current.value?.createdAt
@@ -105,7 +132,7 @@ async function save() {
         <h1>Workspace</h1>
         <p class="lede">
           The record behind this scope: its name, its directory id and who belongs to it.
-          Entities, skills, MCP and machines stay on their own pages.
+          Skills, MCP, Machines and Activity are the workspace’s working tabs.
         </p>
       </div>
       <div class="head-actions">
@@ -118,20 +145,48 @@ async function save() {
       <button
         role="tab"
         :aria-selected="tab === 'general' ? 'true' : 'false'"
-        @click="tab = 'general'; error = ''"
+        @click="setTab('general')"
       >
         General
       </button>
       <button
         role="tab"
         :aria-selected="tab === 'members' ? 'true' : 'false'"
-        @click="tab = 'members'; error = ''"
+        @click="setTab('members')"
       >
         Members <span class="n">{{ form.members.length }}</span>
       </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'skills' ? 'true' : 'false'"
+        @click="setTab('skills')"
+      >
+        Skills <span class="n">{{ workspaces.skills.length }}</span>
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'mcp' ? 'true' : 'false'"
+        @click="setTab('mcp')"
+      >
+        MCP <span class="n">{{ mcpCount }}</span>
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'machines' ? 'true' : 'false'"
+        @click="setTab('machines')"
+      >
+        Machines <span class="n">{{ workspaces.machines.length }}</span>
+      </button>
+      <button
+        role="tab"
+        :aria-selected="tab === 'activity' ? 'true' : 'false'"
+        @click="setTab('activity')"
+      >
+        Activity
+      </button>
     </div>
 
-    <div class="acct-page ws-page">
+    <div v-if="tab === 'general' || tab === 'members'" class="acct-page ws-page">
       <form class="acct-card" @submit.prevent="save">
         <template v-if="tab === 'general'">
           <div class="acct-card-head">
@@ -255,5 +310,10 @@ async function save() {
         </ul>
       </aside>
     </div>
+
+    <SkillsView v-else-if="tab === 'skills'" embedded />
+    <McpView v-else-if="tab === 'mcp'" embedded />
+    <MachinesView v-else-if="tab === 'machines'" embedded />
+    <ActivityView v-else embedded />
   </div>
 </template>

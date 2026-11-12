@@ -24,6 +24,12 @@ import {
  * conversation can be picked up in a terminal where the harness left off. Only
  * sessions whose cwd belongs to an entity in this workspace are shown.
  */
+const props = defineProps({
+  /* Rendered inside Workspace → Activity; the parent owns the page head and
+     padding so the tab reads as part of that page. */
+  embedded: { type: Boolean, default: false },
+})
+
 const router = useRouter()
 const active = ref('journal')
 const cache = reactive({})
@@ -229,8 +235,8 @@ async function copyResume(session) {
 </script>
 
 <template>
-  <div class="view">
-    <div class="page-head">
+  <div :class="props.embedded ? 'ws-activity' : 'view'">
+    <div v-if="!props.embedded" class="page-head">
       <div>
         <p class="eyebrow">Journal · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Activity</h1>
@@ -247,6 +253,7 @@ async function copyResume(session) {
         :aria-selected="active === 'journal' ? 'true' : 'false'"
         @click="active = 'journal'"
       >
+        <EntityMark mini animate />
         Journal <span class="n">{{ rows.length }}</span>
       </button>
       <button
@@ -310,7 +317,7 @@ async function copyResume(session) {
         >
           <time>{{ ago(thread.updatedAt) }}</time>
           <span class="jrn-ent">
-            <EntityMark :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
+            <EntityMark mini animate :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
           </span>
           <span class="jrn-act">
             <b>{{ thread.title || snippet(thread.preview) || 'New thread' }}</b>

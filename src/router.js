@@ -15,7 +15,6 @@ import McpView from '@/views/McpView.vue'
 import ArtifactsView from '@/views/ArtifactsView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import MachineDetailView from '@/views/MachineDetailView.vue'
-import ActivityView from '@/views/ActivityView.vue'
 import AccountView from '@/views/AccountView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
 import ManageWorkspacesView from '@/views/ManageWorkspacesView.vue'
@@ -109,10 +108,9 @@ const router = createRouter({
           meta: { crumb: 'machines', title: 'Machine · entity' },
         },
         {
+          /* Activity moved into the Workspace page; keep old links working. */
           path: 'activity',
-          name: 'activity',
-          component: ActivityView,
-          meta: { crumb: 'activity', title: 'Activity · entity' },
+          redirect: { name: 'workspace', query: { tab: 'activity' } },
         },
         {
           path: 'workspaces',

@@ -4,6 +4,12 @@ import HarnessIcon from '@/components/HarnessIcon.vue'
 import { hub, toast } from '@/stores/hub'
 import { attachSkill, loadLibrary, workspaces } from '@/stores/workspaces'
 
+const props = defineProps({
+  /* Rendered inside Workspace → Skills; the parent owns the page head. */
+  embedded: { type: Boolean, default: false },
+})
+
+
 /**
  * One page, two scopes — workspace first.
  *
@@ -71,8 +77,8 @@ async function attach(item) {
 </script>
 
 <template>
-  <div class="view">
-    <div class="page-head">
+  <div :class="props.embedded ? 'ws-embed' : 'view'">
+    <div v-if="!props.embedded" class="page-head">
       <div>
         <p class="eyebrow">Skills · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Skills</h1>

@@ -85,6 +85,7 @@ const newChatShortcut = isDesktop
   : isMac
     ? '⌥⇧N'
     : 'Alt+Shift+N'
+const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
 
 const HISTORY_KEY = 'entity.chat.history'
 try {
@@ -925,8 +926,12 @@ watch(
               <dd><b>Complete</b><span>Insert the highlighted command.</span></dd>
             </div>
             <div>
-              <dt><kbd>enter</kbd></dt>
+              <dt><kbd>{{ sendShortcut }}</kbd></dt>
               <dd><b>Send</b><span>Send the message to the entity.</span></dd>
+            </div>
+            <div>
+              <dt><kbd>enter</kbd></dt>
+              <dd><b>New line</b><span>Enter adds a line; Shift+Enter does the same.</span></dd>
             </div>
             <div>
               <dt><kbd>esc</kbd></dt>

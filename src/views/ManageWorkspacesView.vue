@@ -251,13 +251,19 @@ async function deleteOne(record) {
           :key="record.id"
           class="wsl-card"
           :data-active="record.id === workspaces.active ? '1' : '0'"
+          role="link"
+          tabindex="0"
+          :aria-label="`Open settings for ${record.label}`"
+          @click="settingsOne(record)"
+          @keydown.enter.self="settingsOne(record)"
+          @keydown.space.prevent.self="settingsOne(record)"
         >
           <div class="wsl-card-top">
             <div class="wsl-card-id">
               <h3>{{ record.label }}</h3>
               <p>{{ record.displayPath }}</p>
             </div>
-            <details class="wsl-menu">
+            <details class="wsl-menu" @click.stop>
               <summary :aria-label="`Actions for ${record.label}`" aria-haspopup="menu">
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
               </summary>
@@ -277,7 +283,7 @@ async function deleteOne(record) {
           <div class="wsl-foot">
             <span class="wsl-lf"><span class="wsl-kt">{{ record.kind }}</span><span>{{ createdLabel(record) }}</span></span>
             <span v-if="record.id === workspaces.active" class="wsl-cur"><i></i>current</span>
-            <button v-else class="wsl-open-link" type="button" @click="openOne(record)">Open →</button>
+            <button v-else class="wsl-open-link" type="button" @click.stop="settingsOne(record)">Settings →</button>
           </div>
         </article>
       </div>
@@ -295,7 +301,7 @@ async function deleteOne(record) {
           <span class="num">{{ record.counts.machines }}</span>
           <span><span class="wsl-kt">{{ record.kind }}</span></span>
           <span class="wsl-date">{{ createdLabel(record) }}</span>
-          <details class="wsl-menu">
+          <details class="wsl-menu" @click.stop>
             <summary :aria-label="`Actions for ${record.label}`" aria-haspopup="menu">
               <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
             </summary>

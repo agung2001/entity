@@ -67,6 +67,6 @@ const lastActivity = computed(() => {
   <p class="stat-foot">
     Last activity <b>{{ lastActivity }}</b>
     <span aria-hidden="true">·</span>
-    <router-link to="/activity">Open the journal</router-link>
+    <router-link :to="{ name: 'workspace', query: { tab: 'activity' } }">Open the journal</router-link>
   </p>
 </template>

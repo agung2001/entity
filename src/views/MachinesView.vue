@@ -5,6 +5,12 @@ import { fleet, loadFleet, probeHost, probeState } from '@/stores/fleet'
 import { toast } from '@/stores/hub'
 import { attachMachine, detachMachine, workspaces } from '@/stores/workspaces'
 
+const props = defineProps({
+  /* Rendered inside Workspace → Machines; the parent owns the page head. */
+  embedded: { type: Boolean, default: false },
+})
+
+
 /**
  * Two tabs, like Skills: the machines this workspace has attached, and the
  * fleet it can attach from. `~/.ssh/config` says which hosts exist; the
@@ -63,8 +69,8 @@ async function test(host) {
 </script>
 
 <template>
-  <div class="view">
-    <div class="page-head">
+  <div :class="props.embedded ? 'ws-embed' : 'view'">
+    <div v-if="!props.embedded" class="page-head">
       <div>
         <p class="eyebrow">Fleet · {{ workspaces.active }}</p>
         <h1>Machines</h1>

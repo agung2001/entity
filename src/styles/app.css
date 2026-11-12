@@ -707,14 +707,6 @@ main {
     justify-content: center;
     padding: 0 0 18px;
   }
-  .rail[data-collapsed='1'] .nav-group {
-    display: none;
-  }
-  .rail[data-collapsed='1'] .nav-adv {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
-  }
   .rail[data-collapsed='1'] .nav a {
     justify-content: center;
     padding: 0;
@@ -895,37 +887,6 @@ main {
   font-size: 10.5px;
   color: var(--muted);
 }
-.nav-group {
-  margin-top: 8px;
-  border-top: 1px solid var(--border) !important;
-  border-radius: 0 !important;
-  color: var(--muted) !important;
-  font-family: var(--mono);
-  font-size: 9.5px !important;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.nav-group:hover {
-  color: var(--ink) !important;
-}
-.nav-group .lbl {
-  margin-right: auto;
-}
-.nav-chev {
-  width: 11px !important;
-  height: 11px !important;
-  opacity: 0.55 !important;
-  transition: transform 0.16s ease;
-}
-.nav-group[aria-expanded='true'] .nav-chev {
-  transform: rotate(90deg);
-}
-.nav-adv {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
 .rail-foot {
   margin-top: auto;
   padding-top: 14px;
@@ -1593,57 +1554,83 @@ kbd {
   align-items: center;
   gap: 8px;
 }
-.prompt {
-  flex: 1;
+/* The chat composer is one card: the dock draws the border, the textarea is
+   flush inside it, and the only button is a round arrow in the corner. */
+.slash-form,
+.cp-dock .slash-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+}
+.slash-input {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  max-height: 108px;
+  padding: 4px 3px 2px;
+  border: 0;
+  outline: 0;
+  background: none;
+  resize: none;
+  overflow-y: hidden;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.slash-input::placeholder {
+  color: var(--muted);
+}
+.slash-input:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.slash-actions {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-width: 0;
-  height: 42px;
-  padding: 0 12px;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  padding-left: 2px;
 }
-.prompt:focus-within {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.prompt span {
+.slash-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
   color: var(--muted);
-  flex: none;
 }
-.ask input,
-.cpanel input {
-  flex: 1;
-  border: 0;
-  background: none;
-  outline: none;
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  color: var(--ink);
-  min-width: 0;
-}
-.ask input::placeholder,
-.cpanel input::placeholder {
-  color: var(--muted);
+.slash-hint kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ink-2);
 }
 .go {
-  height: 42px;
-  padding: 0 15px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
   flex: none;
-  cursor: pointer;
+  padding: 0;
   border: 1px solid var(--ink);
-  border-radius: var(--r);
+  border-radius: 50%;
   background: var(--ink);
   color: var(--bg);
-  font-family: var(--font);
-  font-size: 12.5px;
-  font-weight: 500;
-  transition: background 0.14s ease, border-color 0.14s ease;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+.go svg {
+  width: 15px;
+  height: 15px;
 }
 .go:hover {
   background: color-mix(in oklab, var(--ink) 88%, var(--bg));
@@ -1653,29 +1640,9 @@ kbd {
   transform: translateY(1px);
 }
 .go[disabled] {
-  opacity: 0.55;
+  opacity: 0.35;
   cursor: not-allowed;
   transform: none;
-}
-
-/* the composer's own form, used by both the overview console and the chat panel */
-.slash-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.slash-form input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: none;
-  outline: none;
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  color: var(--ink);
-}
-.slash-form input::placeholder {
-  color: var(--muted);
 }
 .cpanel .slash-form .go {
   color: var(--bg);
@@ -3377,11 +3344,17 @@ kbd {
 .cp-dock {
   pointer-events: auto;
   width: min(760px, 100%);
-  padding: 10px 10px 9px;
+  padding: 10px 10px 8px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(10, 10, 10, 0.1), 0 2px 6px rgba(10, 10, 10, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cp-dock:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 16px 40px rgba(10, 10, 10, 0.1),
+    0 2px 6px rgba(10, 10, 10, 0.04);
 }
 .cp-dock .cp-picks {
   padding: 0 2px 7px;
@@ -4364,17 +4337,6 @@ select:focus-visible {
   }
   .nav .count {
     display: none;
-  }
-  .nav-group {
-    margin-top: 0;
-    padding-left: 10px;
-    border-top: 0 !important;
-    border-left: 1px solid var(--border);
-    border-radius: 0 !important;
-  }
-  .nav-adv {
-    flex-direction: row;
-    gap: 2px;
   }
   .rail-foot {
     margin: 0 0 0 auto;
@@ -8969,5 +8931,92 @@ label.pick:has(input:focus-visible) {
   }
   .entp-title h1 {
     font-size: 24px;
+  }
+}
+
+/* ── rail header: brand and the fold control share the top line ───────── */
+.rail-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 16px;
+}
+.rail-top .brand {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rail-top .brand:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.rail[data-collapsed='1'] .rail-top {
+  padding: 0 0 16px;
+}
+.rail[data-collapsed='1'] .rail-top .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+/* ── topbar theme control ─────────────────────────────────────────────── */
+.topbar-theme {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+}
+.topbar-theme:hover {
+  background: var(--surface);
+  border-color: var(--muted);
+  color: var(--ink);
+}
+.topbar-theme svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.7;
+}
+
+/* ── workspace tabs: embedded working sections ───────────────────────── */
+.sk-tabs .mark {
+  width: 18px;
+  height: 18px;
+}
+.ws-embed {
+  max-width: none;
+}
+.ws-activity {
+  max-width: none;
+}
+
+/* a workspace card is a settings shortcut; its menu must not follow the card */
+.wsl-card {
+  cursor: pointer;
+}
+.wsl-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (max-width: 820px) {
+  .rail-top {
+    flex: none;
+    padding: 0;
+    gap: 0;
+  }
+  .rail-top .brand {
+    padding: 0 8px 0 0;
   }
 }

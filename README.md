@@ -30,6 +30,7 @@ npm install
 | `npm run build` | Builds the renderer into `dist/` |
 | `npm run start` | Runs Electron against the existing `dist/` build (no dev server) |
 | `npm run preview` | Serves the built renderer through `vite preview` |
+| `npm run clean:dev` | Stops a dev server or screenshot browser left running by this checkout |
 | `npm run package` | Builds and packages a distributable with electron-builder → `release/` |
 
 `ENTITY_HOME` overrides `~/.entity`, which is useful for a scratch profile:
@@ -45,6 +46,11 @@ projects that grab Vite's default 5173. Override it with `VITE_DEV_PORT=6000 npm
 If the port is taken, Vite moves to the next free one and `dev:desktop` follows it
 automatically — the launcher reads the URL Vite actually bound, it does not
 assume a port.
+
+Visual checks use disposable headless Chrome profiles under
+`/tmp/entity-chrome-*`. If a check is interrupted, `npm run clean:dev` stops the
+leftover dev server and those headless browsers without touching a normal Chrome
+window.
 
 ## Where data lives
 
@@ -340,20 +346,21 @@ history mode has no server to resolve a path on reload.
 | `#/artifacts` | Workspace artifacts: upload, preview, remove, search, filter, sort |
 | `#/machines` | Machines |
 | `#/machines/:id` | Machine detail (connection, key copy, probe) |
-| `#/activity` | Activity (journal + harness sessions) |
+| `#/activity` | Redirects to Workspace → Activity (old links keep working) |
 | `#/workspaces` | Manage workspaces (add, export/import, delete, settings) |
-| `#/workspace` | Workspace settings (general + members) |
+| `#/workspace` | Workspace tabs: General, Members, Skills, MCP, Machines, Activity |
 | `#/account` | Account profile and MCP server management |
 
-The rail keeps Overview, Chat, Entities, Artifacts and Activity in the main
-list. Skills, MCP and Machines sit behind an **Advanced** disclosure — open by
-default, remembered per window — so the everyday surface is not a glossary; the
-section opens automatically when a deep link lands on one of those pages. The
-rail also owns the light/dark switch (`⌘⇧L` in the desktop app, `⌥⇧L` in a
-browser). New chat is `⌘N` in the desktop app and `⌥⇧N` in a browser.
+The rail keeps Overview, Chat, Entities and Artifacts in the main list.
+Skills, MCP, Machines and Activity live as individual tabs on `#/workspace`, so
+the everyday surface stays small. Click the entity logo to fold or unfold the
+rail (`⌘B` still works), and the light/dark switch sits beside the topbar search
+(`⌘⇧L` in the desktop app, `⌥⇧L` in a browser). New thread is `⌘N` in the
+desktop app and `⌥⇧N` in a browser.
 
-Workspace settings are a page (`#/workspace`), not a modal: General and Members
-are separate tabs for the name, the directory id and the member roster. Managing
+Workspace settings are a page (`#/workspace`), not a modal: General, Members,
+Skills, MCP, Machines and Activity are tabs for the record, roster, working
+sections and journal. Managing
 workspaces is its own page (`#/workspaces`): add, export/import one JSON bundle,
 choose settings, or delete. MCP has its own page (`#/mcp`), and Account has a
 second MCP tab that can enable/disable a server for this workspace and list the
