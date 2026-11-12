@@ -29,6 +29,12 @@ defineProps({ name: { type: String, default: 'pulse' } })
     <path d="M3 2.4h6l4 4v7.2H3z" />
     <path d="M9 2.4v4h4M5.4 9.4h5.2M5.4 11.6h3.4" />
   </svg>
+  <svg v-else-if="name === 'sliders'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+    <path d="M2.2 4.4h11.6M2.2 8h11.6M2.2 11.6h11.6" />
+    <circle cx="5.4" cy="4.4" r="1.35" fill="var(--rail-bg)" />
+    <circle cx="10.6" cy="8" r="1.35" fill="var(--rail-bg)" />
+    <circle cx="6.6" cy="11.6" r="1.35" fill="var(--rail-bg)" />
+  </svg>
   <svg v-else-if="name === 'screen'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
     <rect x="1.6" y="2.6" width="12.8" height="8.2" rx="1.6" />
     <path d="M5.4 13.6h5.2" />

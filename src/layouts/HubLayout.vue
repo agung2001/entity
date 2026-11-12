@@ -22,8 +22,8 @@ const isArtifact = computed(() => route.name === 'artifact')
 const crumbs = computed(() => {
   if (isSkill.value) {
     return [
-      { label: 'library', to: '/' },
-      { label: 'skills', to: '/skills' },
+      { label: 'library', to: '/workspaces' },
+      { label: 'skills', to: { name: 'skills', params: { workspace: route.params.workspace } } },
       { label: route.params.name },
     ]
   }
@@ -31,7 +31,10 @@ const crumbs = computed(() => {
     return [{ label: 'entities' }, { label: route.params.name }]
   }
   if (isMachine.value) {
-    return [{ label: 'machines', to: '/machines' }, { label: route.params.id }]
+    return [
+      { label: 'machines', to: { name: 'machines', params: { workspace: route.params.workspace } } },
+      { label: route.params.id },
+    ]
   }
   if (isArtifact.value) {
     return [{ label: 'artifacts' }, { label: route.params.id }]
@@ -55,7 +58,7 @@ function openPalette() {
 function openNewThread() {
   if (!hub.agents.length) return
   const query = route.name === 'chat' ? { ...route.query, new: '1' } : { new: '1' }
-  router.push({ name: 'chat', query })
+  router.push({ name: 'chat', params: { workspace: route.params.workspace || hub.workspace }, query })
 }
 
 /* the scrim belongs to whichever surface opened last */
@@ -110,7 +113,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 
     <main>
       <AppTopbar :crumb="route.meta.crumb" :crumbs="crumbs">
-        <router-link v-if="isSkill" class="linkbtn" to="/skills">
+        <router-link v-if="isSkill" class="linkbtn" :to="{ name: 'skills', params: { workspace: route.params.workspace } }">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M9.6 3.2L5 8l4.6 4.8" />
           </svg>

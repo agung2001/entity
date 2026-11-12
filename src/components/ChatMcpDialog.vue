@@ -269,7 +269,7 @@ watch(
       </div>
 
       <div class="mo-foot ctxdlg-foot">
-        <router-link class="ctxdlg-link" :to="{ name: 'workspace', query: { tab: 'mcp' } }" @click="close">
+        <router-link class="ctxdlg-link" :to="{ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'mcp' } }" @click="close">
           Open workspace MCP
         </router-link>
         <button class="btn" type="button" @click="close">Close</button>

@@ -9,7 +9,7 @@ import {
 } from '@/stores/workspaces'
 
 /**
- * The first-run form, reused as a modal from the Workspaces panel.
+ * The first-run form, reused as a modal from the workspace picker.
  *
  * It is one screen on purpose: a name, the machines this workspace may use, and
  * — optionally — which sample entities to start with. Skills are not asked for:

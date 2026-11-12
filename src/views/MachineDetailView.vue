@@ -89,7 +89,7 @@ async function toggleAttachment() {
           </p>
         </div>
         <div class="head-actions">
-          <button class="btn" type="button" @click="router.push('/machines')">All machines</button>
+          <button class="btn" type="button" @click="router.push({ name: 'machines', params: { workspace: hub.workspace } })">All machines</button>
           <button
             v-if="!isLocal && host && !missing"
             class="btn"
@@ -178,7 +178,7 @@ async function toggleAttachment() {
     <div v-else class="empty-note">
       <b>{{ fleet.error || 'That machine is not in this workspace or the ssh config.' }}</b>
       <span v-if="!fleet.error">It may have been detached or removed from ~/.ssh/config.</span>
-      <router-link to="/machines">Back to machines</router-link>
+      <router-link :to="{ name: 'machines', params: { workspace: hub.workspace } }">Back to machines</router-link>
     </div>
   </div>
 </template>

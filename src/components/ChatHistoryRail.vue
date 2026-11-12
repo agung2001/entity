@@ -126,14 +126,14 @@ const sections = computed(() => {
 
 function openThread(thread) {
   menuItem.value = null
-  router.push({ name: 'chat', query: { thread: thread.id } })
+  router.push({ name: 'chat', params: { workspace: hub.workspace }, query: { thread: thread.id } })
 }
 
 function newThread() {
   menuItem.value = null
   const current = router.currentRoute.value
   const query = current.name === 'chat' ? { ...current.query, new: '1' } : { new: '1' }
-  router.push({ name: 'chat', query })
+  router.push({ name: 'chat', params: { workspace: hub.workspace }, query })
 }
 
 function openRowMenu(event, thread) {

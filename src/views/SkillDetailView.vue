@@ -123,7 +123,7 @@ async function detach() {
   busy.value = true
   try {
     await detachSkill(workspaceItem.value.name)
-    router.push('/skills')
+    router.push({ name: 'skills', params: { workspace: hub.workspace } })
   } catch (problem) {
     toast(problem?.message || 'Could not detach that skill')
   } finally {
@@ -136,7 +136,7 @@ async function attach() {
   busy.value = true
   try {
     await attachSkill({ name: libraryItem.value.name, harness: libraryItem.value.harness })
-    router.push({ name: 'skill', params: { name: libraryItem.value.name } })
+    router.push({ name: 'skill', params: { workspace: hub.workspace, name: libraryItem.value.name } })
   } catch (problem) {
     toast(problem?.message || 'Could not attach that skill')
   } finally {
@@ -267,7 +267,7 @@ async function attach() {
                   :key="a.id"
                   class="ent"
                   type="button"
-                  @click="router.push({ name: 'entity', params: { name: a.name } })"
+                  @click="router.push({ name: 'entity', params: { workspace: hub.workspace, name: a.name } })"
                 >
                   <EntityMark :entity="a.name" />
                   <span class="who">
@@ -368,7 +368,7 @@ async function attach() {
     <div v-else class="empty-note">
       <b>No skill called “{{ name }}” on this machine.</b>
       <span>It may live in a different harness library, or the workspace link may be stale.</span>
-      <router-link to="/skills">Back to skills</router-link>
+      <router-link :to="{ name: 'skills', params: { workspace: hub.workspace } }">Back to skills</router-link>
     </div>
   </div>
 </template>

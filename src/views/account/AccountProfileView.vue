@@ -33,7 +33,7 @@ const displayName = computed(() =>
 const avatarUrl = computed(() => gravatarUrl(email.value || record.email, 112))
 
 function cancel() {
-  router.push('/')
+  router.push({ name: 'overview', params: { workspace: workspaces.active } })
 }
 
 async function save() {

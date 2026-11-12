@@ -127,7 +127,7 @@ async function remove() {
   try {
     await removeArtifact(current.id)
     toast(`${current.name} removed`)
-    router.push('/')
+    router.push({ name: 'overview', params: { workspace: route.params.workspace } })
   } catch (error) {
     toast(error?.message || 'The artifact could not be removed.')
   } finally {
@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
     <div v-else-if="missing" class="empty-note">
       <b>That artifact is not in this workspace.</b>
       <span>It may have been removed on disk.</span>
-      <button class="btn" type="button" @click="router.push('/')">Back to overview</button>
+      <button class="btn" type="button" @click="router.push({ name: 'overview', params: { workspace: route.params.workspace } })">Back to overview</button>
     </div>
 
     <template v-else-if="item">

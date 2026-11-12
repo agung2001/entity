@@ -21,6 +21,7 @@ const skillRef = require('./skill-ref.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
+const auth = require('./auth-store.cjs')
 const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 
@@ -57,6 +58,27 @@ function chatsDir(record) {
 
 function now() {
   return new Date().toISOString()
+}
+
+/** One stable key per signed-in account. No account means tests/CLI local mode. */
+function currentUser() {
+  const user = auth.get()
+  return String(user?.email || user?.username || '').trim().toLowerCase()
+}
+
+/** A legacy thread belongs to the workspace owner, never to whoever opens it. */
+function threadOwner(raw, record) {
+  return String(
+    raw?.user || record.owner?.email || record.owner?.name || '',
+  )
+    .trim()
+    .toLowerCase()
+}
+
+function canAccess(thread) {
+  const user = currentUser()
+  if (!user) return true
+  return thread.user === user
 }
 
 function newThreadId() {
@@ -179,6 +201,8 @@ function normaliseThread(raw, record) {
     /* a thread may pin a model independently of the entity file; '' means the
        harness default (or the entity's own model, see runHarness) */
     model: String(raw.model || ''),
+    /* chat history is private to the account that started it */
+    user: threadOwner(raw, record),
     title: String(raw.title || ''),
     pinned: Boolean(raw.pinned),
     createdAt: raw.createdAt || now(),
@@ -279,7 +303,7 @@ function list({ workspace }) {
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(chatsDir(record), file), 'utf8'))
         const thread = normaliseThread(raw, record)
-        return thread ? summarise(thread) : null
+        return thread && canAccess(thread) ? summarise(thread) : null
       } catch {
         return null
       }
@@ -295,7 +319,7 @@ function list({ workspace }) {
 function read({ workspace, id }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
-  return thread ? attachArtifactsByTurn(thread) : null
+  return thread && canAccess(thread) ? attachArtifactsByTurn(thread) : null
 }
 
 function checkEntity(workspace, name) {
@@ -323,6 +347,7 @@ function create({ workspace, entity, machine = 'local', harness, model = '', mes
     machine: String(machine || 'local'),
     harness: checkHarness(harness, agent),
     model: String(model || '').trim(),
+    user: currentUser() || threadOwner(null, record),
     title: '',
     pinned: false,
     createdAt: now(),
@@ -339,7 +364,7 @@ function create({ workspace, entity, machine = 'local', harness, model = '', mes
 function update({ workspace, id, entity, machine, harness, model }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
-  if (!thread) throw new Error('That thread no longer exists.')
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   if (thread.messages.some((message) => message.who === 'me')) {
     throw new Error('This thread has already started. Its context is locked.')
   }
@@ -364,7 +389,7 @@ function update({ workspace, id, entity, machine, harness, model }) {
 function rename({ workspace, id, title }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
-  if (!thread) throw new Error('That thread no longer exists.')
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   thread.title = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 120)
   thread.updatedAt = now()
   writeThread(record, thread)
@@ -374,7 +399,7 @@ function rename({ workspace, id, title }) {
 function pin({ workspace, id, pinned }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
-  if (!thread) throw new Error('That thread no longer exists.')
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   thread.pinned = Boolean(pinned)
   thread.updatedAt = now()
   writeThread(record, thread)
@@ -383,6 +408,8 @@ function pin({ workspace, id, pinned }) {
 
 function remove({ workspace, id }) {
   const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread || !canAccess(thread)) return { removed: false }
   const file = threadFile(record, id)
   const existed = fs.existsSync(file)
   if (existed) fs.rmSync(file, { force: true })
@@ -718,7 +745,7 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
 async function send({ workspace, id, text, emit = () => {}, retry = false }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
-  if (!thread) throw new Error('That thread no longer exists.')
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
 
   const retryTurn = Boolean(retry)
   const message = String(text || '').trim()
@@ -889,7 +916,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
 function cancel({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
-  if (!thread) throw new Error('That thread no longer exists.')
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   const child = inFlight.get(thread.id)
   if (!child) return { canceled: false, reason: 'not running' }
   canceling.add(thread.id)

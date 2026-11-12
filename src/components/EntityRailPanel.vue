@@ -35,12 +35,12 @@ const threadsFor = (name) => hub.chat.summaries.filter((thread) => thread.entity
 
 function open(entity) {
   hub.rail.entities = false
-  router.push({ name: 'entity', params: { name: entity.id } })
+  router.push({ name: 'entity', params: { workspace: hub.workspace, name: entity.id } })
 }
 
 function created(entity) {
   adding.value = false
-  router.push({ name: 'entity', params: { name: entity.name } })
+  router.push({ name: 'entity', params: { workspace: hub.workspace, name: entity.name } })
 }
 </script>
 

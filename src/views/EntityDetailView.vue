@@ -32,7 +32,7 @@ const router = useRouter()
 const saving = ref(false)
 
 async function goEntities() {
-  await router.push('/')
+  await router.push({ name: 'overview', params: { workspace: route.params.workspace } })
   hub.rail.entities = true
 }
 
@@ -74,7 +74,11 @@ const threads = computed(() =>
 )
 const recentThreads = computed(() => threads.value.slice(0, 4))
 const threadTurns = (thread) => (thread.queries || 0) + (thread.replies || 0)
-const threadLink = (thread) => ({ name: 'chat', query: { thread: thread.id } })
+const threadLink = (thread) => ({
+  name: 'chat',
+  params: { workspace: route.params.workspace },
+  query: { thread: thread.id },
+})
 const statusState = computed(() =>
   agent.value?.status === 'running' ? 'live' : agent.value?.status === 'error' ? 'fail' : 'idle',
 )
@@ -168,7 +172,7 @@ async function chat() {
   if (!agent.value) return
   try {
     await chatFocusEntity(agent.value.id)
-    router.push('/chat')
+    router.push({ name: 'chat', params: { workspace: route.params.workspace } })
   } catch (error) {
     toast(error?.message || `Could not open a thread for ${agent.value.name}`)
   }
@@ -303,7 +307,7 @@ async function copyPath() {
                 :key="skill.name"
                 class="entp-skchip"
                 :data-missing="skill.present ? '0' : '1'"
-                :to="{ name: 'skill', params: { name: skill.name } }"
+                :to="{ name: 'skill', params: { workspace: route.params.workspace, name: skill.name } }"
               >
                 <i></i>{{ skill.name }}<template v-if="!skill.present"> · link missing</template>
               </router-link>

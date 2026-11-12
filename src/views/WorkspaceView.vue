@@ -26,7 +26,7 @@ function setTab(next) {
   const query = { ...route.query }
   if (next === 'general') delete query.tab
   else query.tab = next
-  router.replace({ query })
+  router.replace({ name: 'workspace', params: { workspace: route.params.workspace }, query })
 }
 
 watch(
@@ -230,7 +230,7 @@ async function save() {
         <p v-if="error" class="acct-error" role="alert">{{ error }}</p>
 
         <div class="acct-actions">
-          <button class="btn" type="button" :disabled="busy" @click="router.push('/')">
+          <button class="btn" type="button" :disabled="busy" @click="router.push({ name: 'overview', params: { workspace: route.params.workspace } })">
             Cancel
           </button>
           <button class="btn btn-ink" type="submit" :disabled="busy">

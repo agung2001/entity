@@ -141,7 +141,7 @@ const shownSessions = computed(() =>
 )
 
 function openThread(id) {
-  router.push({ name: 'chat', query: { thread: id } })
+  router.push({ name: 'chat', params: { workspace: hub.workspace }, query: { thread: id } })
 }
 
 async function load(harness, force = false) {

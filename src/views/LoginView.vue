@@ -140,8 +140,8 @@ function finish() {
      only work left. */
   clearTimeout(timer)
   timer = setTimeout(() => {
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    router.push(redirect)
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    router.push(redirect && redirect !== '/' ? redirect : '/workspaces')
   }, 140)
 }
 

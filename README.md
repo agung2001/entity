@@ -66,7 +66,7 @@ window.
 ~/.entity/mcp-server.json           Entity's own MCP server: enabled, port, token (0600), allowWrite
   machines/CONFIG                  this workspace's ssh_config (Host blocks)
   machines/<host>                  a copy of that host's key, mode 0600
-  chats/<threadId>.json            one conversation per file
+  chats/<threadId>.json            one conversation per file, private to its account
   artifacts/<path>                 documents, screenshots and other deliverables
   runs/<runId>.jsonl               append-only run log
   audit.jsonl                      one line per agent-initiated write
@@ -95,7 +95,7 @@ Two rules make the scope coherent:
 Nothing is seeded behind your back: a profile with no workspace lands on
 `/setup`, and sample entities are a checkbox in that form — off by default, and
 when ticked it lists all six files so you choose which ones to write (three are
-preselected). The same form is reachable from the Workspaces panel in the rail.
+preselected). The same form is reachable from the workspace picker.
 
 Skills are not part of that form: the harness libraries are already on this
 machine, so a skill is attached to a workspace later (one symlink, from the
@@ -229,8 +229,11 @@ copy, share and "save as artifact" actions. A failed turn carries a **Retry**
 button that re-runs the same question without adding a second copy of it. Every
 message — question or answer — has copy/share; share is a deep link
 (`?thread=…&msg=…`) that opens the thread and scrolls to that row. Opening
-`#/chat` without a query adopts the newest thread and replaces the URL, so the
-address is always shareable. A right-edge outline draws one tick per message,
+`#/<workspace>/chat` without a query adopts the newest thread and replaces the
+URL, so the address is always shareable. A thread records the account that
+created it; `list`, `read`, `rename`, `send`, `cancel` and `remove` only see
+that account's threads, so another account in the same workspace cannot read
+them even with the thread id. A right-edge outline draws one tick per message,
 follows the reading position, and opens a jump card on hover or focus.
 
 ### Artifacts in chat
@@ -298,6 +301,7 @@ src/
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
     MachineDetailView.vue  one host: connection, key copy, probe, attachment
     ActivityView.vue  thread journal + one tab per harness session store (cached counts)
+    ManageWorkspacesView.vue  the post-login room picker: search, sort, new/import/export/delete
   components/
     EntityMark.vue    the animated voxel character
     HarnessIcon.vue   brand marks for the skill filter pills
@@ -356,46 +360,50 @@ history mode has no server to resolve a path on reload.
 | --- | --- |
 | `#/login` | Sign in (the only public route) |
 | `#/setup` | Create the first workspace (no rail — the hub is not usable yet) |
-| `#/` | Overview |
-| `#/chat` | Chat |
-| `#/entities/:name` | Entity detail (identity, skills, source file) |
-| `#/skills` | Workspace skills |
-| `#/skills/:name` | Skill detail |
-| `#/mcp` | Workspace MCP pool + global harness MCP configs |
-| `#/artifacts/:id` | Artifact detail: inline preview, metadata, download, reveal, delete |
-| `#/machines` | Machines |
-| `#/machines/:id` | Machine detail (connection, key copy, probe) |
-| `#/activity` | Redirects to Workspace → Activity (old links keep working) |
-| `#/workspace` | Workspace settings; tabs live in the rail's second tier |
+| `#/workspaces` | Workspace picker; the post-login landing page |
+| `#/` | Redirects to `#/workspaces` |
+| `#/:workspace/overview` | Workspace Overview |
+| `#/:workspace/chat` | Chat |
+| `#/:workspace/entities/:name` | Entity detail (identity, skills, source file) |
+| `#/:workspace/skills` | Workspace skills |
+| `#/:workspace/skills/:name` | Skill detail |
+| `#/:workspace/mcp` | Workspace MCP pool + global harness MCP configs |
+| `#/:workspace/artifacts/:id` | Artifact detail: inline preview, metadata, download, reveal, delete |
+| `#/:workspace/machines` | Machines |
+| `#/:workspace/machines/:id` | Machine detail (connection, key copy, probe) |
+| `#/:workspace/settings` | Workspace settings; tabs live in the rail's second tier |
 | `#/account` | Account profile |
 | `#/account/sound` | Pixel Area 51 sound settings |
 | `#/account/mcp` | Entity MCP server status, token and tools |
 
-The rail has two tiers. The first is a 64px icon strip: brand, Workspaces,
-Entities, Artifacts and Chat, with the theme switch and account at the bottom.
-Each icon has an immediate tooltip. The second tier belongs to the section in
-the URL — entity files under Entities, the shelf under Artifacts, machines
-under Overview, and the WORKING/DONE chat history under Chat. Entity and
-artifact rows open their detail pages directly; the lists, search, filters,
-upload and add actions live in the rail. The chat history has a text search and
-a time filter instead of Today/Yesterday headings. The Workspaces button (the
-overview glyph) opens the Workspaces panel; choosing a workspace goes straight
-to its settings, where Overview, General, Members, Skills, MCP, Machines and
-Activity are the second-tier tabs. Click the brand to fold the second tier away
-(`⌘B` still works), drag its right edge to resize it (double-click resets), and
-the light/dark switch sits at the bottom of the icon strip (`⌘⇧L` in the
-desktop app, `⌥⇧L` in a browser). New thread is the + in the Chat rail; `⌘N`
-in the desktop app and `⌥⇧N` in a browser.
+The rail has two tiers. The first is a 64px icon strip: the brand, Overview,
+Entities, Artifacts, Chat and Configurations, with the theme switch and account
+at the bottom. Each icon has an immediate tooltip. The brand opens
+`#/workspaces`, the room picker shown after sign-in; picking a workspace opens
+its Overview at `#/<workspace>/overview` and brings the workspace navigation
+back. Every workspace route names its workspace in the URL, and the guard opens
+that workspace before rendering the page. Overview
+is a dedicated page with no second tier. The second tier belongs to the section
+in the URL — entity files under Entities, the shelf under Artifacts, the
+WORKING/DONE chat history under Chat, and the workspace settings tabs under
+Configurations. Clicking the active section icon again folds or unfolds the
+second tier (`⌘B` also works), drag its right edge to resize it (double-click
+resets), and the light/dark switch sits at the bottom of the icon strip
+(`⌘⇧L` in the desktop app, `⌥⇧L` in a browser). Entity and artifact rows open
+their detail pages directly; the lists, search, filters, upload and add actions
+live in the rail. The chat history has a text search and a time filter instead
+of Today/Yesterday headings. New thread is the + in the Chat rail; `⌘N` in the
+desktop app and `⌥⇧N` in a browser.
 
-Workspace settings are a page (`#/workspace`) with no second tab strip: the
-rail's second tier carries Overview, General, Members, Skills, MCP, Machines
-and Activity, and the page shows only the selected tab. The Workspaces panel carries the
-workspace list plus new/import and per-row export/delete actions. MCP has its
+Workspace settings are a page (`#/<workspace>/settings`) with no second tab strip: the
+rail's second tier carries General, Members, Skills, MCP, Machines and Activity,
+and the page shows only the selected tab. The `#/workspaces` picker carries the
+workspace cards plus new/import and per-row export/delete actions. MCP has its
 own page (`#/mcp`) for the servers the workspace consumes, while
 `#/account/mcp` is the opposite direction: the loopback
 MCP server an agent connects to. Account is three deep-linkable routes:
 `#/account` for the profile, `#/account/sound` for SFX and `#/account/mcp` for
-the server. Artifacts have their own detail pages (`#/artifacts/:id`);
+the server. Artifacts have their own detail pages (`#/<workspace>/artifacts/:id`);
 entities, skills and machines keep theirs.
 
 One account belongs to a hub, and the first workspace creator owns it. The
@@ -415,7 +423,10 @@ sign-in screen is a light-mode Area 51 pixel scene — stepped mesas, a hovering
 saucer, a slow searchlight and rising dust — while keeping the same warm yellow
 accent as the mark.
 
-The guard runs in order: **session → workspace → route**. After sign-in, if
+The guard runs in order: **session → workspace → route**. After sign-in, a hub
+with workspaces lands on `/workspaces` to pick a room; workspace routes carry
+the workspace id, so a direct link opens that workspace before the page renders.
+If
 `~/.entity/workspaces/` holds no readable `workspace.json`, the router sends the
 user to `/setup` and remembers the deep link they wanted, so the first workspace
 lands them there. The active workspace id persists in

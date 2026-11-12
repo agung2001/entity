@@ -19,7 +19,6 @@ const railEl = ref(null)
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 const isDesktop = hasDesktopBridge()
-const railShortcut = isMac ? '⌘B' : 'Ctrl+B'
 const themeShortcut = isDesktop
   ? isMac
     ? '⌘⇧L'
@@ -137,34 +136,46 @@ function toggleRail() {
   }
 }
 
-function toggleWorkspacePanel() {
-  const next = !hub.rail.workspaces
-  hub.rail.workspaces = next
-  if (next) {
-    hub.rail.workspace = false
-    hub.rail.entities = false
-    hub.rail.artifacts = false
+function expandRail() {
+  if (!collapsed.value) return
+  collapsed.value = false
+  try {
+    localStorage.setItem(COLLAPSE_KEY, '0')
+  } catch {
+    /* session-only */
   }
 }
 
 function openRailPanel(panel) {
-  hub.rail.workspaces = false
-  hub.rail.workspace = false
+  expandRail()
   hub.rail.entities = panel === 'entities'
   hub.rail.artifacts = panel === 'artifacts'
 }
 
-/* A route move means the section's own list should win again. The workspace
-   panel is the one panel that is opened from the icon strip, not from a URL. */
+function onPanelClick(item) {
+  if (isActive(item)) toggleRail()
+  else openRailPanel(item.panel)
+}
+
+function onNavClick(item, event) {
+  if (item.view === 'overview') {
+    if (collapsed.value) expandRail()
+    return
+  }
+  if (isActive(item)) {
+    event.preventDefault()
+    toggleRail()
+    return
+  }
+  expandRail()
+}
+
+/* A route move means the section's own list should win again. */
 watch(
   () => route.fullPath,
-  (path) => {
-    hub.rail.workspaces = false
+  () => {
     hub.rail.entities = false
     hub.rail.artifacts = false
-    /* Overview can be opened from the workspace second-tier menu without
-       replacing that menu with the overview machine list. */
-    if (path !== '/') hub.rail.workspace = false
   },
 )
 
@@ -213,6 +224,7 @@ function openAccountPage() {
 }
 
 const NAV = [
+  { name: 'overview', view: 'overview', label: 'Overview', icon: 'grid' },
   { panel: 'entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
   {
     panel: 'artifacts',
@@ -221,15 +233,29 @@ const NAV = [
     icon: 'artifact',
     count: () => artifacts.items.length,
   },
-  { to: '/chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => hub.chat.summaries.length },
+  { name: 'chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => hub.chat.summaries.length },
+  {
+    name: 'workspace',
+    view: 'configurations',
+    label: 'Configurations',
+    icon: 'sliders',
+  },
 ]
 
+const CONFIG_ROUTES = new Set(['workspace', 'skills', 'skill', 'mcp', 'machines', 'machine', 'activity'])
+const onWorkspaces = computed(() => route.name === 'workspaces')
+const onOverview = computed(() => route.name === 'overview')
+const showContext = computed(
+  () => !onWorkspaces.value && (!onOverview.value || hub.rail.entities || hub.rail.artifacts),
+)
+
 function isActive(item) {
-  const panelOpen = hub.rail.workspaces || hub.rail.entities || hub.rail.artifacts
+  const panelOpen = hub.rail.entities || hub.rail.artifacts
   if (panelOpen) return item.panel ? hub.rail[item.panel] : false
   if (item.panel === 'entities') return route.name === 'entity'
   if (item.panel === 'artifacts') return route.name === 'artifact'
-  return route.path === item.to || route.path.startsWith(item.to + '/')
+  if (item.view === 'configurations') return CONFIG_ROUTES.has(String(route.name || ''))
+  return route.name === item.name
 }
 const user = computed(() => hub.session?.user || 'no session')
 
@@ -263,45 +289,32 @@ function leave() {
     class="rail"
     :data-collapsed="collapsed ? '1' : '0'"
     :data-resizing="resizing ? '1' : '0'"
-    :data-panel="hub.rail.workspaces || hub.rail.entities || hub.rail.artifacts ? '1' : '0'"
+    :data-panel="hub.rail.entities || hub.rail.artifacts ? '1' : '0'"
     :style="railStyle"
   >
     <div class="rail-t1">
       <header class="rail-t1-head">
-        <button
+        <router-link
           class="rail-brand"
-          type="button"
-          :aria-expanded="collapsed ? 'false' : 'true'"
-          :aria-label="`${collapsed ? 'Expand' : 'Collapse'} context panel (${railShortcut})`"
-          :data-tip="`${collapsed ? 'Expand' : 'Collapse'} panel (${railShortcut})`"
-          @click="toggleRail"
+          to="/workspaces"
+          aria-label="All workspaces"
+          data-tip="All workspaces"
+          :aria-current="onWorkspaces ? 'page' : undefined"
         >
           <BrandMark />
-        </button>
+        </router-link>
       </header>
 
-      <button
-        class="rail-ico rail-ico--workspaces"
-        type="button"
-        aria-label="Workspaces"
-        data-tip="Workspaces"
-        :aria-current="hub.rail.workspaces ? 'page' : undefined"
-        @click="toggleWorkspacePanel"
-      >
-        <NavIcon name="grid" />
-      </button>
-
-      <div class="rail-t1-sep" aria-hidden="true"></div>
-
-      <nav class="rail-nav" aria-label="Workspace">
+      <nav v-if="!onWorkspaces" class="rail-nav" aria-label="Workspace">
         <template v-for="item in NAV" :key="item.view">
           <router-link
-            v-if="item.to"
+            v-if="item.name"
             class="rail-ico"
-            :to="item.to"
+            :to="{ name: item.name, params: { workspace: hub.workspace } }"
             :aria-current="isActive(item) ? 'page' : undefined"
             :aria-label="item.label"
             :data-tip="item.label"
+            @click="onNavClick(item, $event)"
           >
             <NavIcon :name="item.icon" />
             <span v-if="item.count && item.count()" class="rail-badge">{{ item.count() }}</span>
@@ -313,7 +326,7 @@ function leave() {
             :aria-current="isActive(item) ? 'page' : undefined"
             :aria-label="item.label"
             :data-tip="item.label"
-            @click="openRailPanel(item.panel)"
+            @click="onPanelClick(item)"
           >
             <NavIcon :name="item.icon" />
             <span v-if="item.count && item.count()" class="rail-badge">{{ item.count() }}</span>
@@ -400,9 +413,10 @@ function leave() {
       </div>
     </div>
 
-    <RailContext />
+    <RailContext v-if="showContext" />
 
     <button
+      v-if="showContext"
       class="rail-resize"
       type="button"
       role="separator"

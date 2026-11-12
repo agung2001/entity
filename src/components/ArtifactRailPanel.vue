@@ -85,7 +85,7 @@ async function onFiles(event) {
 
 function open(item) {
   hub.rail.artifacts = false
-  router.push({ name: 'artifact', params: { id: item.id } })
+  router.push({ name: 'artifact', params: { workspace: hub.workspace, id: item.id } })
 }
 </script>
 

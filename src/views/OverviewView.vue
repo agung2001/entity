@@ -40,13 +40,13 @@ const lastChat = (name) => {
 }
 
 function openChatThread(id) {
-  router.push({ name: 'chat', query: { thread: id } })
+  router.push({ name: 'chat', params: { workspace: hub.workspace }, query: { thread: id } })
 }
 
 function openFromKeyboard(e, id) {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
-    router.push({ name: 'entity', params: { name: id } })
+    router.push({ name: 'entity', params: { workspace: hub.workspace, name: id } })
   }
 }
 </script>
@@ -70,7 +70,7 @@ function openFromKeyboard(e, id) {
       </div>
       <div class="head-actions">
         <button class="btn" @click="hub.rail.entities = true">Entities</button>
-        <button class="btn btn-ink" @click="router.push('/workspace')">Workspace settings</button>
+        <button class="btn btn-ink" @click="router.push({ name: 'workspace', params: { workspace: hub.workspace } })">Workspace settings</button>
       </div>
     </div>
 
@@ -92,7 +92,7 @@ function openFromKeyboard(e, id) {
         class="tr"
         tabindex="0"
         role="button"
-        @click="router.push({ name: 'entity', params: { name: a.id } })"
+        @click="router.push({ name: 'entity', params: { workspace: hub.workspace, name: a.id } })"
         @keydown="openFromKeyboard($event, a.id)"
       >
         <span class="cell-agent">
@@ -139,7 +139,7 @@ function openFromKeyboard(e, id) {
         <h2>Conversations</h2>
         <span class="meta">
           newest first ·
-          <router-link to="/chat">{{ recentThreads.length ? 'all threads' : 'open chat' }}</router-link>
+          <router-link :to="{ name: 'chat', params: { workspace: hub.workspace } }">{{ recentThreads.length ? 'all threads' : 'open chat' }}</router-link>
         </span>
       </div>
       <ol>

@@ -131,7 +131,7 @@ async function attach(item) {
           v-for="s in items"
           :key="s.name"
           class="card2"
-          :to="{ name: 'skill', params: { name: s.name } }"
+          :to="{ name: 'skill', params: { workspace: hub.workspace, name: s.name } }"
         >
           <div class="card-top">
             <h3><HarnessIcon :name="s.harness" :size="14" />{{ s.name }}</h3>
@@ -208,7 +208,7 @@ async function attach(item) {
             <div class="card-actions">
               <router-link
                 class="btn btn-sm"
-                :to="{ name: 'skill', params: { name: s.name }, query: { harness: s.harness } }"
+                :to="{ name: 'skill', params: { workspace: hub.workspace, name: s.name }, query: { harness: s.harness } }"
               >
                 Open
               </router-link>

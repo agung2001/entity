@@ -16,7 +16,7 @@ const router = useRouter()
 function landed(record) {
   toast(`${record.label} is ready`)
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-  router.replace(redirect && redirect !== '/setup' ? redirect : '/')
+  router.replace(redirect && redirect !== '/setup' && redirect !== '/' ? redirect : '/workspaces')
 }
 </script>
 

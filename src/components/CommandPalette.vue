@@ -61,21 +61,19 @@ const navigationItems = computed(() => [
     id: 'nav:overview',
     label: 'Overview',
     meta: 'Workspace dashboard',
-    act: () => router.push('/'),
+    act: () => router.push({ name: 'overview', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:workspaces',
     label: 'Workspaces',
-    meta: 'Switch workspace or open its settings',
-    act: () => {
-      hub.rail.workspaces = true
-    },
+    meta: 'Choose a workspace to open',
+    act: () => router.push('/workspaces'),
   },
   {
     id: 'nav:workspace',
-    label: 'Workspace settings',
+    label: 'Configurations',
     meta: 'General, members, skills, MCP, machines',
-    act: () => router.push('/workspace'),
+    act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:account',
@@ -100,8 +98,6 @@ const navigationItems = computed(() => [
     label: 'Entities',
     meta: 'Entity directory',
     act: () => {
-      hub.rail.workspaces = false
-      hub.rail.workspace = false
       hub.rail.entities = true
       hub.rail.artifacts = false
     },
@@ -111,8 +107,6 @@ const navigationItems = computed(() => [
     label: 'Artifacts',
     meta: 'Files in this workspace',
     act: () => {
-      hub.rail.workspaces = false
-      hub.rail.workspace = false
       hub.rail.entities = false
       hub.rail.artifacts = true
     },
@@ -121,25 +115,25 @@ const navigationItems = computed(() => [
     id: 'nav:skills',
     label: 'Skills',
     meta: 'Workspace skills and harness libraries',
-    act: () => router.push('/skills'),
+    act: () => router.push({ name: 'skills', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:mcp',
     label: 'MCP',
     meta: 'Workspace pool and global configs',
-    act: () => router.push('/mcp'),
+    act: () => router.push({ name: 'mcp', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:machines',
     label: 'Machines',
     meta: 'Attached machines and the fleet',
-    act: () => router.push('/machines'),
+    act: () => router.push({ name: 'machines', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:activity',
     label: 'Activity',
     meta: 'Journal and harness sessions',
-    act: () => router.push('/workspace?tab=activity'),
+    act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }),
   },
 ])
 
@@ -148,7 +142,7 @@ const entityItems = computed(() =>
     id: `entity:${agent.id}`,
     label: agent.name,
     meta: `${agent.harnessLabel} · ${agent.skills.length} skills`,
-    act: () => router.push({ name: 'entity', params: { name: agent.name } }),
+    act: () => router.push({ name: 'entity', params: { workspace: hub.workspace, name: agent.name } }),
   })),
 )
 
@@ -157,7 +151,7 @@ const chatItems = computed(() =>
     id: `chat:${thread.id}`,
     label: chatLabel(thread),
     meta: `${thread.entity} · ${ago(thread.updatedAt)}`,
-    act: () => router.push({ name: 'chat', query: { thread: thread.id } }),
+    act: () => router.push({ name: 'chat', params: { workspace: hub.workspace }, query: { thread: thread.id } }),
   })),
 )
 
@@ -168,8 +162,9 @@ const workspaceItems = computed(() =>
     meta: `${workspace.id}${workspace.id === workspaces.active ? ' · current' : ''} · ${workspace.counts?.entities || 0} entities`,
     act: async () => {
       if (workspace.id !== workspaces.active) await openWorkspace(workspace.id)
-      hub.rail.workspaces = false
-      router.push({ name: 'workspace', query: {} })
+      hub.rail.entities = false
+      hub.rail.artifacts = false
+      router.push({ name: 'overview', params: { workspace: workspace.id } })
     },
   })),
 )
@@ -185,7 +180,7 @@ const skillItems = computed(() => {
       id: `skill:${key}`,
       label: skill.name,
       meta: `${skill.harnessLabel || 'workspace'} · attached`,
-      act: () => router.push({ name: 'skill', params: { name: skill.name } }),
+      act: () => router.push({ name: 'skill', params: { workspace: hub.workspace, name: skill.name } }),
     })
   }
   for (const skill of workspaces.library?.items || []) {
@@ -199,7 +194,7 @@ const skillItems = computed(() => {
       act: () =>
         router.push({
           name: 'skill',
-          params: { name: skill.name },
+          params: { workspace: hub.workspace, name: skill.name },
           query: { harness: skill.harness },
         }),
     })
@@ -214,7 +209,7 @@ const machineItems = computed(() => {
       id: `machine:${machine.id}`,
       label: machine.label || machine.id,
       meta: `${machine.thisMachine ? 'local' : 'ssh'} · attached`,
-      act: () => router.push({ name: 'machine', params: { id: machine.id } }),
+      act: () => router.push({ name: 'machine', params: { workspace: hub.workspace, id: machine.id } }),
     })
   }
   for (const host of hosts.value || []) {
@@ -224,7 +219,7 @@ const machineItems = computed(() => {
       id: `machine:${id}`,
       label: host.label || host.alias || id,
       meta: `${host.spec || host.hostName || 'ssh'} · fleet`,
-      act: () => router.push({ name: 'machine', params: { id } }),
+      act: () => router.push({ name: 'machine', params: { workspace: hub.workspace, id } }),
     })
   }
   return [...seen.values()]
@@ -235,25 +230,25 @@ const activityItems = computed(() => [
     id: 'activity:open',
     label: 'Activity',
     meta: 'Journal and harness sessions',
-    act: () => router.push('/activity'),
+    act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }),
   },
   {
     id: 'activity:journal',
     label: 'Journal',
     meta: 'Conversation history',
-    act: () => router.push('/activity'),
+    act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }),
   },
   {
     id: 'activity:sessions',
     label: 'Harness sessions',
     meta: 'Session IDs and resume commands',
-    act: () => router.push('/activity'),
+    act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }),
   },
   ...hub.runs.map((run) => ({
     id: `run:${run.id}`,
     label: `${run.entity || 'Run'} · ${run.status}`,
     meta: `${run.harness || 'harness'} · ${ago(run.startedAt)}`,
-    act: () => router.push('/activity'),
+    act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }),
   })),
 ])
 

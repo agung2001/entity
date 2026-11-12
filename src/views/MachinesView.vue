@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import { fleet, loadFleet, probeHost, probeState } from '@/stores/fleet'
-import { toast } from '@/stores/hub'
+import { hub, toast } from '@/stores/hub'
 import { attachMachine, detachMachine, workspaces } from '@/stores/workspaces'
 
 const props = defineProps({
@@ -159,7 +159,7 @@ async function test(host) {
           <div class="mcard-actions">
             <router-link
               class="btn btn-sm"
-              :to="{ name: 'machine', params: { id: machine.id } }"
+              :to="{ name: 'machine', params: { workspace: hub.workspace, id: machine.id } }"
             >
               Open
             </router-link>
@@ -268,7 +268,7 @@ async function test(host) {
           <div class="mcard-actions">
             <router-link
               class="btn btn-sm"
-              :to="{ name: 'machine', params: { id: host.alias } }"
+              :to="{ name: 'machine', params: { workspace: hub.workspace, id: host.alias } }"
             >
               Open
             </router-link>

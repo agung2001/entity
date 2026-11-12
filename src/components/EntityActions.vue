@@ -59,7 +59,7 @@ async function chat() {
     toast(error?.message || `Could not open a thread for ${props.entity.name}`)
     return
   }
-  router.push('/chat')
+  router.push({ name: 'chat', params: { workspace: hub.workspace } })
 }
 
 async function reveal() {
@@ -82,7 +82,7 @@ async function duplicate() {
       mood: mark.mood,
     })
     toast(`${copy.name}.md duplicated`)
-    router.push({ name: 'entity', params: { name: copy.name } })
+    router.push({ name: 'entity', params: { workspace: hub.workspace, name: copy.name } })
   } catch (error) {
     toast(error?.message || 'The entity could not be duplicated.')
   }

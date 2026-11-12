@@ -43,13 +43,13 @@ const lastActivity = computed(() => {
       </span>
     </button>
 
-    <router-link class="stat-card" to="/chat">
+    <router-link class="stat-card" :to="{ name: 'chat', params: { workspace: hub.workspace } }">
       <span class="stat-k">Conversations</span>
       <span class="stat-v">{{ summaries.length }}</span>
       <span class="stat-m">{{ queries }} queries · {{ replies }} responses</span>
     </router-link>
 
-    <router-link class="stat-card" to="/skills">
+    <router-link class="stat-card" :to="{ name: 'skills', params: { workspace: hub.workspace } }">
       <span class="stat-k">Skills</span>
       <span class="stat-v">{{ hub.skills.length }}</span>
       <span class="stat-m">
@@ -57,7 +57,7 @@ const lastActivity = computed(() => {
       </span>
     </router-link>
 
-    <router-link class="stat-card" to="/machines">
+    <router-link class="stat-card" :to="{ name: 'machines', params: { workspace: hub.workspace } }">
       <span class="stat-k">Machines</span>
       <span class="stat-v">{{ workspaces.machines.length }}</span>
       <span class="stat-m">{{ localMachines }} local · {{ remoteMachines }} remote</span>
@@ -67,6 +67,6 @@ const lastActivity = computed(() => {
   <p class="stat-foot">
     Last activity <b>{{ lastActivity }}</b>
     <span aria-hidden="true">·</span>
-    <router-link :to="{ name: 'workspace', query: { tab: 'activity' } }">Open the journal</router-link>
+    <router-link :to="{ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }">Open the journal</router-link>
   </p>
 </template>

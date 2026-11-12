@@ -124,6 +124,7 @@ const messages = computed(() => {
 const shareUrlFor = (index) =>
   router.resolve({
     name: 'chat',
+    params: { workspace: route.params.workspace },
     query: { ...route.query, thread: hub.chat.active, msg: String(index) },
   }).href
 
@@ -314,7 +315,7 @@ function onCreated(created) {
   playSfx('success')
   newOpen.value = false
   if (created?.id && route.query.thread !== created.id) {
-    router.replace({ name: 'chat', query: { thread: created.id } })
+    router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query: { thread: created.id } })
   }
 }
 
@@ -389,7 +390,7 @@ function consumeNewQuery() {
   startThread()
   const query = { ...route.query }
   delete query.new
-  router.replace({ name: 'chat', query })
+  router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query })
 }
 
 onMounted(async () => {
@@ -428,7 +429,7 @@ watch(
     if (current === id) return
     const query = { ...route.query, thread: id }
     if (previous && previous !== id) delete query.msg
-    router.replace({ name: 'chat', query })
+    router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query })
   },
 )
 
@@ -445,7 +446,7 @@ watch(
     /* A dead link falls back to what is open, or the newest thread. */
     const fallback = hub.chat.active || newestThreadId()
     if (fallback && fallback !== id) {
-      router.replace({ name: 'chat', query: { ...route.query, thread: fallback } })
+      router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query: { ...route.query, thread: fallback } })
     }
   },
 )
@@ -642,7 +643,7 @@ watch(
             <span>Start one to talk to an entity on this machine through its harness.</span>
             <router-link
               class="empty-link"
-              :to="{ name: 'chat', query: { ...route.query, new: '1' } }"
+              :to="{ name: 'chat', params: { workspace: route.params.workspace }, query: { ...route.query, new: '1' } }"
             >New thread</router-link>
           </div>
         </section>
