@@ -288,7 +288,6 @@ defineExpose({ newThread })
         <button v-if="query" type="button" aria-label="Clear search" @click="query = ''">×</button>
       </label>
       <label class="rchat-range">
-        <span>Time</span>
         <select v-model="range" aria-label="Filter threads by time">
           <option v-for="option in RANGE_OPTIONS" :key="option.id" :value="option.id">
             {{ option.label }}

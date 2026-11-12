@@ -476,11 +476,6 @@ watch(
 <template>
   <div class="view view--chat">
     <div class="cpage">
-      <header class="cbar">
-        <h1>Chat</h1>
-        <p class="sub">Every thread in this workspace, pinned to the entity, machine and harness it started on.</p>
-      </header>
-
       <div class="cbody">
         <section v-if="!hub.agents.length" class="cpanel cpanel-empty">
           <div class="empty-note">
