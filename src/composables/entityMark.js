@@ -555,7 +555,7 @@ function start() {
  */
 export function hydrateMark(
   el,
-  { mini = false, hop = false, mark = markSettings, badge = true } = {},
+  { mini = false, hop = false, animate = false, mark = markSettings, badge = true } = {},
 ) {
   if (!el || el.dataset.ready === '1') return
   el.dataset.ready = '1'
@@ -568,7 +568,7 @@ export function hydrateMark(
   }
   applyMark(el, mark)
 
-  if (mini && !hop) {
+  if (mini && !hop && !animate) {
     statics.push({ el, mark })
     return
   }

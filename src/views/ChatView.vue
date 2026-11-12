@@ -10,6 +10,7 @@ import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TranscriptDialog from '@/components/TranscriptDialog.vue'
 import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
+import { markFor, moodGlyph } from '@/composables/entityMark'
 import { loadArtifacts } from '@/stores/artifacts'
 import { HARNESSES } from '@/data/mock'
 import {
@@ -95,13 +96,24 @@ try {
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
 const filterOptions = {
-  entity: () => hub.agents.map((a) => ({ id: a.id, label: a.name, meta: `${a.skills.length} skills` })),
+  entity: () =>
+    hub.agents.map((a) => ({
+      id: a.id,
+      label: a.name,
+      meta: `${a.skills.length} skills`,
+      glyph: moodGlyph(markFor(hub.workspace, a.id).mood),
+    })),
   machine: () => hub.machines.map((m) => ({ id: m.id, label: m.label, meta: m.thisMachine ? 'local' : 'remote' })),
   harness: () => HARNESSES.map((h) => ({ id: h.id, label: h.label })),
 }
 
 const contextOptions = {
-  entity: () => hub.agents.map((a) => ({ id: a.id, label: a.name })),
+  entity: () =>
+    hub.agents.map((a) => ({
+      id: a.id,
+      label: a.name,
+      glyph: moodGlyph(markFor(hub.workspace, a.id).mood),
+    })),
   machine: () => hub.machines.map((m) => ({ id: m.id, label: m.label, meta: m.thisMachine ? 'local' : 'remote' })),
   harness: () => HARNESSES.map((h) => ({ id: h.id, label: h.label })),
 }
@@ -160,7 +172,7 @@ watch(
 
 const threadTitle = computed(() => {
   const t = thread.value
-  if (!t) return 'New chat'
+  if (!t) return 'New thread'
   if (t.title) return t.title
   const asked = (t.messages || []).find((message) => message.who === 'me')
   return asked ? snippet(asked.text) : `Thread with ${agent.value?.name || 'entity'}`
@@ -184,7 +196,7 @@ const canTranscript = computed(() => Boolean(live.value || latestTrace.value))
 
 const threadLabel = (summary) =>
   summary.title ||
-  (summary.queries ? snippet(summary.preview) : `New chat · ${summary.entity}`)
+  (summary.queries ? snippet(summary.preview) : `New thread · ${summary.entity}`)
 
 const lastAsked = (summary) => (summary.queries ? snippet(summary.preview) : 'No question yet')
 const threadQueries = (summary) => summary.queries || 0
@@ -549,7 +561,7 @@ watch(
         <p class="sub">Every thread in this workspace, pinned to the entity, machine and harness it started on.</p>
         <div class="right">
           <button class="btn btn-ink" :disabled="!hub.agents.length" @click="startThread">
-            New chat
+            New thread
             <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
           </button>
         </div>
@@ -566,6 +578,7 @@ watch(
           <div class="cfilt" role="group" aria-label="Filter history">
             <PickMenu
               head="Entity"
+              icons="entity"
               all-label="All entities"
               include-all
               :options="filterOptions.entity()"
@@ -696,7 +709,7 @@ watch(
                 search
                   ? 'Try a different title, entity or preview.'
                   : hub.chat.summaries.length
-                    ? 'Nothing has started with this combination yet. Clear a filter, or start a new chat.'
+                    ? 'Nothing has started with this combination yet. Clear a filter, or start a new thread.'
                     : 'No conversation has started in this workspace yet. Open an entity and send the first message.'
               }}
             </div>
@@ -777,6 +790,7 @@ watch(
               <div class="cp-picks" role="group" aria-label="Thread context">
                 <PickMenu
                   head="Entity"
+                  icons="entity"
                   :options="contextOptions.entity()"
                   :model-value="ctx.entity"
                   :count="agent.skills.length"
@@ -832,7 +846,7 @@ watch(
             <b>No thread open.</b>
             <span>Start one to talk to an entity on this machine through its harness.</span>
             <button class="btn btn-ink" type="button" :disabled="!hub.agents.length" @click="startThread">
-              New chat
+              New thread
               <kbd class="btn-kbd">{{ newChatShortcut }}</kbd>
             </button>
           </div>

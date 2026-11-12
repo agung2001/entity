@@ -5,12 +5,12 @@ import McpAccountPanel from '@/components/McpAccountPanel.vue'
 import {
   changePassword,
   credentials,
-  ROLES,
   roleById,
   toast,
   updateAccount,
 } from '@/stores/hub'
 import { displayNameFrom, gravatarUrl } from '@/lib/gravatar'
+import { activeWorkspace } from '@/stores/workspaces'
 
 /**
  * Account is a page, not a modal. The handle and email identify this hub; the
@@ -34,6 +34,28 @@ const displayName = computed(() =>
   displayNameFrom(username.value || email.value, username.value || 'Account'),
 )
 const avatarUrl = computed(() => gravatarUrl(email.value || record.email, 112))
+
+const people = computed(() => {
+  const members = activeWorkspace.value?.members || []
+  if (members.length) return members
+  return [{ name: username.value || record.username, email: email.value || record.email, role: record.role }]
+})
+const peopleStats = computed(() => ({
+  total: people.value.length,
+  owners: people.value.filter((person) => person.role === 'owner').length,
+  admins: people.value.filter((person) => person.role === 'admin').length,
+  members: people.value.filter((person) => person.role === 'member').length,
+}))
+const personName = (person) => person.name || displayNameFrom(person.email, 'Member')
+const personInitials = (person) =>
+  personName(person)
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?'
+const personAvatar = (person) => gravatarUrl(person.email, 56)
 
 function cancel() {
   router.push('/')
@@ -230,18 +252,28 @@ async function save() {
         </div>
       </form>
 
-      <aside class="role-card">
-        <h2>Workspace roles</h2>
-        <p class="mnote">
-          One person owns the workspace; the other two levels are how access is described when
-          members arrive.
-        </p>
-        <ul class="role-list">
-          <li v-for="entry in ROLES" :key="entry.id" :data-on="entry.id === role.id ? '1' : '0'">
-            <b>{{ entry.label }}</b>
-            <span>{{ entry.desc }}</span>
+      <aside class="role-card people-card">
+        <h2>People</h2>
+        <p class="mnote">Members recorded in this workspace.</p>
+        <div class="people-stats">
+          <div><b>{{ peopleStats.total }}</b><span>members</span></div>
+          <div><b>{{ peopleStats.owners }}</b><span>owners</span></div>
+          <div><b>{{ peopleStats.admins }}</b><span>admins</span></div>
+        </div>
+        <ul class="people-list">
+          <li v-for="person in people" :key="person.email || person.name">
+            <img v-if="personAvatar(person)" class="people-avatar" :src="personAvatar(person)" alt="" />
+            <span v-else class="people-avatar people-avatar--text">{{ personInitials(person) }}</span>
+            <span class="people-id">
+              <b>{{ personName(person) }}</b>
+              <span>{{ person.email || 'no email' }}</span>
+            </span>
+            <span class="role-badge">{{ roleById(person.role).label }}</span>
           </li>
         </ul>
+        <p v-if="!activeWorkspace?.members?.length" class="mnote people-note">
+          This workspace has no members file yet. The signed-in account is shown.
+        </p>
       </aside>
     </div>
 

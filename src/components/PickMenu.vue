@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
         :size="12"
       />
       <template v-else-if="icons === 'entity'">
-        <EntityMark v-if="current" mini :entity="current.id" />
+        <EntityMark v-if="current && current.id !== 'all'" mini animate :entity="current.id" />
         <span v-if="current?.glyph" class="pick-glyph" aria-hidden="true">{{ current.glyph }}</span>
       </template>
       <MachineIcon v-else-if="icons === 'machine'" :size="12" />
@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
       >
         <HarnessIcon v-if="icons === 'harness'" :name="o.id" :size="12" />
         <template v-else-if="icons === 'entity'">
-          <EntityMark mini :entity="o.id" />
+          <EntityMark v-if="o.id !== 'all'" mini animate :entity="o.id" />
           <span v-if="o.glyph" class="pick-glyph" aria-hidden="true">{{ o.glyph }}</span>
         </template>
         <MachineIcon v-else-if="icons === 'machine'" :size="12" />

@@ -7,7 +7,7 @@ import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import { HARNESSES, MODELS } from '@/data/mock'
 import { scaffoldEntity } from '@/stores/entities'
-import { ago, ensureChats, hub, machineById, toast } from '@/stores/hub'
+import { ago, ensureChats, harnessById, hub, machineById, toast } from '@/stores/hub'
 
 /**
  * The entity table is a directory listing. Every row is a file in
@@ -18,6 +18,8 @@ const FILTERS = ['all', 'running', 'idle', 'sleep', 'error']
 const router = useRouter()
 
 const adding = ref(false)
+const search = ref('')
+const openId = ref('')
 const name = ref('')
 const harness = ref('claude')
 const model = ref('')
@@ -38,11 +40,34 @@ watch(harness, () => {
   model.value = ''
 })
 
-const list = computed(() =>
-  hub.entityFilter === 'all'
-    ? hub.agents
-    : hub.agents.filter((a) => a.status === hub.entityFilter),
-)
+const filterCounts = computed(() => {
+  const counts = { all: hub.agents.length }
+  for (const state of ['running', 'idle', 'sleep', 'error']) {
+    counts[state] = hub.agents.filter((agent) => agent.status === state).length
+  }
+  return counts
+})
+
+const list = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return hub.agents.filter((agent) => {
+    if (hub.entityFilter !== 'all' && agent.status !== hub.entityFilter) return false
+    if (!q) return true
+    return `${agent.name} ${agent.desc} ${agent.harnessLabel}`.toLowerCase().includes(q)
+  })
+})
+
+const threadsFor = (name) => hub.chat.summaries.filter((thread) => thread.entity === name)
+const threadTurns = (thread) => (thread.queries || 0) + (thread.replies || 0)
+const threadLink = (thread) => ({ name: 'chat', query: { thread: thread.id } })
+
+function toggleThreads(id) {
+  openId.value = openId.value === id ? '' : id
+}
+
+watch([search, () => hub.entityFilter], () => {
+  openId.value = ''
+})
 
 const dotState = (status) =>
   ({ running: 'live', idle: 'idle', sleep: 'sleep', error: 'fail' })[status] || 'idle'
@@ -105,121 +130,146 @@ async function create() {
 }
 </script>
 
+
 <template>
-  <div class="view">
-    <div class="page-head">
+  <div class="view edir-view">
+    <header class="page-head edir-head">
       <div>
         <p class="eyebrow">Workspace · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h1>Entities</h1>
         <p class="lede">
-          Every entity this workspace has, one file each in
-          <code class="mono">entities/</code>. Open one to read its instructions, or start a
-          conversation with it on this machine.
+          Every entity this workspace has, one file each in <code class="mono">entities/</code>.
+          Open a row to read what it is and every conversation it has had on this machine.
         </p>
       </div>
       <div class="head-actions">
-        <button class="btn" @click="startAdd">Add entity</button>
+        <button class="btn btn-ink" @click="startAdd">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+          Add entity
+        </button>
       </div>
+    </header>
+
+    <div class="edir-tool">
+      <label class="edir-search">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" />
+          <path d="M10.4 10.4L14 14" />
+        </svg>
+        <input v-model="search" type="search" placeholder="Search name or description" aria-label="Search entities" autocomplete="off" />
+      </label>
+      <div class="edir-filters" role="group" aria-label="Filter by state">
+        <button
+          v-for="f in FILTERS"
+          :key="f"
+          type="button"
+          :aria-pressed="hub.entityFilter === f ? 'true' : 'false'"
+          @click="hub.entityFilter = f"
+        >
+          {{ f === 'all' ? 'All' : f }}<b>{{ filterCounts[f] }}</b>
+        </button>
+      </div>
+      <span class="edir-count">{{ list.length }} of {{ hub.agents.length }} entities</span>
     </div>
 
-    <div class="hints" style="margin-bottom: 14px">
-      <button
-        v-for="f in FILTERS"
-        :key="f"
-        class="hint"
-        :aria-pressed="hub.entityFilter === f ? 'true' : 'false'"
-        @click="hub.entityFilter = f"
-      >
-        {{ f === 'all' ? `All ${hub.agents.length}` : f }}
-      </button>
-    </div>
-
-    <div class="tbl">
-      <div class="tr th">
-        <span>Entity</span><span>State</span><span class="col-machines">Machines</span>
-        <span class="col-skills">Skills</span><span class="col-last">Last chat</span>
-        <span class="col-actions">Actions</span>
+    <div v-if="list.length" class="edir-table">
+      <div class="edir-head-row">
+        <span>Entity</span><span>State</span><span>Machines</span><span>Skills</span><span>Conversations</span><span></span>
       </div>
-      <div
-        v-for="a in list"
-        :key="a.id"
-        class="tr"
-        tabindex="0"
-        role="button"
-        @click="router.push({ name: 'entity', params: { name: a.id } })"
-        @keydown="openFromKeyboard($event, a.id)"
-      >
-        <span class="cell-agent">
-          <EntityMark :entity="a.name" />
-          <span>
-            <span class="nm2">
-              {{ a.name }}
-              <em v-if="a.problems.length" class="row-warn" :title="a.problems.join('\n')">
-                {{ a.problems.length }}
-              </em>
-            </span>
-            <span class="sub2" style="max-width: 38ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
-              {{ a.desc }}
+      <template v-for="a in list" :key="a.id">
+        <div
+          class="edir-row"
+          :data-open="openId === a.id ? '1' : '0'"
+          tabindex="0"
+          role="button"
+          @click="router.push({ name: 'entity', params: { name: a.id } })"
+          @keydown="openFromKeyboard($event, a.id)"
+        >
+          <span class="cell-agent">
+            <EntityMark :entity="a.name" />
+            <span class="edir-ident">
+              <span class="nm2">
+                {{ a.name }}
+                <em v-if="a.problems.length" class="row-warn" :title="a.problems.join('\n')">{{ a.problems.length }}</em>
+              </span>
+              <span class="sub2 edir-desc">{{ a.desc }}</span>
             </span>
           </span>
-        </span>
-        <span class="col-state">
           <span class="state" :data-s="dotState(a.status)"><i></i>{{ a.status }}</span>
-        </span>
-        <span class="col-machines">
-          <span class="chipm chipm--harness">
-            <HarnessIcon :name="a.harness" :size="10" />{{ a.harnessLabel }}
+          <span class="edir-machines">
+            <span class="chipm chipm--harness"><HarnessIcon :name="a.harness" :size="10" />{{ a.harnessLabel }}</span>
+            <span v-for="m in a.machines" :key="m" class="chipm"><MachineIcon :size="10" />{{ machineLabel(m) }}</span>
+            <span v-if="!a.machines.length" class="unplaced">nowhere</span>
           </span>
-          <template v-if="a.machines.length">
-            <span v-for="m in a.machines" :key="m" class="chipm">
-              <MachineIcon :size="10" />{{ machineLabel(m) }}
+          <span class="num">{{ a.skills.length }}</span>
+          <button
+            class="edir-thrcell"
+            type="button"
+            :aria-expanded="openId === a.id ? 'true' : 'false'"
+            @click.stop="toggleThreads(a.id)"
+          >
+            <span class="edir-thrtop">
+              <span class="n">{{ threadsFor(a.name).length }} {{ threadsFor(a.name).length === 1 ? 'thread' : 'threads' }}</span>
+              <span v-if="threadsFor(a.name).length" class="when">{{ ago(threadsFor(a.name)[0].updatedAt) }}</span>
             </span>
-          </template>
-          <span v-else class="unplaced">nowhere</span>
-        </span>
-        <span class="num col-skills">{{ a.skills.length }}</span>
-        <span class="last col-last">{{ lastChat(a.name) }}</span>
-        <EntityActions :entity="a" />
-      </div>
-      <div
-        v-if="!list.length"
-        class="tr"
-        style="grid-column: 1 / -1; cursor: default; color: var(--muted); font-size: 12.5px"
-      >
-        {{
-          hub.agents.length
-            ? 'No entity in this state.'
-            : 'No entities yet. Add one — it creates a real markdown file.'
-        }}
-      </div>
+            <span class="edir-thrq">
+              {{ threadsFor(a.name).length ? (threadsFor(a.name)[0].preview || 'No question asked yet') : 'No conversations yet' }}
+            </span>
+          </button>
+          <EntityActions :entity="a" />
+        </div>
+        <div v-if="openId === a.id" class="edir-drawer">
+          <div class="edir-drawer-head">
+            <span>{{ threadsFor(a.name).length }} {{ threadsFor(a.name).length === 1 ? 'conversation' : 'conversations' }}</span>
+            <router-link :to="{ name: 'entity', params: { name: a.name } }">Open entity →</router-link>
+          </div>
+          <router-link v-for="t in threadsFor(a.name)" :key="t.id" class="edir-thr" :to="threadLink(t)">
+            <span class="edir-tm">{{ ago(t.updatedAt) }}</span>
+            <span class="edir-thrbody">
+              <b>{{ t.title || t.preview || 'No question asked yet' }}</b>
+              <span>
+                <MachineIcon :size="9" /> {{ machineLabel(t.machine) }}
+                <span aria-hidden="true">·</span>
+                <HarnessIcon :name="t.harness" :size="9" /> {{ harnessById(t.harness).label }}
+                <span aria-hidden="true">·</span>
+                {{ threadTurns(t) }} {{ threadTurns(t) === 1 ? 'turn' : 'turns' }}
+              </span>
+            </span>
+            <svg class="edir-go" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2l4 4-4 4" /></svg>
+          </router-link>
+          <p v-if="!threadsFor(a.name).length" class="edir-empty-thr">Nothing has been asked of {{ a.name }} yet.</p>
+        </div>
+      </template>
     </div>
+
+    <div v-else class="empty-note edir-empty">
+      <b>{{ hub.agents.length ? 'Nothing matches.' : 'No entities yet.' }}</b>
+      <span>
+        {{ hub.agents.length ? 'Search covers the name and description. Clear the filter to see the rest.' : 'An entity is a markdown file with its own instructions, skills and conversations.' }}
+      </span>
+      <button v-if="hub.agents.length" class="btn" type="button" @click="search = ''; hub.entityFilter = 'all'">Clear filters</button>
+      <button v-else class="btn btn-ink" type="button" @click="startAdd">Add entity</button>
+    </div>
+
+    <p class="edir-foot">
+      <span><b>{{ hub.agents.length }}</b> entities · <b>{{ hub.chat.summaries.length }}</b> conversations</span>
+      <span class="r">A thread is a file in <b>chats/</b>; opening one takes you straight to it in Chat.</span>
+    </p>
 
     <div class="modal modal-narrow" :data-open="adding ? '1' : '0'" role="dialog" aria-modal="true" aria-label="Add entity">
       <div class="mo-head">
         <h2>Add entity</h2>
-        <p>
-          Writes <code class="mono">entities/{{ slug || 'name' }}.md</code> with a harness
-          and a working directory you can edit.
-        </p>
+        <p>Writes <code class="mono">entities/{{ slug || 'name' }}.md</code> with a harness and a working directory you can edit.</p>
         <button class="x mo-x" aria-label="Close" @click="cancelAdd">
-          <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
-            <path d="M2 2l8 8M10 2l-8 8" />
-          </svg>
+          <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
         </button>
       </div>
       <form class="mo-body" @submit.prevent="create">
         <div class="fld">
           <label class="lbl" for="ent-name">Name</label>
-          <input
-            id="ent-name"
-            ref="nameInput"
-            v-model="name"
-            type="text"
-            placeholder="py-agent"
-            spellcheck="false"
-            :disabled="busy"
-            @input="error = ''"
-          />
+          <input id="ent-name" ref="nameInput" v-model="name" type="text" placeholder="py-agent" spellcheck="false" :disabled="busy" @input="error = ''" />
           <p class="mnote">File: <code class="mono">entities/{{ slug || 'name' }}.md</code></p>
         </div>
         <div class="fld">
@@ -230,29 +280,14 @@ async function create() {
         </div>
         <div class="fld">
           <label class="lbl" for="ent-model">Model</label>
-          <input
-            id="ent-model"
-            v-model="model"
-            type="text"
-            :list="`ent-models-${harness}`"
-            placeholder="harness default"
-            spellcheck="false"
-            :disabled="busy"
-          />
-          <datalist :id="`ent-models-${harness}`">
-            <option v-for="option in modelOptions" :key="option" :value="option" />
-          </datalist>
-          <p class="mnote">
-            Written as <code class="mono">model:</code> in the entity file. Leave blank to let
-            {{ HARNESSES.find((h) => h.id === harness)?.label || harness }} choose.
-          </p>
+          <input id="ent-model" v-model="model" type="text" :list="`ent-models-${harness}`" placeholder="harness default" spellcheck="false" :disabled="busy" />
+          <datalist :id="`ent-models-${harness}`"><option v-for="option in modelOptions" :key="option" :value="option" /></datalist>
+          <p class="mnote">Written as <code class="mono">model:</code> in the entity file. Leave blank to let {{ HARNESSES.find((h) => h.id === harness)?.label || harness }} choose.</p>
         </div>
         <p v-if="error" class="run-warn">{{ error }}</p>
         <div class="mo-foot" style="padding: 8px 0 0; border: 0">
           <button class="btn" type="button" :disabled="busy" @click="cancelAdd">Cancel</button>
-          <button class="btn btn-ink" type="submit" :disabled="busy">
-            {{ busy ? 'Creating…' : 'Create file' }}
-          </button>
+          <button class="btn btn-ink" type="submit" :disabled="busy">{{ busy ? 'Creating…' : 'Create file' }}</button>
         </div>
       </form>
     </div>

@@ -149,10 +149,10 @@ async function submit() {
     :data-open="open ? '1' : '0'"
     role="dialog"
     aria-modal="true"
-    aria-label="New chat"
+    aria-label="New thread"
   >
     <div class="mo-head">
-      <h2>New chat</h2>
+      <h2>New thread</h2>
       <p>Pin the entity, machine, harness and model this conversation belongs to.</p>
       <button class="x mo-x" aria-label="Close" @click="emit('close')">
         <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
@@ -226,7 +226,7 @@ async function submit() {
       <div class="mo-foot" style="padding: 8px 0 0; border: 0">
         <button class="btn" type="button" :disabled="busy" @click="emit('close')">Cancel</button>
         <button class="btn btn-ink" type="submit" :disabled="busy || !hub.agents.length">
-          {{ busy ? 'Starting…' : 'Start chat' }}
+          {{ busy ? 'Starting…' : 'Start thread' }}
         </button>
       </div>
     </form>

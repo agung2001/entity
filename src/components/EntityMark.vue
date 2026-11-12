@@ -13,6 +13,7 @@ import { hub } from '@/stores/hub'
  */
 const props = defineProps({
   mini: { type: Boolean, default: false },
+  animate: { type: Boolean, default: false },
   hop: { type: Boolean, default: false },
   entity: { type: String, default: '' },
   workspace: { type: String, default: '' },
@@ -26,6 +27,7 @@ function mount() {
   hydrateMark(el.value, {
     mini: props.mini,
     hop: props.hop,
+    animate: props.animate,
     mark: mark.value,
     /* the brand mark is a logo; entity marks keep their mood badge */
     badge: Boolean(props.entity),
