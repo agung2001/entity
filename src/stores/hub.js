@@ -307,6 +307,9 @@ export const hub = reactive({
   entityFilter: 'all',
   palette: { open: false, query: '', active: 0 },
   wizard: { open: false },
+  /* the second tier can temporarily show the workspace list instead of the
+     current section's list; it is navigation state, not a route */
+  rail: { workspaces: false, workspace: false },
   toast: { open: false, message: '' },
 
   /* --- consoles ------------------------------------------------------ */

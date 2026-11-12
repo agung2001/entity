@@ -1,13 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '@/components/BrandMark.vue'
-import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
 import NavIcon from '@/components/NavIcon.vue'
-import WorkspaceSwitcher from '@/components/WorkspaceSwitcher.vue'
-import { hub, initials, roleById, signOut } from '@/stores/hub'
+import RailContext from '@/components/RailContext.vue'
+import { ensureChats, hub, initials, roleById, signOut } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
+import { hasDesktopBridge } from '@/composables/localBridge'
 import { gravatarUrl } from '@/lib/gravatar'
+import { themeMode, toggleTheme } from '@/lib/theme'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,14 +18,22 @@ const accountRoot = ref(null)
 const railEl = ref(null)
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+const isDesktop = hasDesktopBridge()
 const railShortcut = isMac ? '⌘B' : 'Ctrl+B'
+const themeShortcut = isDesktop
+  ? isMac
+    ? '⌘⇧L'
+    : 'Ctrl+Shift+L'
+  : isMac
+    ? '⌥⇧L'
+    : 'Alt+Shift+L'
 
-/* The rail is a working surface, not a fixed chrome strip: some histories need
+/* The second tier is a working surface, not fixed chrome: some histories need
    more width than others. The width belongs to the window, like the fold. */
 const WIDTH_KEY = 'entity.rail.width'
 const MIN_WIDTH = 190
 const MAX_WIDTH = 360
-const DEFAULT_WIDTH = 228
+const DEFAULT_WIDTH = 236
 const railWidth = ref(DEFAULT_WIDTH)
 const resizing = ref(false)
 let resizeStartX = 0
@@ -42,9 +51,9 @@ try {
   /* private mode: keep the default */
 }
 
-const railStyle = computed(() =>
-  collapsed.value ? null : { width: `${railWidth.value}px` },
-)
+/* The root owns the custom property so a drag can move the second tier without
+   re-rendering the rail on every pointer sample. */
+const railStyle = computed(() => ({ '--rail-w': `${railWidth.value}px` }))
 
 function storeWidth() {
   try {
@@ -69,9 +78,6 @@ function startResize(event) {
 
 function onResizeMove(event) {
   if (!resizing.value) return
-  /* Width is written straight to the rail while dragging. Updating a reactive
-     value here re-rendered the whole rail on every pointer sample, and pointer
-     devices can sample faster than the screen paints. */
   resizeWidth = Math.min(
     MAX_WIDTH,
     Math.max(MIN_WIDTH, resizeStartWidth + event.clientX - resizeStartX),
@@ -79,7 +85,7 @@ function onResizeMove(event) {
   if (resizeFrame) return
   resizeFrame = requestAnimationFrame(() => {
     resizeFrame = 0
-    if (railEl.value) railEl.value.style.width = `${resizeWidth}px`
+    railEl.value?.style.setProperty('--rail-w', `${resizeWidth}px`)
   })
 }
 
@@ -92,7 +98,7 @@ function stopResize() {
   document.body.style.userSelect = ''
   window.removeEventListener('pointermove', onResizeMove)
   window.removeEventListener('pointerup', stopResize)
-  if (railEl.value) railEl.value.style.width = `${resizeWidth}px`
+  railEl.value?.style.setProperty('--rail-w', `${resizeWidth}px`)
   railWidth.value = resizeWidth
   storeWidth()
 }
@@ -112,8 +118,8 @@ function resetWidth() {
   storeWidth()
 }
 
-/* the rail folds down to its icons; the choice belongs to the window, not the
-   workspace, so it lives beside the other UI preferences */
+/* the second tier folds away; the icon tier stays. The choice belongs to the
+   window, not the workspace, so it lives beside the other UI preferences */
 const COLLAPSE_KEY = 'entity.rail.collapsed'
 const collapsed = ref(false)
 try {
@@ -131,7 +137,24 @@ function toggleRail() {
   }
 }
 
+function toggleWorkspacePanel() {
+  hub.rail.workspaces = !hub.rail.workspaces
+}
+
+/* A route move means the section's own list should win again. The workspace
+   panel is the one panel that is opened from the icon strip, not from a URL. */
+watch(
+  () => route.fullPath,
+  (path) => {
+    hub.rail.workspaces = false
+    /* Overview can be opened from the workspace second-tier menu without
+       replacing that menu with the overview machine list. */
+    if (path !== '/') hub.rail.workspace = false
+  },
+)
+
 onMounted(() => {
+  ensureChats()
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKey)
 })
@@ -175,7 +198,6 @@ function openAccountPage() {
 }
 
 const NAV = [
-  { to: '/', view: 'overview', label: 'Overview', icon: 'grid' },
   { to: '/entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
   {
     to: '/artifacts',
@@ -184,12 +206,13 @@ const NAV = [
     icon: 'artifact',
     count: () => artifacts.items.length,
   },
+  { to: '/chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => hub.chat.summaries.length },
 ]
 
 const isActive = (item) => route.path === item.to || route.path.startsWith(item.to + '/')
 const user = computed(() => hub.session?.user || 'no session')
 
-/* "agung@studio.dev" → "Agung" in the rail, the full handle underneath */
+/* "agung@studio.dev" → "Agung" in the account menu, the full handle underneath */
 const displayName = computed(() => {
   const local = user.value.split('@')[0]
   return (
@@ -204,6 +227,7 @@ const displayName = computed(() => {
 const role = computed(() => roleById(hub.session?.role || 'owner'))
 const avatar = computed(() => initials(displayName.value) || 'as')
 const avatarUrl = computed(() => gravatarUrl(hub.session?.email || '', 72))
+const accountTip = computed(() => `Account · ${displayName.value} (${role.value.label})`)
 
 function leave() {
   accountOpen.value = false
@@ -213,44 +237,93 @@ function leave() {
 </script>
 
 <template>
-  <aside ref="railEl" class="rail" :data-collapsed="collapsed ? '1' : '0'" :data-resizing="resizing ? '1' : '0'" :style="railStyle">
-    <div class="rail-top">
+  <aside
+    ref="railEl"
+    class="rail"
+    :data-collapsed="collapsed ? '1' : '0'"
+    :data-resizing="resizing ? '1' : '0'"
+    :data-panel="hub.rail.workspaces ? '1' : '0'"
+    :style="railStyle"
+  >
+    <div class="rail-t1">
+      <header class="rail-t1-head">
+        <button
+          class="rail-brand"
+          type="button"
+          :aria-expanded="collapsed ? 'false' : 'true'"
+          :aria-label="`${collapsed ? 'Expand' : 'Collapse'} context panel (${railShortcut})`"
+          :data-tip="`${collapsed ? 'Expand' : 'Collapse'} panel (${railShortcut})`"
+          @click="toggleRail"
+        >
+          <BrandMark />
+        </button>
+      </header>
+
       <button
-        class="brand"
+        class="rail-ico rail-ico--workspaces"
         type="button"
-        :aria-expanded="collapsed ? 'false' : 'true'"
-        :title="`${collapsed ? 'Expand' : 'Collapse'} sidebar (${railShortcut})`"
-        :aria-label="`${collapsed ? 'Expand' : 'Collapse'} sidebar (${railShortcut})`"
-        @click="toggleRail"
+        aria-label="Workspaces"
+        data-tip="Workspaces"
+        :aria-current="hub.rail.workspaces ? 'page' : undefined"
+        @click="toggleWorkspacePanel"
       >
-        <BrandMark />
-        <span class="wordmark">entity</span>
+        <NavIcon name="grid" />
       </button>
-    </div>
 
-    <WorkspaceSwitcher />
+      <div class="rail-t1-sep" aria-hidden="true"></div>
 
-    <nav class="nav" aria-label="Workspace">
-      <div class="nav-label">Hub</div>
-      <router-link
-        v-for="item in NAV"
-        :key="item.view"
-        :to="item.to"
-        :aria-current="isActive(item) ? 'page' : undefined"
-        :aria-label="item.label"
-        :title="collapsed ? item.label : undefined"
+      <nav class="rail-nav" aria-label="Workspace">
+        <router-link
+          v-for="item in NAV"
+          :key="item.view"
+          class="rail-ico"
+          :to="item.to"
+          :aria-current="isActive(item) ? 'page' : undefined"
+          :aria-label="item.label"
+          :data-tip="item.label"
+        >
+          <NavIcon :name="item.icon" />
+          <span v-if="item.count && item.count()" class="rail-badge">{{ item.count() }}</span>
+        </router-link>
+      </nav>
+
+      <div class="rail-t1-spacer"></div>
+
+      <button
+        class="rail-ico rail-theme"
+        type="button"
+        :aria-pressed="themeMode === 'dark' ? 'true' : 'false'"
+        :aria-label="`${themeMode === 'dark' ? 'Switch to light' : 'Switch to dark'} mode (${themeShortcut})`"
+        :data-tip="`${themeMode === 'dark' ? 'Switch to light' : 'Switch to dark'} (${themeShortcut})`"
+        @click="toggleTheme"
       >
-        <NavIcon :name="item.icon" />
-        <span class="lbl">{{ item.label }}</span>
-        <span v-if="item.count" class="count">{{ item.count() }}</span>
-      </router-link>
+        <svg
+          v-if="themeMode === 'dark'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 2.4v2.1M12 19.5v2.1M2.4 12h2.1M19.5 12h2.1M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5" />
+        </svg>
+        <svg
+          v-else
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M20.3 14.6A8.6 8.6 0 019.4 3.7 8.7 8.7 0 1020.3 14.6z" />
+        </svg>
+      </button>
 
-    </nav>
-
-    <ChatHistoryRail />
-
-    <div class="rail-foot">
-      <div ref="accountRoot" class="account" :data-open="accountOpen ? '1' : '0'">
+      <div ref="accountRoot" class="account rail-account" :data-open="accountOpen ? '1' : '0'">
         <div class="acct-menu" role="menu" aria-label="Account">
           <div class="acct-head">
             <span class="acct-nm">{{ displayName }}</span>
@@ -275,11 +348,12 @@ function leave() {
         </div>
 
         <button
-          class="user"
+          class="user rail-user"
           type="button"
-          title="Account"
           aria-haspopup="menu"
           :aria-expanded="accountOpen ? 'true' : 'false'"
+          :aria-label="accountTip"
+          :data-tip="accountTip"
           @click="toggleAccount"
         >
           <img v-if="avatarUrl" class="avatar avatar-img" :src="avatarUrl" alt="" />
@@ -292,16 +366,18 @@ function leave() {
       </div>
     </div>
 
+    <RailContext />
+
     <button
       class="rail-resize"
       type="button"
       role="separator"
       aria-orientation="vertical"
-      :aria-label="`Resize sidebar, ${railWidth} pixels`"
+      :aria-label="`Resize context panel, ${railWidth} pixels`"
       :aria-valuemin="MIN_WIDTH"
       :aria-valuemax="MAX_WIDTH"
       :aria-valuenow="railWidth"
-      title="Drag to resize sidebar · double-click to reset"
+      title="Drag to resize context panel · double-click to reset"
       @pointerdown="startResize"
       @keydown="nudgeResize"
       @dblclick="resetWidth"

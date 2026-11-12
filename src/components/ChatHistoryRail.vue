@@ -17,6 +17,10 @@ import {
  * within a shelf the rows are grouped by the day they last changed. The date
  * header carries the date so a row only needs its query count and time.
  */
+const props = defineProps({
+  /* the second-tier shell owns the heading and the new-chat control */
+  headless: { type: Boolean, default: false },
+})
 const router = useRouter()
 const editing = ref('')
 const editTitle = ref('')
@@ -243,11 +247,13 @@ watch(
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
 })
+
+defineExpose({ newThread })
 </script>
 
 <template>
   <section class="rchat" aria-label="Chat history">
-    <div class="rchat-head">
+    <div v-if="!props.headless" class="rchat-head">
       <span>Chats</span>
       <span class="rchat-head-right">
         <span class="n">{{ threads.length }}</span>

@@ -7,7 +7,7 @@ import CommandPalette from '@/components/CommandPalette.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import { closeWizard, hub, toast } from '@/stores/hub'
-import { themeMode, toggleTheme } from '@/lib/theme'
+import { toggleTheme } from '@/lib/theme'
 import { hasDesktopBridge } from '@/composables/localBridge'
 
 const route = useRoute()
@@ -42,13 +42,6 @@ const isMac =
 const isDesktop = hasDesktopBridge()
 /* Browsers own several Cmd/Ctrl+Shift combinations; the dev server uses the
    same Option/Alt+Shift escape hatch as the other browser-safe shortcuts. */
-const themeShortcut = isDesktop
-  ? isMac
-    ? '⌘⇧L'
-    : 'Ctrl+Shift+L'
-  : isMac
-    ? '⌥⇧L'
-    : 'Alt+Shift+L'
 const newChatShortcut = isDesktop
   ? isMac
     ? '⌘N'
@@ -144,39 +137,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             <path d="M10.5 10.5L14 14" />
           </svg>
           Search <kbd>⌘K</kbd>
-        </button>
-        <button
-          class="theme-toggle topbar-theme"
-          type="button"
-          :aria-pressed="themeMode === 'dark' ? 'true' : 'false'"
-          :aria-label="`${themeMode === 'dark' ? 'Switch to light' : 'Switch to dark'} mode (${themeShortcut})`"
-          :title="`${themeMode === 'dark' ? 'Switch to light' : 'Switch to dark'} mode (${themeShortcut})`"
-          @click="toggleTheme"
-        >
-          <svg
-            v-if="themeMode === 'dark'"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="4.2" />
-            <path d="M12 2.4v2.1M12 19.5v2.1M2.4 12h2.1M19.5 12h2.1M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5" />
-          </svg>
-          <svg
-            v-else
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M20.3 14.6A8.6 8.6 0 019.4 3.7 8.7 8.7 0 1020.3 14.6z" />
-          </svg>
         </button>
       </AppTopbar>
 

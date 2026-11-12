@@ -20,7 +20,6 @@ import AccountProfileView from '@/views/account/AccountProfileView.vue'
 import AccountSoundView from '@/views/account/AccountSoundView.vue'
 import AccountMcpView from '@/views/account/AccountMcpView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
-import ManageWorkspacesView from '@/views/ManageWorkspacesView.vue'
 
 /* Clean URLs wherever an HTTP server can resolve a path. The packaged app
    loads `dist/index.html` over `file://`, where there is no server to answer a
@@ -116,12 +115,6 @@ const router = createRouter({
           redirect: { name: 'workspace', query: { tab: 'activity' } },
         },
         {
-          path: 'workspaces',
-          name: 'workspaces',
-          component: ManageWorkspacesView,
-          meta: { crumb: 'workspaces', title: 'Manage workspaces · entity' },
-        },
-        {
           path: 'workspace',
           name: 'workspace',
           component: WorkspaceView,
@@ -185,7 +178,7 @@ router.beforeEach(async (to) => {
 
   if (to.name === 'setup') {
     /* the setup screen is for a profile with no workspace; adding another one
-       later happens in a modal from the switcher, not by leaving the hub */
+       later happens as a modal from the Workspaces panel, not by leaving the hub */
     if (workspaces.items.length) return { name: 'overview' }
     return true
   }

@@ -65,9 +65,11 @@ const navigationItems = computed(() => [
   },
   {
     id: 'nav:workspaces',
-    label: 'Manage workspaces',
-    meta: 'Open, import, export and delete workspaces',
-    act: () => router.push('/workspaces'),
+    label: 'Workspaces',
+    meta: 'Switch workspace or open its settings',
+    act: () => {
+      hub.rail.workspaces = true
+    },
   },
   {
     id: 'nav:workspace',
@@ -155,13 +157,9 @@ const workspaceItems = computed(() =>
     label: workspace.label,
     meta: `${workspace.id}${workspace.id === workspaces.active ? ' · current' : ''} · ${workspace.counts?.entities || 0} entities`,
     act: async () => {
-      if (workspace.id === workspaces.active) return
-      const record = await openWorkspace(workspace.id)
-      toast(`Opened ${record.label}`)
-      const route = router.currentRoute.value.name
-      if (route === 'skill') router.push('/skills')
-      else if (route === 'entity') router.push('/entities')
-      else if (route === 'machine') router.push('/machines')
+      if (workspace.id !== workspaces.active) await openWorkspace(workspace.id)
+      hub.rail.workspaces = false
+      router.push({ name: 'workspace', query: {} })
     },
   })),
 )

@@ -6,7 +6,7 @@ import SkillsView from '@/views/SkillsView.vue'
 import McpView from '@/views/McpView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import { ROLES, hub, roleById, toast } from '@/stores/hub'
-import { activeWorkspace, updateWorkspace, workspaces } from '@/stores/workspaces'
+import { activeWorkspace, updateWorkspace } from '@/stores/workspaces'
 
 /**
  * Workspace settings are a page, not a modal. General and Members are separate
@@ -42,8 +42,6 @@ const error = ref('')
 const busy = ref('')
 
 const owner = computed(() => roleById(hub.session?.role || 'owner'))
-
-const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
 
 const idChanged = computed(() => Boolean(current.value) && form.id !== current.value.id)
 const createdLabel = computed(() =>
@@ -139,66 +137,6 @@ async function save() {
 
 <template>
   <div class="view">
-    <div class="page-head">
-      <div>
-        <p class="eyebrow">Workspace · {{ current?.label || workspaces.active }}</p>
-        <h1>Workspace</h1>
-        <p class="lede">
-          The record behind this scope: its name, its directory id and who belongs to it.
-          Skills, MCP, Machines and Activity are the workspace’s working tabs.
-        </p>
-      </div>
-      <div class="head-actions">
-        <button class="btn" type="button" @click="router.push('/workspaces')">Manage workspaces</button>
-        <button class="btn" type="button" @click="router.push('/')">Back to overview</button>
-      </div>
-    </div>
-
-    <div class="sk-tabs" role="tablist" aria-label="Workspace settings">
-      <button
-        role="tab"
-        :aria-selected="tab === 'general' ? 'true' : 'false'"
-        @click="setTab('general')"
-      >
-        General
-      </button>
-      <button
-        role="tab"
-        :aria-selected="tab === 'members' ? 'true' : 'false'"
-        @click="setTab('members')"
-      >
-        Members <span class="n">{{ form.members.length }}</span>
-      </button>
-      <button
-        role="tab"
-        :aria-selected="tab === 'skills' ? 'true' : 'false'"
-        @click="setTab('skills')"
-      >
-        Skills <span class="n">{{ workspaces.skills.length }}</span>
-      </button>
-      <button
-        role="tab"
-        :aria-selected="tab === 'mcp' ? 'true' : 'false'"
-        @click="setTab('mcp')"
-      >
-        MCP <span class="n">{{ mcpCount }}</span>
-      </button>
-      <button
-        role="tab"
-        :aria-selected="tab === 'machines' ? 'true' : 'false'"
-        @click="setTab('machines')"
-      >
-        Machines <span class="n">{{ workspaces.machines.length }}</span>
-      </button>
-      <button
-        role="tab"
-        :aria-selected="tab === 'activity' ? 'true' : 'false'"
-        @click="setTab('activity')"
-      >
-        Activity
-      </button>
-    </div>
-
     <div v-if="tab === 'general' || tab === 'members'" class="acct-page ws-page">
       <form class="acct-card" @submit.prevent="save">
         <template v-if="tab === 'general'">

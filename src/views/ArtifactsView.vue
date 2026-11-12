@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ArtifactThumb from '@/components/ArtifactThumb.vue'
 import { matchesQuery } from '@/composables/search'
 import { hub, toast } from '@/stores/hub'
@@ -18,6 +19,8 @@ import {
  * page reads metadata from the main process and asks for bytes only when a
  * preview or download actually needs them.
  */
+const route = useRoute()
+const router = useRouter()
 const query = ref('')
 const ext = ref('all')
 const sort = ref('newest')
@@ -31,7 +34,27 @@ const previewData = ref(null)
 const previewLoading = ref(false)
 let previewToken = 0
 
-onMounted(loadArtifacts)
+async function openQueryArtifact() {
+  const id = String(route.query.file || '')
+  if (!id || preview.value?.id === id) return
+  const item = artifacts.items.find((entry) => entry.id === id)
+  if (item) await openPreview(item)
+}
+
+onMounted(async () => {
+  await loadArtifacts()
+  await openQueryArtifact()
+})
+
+watch(
+  () => route.query.file,
+  () => openQueryArtifact(),
+)
+
+watch(
+  () => artifacts.items,
+  () => openQueryArtifact(),
+)
 
 watch(
   () => hub.workspace,
@@ -203,6 +226,7 @@ function closePreview() {
   preview.value = null
   previewData.value = null
   previewLoading.value = false
+  if (route.query.file) router.replace({ name: 'artifacts' })
 }
 
 function onKey(event) {

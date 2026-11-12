@@ -95,7 +95,7 @@ Two rules make the scope coherent:
 Nothing is seeded behind your back: a profile with no workspace lands on
 `/setup`, and sample entities are a checkbox in that form — off by default, and
 when ticked it lists all six files so you choose which ones to write (three are
-preselected). The same form is reachable as a modal from the workspace switcher.
+preselected). The same form is reachable from the Workspaces panel in the rail.
 
 Skills are not part of that form: the harness libraries are already on this
 machine, so a skill is attached to a workspace later (one symlink, from the
@@ -298,14 +298,14 @@ src/
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
     MachineDetailView.vue  one host: connection, key copy, probe, attachment
     ActivityView.vue  thread journal + one tab per harness session store (cached counts)
-    ManageWorkspacesView.vue  add, settings, export/import JSON, delete
   components/
     EntityMark.vue    the animated voxel character
     HarnessIcon.vue   brand marks for the skill filter pills
     MachineIcon.vue   the server glyph on machine cards
     SkillIcon.vue     the medal glyph on skill cards
     MarkPicker.vue    shape + mood + colour, opened on the entity page
-    AppRail.vue       brand, workspace switcher, nav, account menu
+    AppRail.vue       two-tier shell: icon strip + contextual second panel
+    RailContext.vue   the second tier's list for the current section
     AppTopbar.vue     breadcrumbs + view tools
     MessageList / MessageBody / SlashComposer
     ThreadMinimap.vue  right-edge message outline and jump card
@@ -365,28 +365,30 @@ history mode has no server to resolve a path on reload.
 | `#/machines` | Machines |
 | `#/machines/:id` | Machine detail (connection, key copy, probe) |
 | `#/activity` | Redirects to Workspace → Activity (old links keep working) |
-| `#/workspaces` | Manage workspaces (add, export/import, delete, settings) |
-| `#/workspace` | Workspace tabs: General, Members, Skills, MCP, Machines, Activity |
+| `#/workspace` | Workspace settings; tabs live in the rail's second tier |
 | `#/account` | Account profile |
 | `#/account/sound` | Pixel Area 51 sound settings |
 | `#/account/mcp` | Entity MCP server status, token and tools |
 
-The rail keeps Overview, Entities and Artifacts in the main list, then folds
-the chat history underneath them: one animated mark, title, state and menu per
-thread. There is no separate Chat page column and no Chat nav item. Skills, MCP,
-Machines and Activity live as individual tabs on `#/workspace`, so the everyday
-surface stays small. Click the entity logo to fold or unfold the rail (`⌘B`
-still works), drag the rail's right edge to resize it (double-click resets), and
-the light/dark switch sits beside the topbar search (`⌘⇧L` in
-the desktop app, `⌥⇧L` in a browser). New thread is a yellow topbar action;
-`⌘N` in the desktop app and `⌥⇧N` in a browser.
+The rail has two tiers. The first is a 64px icon strip: brand, Workspaces,
+Entities, Artifacts and Chat, with the theme switch and account at the bottom.
+Each icon has an immediate tooltip. The second tier belongs to the section in
+the URL — entity files under Entities, the shelf under Artifacts, machines
+under Overview, and the WORKING/DONE chat history under Chat. The Workspaces
+button (the overview glyph) opens the Workspaces panel; choosing a workspace
+goes straight to its settings, where Overview, General, Members, Skills, MCP,
+Machines and Activity are the second-tier tabs. Click the brand to fold the second tier away (`⌘B` still
+works), drag its right edge to resize it (double-click resets), and the
+light/dark switch sits at the bottom of the icon strip (`⌘⇧L` in the desktop
+app, `⌥⇧L` in a browser). New thread is a yellow topbar action; `⌘N` in the
+desktop app and `⌥⇧N` in a browser.
 
-Workspace settings are a page (`#/workspace`), not a modal: General, Members,
-Skills, MCP, Machines and Activity are tabs for the record, roster, working
-sections and journal. Managing
-workspaces is its own page (`#/workspaces`): add, export/import one JSON bundle,
-choose settings, or delete. MCP has its own page (`#/mcp`) for the servers the
-workspace consumes, while `#/account/mcp` is the opposite direction: the loopback
+Workspace settings are a page (`#/workspace`) with no second tab strip: the
+rail's second tier carries General, Members, Skills, MCP, Machines and Activity,
+and the page shows only the selected tab. The Workspaces panel carries the
+workspace list plus new/import and per-row export/delete actions. MCP has its
+own page (`#/mcp`) for the servers the workspace consumes, while
+`#/account/mcp` is the opposite direction: the loopback
 MCP server an agent connects to. Account is three deep-linkable routes:
 `#/account` for the profile, `#/account/sound` for SFX and `#/account/mcp` for
 the server. Workspace artifacts have their own page (`#/artifacts`);
