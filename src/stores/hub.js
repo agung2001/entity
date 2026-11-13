@@ -560,7 +560,6 @@ const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
 export function slashMenu(value, agent, machine = 'local') {
   const parts = String(value || '').split(/\s/)
   if (!value?.startsWith('/') || parts.length !== 1) return []
-  if (machine && machine !== 'local') return []
 
   const q = parts[0].slice(1).toLowerCase()
   const own = new Set((agent?.skills || []).map((name) => name.toLowerCase()))
@@ -860,7 +859,7 @@ export async function setThreadContext(kind, value) {
   }
 }
 
-export async function chatSend(text, { retry = false } = {}) {
+export async function chatSend(text, { retry = false, attachments = [], attachmentsEnabled = false } = {}) {
   const thread = activeThread()
   if (!thread || hub.chat.sending) return
   const message = String(text || '').trim()
@@ -891,6 +890,8 @@ export async function chatSend(text, { retry = false } = {}) {
       id: thread.id,
       text: message,
       retry,
+      attachments,
+      attachmentsEnabled,
     })
     remember(updated)
     await refreshChatList()

@@ -6,6 +6,7 @@ import { useDialogDismiss } from '@/composables/useDialog'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { agentById, createThread, hub } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
+import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
 
 /**
  * A thread is pinned to four choices, so they are asked once, up front: which
@@ -32,14 +33,22 @@ useDialogDismiss({
   guard: () => busy.value,
 })
 
-const machines = computed(() =>
-  hub.machines.length
-    ? hub.machines
-    : [{ id: 'local', label: 'This machine', thisMachine: true }],
+const machines = computed(() => machineChoices.value)
+const machineOptions = computed(() =>
+  machines.value.map((item) => ({ id: item.id, label: item.label, meta: item.meta })),
 )
 const agent = computed(() => agentById(form.entity))
 const machine = computed(() => machines.value.find((item) => item.id === form.machine) || null)
-const modelData = computed(() => harnesses.models[form.harness] || null)
+const remote = computed(() => Boolean(machine.value?.remote))
+const remoteFacts = computed(() => (remote.value ? machine.value?.facts || null : null))
+const remoteHarness = computed(
+  () => remoteFacts.value?.harnesses?.find((entry) => entry.id === form.harness) || null,
+)
+const modelData = computed(() =>
+  remoteHarness.value
+    ? { models: remoteHarness.value.models || [], default: remoteHarness.value.default || '' }
+    : harnesses.models[form.harness] || null,
+)
 /* Only what the harness itself reports; there is no built-in list to merge. */
 const modelOptions = computed(() => [...new Set(modelData.value?.models || [])])
 const modelLoading = computed(() => Boolean(modelData.value?.loading))
@@ -51,13 +60,20 @@ const entityOptions = computed(() =>
     glyph: moodGlyph(markFor(hub.workspace, item.id, item.mark).mood),
   })),
 )
-const harnessOptions = computed(() =>
-  harnesses.items.map((item) => ({
-    id: item.id,
-    label: item.label,
-    meta: item.installed ? 'installed' : 'not found',
-  })),
-)
+const harnessOptions = computed(() => {
+  if (!remote.value) {
+    return harnesses.items.map((item) => ({
+      id: item.id,
+      label: item.label,
+      meta: item.installed ? 'installed' : 'not found',
+    }))
+  }
+  return (remoteFacts.value?.harnesses || []).map((entry) => ({
+    id: entry.id,
+    label: entry.label || entry.id,
+    meta: 'installed on host',
+  }))
+})
 
 /* The list is the main process's, so it can arrive after this dialog opens.
    Until it does, the thread keeps whatever its entity asked for; a name this
@@ -70,12 +86,15 @@ watch(
   },
   { immediate: true, deep: true },
 )
-const remote = computed(() => Boolean(machine.value && !machine.value.thisMachine))
 const entityDefaultHarness = computed(() => agent.value?.harness || '')
 /* A model default only belongs to the entity's own harness; once the harness
    is overridden, the model is the harness's choice until the user types one. */
 const modelDefault = computed(() =>
-  form.harness === agent.value?.harness ? agent.value?.model || '' : '',
+  remote.value
+    ? remoteHarness.value?.default || ''
+    : form.harness === agent.value?.harness
+      ? agent.value?.model || ''
+      : '',
 )
 const harnessOverridden = computed(
   () => Boolean(agent.value) && form.harness !== entityDefaultHarness.value,
@@ -113,7 +132,8 @@ function reset() {
   form.model = chosen?.model || ''
   error.value = ''
   loadHarnesses().catch(() => {})
-  loadModels(form.harness).catch(() => {})
+  settleMachine()
+  if (!remote.value) loadModels(form.harness).catch(() => {})
   nextTick(() => {
     resetting.value = false
   })
@@ -122,7 +142,10 @@ function reset() {
 watch(
   () => props.open,
   (open) => {
-    if (open) reset()
+    if (open) {
+    if (!fleet.loaded) loadFleet()
+    reset()
+  }
   },
 )
 
@@ -135,9 +158,33 @@ watch(
     if (!chosen) return
     form.harness = chosen.harness || form.harness
     form.model = chosen.model || ''
-    loadModels(form.harness).catch(() => {})
+    if (!remote.value) loadModels(form.harness).catch(() => {})
   },
 )
+
+function settleMachine() {
+  if (remote.value) {
+    const available = remoteFacts.value?.harnesses || []
+    if (!available.length) return
+    if (!available.some((entry) => entry.id === form.harness)) {
+      form.harness = available[0].id
+    }
+    const chosen = available.find((entry) => entry.id === form.harness)
+    form.model = chosen?.default || ''
+    return
+  }
+  const installed = harnesses.items.filter((entry) => entry.installed)
+  if (!installed.length) return
+  if (!installed.some((entry) => entry.id === form.harness)) {
+    form.harness = installed.some((entry) => entry.id === entityDefaultHarness.value)
+      ? entityDefaultHarness.value
+      : installed[0].id
+  }
+  form.model = form.harness === entityDefaultHarness.value ? agent.value?.model || '' : ''
+}
+
+watch(() => form.machine, settleMachine)
+watch(remoteFacts, settleMachine)
 
 watch(
   () => form.harness,
@@ -158,10 +205,6 @@ async function submit() {
   }
   if (!machine.value) {
     error.value = 'Pick a machine for this chat.'
-    return
-  }
-  if (remote.value) {
-    error.value = 'Remote chat is not wired yet. Pick this machine to send a message.'
     return
   }
   busy.value = true
@@ -216,14 +259,19 @@ async function submit() {
       </div>
 
       <div class="fld">
-        <label class="lbl" for="thread-machine">Machine</label>
-        <select id="thread-machine" v-model="form.machine" :disabled="busy">
-          <option v-for="item in machines" :key="item.id" :value="item.id">
-            {{ item.label }}<template v-if="item.thisMachine"> — this machine</template>
-          </option>
-        </select>
+        <span class="lbl">Machine</span>
+        <PickMenu
+          class="field-select"
+          head="Machine"
+          icons="machine"
+          :options="machineOptions"
+          :model-value="form.machine"
+          :disabled="busy"
+          @update:model-value="form.machine = $event"
+        />
         <p v-if="remote" class="mnote">
-          Remote chat is not wired yet. Pick this machine to start the chat.
+          Runs over ssh on {{ form.machine }}. The workspace is staged there for the turn.
+          <template v-if="!remoteFacts">Scan this host on the Fleet page first.</template>
         </p>
       </div>
 

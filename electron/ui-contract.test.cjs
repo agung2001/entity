@@ -28,6 +28,16 @@ const FILES = walk(SRC).map((file) => ({
   text: fs.readFileSync(file, 'utf8'),
 }))
 
+test('the composer keeps attachments below the prompt and documents them', () => {
+  const composer = fs.readFileSync(path.join(SRC, 'components', 'SlashComposer.vue'), 'utf8')
+  const help = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  assert.match(composer, /Local attachment/, 'the off-by-default toggle belongs to the composer')
+  assert.match(composer, /attach-tray/, 'attachments belong in a tray below the prompt')
+  assert.match(help, /@file:/, 'Composer help documents file attachments')
+  assert.match(help, /@mcp:/, 'Composer help documents MCP attachments')
+  assert.doesNotMatch(help, /@skill:/, 'skills stay on the slash syntax')
+})
+
 test('the machine capability page brands harnesses and offers search', () => {
   const file = path.join(SRC, 'views', 'MachineDetailView.vue')
   const text = fs.readFileSync(file, 'utf8')

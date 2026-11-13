@@ -9,7 +9,7 @@
 import { computed, reactive } from 'vue'
 import { readSshHosts } from '@/composables/localBridge'
 import { hub } from '@/stores/hub'
-import { scanMachine } from '@/stores/workspaces'
+import { machineFactsFor, scanMachine } from '@/stores/workspaces'
 
 export const fleet = reactive({
   loading: false,
@@ -85,3 +85,28 @@ export async function probeHost(host) {
 export const reachableCount = computed(
   () => Object.values(fleet.probes).filter((probe) => probe.state === 'ok').length,
 )
+
+/** What the chat/new-thread picker offers: this machine plus scanned ssh hosts. */
+export const machineChoices = computed(() => {
+  const local = {
+    id: 'local',
+    label: String(fleet.hostname || 'local').replace(/\.local$/i, ''),
+    meta: 'this machine',
+    remote: false,
+    facts: null,
+  }
+  const remote = fleet.hosts.map((host) => {
+    const alias = host.alias || host.id
+    const facts = machineFactsFor(alias)
+    return {
+      id: alias,
+      label: host.label || alias,
+      meta: facts
+        ? `${facts.harnesses?.length || 0} harnesses · ${host.spec || alias}`
+        : `not scanned · ${host.spec || alias}`,
+      remote: true,
+      facts,
+    }
+  })
+  return [local, ...remote]
+})

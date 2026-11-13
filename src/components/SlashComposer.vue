@@ -25,8 +25,10 @@ const props = defineProps({
   sending: { type: Boolean, default: false },
   stopping: { type: Boolean, default: false },
   focusShortcut: { type: String, default: '' },
+  attachmentsEnabled: { type: Boolean, default: false },
+  attachments: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['send', 'stop'])
+const emit = defineEmits(['send', 'stop', 'update:attachments', 'toggle-attachments'])
 
 const draft = ref('')
 const menu = ref([])
@@ -44,12 +46,22 @@ let mentionAsked = false
 
 /* The four typed mentions. A bare `@name` is an entity, so entities are listed
    from the workspace rather than from this table. */
-const MENTION_KINDS = [
+const localAttachment = computed(() => props.attachmentsEnabled && props.machine !== 'local')
+
+const MENTION_KINDS = computed(() => [
+  ...(localAttachment.value
+    ? [
+        { name: '@file:', desc: 'A local file for this turn only', kind: 'attachment-file' },
+        ...(props.machine === 'local'
+          ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
+          : []),
+      ]
+    : []),
   { name: '@orca:', desc: 'A path from an Orca project — project:file' },
   { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
   { name: '@maka:', desc: 'A note in a Maka vault — vault:query' },
   { name: '@youtrack:', desc: 'An issue — project:query' },
-]
+])
 
 /** `@` right before the caret, with the partial word typed after it. */
 function mentionTrigger() {
@@ -61,7 +73,7 @@ function mentionTrigger() {
 function mentionMenu(query) {
   const q = String(query || '').toLowerCase()
   const items = []
-  for (const kind of MENTION_KINDS) {
+  for (const kind of MENTION_KINDS.value) {
     if (kind.name.slice(1).toLowerCase().includes(q)) items.push({ ...kind, kind: 'mention' })
   }
   for (const agent of hub.agents || []) {
@@ -92,7 +104,7 @@ async function loadMentionSources() {
 
 /* ── live results while a typed mention is being written ──────────── */
 
-const KIND_NAMES = new Set(MENTION_KINDS.map((kind) => kind.name.slice(1, -1)))
+const KIND_NAMES = computed(() => new Set(MENTION_KINDS.value.map((kind) => kind.name.slice(1, -1))))
 const PAGE = 10
 const searching = ref(false)
 const loadingMore = ref(false)
@@ -115,7 +127,7 @@ function typedMention() {
   const match = before.match(/(^|[\s(\[])@([A-Za-z0-9._-]+):([^\s]*)$/)
   if (!match) return null
   const kind = match[2].toLowerCase()
-  if (!KIND_NAMES.has(kind)) return null
+  if (!KIND_NAMES.value.has(kind)) return null
   return { kind, fields: match[3] === '' ? [''] : match[3].split(':') }
 }
 
@@ -144,6 +156,27 @@ function scheduleSearch(kind, fields) {
   searchKind = kind
   searchFields = fields
   if (searchState.value.key === key) return
+
+  if (kind === 'file') {
+    menu.value = []
+    searchState.value = { key, more: false, error: '' }
+    searching.value = false
+    return
+  }
+  if (kind === 'mcp') {
+    const needle = fields.join(':').toLowerCase()
+    const names = (workspaces.mcp?.names || []).filter((name) =>
+      String(name).toLowerCase().includes(needle),
+    )
+    menu.value = names.map((name) => ({
+      name: `@mcp:${name} `,
+      desc: 'Workspace MCP server · this turn only',
+      kind: 'result',
+    }))
+    searchState.value = { key, more: false, error: '' }
+    searching.value = false
+    return
+  }
 
   clearTimeout(searchTimer)
   const seq = ++searchSeq
@@ -213,6 +246,8 @@ const note = computed(() => {
   if (props.disabled) return ''
   if (menu.value.length || searching.value) return ''
   if (menuMode.value === 'mention-search') {
+    if (searchKind === 'file') return 'Type a path after @file: — a space finishes it.'
+    if (searchKind === 'mcp') return 'No MCP server by that name in this workspace.'
     return searchState.value.error || 'No match yet — keep typing, or Esc and send it as written.'
   }
   if (!draft.value.startsWith('/')) return ''
@@ -227,6 +262,55 @@ const note = computed(() => {
 })
 const boxOpen = computed(() => open.value || Boolean(note.value) || scanning.value || searching.value)
 
+function addAttachment(entry) {
+  const key = `${entry.kind}:${entry.value || entry.name || ''}`
+  if (props.attachments.some((item) => `${item.kind}:${item.value || item.name || ''}` === key)) return
+  emit('update:attachments', [...props.attachments, entry])
+}
+
+function removeAttachment(index) {
+  emit('update:attachments', props.attachments.filter((_, at) => at !== index))
+}
+
+function toggleAttachments() {
+  const next = !props.attachmentsEnabled
+  emit('toggle-attachments', next)
+  if (!next) emit('update:attachments', [])
+}
+
+function attachmentLabel(entry) {
+  if (entry.kind === 'mcp') return `MCP · ${entry.name || entry.value}`
+  return `File · ${String(entry.value || entry.path || '').split(/[\\/]/).pop()}`
+}
+
+/** Move complete `@file:` / `@mcp:` tokens below the prompt. */
+function harvestAttachments(final = false) {
+  if (!localAttachment.value) return false
+  const pattern = final
+    ? /(^|[\s([])@(file|mcp):(?:"([^"]+)"|([^\s]+))(?=\s|$)/g
+    : /(^|[\s([])@(file|mcp):(?:"([^"]+)"|([^\s]+))(?=\s)/g
+  const matches = [...String(draft.value || '').matchAll(pattern)]
+  if (!matches.length) return false
+  let text = draft.value
+  const next = [...props.attachments]
+  const seen = new Set(next.map((entry) => `${entry.kind}:${entry.value || entry.name || ''}`))
+  for (const match of [...matches].reverse()) {
+    const value = String(match[3] || match[4] || '').trim()
+    if (!value || (match[2] === 'mcp' && props.machine !== 'local')) continue
+    const start = match.index + match[1].length
+    const end = match.index + match[0].length
+    text = `${text.slice(0, start)}${text.slice(end)}`
+    const key = `${match[2]}:${value}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      next.push({ kind: match[2], value, name: value })
+    }
+  }
+  draft.value = text.replace(/[ \t]{2,}/g, ' ').trim()
+  if (next.length !== props.attachments.length) emit('update:attachments', next)
+  return true
+}
+
 async function scanNames() {
   const cached = workspaces.skillNamesByMachine[props.machine]
   if (cached && !cached.error) return
@@ -240,6 +324,7 @@ async function scanNames() {
 
 function refresh() {
   if (props.disabled) return
+  harvestAttachments(false)
 
   const typed = typedMention()
   if (typed) {
@@ -302,9 +387,10 @@ onMounted(() => nextTick(grow))
 
 function submit() {
   if (props.disabled) return
+  harvestAttachments(true)
   const text = draft.value.trim()
-  if (!text) return
-  emit('send', text)
+  if (!text && !props.attachments.length) return
+  emit('send', text || 'Use the attached resources.')
   draft.value = ''
   closeMenu()
   nextTick(() => {
@@ -326,6 +412,7 @@ function pick(cmd) {
   const insert = cmd.name.endsWith(':') ? cmd.name : `${cmd.name} `
   const next = `${text.slice(0, start)}${insert}${text.slice(caret)}`
   draft.value = next
+  harvestAttachments(false)
   closeMenu()
   nextTick(() => {
     const at = start + insert.length
@@ -372,6 +459,16 @@ function onKey(e) {
 /* a short delay so a click on a menu row lands before the menu closes */
 function onBlur() {
   setTimeout(closeMenu, 120)
+}
+
+function insertToken(token) {
+  const space = draft.value && !/\s$/.test(draft.value) ? ' ' : ''
+  draft.value = `${draft.value}${space}${token}`
+  closeMenu()
+  nextTick(() => {
+    input.value?.focus()
+    grow()
+  })
 }
 
 function focus() {
@@ -463,7 +560,7 @@ defineExpose({ focus })
           class="go"
           type="submit"
           data-sfx="off"
-          :disabled="disabled || !draft.trim()"
+          :disabled="disabled || (!draft.trim() && !attachments.length)"
           :title="`Send message (${sendShortcut})`"
           aria-label="Send message"
         >
@@ -473,5 +570,121 @@ defineExpose({ focus })
         </button>
       </div>
     </form>
+
+    <div v-if="machine !== 'local'" class="attach-toggle">
+      <label>
+        <input
+          type="checkbox"
+          :checked="attachmentsEnabled"
+          :disabled="disabled"
+          @change="toggleAttachments"
+        />
+        Local attachment
+      </label>
+      <span>off by default · files and MCP stay out of the prompt</span>
+    </div>
+
+    <div v-if="localAttachment" class="attach-tray">
+      <div class="attach-actions">
+        <button class="attach-add" type="button" :disabled="disabled" @click="insertToken('@file:')">
+          + File
+        </button>
+        <button
+          v-if="machine === 'local'"
+          class="attach-add"
+          type="button"
+          :disabled="disabled"
+          @click="insertToken('@mcp:')"
+        >
+          + MCP
+        </button>
+        <span v-if="!attachments.length" class="attach-empty">
+          Type @file:path<template v-if="machine === 'local'"> or @mcp:name</template>, then press space.
+        </span>
+        <span v-if="machine !== 'local'" class="attach-empty">MCP attachments are local-only for now.</span>
+      </div>
+      <div v-if="attachments.length" class="attach-chips">
+        <span v-for="(entry, index) in attachments" :key="`${entry.kind}:${entry.value || entry.name}`" class="attach-chip">
+          {{ attachmentLabel(entry) }}
+          <button type="button" :aria-label="`Remove ${attachmentLabel(entry)}`" @click="removeAttachment(index)">×</button>
+        </span>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.attach-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 2px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.attach-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.attach-toggle input {
+  accent-color: var(--accent);
+}
+.attach-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 2px 0;
+}
+.attach-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attach-add {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.attach-add:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.attach-empty {
+  font-size: 9.5px;
+  color: var(--muted);
+}
+.attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px 2px 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+}
+.attach-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+</style>

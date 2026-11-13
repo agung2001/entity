@@ -58,6 +58,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'N'],
       },
       {
+        id: 'rail-search',
+        label: 'Focus rail search',
+        desc: 'Jump into the search field of the active second-tier rail.',
+        desktop: ['alt', 'shift', 'F'],
+        browser: ['alt', 'shift', 'F'],
+      },
+      {
         id: 'theme',
         label: 'Switch light and dark',
         desc: 'Flip the theme without leaving the page.',
@@ -97,6 +104,20 @@ export const SHORTCUT_GROUPS = [
         desc: 'See every step of the last turn on one clock.',
         desktop: ['mod', 'shift', 'E'],
         browser: ['alt', 'shift', 'E'],
+      },
+      {
+        id: 'prev-chat',
+        label: 'Previous conversation',
+        desc: 'Move to the previous conversation in the rail.',
+        desktop: ['alt', 'shift', '['],
+        browser: ['alt', 'shift', '['],
+      },
+      {
+        id: 'next-chat',
+        label: 'Next conversation',
+        desc: 'Move to the next conversation in the rail.',
+        desktop: ['alt', 'shift', ']'],
+        browser: ['alt', 'shift', ']'],
       },
     ],
   },
@@ -152,6 +173,7 @@ function comboMatches(event, combo) {
   if (!event || !combo || !combo.length) return false
   const wants = (token) => combo.includes(token)
   const letter = combo.find((token) => /^[a-z0-9]$/i.test(token))
+  const symbol = combo.find((token) => ['[', ']'].includes(token))
   const special = combo.find((token) => ['enter', 'esc', '?'].includes(token))
 
   /* `?` is Shift+/ on most layouts, so the shift flag is part of the key
@@ -167,6 +189,12 @@ function comboMatches(event, combo) {
 
   if (special === 'enter') return event.key === 'Enter'
   if (special === 'esc') return event.key === 'Escape'
+  if (symbol) {
+    return (
+      event.key === symbol ||
+      event.code === (symbol === '[' ? 'BracketLeft' : 'BracketRight')
+    )
+  }
   if (!letter) return false
 
   const key = String(event.key || '').toLowerCase()

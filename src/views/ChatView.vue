@@ -17,6 +17,7 @@ import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
+import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
 import {
   activeThread,
   agentById,
@@ -56,6 +57,8 @@ const focusMessage = ref(-1)
 const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
+const attachments = ref([])
+const attachmentsEnabled = ref(false)
 let offEvent = null
 
 /* Every combo comes from the catalog in `src/lib/shortcuts.js`, which also
@@ -70,8 +73,15 @@ useDialogDismiss({ active: () => helpOpen.value, close: () => (helpOpen.value = 
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
+const attachmentsAllowed = computed(() => ctx.value.machine !== 'local')
+
 const contextOptions = {
-  machine: () => hub.machines.map((m) => ({ id: m.id, label: m.label, meta: m.thisMachine ? 'local' : 'remote' })),
+  machine: () =>
+    machineChoices.value.map((machine) => ({
+      id: machine.id,
+      label: machine.label,
+      meta: machine.meta,
+    })),
 }
 
 const thread = computed(() => activeThread())
@@ -215,7 +225,31 @@ function startThread() {
   newOpen.value = true
 }
 
+async function stepThread(delta) {
+  const rows = hub.chat.summaries || []
+  if (!rows.length) return
+  const at = rows.findIndex((row) => row.id === hub.chat.active)
+  const next = at < 0 ? (delta > 0 ? 0 : rows.length - 1) : (at + delta + rows.length) % rows.length
+  const target = rows[next]
+  if (target && target.id !== hub.chat.active) await pickThread(target.id)
+}
+
 function onChatKey(event) {
+  if (newOpen.value || timelineOpen.value || helpOpen.value || harnessOpen.value || mcpOpen.value) {
+    return
+  }
+  if (matchesShortcut('prev-chat', event)) {
+    event.preventDefault()
+    event.stopPropagation()
+    stepThread(-1)
+    return
+  }
+  if (matchesShortcut('next-chat', event)) {
+    event.preventDefault()
+    event.stopPropagation()
+    stepThread(1)
+    return
+  }
   if (matchesShortcut('focus', event)) {
     if (newOpen.value || timelineOpen.value || helpOpen.value || harnessOpen.value || mcpOpen.value) {
       return
@@ -304,7 +338,11 @@ async function send(text) {
   playSfx('send')
   playReaction(hub.workspace, thread.value?.entity)
   try {
-    await chatSend(text)
+    const updated = await chatSend(text, {
+      attachments: attachmentsAllowed.value ? attachments.value : [],
+      attachmentsEnabled: attachmentsAllowed.value && attachmentsEnabled.value,
+    })
+    if (updated) attachments.value = []
   } catch (error) {
     playSfx('error')
     playReaction(hub.workspace, thread.value?.entity)
@@ -376,6 +414,7 @@ function consumeNewQuery() {
 onMounted(async () => {
   offEvent = onRunEvent(onLiveEvent)
   window.addEventListener('keydown', onChatKey, true)
+  if (!fleet.loaded) loadFleet()
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   await openInitialThread(wanted)
   consumeNewQuery()
@@ -404,6 +443,8 @@ watch(
 watch(
   () => hub.chat.active,
   (id, previous) => {
+    attachments.value = []
+    attachmentsEnabled.value = false
     if (!id) return
     const current = typeof route.query.thread === 'string' ? route.query.thread : ''
     if (current === id) return
@@ -619,6 +660,9 @@ watch(
                   :disabled="hub.chat.sending"
                   :sending="hub.chat.sending"
                   :stopping="hub.chat.stopping"
+                  v-model:attachments="attachments"
+                  :attachments-enabled="attachmentsEnabled && attachmentsAllowed"
+                  @toggle-attachments="attachmentsEnabled = $event"
                   @send="send"
                   @stop="stopTurn"
                 />
@@ -651,7 +695,7 @@ watch(
       >
         <div class="mo-head">
           <h2>Composer help</h2>
-          <p>Everything the message box understands: keys, mentions and skills.</p>
+          <p>Everything the message box understands: keys, mentions, skills and attachments.</p>
           <button class="x mo-x" aria-label="Close" @click="helpOpen = false">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
               <path d="M2 2l8 8M10 2l-8 8" />
@@ -665,6 +709,7 @@ watch(
               { id: 'keys', label: 'Keys' },
               { id: 'mentions', label: 'Mentions' },
               { id: 'skills', label: 'Skills' },
+              { id: 'attachments', label: 'Attachments' },
             ]"
             :key="tab.id"
             class="help-tab"
@@ -687,7 +732,7 @@ watch(
             </div>
             <div>
               <dt><kbd>@</kbd></dt>
-              <dd><b>Mentions</b><span>Another entity, an Orca file, an artifact, a Maka note, a YouTrack issue.</span></dd>
+              <dd><b>Mentions</b><span>Another entity, an Orca file, an artifact, a Maka note, a YouTrack issue, or a file/MCP attachment.</span></dd>
             </div>
             <div>
               <dt><kbd>↑</kbd><kbd>↓</kbd></dt>
@@ -747,6 +792,28 @@ watch(
             </p>
           </div>
 
+          <div v-else-if="helpTab === 'attachments'" class="help-mentions">
+            <p class="help-lede">
+              Attachments sit below the prompt and are only available on a remote thread, when
+              <b>Local attachment</b> is enabled. The toggle is off by default and hidden for a local
+              thread. Removing a chip removes that attachment.
+            </p>
+            <div v-for="row in [
+              { token: '@file:<path>', what: 'A local file for this turn. On a remote machine it is uploaded to a temporary directory and deleted after the answer.' },
+              { token: '@mcp:<server>', what: 'One workspace MCP server for this turn. MCP attachments are not saved. Remote MCP is not enabled in this build.' },
+              { token: '@artifact:<name>', what: 'A workspace artifact attached for this turn.' },
+            ]" :key="row.token" class="help-mention">
+              <code class="mono">{{ row.token }}</code>
+              <span>{{ row.what }}</span>
+            </div>
+            <p class="help-note">
+              With the toggle off, <code class="mono">@file</code> and <code class="mono">@mcp</code>
+              are not resolved. Skills are not @ attachments — use the slash syntax in the Skills tab.
+              Remote files are temporary; remote skills installed with
+              <code class="mono">/workspace:</code> are persistent on that host.
+            </p>
+          </div>
+
           <div v-else class="help-mentions">
             <p class="help-lede">
               A skill is a file the harness opens. Start the message with one of these and the app turns
@@ -762,7 +829,9 @@ watch(
             </div>
             <p class="help-note">
               Type <code class="mono">/</code> to see what is available. A name this app owns that does
-              not resolve is an error, so a typo never becomes an answer without the skill.
+              not resolve is an error, so a typo never becomes an answer without the skill. On a remote
+              target, a <code class="mono">/workspace:</code> skill is installed into the target harness
+              library and the previous copy is backed up.
             </p>
           </div>
         </div>

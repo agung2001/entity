@@ -21,6 +21,7 @@ const input = ref(null)
 
 useDialogDismiss({ active: () => hub.palette.open, close: () => (hub.palette.open = false) })
 const limits = reactive({ navigation: 6, workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 })
+const listEl = ref(null)
 
 const LIMIT_START = { navigation: 6, workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 }
 const LIMIT_STEP = 8
@@ -327,6 +328,10 @@ function onKey(event) {
         ? Math.min(list.length - 1, hub.palette.active + 1)
         : Math.max(0, hub.palette.active - 1)
     hub.palette.active = next
+    nextTick(() => {
+      const rows = listEl.value?.querySelectorAll('.pitem') || []
+      rows[next]?.scrollIntoView({ block: 'nearest' })
+    })
   } else if (event.key === 'Enter') {
     event.preventDefault()
     run(list[hub.palette.active])
@@ -355,7 +360,7 @@ function onKey(event) {
       />
       <kbd>esc</kbd>
     </div>
-    <div class="plist" role="listbox" aria-label="Results">
+    <div ref="listEl" class="plist" role="listbox" aria-label="Results">
       <template v-if="flat.length">
         <div v-for="group in groups" :key="group.id" class="pgroup">
           <div class="pgh">

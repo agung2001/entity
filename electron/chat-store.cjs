@@ -19,6 +19,8 @@ const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
 const mentionRef = require('./mention-ref.cjs')
+const attachmentRef = require('./attachment-ref.cjs')
+const remoteRunner = require('./remote-runner.cjs')
 const mcpRuntime = require('./mcp-runtime.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const artifacts = require('./artifact-store.cjs')
@@ -26,6 +28,7 @@ const harnesses = require('./harness-store.cjs')
 const auth = require('./auth-store.cjs')
 const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
+const { expandHome } = require('./frontmatter.cjs')
 
 /* a generous cap: the renderer only paints the newest turns, but the file is
    the conversation and should survive a long session */
@@ -200,6 +203,9 @@ function normaliseMessage(message) {
     ...(execution ? { execution } : {}),
     /* files the harness put on the artifact shelf during this turn */
     ...(linkedArtifacts.length ? { artifacts: linkedArtifacts } : {}),
+    ...(Array.isArray(message.attachments) && message.attachments.length
+      ? { attachments: message.attachments.filter((entry) => entry && entry.kind) }
+      : {}),
   }
 }
 
@@ -217,6 +223,7 @@ function normaliseThread(raw, record) {
     /* a thread may pin a model independently of the entity file; '' means the
        harness default (or the entity's own model, see runHarness) */
     model: String(raw.model || ''),
+    attachmentsEnabled: Boolean(raw.attachmentsEnabled),
     /* chat history is private to the account that started it */
     user: threadOwner(raw, record),
     title: String(raw.title || ''),
@@ -354,17 +361,32 @@ function checkHarness(harness, entity) {
   return value
 }
 
-function create({ workspace, entity, machine = 'local', harness, model = '', message }) {
+function checkMachine(record, machine, harness) {
+  const value = String(machine || 'local')
+  if (value === 'local') return value
+  const facts = workspaces.machineFacts(record.id).hosts[value]
+  if (!facts) {
+    throw new Error(`${value} has no capability snapshot. Run Test & scan on the Fleet page first.`)
+  }
+  if (!(facts.harnesses || []).some((entry) => entry.id === harness)) {
+    throw new Error(`${harness} is not installed on ${value}.`)
+  }
+  return value
+}
+
+function create({ workspace, entity, machine = 'local', harness, model = '', message, attachmentsEnabled = false }) {
   const record = workspaces.open(workspace)
   const agent = checkEntity(workspace, entity)
+  const chosenHarness = checkHarness(harness, agent)
   const thread = {
     schema: 1,
     id: newThreadId(),
     workspace: record.id,
     entity: agent.name,
-    machine: String(machine || 'local'),
-    harness: checkHarness(harness, agent),
+    machine: checkMachine(record, machine, chosenHarness),
+    harness: chosenHarness,
     model: String(model || '').trim(),
+    attachmentsEnabled: Boolean(attachmentsEnabled),
     user: currentUser() || threadOwner(null, record),
     title: '',
     pinned: false,
@@ -379,7 +401,7 @@ function create({ workspace, entity, machine = 'local', harness, model = '', mes
 }
 
 /** Context can only move before the first question — after that it is history. */
-function update({ workspace, id, entity, machine, harness, model }) {
+function update({ workspace, id, entity, machine, harness, model, attachmentsEnabled }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
@@ -392,9 +414,10 @@ function update({ workspace, id, entity, machine, harness, model }) {
     thread.entity = agent.name
     thread.harness = checkHarness(thread.harness, agent)
   }
-  if (machine) thread.machine = String(machine)
   if (harness) thread.harness = checkHarness(harness, checkEntity(workspace, thread.entity))
+  if (machine) thread.machine = checkMachine(record, machine, thread.harness)
   if (model !== undefined) thread.model = String(model || '').trim()
+  if (typeof attachmentsEnabled === 'boolean') thread.attachmentsEnabled = attachmentsEnabled
   /* a model belongs to its harness: changing the harness without naming a new
      model drops the old one instead of passing an incompatible name through */
   else if (thread.harness !== previousHarness) thread.model = ''
@@ -588,7 +611,60 @@ function commandPreview(spec) {
  * managed to produce, so the transcript is available even when the answer is
  * not. Only an unexpected programming error rejects.
  */
-function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () => {}, mentions = [] } = {}) {
+async function runRemoteHarness(entity, thread, prompt, { onStart, onStep, mentions, attachments }) {
+  let record
+  try {
+    record = workspaces.open(thread.workspace)
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error),
+      answer: '',
+      steps: [],
+      execution: { harness: thread.harness, status: 'error', startedAt: now() },
+    }
+  }
+  try {
+    const result = await remoteRunner.run({
+      record,
+      entity,
+      thread,
+      prompt,
+      attachments,
+      onStart,
+      onStep,
+      onChild: (child) => inFlight.set(thread.id, child),
+    })
+    return result
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error),
+      answer: '',
+      steps: [],
+      execution: {
+        harness: thread.harness,
+        machine: thread.machine,
+        remote: true,
+        status: 'error',
+        startedAt: now(),
+        ...(mentions?.length ? { mentions } : {}),
+      },
+    }
+  } finally {
+    inFlight.delete(thread.id)
+  }
+}
+
+function runHarness(
+  entity,
+  thread,
+  prompt,
+  { onStart = () => {}, onStep = () => {}, mentions = [], attachments = [], mcpOnly = null } = {},
+) {
+  if (thread.machine !== 'local') {
+    return runRemoteHarness(entity, thread, prompt, { onStart, onStep, mentions, attachments })
+  }
   return new Promise((resolve) => {
     let dir
     try {
@@ -620,13 +696,20 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
        message and a shared server is never a copy of a secret. */
     let mcp = { servers: [], files: [], argv: [], env: {}, notes: [], cleanup() {} }
     try {
-      mcp = mcpRuntime.materialise({ record, entity, harness: thread.harness })
+      mcp = mcpRuntime.materialise({
+        record,
+        entity,
+        harness: thread.harness,
+        only: mcpOnly || null,
+      })
       const instructions = platform.compose({
         record,
         entity,
         extra: artifacts.brief(thread.workspace),
       })
-      spec = chatInvocation(thread.harness, instructions, prompt, model, mcp)
+      const attachmentText = attachmentsBlock(attachments)
+      const runPrompt = attachmentText ? `${prompt.trim()}\n\n${attachmentText}` : prompt
+      spec = chatInvocation(thread.harness, instructions, runPrompt, model, mcp)
       spec.cmd = harnesses.binary(thread.harness) || spec.cmd
     } catch (error) {
       mcp.cleanup?.()
@@ -774,7 +857,60 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
   })
 }
 
-async function send({ workspace, id, text, emit = () => {}, retry = false }) {
+
+function resolveAttachments(record, list) {
+  const out = []
+  const seen = new Set()
+  const pool = workspaces.mcp(record.id)
+  for (const entry of Array.isArray(list) ? list : []) {
+    if (!entry || !entry.kind) continue
+    if (entry.kind === 'mcp') {
+      const name = String(entry.value || entry.name || '').trim()
+      if (!name) continue
+      if (!pool.servers?.[name]) {
+        throw new Error(`@mcp:${name} is not an enabled server in this workspace's MCP pool.`)
+      }
+      const key = `mcp:${name}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ kind: 'mcp', name })
+      continue
+    }
+    if (entry.kind !== 'file') continue
+    const raw = String(entry.value || entry.path || '').trim()
+    if (!raw) continue
+    const absolute = expandHome(raw)
+    const candidates = path.isAbsolute(absolute)
+      ? [absolute]
+      : [path.resolve(record.path, absolute), path.resolve(process.cwd(), absolute)]
+    const file = candidates.find((candidate) => {
+      try {
+        return fs.statSync(candidate).isFile()
+      } catch {
+        return false
+      }
+    })
+    if (!file) throw new Error(`Attached file does not exist: ${raw}`)
+    const stat = fs.statSync(file)
+    if (stat.size > 25 * 1024 * 1024) throw new Error(`Attached file is over 25 MB: ${raw}`)
+    const key = `file:${file}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ kind: 'file', path: file, name: path.basename(file) })
+  }
+  return out
+}
+
+function attachmentsBlock(attachments) {
+  const files = (attachments || []).filter((entry) => entry.kind === 'file' && entry.path)
+  if (!files.length) return ''
+  return [
+    'Attached files (available on this machine):',
+    ...files.map((entry) => `- ${entry.path}`),
+  ].join('\n')
+}
+
+async function send({ workspace, id, text, emit = () => {}, retry = false, attachments = [], attachmentsEnabled = false }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
@@ -783,14 +919,20 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
   let turnMentions = []
   const message = String(text || '').trim()
   if (!retryTurn && !message) throw new Error('Write a message first.')
-  if (thread.machine !== 'local') {
-    throw new Error(
-      `This thread is pinned to ${thread.machine}. Remote chat is not wired yet — pick local for a new thread.`,
-    )
-  }
   if (sending.has(thread.id)) throw new Error('This thread is already answering.')
 
   const entity = checkEntity(workspace, thread.entity)
+  const enabled =
+    typeof attachmentsEnabled === 'boolean' ? attachmentsEnabled : Boolean(thread.attachmentsEnabled)
+  const typed = enabled ? attachmentRef.extract(message) : { text: message, attachments: [] }
+  const resolvedAttachments = enabled
+    ? resolveAttachments(record, [...typed.attachments, ...(Array.isArray(attachments) ? attachments : [])])
+    : []
+  const turnText = typed.text || (resolvedAttachments.length ? 'Use the attached resources.' : '')
+  if (thread.machine !== 'local' && resolvedAttachments.some((entry) => entry.kind === 'mcp')) {
+    throw new Error('MCP attachments are not available on a remote host yet.')
+  }
+  thread.attachmentsEnabled = enabled
 
   if (retryTurn) {
     const last = thread.messages[thread.messages.length - 1]
@@ -809,7 +951,13 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
        `use this skill <path>` — resolved on the machine this thread is pinned to,
        before anything is written, so a typo leaves no half-turn in the
        transcript */
-    const applied = skillRef.rewrite(record, message, { machine: thread.machine })
+    const applied =
+      thread.machine === 'local'
+        ? skillRef.rewrite(record, turnText, { machine: thread.machine })
+        : await remoteRunner.rewriteSkill(record, turnText, {
+            machine: thread.machine,
+            harness: thread.harness,
+          })
     /* `@…` mentions resolve after the skill reference, so the block lands above
        the prompt and the `/skill` rewrite keeps its anchor at the start */
     const mentioned = await mentionRef.rewrite(record, applied.text, {
@@ -821,8 +969,12 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
       who: 'me',
       text: message,
       at: now(),
-      ...(applied.ref || mentioned.mentions.length ? { sent: mentioned.text } : {}),
+      ...(applied.ref || mentioned.mentions.length || resolvedAttachments.length
+        ? { sent: mentioned.text }
+        : {}),
       ...(mentioned.mentions.length ? { mentions: mentioned.mentions } : {}),
+      ...(resolvedAttachments.length ? { attachments: resolvedAttachments } : {}),
+      ...(applied.skill ? { skill: applied.skill } : {}),
     })
   }
   thread.updatedAt = now()
@@ -898,7 +1050,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
       onStart: (execution) => emitTurn('start', { execution }),
       onStep,
       mentions: turnMentions,
+      attachments: resolvedAttachments,
+      mcpOnly: resolvedAttachments.find((entry) => entry.kind === 'mcp')?.name || null,
     })
+    if (thread.machine !== 'local') run.canceled = canceling.delete(thread.id)
     flushStep()
 
     const at = now()

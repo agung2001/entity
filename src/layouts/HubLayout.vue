@@ -112,6 +112,16 @@ function onKey(e) {
   if (matchesShortcut('new-thread', e)) {
     e.preventDefault()
     openNewThread()
+    return
+  }
+  if (matchesShortcut('rail-search', e)) {
+    if (hub.palette.open) return
+    e.preventDefault()
+    const input = document.querySelector('.rail-t2 input[type="search"]')
+    if (input instanceof HTMLInputElement) {
+      input.focus()
+      input.select()
+    }
   }
 }
 

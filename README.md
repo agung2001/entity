@@ -567,9 +567,11 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
 
 - A run dies with the app; there is no daemon. Nothing keeps working while the
   window is closed.
-- **Remote agent placement is not implemented.** Workspace sync is real; a run
-  still executes on the machine whose window started it, and the server image has
-  no harness binaries.
+- **Remote chat is one ssh turn at a time.** A thread pinned to a fleet host
+  stages a temporary workspace, runs the installed harness there and streams the
+  answer back. The remote host is cleaned after the turn; entity *runs* still
+  execute on the machine whose window started them. The server image has no
+  harness binaries, so remote chat is a desktop feature.
 - Sync is file-level, not a CRDT: simultaneous edits keep both bytes as a conflict
   copy, but they are not merged line by line.
 - Skills are not sandboxed per workspace at execution time; a harness loads its own
@@ -583,6 +585,11 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
   capability facts and run logs are deliberately left out.
 - `machine-facts.json` is local to this copy of the workspace: host aliases and
   installed CLIs describe this user's fleet, not a shared project file.
+- Remote chat stages the workspace over ssh and deletes the remote run directory
+  afterwards. Artifacts are pulled back; entity edits made only on the remote host
+  are discarded with the run directory. File attachments are temporary; a
+  `/workspace:` skill installed on a remote host is persistent in that harness's
+  library and is backed up first.
 
 ## Status
 

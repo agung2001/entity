@@ -9,14 +9,18 @@ same mistakes kept coming back:
 2. a shortcut typed into a component instead of registered once, so the hint
    drifts from the handler and never appears in the guide;
 3. a harness/model inventory rendered as bare text with no search, so a long
-   list is unusable and the brand mark is missing.
+   list is unusable and the brand mark is missing;
+4. attachments typed into the prompt instead of sitting in the tray below it,
+   with no off-by-default gate and no Composer-help entry;
+5. keyboard movement that changes the selection without keeping the visible
+   list in sync.
 
 Read this before adding a surface or a key. When a new class of mistake is
 found, add it to **Common mistakes** below — that is how this file stays
 useful. The rules that can be checked mechanically are enforced by
 `electron/ui-contract.test.cjs` (`npm test`).
 
-## Three non-negotiables
+## Five non-negotiables
 
 ### 1. Every dismissible surface closes on `Esc`
 
@@ -111,6 +115,35 @@ A capability row is a compact control, not a card heading.
 - The expanded body is where the path, default model, source note and model
   list belong. The summary stays one line.
 
+### 4. The composer separates prompts from attachments
+
+The message box is for the prompt. Attachments belong in a tray below it.
+
+- A visible **Local attachment** toggle sits below the prompt **only on a remote
+  thread**. It is off by default and is per thread. A local thread has no tray.
+- Files and MCP servers are attachment chips in that tray, not text inside the
+  prompt.
+- Selecting `@file` or `@mcp` adds/removes a chip; removing the chip removes the
+  attachment without rewriting the sentence.
+- With the toggle off, attachment kinds are absent from the `@` menu and are
+  not resolved.
+- Skills are not attachments in the `@` language. They keep the slash forms
+  from Composer help: `/workspace:<name>`, `/<harness>:<name>`, `/<name>`.
+- Every attachment token shown in the UI must appear in **Composer help** in the
+  same change. Do not invent a token that the help does not document.
+- Remote `@file` uploads are temporary; remote `/workspace:` skills are
+  persistent in the target harness and need a backup.
+
+### 5. Keyboard movement follows the visible selection
+
+- Arrow-key movement in a list must also move the scroll position. Use
+  `scrollIntoView({ block: 'nearest' })` in a `nextTick` after changing the
+  active index.
+- A rail search shortcut targets the **active** rail, not a fixed panel. Query
+  the visible second-tier search field instead of importing one component.
+- Previous/next conversation shortcuts live in the shortcut catalog and wrap at
+  the ends only if the rail wraps; they are not a hidden component handler.
+
 ## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
@@ -129,6 +162,13 @@ A capability row is a compact control, not a card heading.
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
 | A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
+| An attachment is typed into the prompt instead of the tray | Prompts stay prompts; file/MCP attachments live in the tray below | Review |
+| Attachment controls are always visible | Gate them behind the Local attachment toggle, off by default | Review |
+| `@skill:` is introduced beside `/workspace:` | Skills have one syntax: the slash reference; no `@skill` | Review |
+| A new attachment token is not in Composer help | Parser, UI and Composer help change together | Review |
+| Arrow keys move the highlight but the list does not scroll | Scroll the active row into view with `block: 'nearest'` | Review |
+| A rail shortcut assumes one panel | Target the search field of the currently visible rail | Review |
+| Conversation shortcuts exist only in a view | Add them to `SHORTCUT_GROUPS` so the guide and handler agree | Review |
 | Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
 | A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
 | A summary row inherits the card heading size | Set label/meta sizes explicitly: 12px label, 10px count | Review |
@@ -204,8 +244,12 @@ build` prints the chunk list — the entry chunk should not grow without a reaso
 5. If the page renders harnesses, use `HarnessIcon` beside every label.
 6. If the page renders an inventory (harnesses, models, MCP tools, files), add
    a search input unless it is guaranteed to stay shorter than one screen.
-7. For inventory rows, test zero data, hundreds of items, one separator system,
+7. If the page has a composer, put attachments below the prompt, gate them with
+   an off-by-default toggle on remote threads, and document every token in Composer help.
+8. If arrow keys move a selection, scroll the active row into view. If a shortcut
+   targets a rail, resolve the active rail instead of a fixed component.
+9. For inventory rows, test zero data, hundreds of items, one separator system,
    and a compact summary. Details belong in the expanded body.
-8. If the change taught you a new failure mode, add a row to **Common
+10. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.

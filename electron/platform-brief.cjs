@@ -22,9 +22,20 @@ const SKILL = fs
   .readFileSync(path.join(__dirname, 'platform-skill.md'), 'utf8')
   .trim()
 
+const REMOTE_SKILL = `## This run is on a remote machine
+
+The workspace was staged into the current directory before this turn. Treat
+those files as the workspace: read and write entities and artifacts there.
+The Entity CLI is not installed on this host, so do not call \`$ENTITY_CLI_PATH\`.
+Skills named by the prompt are already installed in this harness's skill
+library when the target supports it.
+
+Do not try to reach the person's local filesystem, local Entity profile or a
+local MCP server. If a file or server is missing, say so instead of guessing.`
+
 /** instruction text for one run */
-function compose({ record, entity, extra = '' } = {}) {
-  const parts = [SKILL]
+function compose({ record, entity, extra = '', remote = false } = {}) {
+  const parts = [remote ? REMOTE_SKILL : SKILL]
   const context = String(record?.context || '').trim()
   if (context) parts.push(`## Workspace context\n\n${context}`)
   const own = String(entity?.instructions || '').trim()
@@ -84,15 +95,15 @@ function ensureShim(record) {
 }
 
 /** The environment every harness gets, so the brief's commands resolve. */
-function env({ record, entity } = {}) {
+function env({ record, entity, remote = false } = {}) {
   /* ENTITY_HOME is inherited: the app itself was launched with whatever value
      pointed at this profile, and the child gets the same process.env. */
   const out = {
     ENTITY_WORKSPACE: record?.id || '',
     ENTITY_ENTITY: entity?.name || '',
   }
-  if (record) out.ENTITY_CLI_PATH = ensureShim(record)
+  if (record && !remote) out.ENTITY_CLI_PATH = ensureShim(record)
   return out
 }
 
-module.exports = { SKILL, compose, env, ensureShim, shimPath, shellQuote }
+module.exports = { SKILL, REMOTE_SKILL, compose, env, ensureShim, shimPath, shellQuote }

@@ -6363,6 +6363,9 @@ label.pick:has(input:focus-visible) {
   width: 100%;
   display: block;
 }
+.field-select .pickwrap {
+  width: 100%;
+}
 .field-select .pickbtn {
   width: 100%;
   height: 36px;
@@ -6382,7 +6385,8 @@ label.pick:has(input:focus-visible) {
 }
 .field-select .pickmenu {
   width: 100%;
-  min-width: 260px;
+  min-width: 0;
+  max-width: none;
   max-height: 300px;
   overflow: auto;
 }
