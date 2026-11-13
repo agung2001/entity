@@ -25,7 +25,10 @@ ENV NODE_ENV=production \
     ENTITY_HOST=0.0.0.0 \
     ENTITY_PORT=1020
 
-RUN groupadd --gid 10001 entity \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends procps \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --gid 10001 entity \
  && useradd --uid 10001 --gid entity --create-home --shell /usr/sbin/nologin entity \
  && mkdir -p /app /data \
  && chown -R entity:entity /data
