@@ -83,6 +83,8 @@ const declaredSkills = computed(() =>
     present: hub.skills.some((skill) => skill.name === name && !skill.missing),
   })),
 )
+
+/* ── config diff ──────────────────────────────────────────────────── */
 const dirty = computed(
   () =>
     Boolean(agent.value) &&
@@ -305,9 +307,6 @@ async function copyPath() {
               </router-link>
               <span v-if="!declaredSkills.length" class="entp-skchip"><i></i>none declared</span>
             </div>
-            <p class="entp-note">
-              {{ agent.mcp.length ? `MCP: ${agent.mcp.join(', ')}` : 'No MCP servers on this entity.' }}
-            </p>
           </section>
         </div>
 
@@ -346,7 +345,6 @@ async function copyPath() {
             </div>
             <div><dt>Machines</dt><dd>{{ agent.machines.length ? agent.machines.map(machineLabel).join(', ') : 'nowhere' }}</dd></div>
             <div><dt>Directory</dt><dd class="mono" :title="agent.dir">{{ agent.dir || 'not set' }}</dd></div>
-            <div><dt>MCP</dt><dd>{{ agent.mcp.length ? agent.mcp.join(', ') : 'none' }}</dd></div>
             <div><dt>File</dt><dd class="mono" :title="agent.displayPath">{{ agent.displayPath }}</dd></div>
             <div><dt>Last chat</dt><dd>{{ lastChat }}</dd></div>
           </dl>

@@ -429,10 +429,14 @@ export async function setMcpEnabled(name, enabled, definition = null) {
   }
 }
 
-export async function writeMcp(servers) {
+export async function writeMcp(servers, { disabled } = {}) {
   workspaces.busy = 'mcp'
   try {
-    workspaces.mcp = await call('workspace.writeMcp', { id: workspaces.active, servers })
+    workspaces.mcp = await call('workspace.writeMcp', {
+      id: workspaces.active,
+      servers,
+      ...(disabled ? { disabled } : {}),
+    })
     await afterScopeWrite()
     return workspaces.mcp
   } finally {

@@ -2,11 +2,17 @@
 
 export function definitionOf(server) {
   if (!server) return null
-  if (server.url) return { url: String(server.url) }
-  if (!server.command) return null
-  const value = { command: String(server.command) }
+  const value = {}
+  if (server.url) value.url = String(server.url)
+  if (server.command) value.command = String(server.command)
   if (Array.isArray(server.args) && server.args.length) value.args = server.args.map(String)
-  if (Array.isArray(server.env) && server.env.length) value.env = server.env.map(String)
+  const env = server.env
+  if (Array.isArray(env) && env.length) value.env = env.map(String)
+  else if (env && typeof env === 'object' && Object.keys(env).length) value.env = { ...env }
+  if (server.headers && typeof server.headers === 'object' && Object.keys(server.headers).length) {
+    value.headers = { ...server.headers }
+  }
+  if (!value.url && !value.command) return null
   return value
 }
 
@@ -21,7 +27,10 @@ export function transportOf(definition) {
 }
 
 export function envNames(definition) {
-  return Array.isArray(definition?.env) ? definition.env.map(String) : []
+  const env = definition?.env
+  if (Array.isArray(env)) return env.map(String)
+  if (env && typeof env === 'object') return Object.keys(env)
+  return []
 }
 
 /** Enabled pool first, then the disabled pile. */

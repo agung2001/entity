@@ -24,6 +24,11 @@ machine has it; the app resolves it to a path before you see the prompt. If
 someone asks how to use a skill, that is the answer — `entity skill list` shows
 what this workspace has attached.
 
+The same works for MCP: servers in `<workspace>/mcp.json` apply to every entity in
+this workspace, so a server someone added there is already yours to use — do not
+ask to have it bound. An entity may narrow the pool with `mcp: a, b`, and a named
+server that is missing is reported instead of being silently dropped.
+
 - `--help` on any verb beats guessing a flag.
 - A name is not an id: `list` first, then act on what it returned.
 - `--output json` writes to stdout; diagnostics go to stderr. Never merge them.

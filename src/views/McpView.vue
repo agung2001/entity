@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
@@ -14,22 +15,20 @@ const props = defineProps({
 
 /**
  * MCP inventory. The workspace pool and the harness configs on this machine
- * are two scopes of the same table: same columns, same drawer, same search.
- * The globals side is read-only except for attaching a definition to the pool.
+ * are two scopes of the same table: same columns, same search. A row opens the
+ * server's own page — the table is for scanning, not for reading details.
  */
+const route = useRoute()
+const router = useRouter()
 const scope = ref('workspace')
 const search = ref('')
 const harness = ref('all')
 const sortKey = ref('name')
 const sortDir = ref('asc')
 const globals = reactive({ loading: false, loaded: false, error: '', groups: [], count: 0 })
-const selected = ref(null)
-const confirming = ref(false)
-
 const addOpen = ref(false)
 const addBusy = ref(false)
 const addError = ref('')
-const editing = ref('')
 const addForm = reactive({ name: '', transport: 'stdio', command: '', args: '', url: '', env: '' })
 
 const jsonOpen = ref(false)
@@ -131,14 +130,11 @@ function setScope(next) {
   search.value = ''
 }
 
-function openDrawer(row) {
-  selected.value = row
-  confirming.value = false
-}
-
-function closeDrawer() {
-  selected.value = null
-  confirming.value = false
+function openRow(row) {
+  router.push({
+    name: 'mcp-server',
+    params: { workspace: route.params.workspace || hub.workspace, name: row.name },
+  })
 }
 
 async function loadGlobals(force = false) {
@@ -160,33 +156,7 @@ async function loadGlobals(force = false) {
   }
 }
 
-async function copyCommand() {
-  if (!selected.value) return
-  try {
-    await navigator.clipboard.writeText(selected.value.command)
-    toast(`${selected.value.name} command copied`)
-  } catch {
-    toast('The command could not be copied.')
-  }
-}
-
-function beginEdit() {
-  if (!selected.value) return
-  const definition = selected.value.definition || {}
-  editing.value = selected.value.name
-  addForm.name = selected.value.name
-  addForm.transport = definition.url ? 'http' : 'stdio'
-  addForm.command = definition.command || ''
-  addForm.args = Array.isArray(definition.args) ? definition.args.join('\n') : ''
-  addForm.url = definition.url || ''
-  addForm.env = envNames(definition).join(', ')
-  addError.value = ''
-  addOpen.value = true
-  closeDrawer()
-}
-
 function beginAdd() {
-  editing.value = ''
   addForm.name = ''
   addForm.transport = 'stdio'
   addForm.command = ''
@@ -233,7 +203,7 @@ async function saveServer() {
     return
   }
   const next = { ...(workspaces.mcp?.servers || {}) }
-  if (!editing.value && next[name]) {
+  if (next[name]) {
     addError.value = `${name} is already in the workspace pool.`
     return
   }
@@ -241,50 +211,12 @@ async function saveServer() {
   addBusy.value = true
   try {
     await writeMcp(next)
-    toast(editing.value ? `${name} updated` : `${name} added to the workspace pool`)
+    toast(`${name} added to the workspace pool`)
     addOpen.value = false
   } catch (error) {
     addError.value = error?.message || 'The server could not be saved.'
   } finally {
     addBusy.value = false
-  }
-}
-
-async function removeSelected() {
-  if (!selected.value) return
-  if (!confirming.value) {
-    confirming.value = true
-    return
-  }
-  const name = selected.value.name
-  const next = { ...(workspaces.mcp?.servers || {}) }
-  delete next[name]
-  try {
-    await writeMcp(next)
-    toast(`${name} removed from the workspace pool`)
-    closeDrawer()
-  } catch (error) {
-    toast(error?.message || `${name} could not be removed.`)
-  }
-}
-
-async function attachSelected() {
-  if (!selected.value || selected.value.kind !== 'global') return
-  if (inPool(selected.value.name)) return
-  if (!selected.value.definition) {
-    toast('That server has neither a command nor a URL.')
-    return
-  }
-  const next = {
-    ...(workspaces.mcp?.servers || {}),
-    [selected.value.name]: selected.value.definition,
-  }
-  try {
-    await writeMcp(next)
-    toast(`${selected.value.name} attached to the workspace pool`)
-    closeDrawer()
-  } catch (error) {
-    toast(error?.message || `${selected.value.name} could not be attached.`)
   }
 }
 
@@ -333,7 +265,7 @@ onMounted(() => {
         <h1>MCP</h1>
         <p class="lede">
           Every server the workspace carries, and every server the harnesses already know.
-          An entity opts into the pool with <code class="mono">mcp: name</code>.
+          Every entity gets this pool; an entity can narrow it with <code class="mono">mcp: name</code>.
         </p>
       </div>
       <div class="head-actions">
@@ -353,7 +285,7 @@ onMounted(() => {
         <h2>MCP inventory</h2>
         <p class="lede">
           The workspace pool and the harness configs on this machine, in one comparison table.
-          Entities opt in with <code class="mono">mcp: name</code>.
+          Every entity gets the pool; an entity can narrow it with <code class="mono">mcp: name</code>.
         </p>
       </div>
       <div class="mcp-inv-actions">
@@ -442,7 +374,7 @@ onMounted(() => {
         <span v-if="scope === 'workspace'">Command / URL</span>
         <span v-else>Command / URL</span>
         <span>Env</span>
-        <span>{{ scope === 'workspace' ? 'Used by' : 'Source file' }}</span>
+        <span>{{ scope === 'workspace' ? 'Named by' : 'Source file' }}</span>
         <span v-if="scope === 'workspace'">Source</span>
         <span v-else>Pool</span>
         <span></span>
@@ -455,9 +387,9 @@ onMounted(() => {
           class="mcp-inv-row"
           role="button"
           tabindex="0"
-          @click="openDrawer(row)"
-          @keydown.enter="openDrawer(row)"
-          @keydown.space.prevent="openDrawer(row)"
+          @click="openRow(row)"
+          @keydown.enter="openRow(row)"
+          @keydown.space.prevent="openRow(row)"
         >
           <span class="mcp-inv-nm">
             <b>{{ row.name }}</b>
@@ -474,7 +406,7 @@ onMounted(() => {
           <span class="mono mcp-inv-env">{{ row.env.length ? row.env.join(', ') : '—' }}</span>
           <span v-if="scope === 'workspace'" class="mcp-inv-used">
             <span v-if="row.used.length" v-for="entity in row.used" :key="entity" class="mcp-inv-u">{{ entity }}</span>
-            <span v-else class="mcp-inv-none">no entity</span>
+            <span v-else class="mcp-inv-none">every entity</span>
           </span>
           <span v-else class="mono mcp-inv-file">{{ row.file || '—' }}</span>
           <span v-if="scope === 'workspace'" class="mcp-inv-src">
@@ -489,7 +421,7 @@ onMounted(() => {
               class="mcp-inv-menu"
               type="button"
               :aria-label="`Open details for ${row.name}`"
-              @click.stop="openDrawer(row)"
+              @click.stop="openRow(row)"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" />
@@ -511,94 +443,15 @@ onMounted(() => {
     </div>
 
     <div class="mcp-inv-foot">
-      <span><b>{{ enabledCount }}</b> in the pool · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> entities opt in · <b>{{ totalGlobals }}</b> on this machine</span>
+      <span><b>{{ enabledCount }}</b> in the pool · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> narrow it · <b>{{ totalGlobals }}</b> on this machine</span>
       <span class="r">Harness configs stay read-only · strict {{ workspaces.mcp?.strict ? 'on' : 'off' }}</span>
     </div>
-
-    <Teleport to="body">
-      <div class="mcp-drawer-scrim" :data-open="selected ? '1' : '0'" @click="closeDrawer"></div>
-      <aside
-        class="mcp-drawer"
-        :data-open="selected ? '1' : '0'"
-        role="dialog"
-        aria-modal="true"
-        aria-label="MCP server details"
-      >
-        <template v-if="selected">
-          <header class="mcp-drawer-head">
-            <div>
-              <p class="eyebrow">{{ selected.kind === 'pool' ? 'Workspace pool' : `${selected.harnessLabel} · config` }}</p>
-              <h2>{{ selected.name }}</h2>
-            </div>
-            <button class="x" type="button" aria-label="Close details" @click="closeDrawer">
-              <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
-                <path d="M2 2l8 8M10 2l-8 8" />
-              </svg>
-            </button>
-          </header>
-          <div class="mcp-drawer-body">
-            <dl class="mcp-drawer-facts">
-              <div><dt>Transport</dt><dd>{{ selected.transport === 'http' ? 'remote · http/sse' : 'local · stdio' }}</dd></div>
-              <div v-if="selected.definition?.command"><dt>Command</dt><dd class="mono">{{ selected.definition.command }}</dd></div>
-              <div v-if="selected.definition?.args?.length"><dt>Arguments</dt><dd class="mono">{{ selected.definition.args.join(' ') }}</dd></div>
-              <div v-if="selected.definition?.url"><dt>URL</dt><dd class="mono">{{ selected.definition.url }}</dd></div>
-              <div><dt>Env</dt><dd class="mono">{{ selected.env.length ? selected.env.join(', ') : 'none' }}</dd></div>
-              <div><dt>In pool</dt><dd>{{ selected.kind === 'pool' || inPool(selected.name) ? 'yes' : 'no' }}</dd></div>
-            </dl>
-
-            <section class="mcp-drawer-block">
-              <h3>{{ selected.kind === 'pool' ? 'Used by' : 'Known to' }}</h3>
-              <div class="mcp-inv-used">
-                <template v-if="selected.kind === 'pool'">
-                  <span v-if="usedBy(selected.name).length" v-for="entity in usedBy(selected.name)" :key="entity" class="mcp-inv-u">{{ entity }}</span>
-                  <span v-else class="mcp-inv-none">no entity names it</span>
-                </template>
-                <span v-else class="mcp-inv-u">{{ selected.harnessLabel }}</span>
-              </div>
-            </section>
-
-            <section class="mcp-drawer-block">
-              <h3>Definition</h3>
-              <pre class="codebox">{{ JSON.stringify(selected.definition, null, 2) }}</pre>
-            </section>
-
-            <section class="mcp-drawer-block">
-              <h3>Environment</h3>
-              <p class="mcp-drawer-note">
-                {{ selected.env.length ? 'Values resolve from the environment when a chat starts. Only the names are stored here.' : 'No environment variables are required.' }}
-              </p>
-            </section>
-          </div>
-          <footer class="mcp-drawer-foot">
-            <button class="btn btn-sm" type="button" @click="copyCommand">Copy command</button>
-            <span class="r">
-              <template v-if="selected.kind === 'pool'">
-                <button class="btn btn-sm" type="button" @click="beginEdit">Edit</button>
-                <button
-                  class="btn btn-sm btn-danger"
-                  type="button"
-                  :class="{ confirming }"
-                  @click="removeSelected"
-                >{{ confirming ? 'Click again to remove' : 'Remove' }}</button>
-              </template>
-              <button
-                v-else
-                class="btn btn-sm btn-ink"
-                type="button"
-                :disabled="inPool(selected.name) || !selected.definition"
-                @click="attachSelected"
-              >{{ inPool(selected.name) ? 'In pool' : 'Attach to pool' }}</button>
-            </span>
-          </footer>
-        </template>
-      </aside>
-    </Teleport>
 
     <Teleport to="body">
       <div class="scrim" :data-open="addOpen || jsonOpen ? '1' : '0'" @click="addOpen = false; jsonOpen = false"></div>
       <div class="modal mcp-modal" :data-open="addOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP server">
         <div class="mo-head">
-          <h2>{{ editing ? 'Edit MCP server' : 'Add MCP server' }}</h2>
+          <h2>Add MCP server</h2>
           <p>Write the definition into this workspace's pool. Env holds variable names only.</p>
           <button class="x mo-x" type="button" aria-label="Close" @click="addOpen = false">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
@@ -607,7 +460,7 @@ onMounted(() => {
         <form class="mo-body" @submit.prevent="saveServer">
           <div class="fld">
             <label class="lbl" for="mcp-server-name">Name</label>
-            <input id="mcp-server-name" v-model="addForm.name" type="text" class="acct-input mono" spellcheck="false" :disabled="Boolean(editing) || addBusy" />
+            <input id="mcp-server-name" v-model="addForm.name" type="text" class="acct-input mono" spellcheck="false" :disabled="addBusy" />
           </div>
           <div class="fld">
             <label class="lbl" for="mcp-server-transport">Transport</label>
@@ -638,7 +491,7 @@ onMounted(() => {
           <p v-if="addError" class="acct-error" role="alert">{{ addError }}</p>
           <div class="mo-foot" style="padding: 8px 0 0; border: 0">
             <button class="btn" type="button" :disabled="addBusy" @click="addOpen = false">Cancel</button>
-            <button class="btn btn-ink" type="submit" :disabled="addBusy">{{ addBusy ? 'Saving…' : editing ? 'Save server' : 'Add server' }}</button>
+            <button class="btn btn-ink" type="submit" :disabled="addBusy">{{ addBusy ? 'Saving…' : 'Add server' }}</button>
           </div>
         </form>
       </div>

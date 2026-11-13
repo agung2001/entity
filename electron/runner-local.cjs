@@ -12,6 +12,7 @@ const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
+const mcpRuntime = require('./mcp-runtime.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const platform = require('./platform-brief.cjs')
@@ -23,16 +24,29 @@ const KILL_AFTER_MS = 3000
 const MAX_RUNS_SCANNED = 400
 
 /* Each harness takes instructions differently. Only claude and pi have a real
-   system prompt; the rest get the file prepended to the prompt text. */
-function invocation(harness, instructions, prompt, mcpFile, strict, model = '') {
+   system prompt; the rest get the file prepended to the prompt text.
+
+   `mcp` is what `mcp-runtime.materialise()` returned: argv to add and the
+   files/dirs to clean up later. Placement matters — codex reads its `-c`
+   overrides before the positional `-` prompt, so those go right after the
+   subcommand instead of at the end. */
+function withMcp(harness, argv, mcp) {
+  if (!mcp?.argv?.length) return argv
+  if (harness === 'codex') return [argv[0], ...mcp.argv, ...argv.slice(1)]
+  return [...argv, ...mcp.argv]
+}
+
+function invocation(harness, instructions, prompt, model = '', mcp = null) {
+  return withMcp(harness, baseInvocation(harness, instructions, prompt, model), mcp)
+}
+
+function baseInvocation(harness, instructions, prompt, model = '') {
   const preface = `${instructions.trim()}\n\n---\n\n${prompt}`
   const chosen = String(model || '').trim()
   switch (harness) {
     case 'claude': {
       const argv = ['-p', '--append-system-prompt', instructions]
       if (chosen) argv.push('--model', chosen)
-      if (mcpFile) argv.push('--mcp-config', mcpFile)
-      if (mcpFile && strict) argv.push('--strict-mcp-config')
       return { cmd: 'claude', argv, stdin: prompt, system: true }
     }
     case 'pi': {
@@ -68,7 +82,11 @@ function invocation(harness, instructions, prompt, mcpFile, strict, model = '') 
  * kept for entity runs, which only need the final text and whose logs are
  * already append-only run files.
  */
-function chatInvocation(harness, instructions, prompt, model = '') {
+function chatInvocation(harness, instructions, prompt, model = '', mcp = null) {
+  return withMcp(harness, baseChatInvocation(harness, instructions, prompt, model), mcp)
+}
+
+function baseChatInvocation(harness, instructions, prompt, model = '') {
   const preface = `${instructions.trim()}\n\n---\n\n${prompt}`
   const chosen = String(model || '').trim()
   switch (harness) {
@@ -108,20 +126,6 @@ function chatInvocation(harness, instructions, prompt, model = '') {
     default:
       throw new Error(`The harness "${harness}" has no known invocation.`)
   }
-}
-
-/** claude's own MCP file shape, filtered to the entity's `mcp:` list. */
-function writeClaudeMcp(record, runId, entity) {
-  const pool = workspaces.mcp(record.id)
-  const servers = {}
-  for (const name of entity.mcp) {
-    const entry = pool.servers[name]
-    if (entry) servers[name] = entry
-  }
-  const file = path.join(record.path, 'runs', `.mcp-${runId}.json`)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`, 'utf8')
-  return { file, count: Object.keys(servers).length }
 }
 
 function newRunId() {
@@ -242,13 +246,7 @@ function createRunner({ emit = () => {} } = {}) {
     run.outTimer = run.errTimer = null
     flush(run, 'stdout')
     flush(run, 'stderr')
-    if (run.mcpFile) {
-      try {
-        fs.rmSync(run.mcpFile, { force: true })
-      } catch {
-        /* the run directory is disposable */
-      }
-    }
+    run.mcp?.cleanup()
     active.delete(run.runId)
     const key = `${run.workspace}/${run.entity}`
     if (locks.get(key) === run.runId) locks.delete(key)
@@ -275,14 +273,7 @@ function createRunner({ emit = () => {} } = {}) {
     const status = canceled ? 'canceled' : code === 0 ? 'ok' : 'error'
     if (error) publish(run, 'state', { status: 'error', error, endedAt })
     publish(run, 'exit', { code, ms, endedAt, canceled })
-    if (run.mcpFile) {
-      try {
-        fs.rmSync(run.mcpFile, { force: true })
-      } catch {
-        /* nothing to remove */
-      }
-      run.mcpFile = ''
-    }
+    run.mcp?.cleanup()
     run.status = status
     run.exitCode = code
     run.endedAt = endedAt
@@ -320,18 +311,16 @@ function createRunner({ emit = () => {} } = {}) {
       errTimer: null,
       killTimer: null,
       finished: false,
-      mcpFile: '',
+      mcp: null,
       file: path.join(runsDir(workspace), `${runId}.jsonl`),
       startedMs: Date.now(),
       startedAt: new Date().toISOString(),
     }
 
-    let mcpFile = ''
-    if (entity.harness === 'claude' && record.mcpStrict) {
-      const written = writeClaudeMcp(record, runId, entity)
-      mcpFile = written.file
-      run.mcpFile = written.file
-    }
+    /* The workspace pool filtered to what this entity names. Same resolver the
+       chat composer uses, so a run and a chat turn cannot disagree about which
+       servers an entity gets. */
+    run.mcp = mcpRuntime.materialise({ record, entity, harness: entity.harness })
 
     /* Two compositions, one source. `platform.compose` owns the precedence —
        platform brief, workspace context, then this entity's own body — so a
@@ -342,14 +331,7 @@ function createRunner({ emit = () => {} } = {}) {
       entity,
       extra: artifacts.brief(workspace),
     })
-    const spec = invocation(
-      entity.harness,
-      instructions,
-      applied.text,
-      mcpFile,
-      record.mcpStrict,
-      entity.model,
-    )
+    const spec = invocation(entity.harness, instructions, applied.text, entity.model, run.mcp)
     spec.cmd = harnesses.binary(entity.harness) || spec.cmd
     locks.set(key, runId)
     active.set(runId, run)
@@ -370,7 +352,8 @@ function createRunner({ emit = () => {} } = {}) {
           }
         : null,
       startedAt: run.startedAt,
-      mcp: mcpFile ? entity.mcp.filter((server) => workspaces.mcp(workspace).servers[server]) : [],
+      mcp: run.mcp.servers,
+      mcpNote: run.mcp.notes.join(' · '),
       systemPrompt: spec.system,
     })
 
@@ -380,7 +363,7 @@ function createRunner({ emit = () => {} } = {}) {
          helper processes, and all of them have to die with the run. */
       child = spawnTracked(spec.cmd, spec.argv, {
         cwd: dir,
-        env: { ...process.env, ...platform.env({ record, entity }) },
+        env: { ...process.env, ...platform.env({ record, entity }), ...run.mcp.env },
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
         kind: 'run',

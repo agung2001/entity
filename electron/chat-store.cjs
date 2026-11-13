@@ -18,6 +18,7 @@ const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
+const mcpRuntime = require('./mcp-runtime.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
@@ -597,15 +598,21 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
       record = null
     }
     let spec
+    /* The workspace pool filtered to what this entity names. Resolved from the
+       files on disk on every turn, so an edit in $EDITOR lands on the next
+       message and a shared server is never a copy of a secret. */
+    let mcp = { servers: [], files: [], argv: [], env: {}, notes: [], cleanup() {} }
     try {
+      mcp = mcpRuntime.materialise({ record, entity, harness: thread.harness })
       const instructions = platform.compose({
         record,
         entity,
         extra: artifacts.brief(thread.workspace),
       })
-      spec = chatInvocation(thread.harness, instructions, prompt, model)
+      spec = chatInvocation(thread.harness, instructions, prompt, model, mcp)
       spec.cmd = harnesses.binary(thread.harness) || spec.cmd
     } catch (error) {
+      mcp.cleanup?.()
       resolve({
         ok: false,
         error: String(error?.message || error),
@@ -625,6 +632,9 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
       cwd: dir,
       startedAt,
       status: 'running',
+      /* what actually reached the harness, and what did not and why */
+      ...(mcp.servers.length ? { mcp: mcp.servers } : {}),
+      ...(mcp.notes.length ? { mcpNote: mcp.notes.join(' · ') } : {}),
     }
     onStart(execution)
 
@@ -633,13 +643,14 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
       /* Same contract as a run: tracked, and its whole tree is ours to stop. */
       child = spawnTracked(spec.cmd, spec.argv, {
         cwd: dir,
-        env: { ...process.env, ...platform.env({ record, entity }) },
+        env: { ...process.env, ...platform.env({ record, entity }), ...mcp.env },
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
         kind: 'chat',
         label: `${entity.name} · ${thread.harness}`,
       })
     } catch (error) {
+      mcp.cleanup?.()
       resolve({
         ok: false,
         error: String(error?.message || error),
@@ -671,6 +682,9 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
       if (settled) return
       settled = true
       clearTimeout(idleTimer)
+      /* the config file is a secret; it outlives the process only if this line
+         is skipped, which is why it is here and not in a finally */
+      mcp.cleanup?.()
       if (inFlight.get(thread.id) === child) inFlight.delete(thread.id)
       const canceled = canceling.delete(thread.id)
       const parsed = parser.finish()

@@ -148,11 +148,19 @@ function readJson(file, fallback) {
 }
 
 /** tmp + rename: a crash cannot truncate a workspace file. */
-function writeJson(file, value) {
+function writeJson(file, value, { mode = 0o644 } = {}) {
   const tmp = `${file}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode })
   fs.renameSync(tmp, file)
+  /* mode is only applied when the temp file is created; a rewrite of an older
+     file keeps whatever mode it had. The MCP pool can carry a token, so it is
+     forced to 0600 every time. */
+  try {
+    fs.chmodSync(file, mode)
+  } catch {
+    /* a filesystem without modes */
+  }
   return value
 }
 
@@ -910,8 +918,32 @@ function validServer(name, entry) {
   if (!entry.command && !entry.url) {
     throw new Error(`MCP server "${name}" needs a command or a url.`)
   }
-  if (entry.env && !Array.isArray(entry.env)) {
-    throw new Error(`MCP server "${name}": env is a list of variable names, not values.`)
+  /* `env` has two accepted shapes: a list of variable names resolved when the
+     harness is spawned, or a name → value object copied verbatim from a
+     harness config (that is what attaching a working server gives you).
+     Values are stored here and never returned by any verb. */
+  if (entry.env !== undefined) {
+    const env = entry.env
+    if (!env || typeof env !== 'object') {
+      throw new Error(`MCP server "${name}": env is a map of name → value, or a list of names.`)
+    }
+    const values = Array.isArray(env) ? env : Object.values(env)
+    for (const value of values) {
+      if (typeof value !== 'string') {
+        throw new Error(`MCP server "${name}": env values must be strings.`)
+      }
+    }
+  }
+  if (entry.headers !== undefined) {
+    const headers = entry.headers
+    if (!headers || typeof headers !== 'object' || Array.isArray(headers)) {
+      throw new Error(`MCP server "${name}": headers must be a name → value object.`)
+    }
+    for (const value of Object.values(headers)) {
+      if (typeof value !== 'string') {
+        throw new Error(`MCP server "${name}": header values must be strings.`)
+      }
+    }
   }
   return entry
 }
@@ -948,7 +980,7 @@ function writeMcp({ id, servers, disabled }) {
     : current.disabled
   for (const [name, entry] of Object.entries(servers)) validServer(name, entry)
   for (const [name, entry] of Object.entries(parked)) validServer(name, entry)
-  writeJson(mcpPath(record), { schema: 1, servers, disabled: parked })
+  writeJson(mcpPath(record), { schema: 1, servers, disabled: parked }, { mode: 0o600 })
   return mcp(id)
 }
 
@@ -974,7 +1006,7 @@ function setMcpEnabled({ id, name, enabled, definition = null }) {
       delete servers[key]
     }
   }
-  writeJson(mcpPath(record), { schema: 1, servers, disabled })
+  writeJson(mcpPath(record), { schema: 1, servers, disabled }, { mode: 0o600 })
   return mcp(id)
 }
 

@@ -11,6 +11,7 @@ import EntityDetailView from '@/views/EntityDetailView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import SkillDetailView from '@/views/SkillDetailView.vue'
 import McpView from '@/views/McpView.vue'
+import McpServerView from '@/views/McpServerView.vue'
 import ArtifactDetailView from '@/views/ArtifactDetailView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import MachineDetailView from '@/views/MachineDetailView.vue'
@@ -177,6 +178,12 @@ const router = createRouter({
           name: 'mcp',
           component: McpView,
           meta: { crumb: 'mcp', title: 'MCP · entity' },
+        },
+        {
+          path: ':workspace/mcp/:name',
+          name: 'mcp-server',
+          component: McpServerView,
+          meta: { crumb: 'mcp', title: 'MCP server · entity' },
         },
         {
           path: ':workspace/artifacts/:id(.*)',

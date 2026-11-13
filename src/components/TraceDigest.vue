@@ -24,6 +24,10 @@ const totalMs = computed(() => {
 const thoughtChars = computed(() =>
   thoughts.value.reduce((total, step) => total + String(step.content || '').length, 0),
 )
+/* the workspace MCP servers this turn actually ran with */
+const mcpServers = computed(() =>
+  Array.isArray(props.execution?.mcp) ? props.execution.mcp : [],
+)
 
 const tools = computed(() => {
   const rows = []
@@ -142,7 +146,13 @@ function errorText(step) {
       <span v-if="errors.length" class="trace-stat trace-stat--bad">
         {{ errors.length }} error{{ errors.length === 1 ? '' : 's' }}
       </span>
+      <span v-if="mcpServers.length" class="trace-stat" :title="`MCP: ${mcpServers.join(', ')}`">
+        <i class="trace-stat-dot" data-kind="mcp"></i>
+        {{ mcpServers.join(', ') }}
+      </span>
     </div>
+
+    <p v-if="execution?.mcpNote" class="trace-digest-note">{{ execution.mcpNote }}</p>
 
     <details v-if="thoughts.length" class="trace-thoughts">
       <summary>

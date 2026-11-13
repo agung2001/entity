@@ -157,12 +157,13 @@ transport, not a second implementation.
   reads it back. A change outlives the run that made it, so the row is the only
   thing that can explain it later.
 
-`env` on an MCP server is a list of variable **names** — `mcp.json` never holds a
-value, and no verb returns one. Set the variable in the environment the app runs
-in. Account → MCP is the other direction: a loopback HTTP MCP endpoint with a
-bearer token, exposing `list_workspaces`, `get_workspace`, `list_entities`,
-`get_entity`, `create_entity`, `list_chats`, `read_chat` and `list_artifacts`.
-Reads work by default; `create_entity` needs **Allow writes**.
+`env` on an MCP server is either a list of variable **names** or a name → value
+map copied from a harness config; the pool may therefore hold a credential, and
+it is written 0600. No verb returns a value — `mcp list` reports
+`envKeys`/`headerKeys` only. Account → MCP is the other direction: a loopback HTTP
+MCP endpoint with a bearer token, exposing `list_workspaces`, `get_workspace`,
+`list_entities`, `get_entity`, `create_entity`, `list_chats`, `read_chat` and
+`list_artifacts`. Reads work by default; `create_entity` needs **Allow writes**.
 
 A write changes the file; the window notices without a reload because
 `workspace-watch.cjs` watches `entities/`, `skills/`, `workspace.json` and
@@ -294,7 +295,8 @@ src/
     ChatView.vue      thread transcript, row action menu, composer and minimap
     EntityDetailView.vue  entity page: editable harness/model, harness paths, Markdown instructions
     SkillsView.vue    the workspace's skill catalog (default tab) + the harness libraries tab
-    McpView.vue       workspace MCP pool + global harness MCP config (attach to pool)
+    McpView.vue       workspace MCP pool + global harness MCP config (a row opens one server)
+    McpServerView.vue  one MCP server: tools, definition, env, entities that narrow to it
     AccountView.vue   profile + password, sound, and the Entity MCP server connection
     ArtifactDetailView.vue  one artifact: inline preview, metadata, download/reveal/delete
     SkillDetailView.vue  overview / SKILL.md / files, read from the link target
@@ -368,6 +370,7 @@ history mode has no server to resolve a path on reload.
 | `#/:workspace/skills` | Workspace skills |
 | `#/:workspace/skills/:name` | Skill detail |
 | `#/:workspace/mcp` | Workspace MCP pool + global harness MCP configs |
+| `#/:workspace/mcp/:name` | One MCP server: tools, definition, environment, entities |
 | `#/:workspace/artifacts/:id` | Artifact detail: inline preview, metadata, download, reveal, delete |
 | `#/:workspace/machines` | Machines |
 | `#/:workspace/machines/:id` | Machine detail (connection, key copy, probe) |
@@ -479,10 +482,54 @@ to `<ws>/runs/<runId>.jsonl`. Status is the last `state`/`exit` line, so there i
 no index to keep consistent. A run that still says `running` with no child
 process (the app was quit) is reported as canceled. One run per entity at a time.
 
-MCP is enforced for **claude only**: the workspace pool is filtered to the
-entity's `mcp:` list, written to a temporary `--mcp-config` file and deleted when
-the run ends. `codex`, `opencode`, `pi` and `gemini` manage MCP in their own
-global config, and the UI says so instead of implying enforcement.
+### Shared MCP servers
+
+The workspace has one MCP pool (`<ws>/mcp.json`) and **every entity gets it**. Add a
+server once — on the MCP page, or by attaching one a harness on this machine
+already has configured — and any thread can use it. There is no per-entity step.
+
+An entity may narrow the pool in its own frontmatter, and `mcp: none` opts out
+entirely:
+
+```markdown
+---
+name: py-agent
+harness: claude
+mcp: youtrack
+---
+```
+
+Every message resolves the pool from disk again, so an edit in `$EDITOR` lands on
+the next turn with nothing to restart.
+
+What the turn then spawns depends on the harness. Each mechanism below was
+checked against the CLI itself; none of them writes into your own config:
+
+| harness | how the pool reaches it | merge or replace |
+| --- | --- | --- |
+| `claude` | `--mcp-config <file> --strict-mcp-config` | replaces (only the pool) |
+| `opencode` | `OPENCODE_CONFIG=<file>` | merges over its own |
+| `codex` | `-c mcp_servers.<name>.*` overrides; a bearer token rides in `ENTITY_MCP_<NAME>_TOKEN` | merges; the token never appears in `ps` |
+| `pi` | a generated `--extension` (`.mjs`) that calls `pi.registerMcpServer()` on load — the agent dir is not touched. Before pi 0.99 (or when the version cannot be read) it falls back to a temp `PI_CODING_AGENT_DIR` with `mcp.json` merged and everything else symlinked through | merges; pi's own `mcp.json` wins a same-name clash |
+| `gemini` | `GEMINI_CLI_HOME=<temp>`: a temp `~/.gemini` with `settings.json` merged, the rest symlinked, plus `--skip-trust` (gemini disables user-level MCP in an untrusted folder) | merges |
+
+The temp file or directory lives under `<ws>/runs/.mcp-*`, mode 0600, and is
+removed when the process exits.
+
+A server that is missing from the pool, or whose secret is unset, is reported on
+the turn (`mcpNote`) instead of half-written, and the turn still runs.
+
+Attaching a server from a harness config copies its definition **verbatim**,
+including the header or env value that makes it work — that is the point, and it
+is why `mcp.json` is written 0600. Nothing reads a value back: `entity mcp list`
+reports `envKeys`/`headerKeys`, the inventory shows names, and the audit log
+records the server name only. `${NAME}` in `args`/`url`/`headers` is still
+expanded from the app's environment if you would rather keep a token out of the
+file.
+
+The generated config is a second copy of those values, under
+`<ws>/runs/.mcp-*.json` at mode 0600: deleted when the process exits, and any
+left behind by a killed turn is pruned on the next one.
 
 ## Child processes
 
@@ -524,9 +571,10 @@ is the same bug as a harness leaked per quit.
   re-checks containment on the **resolved** path, `set-instructions` refuses a
   write that raced an outside edit, and every mutation is logged to
   `audit.jsonl`. It cannot reach another workspace, the ssh config, or a key.
-- MCP `env` entries are variable **names**; values resolve from the environment
-  at run time and are never written into `mcp.json`. Tool discovery returns only
-  tool names, descriptions and schemas; it never returns env values.
+- MCP servers may carry a credential in the pool (a header or env value copied
+  from a harness config). The file is 0600, no verb returns a value, the inventory
+  and audit log show names only, and tool discovery returns tool names,
+  descriptions and schemas — never the credential.
 - Chat transcripts contain model thinking and tool output. They live only in the
   workspace's own thread JSON and are never sent anywhere by the hub.
 - External links open in the OS browser; in-app navigation away from the app
@@ -548,7 +596,9 @@ packaged app renders a blank window.
   A skill reference is resolved on the thread's machine, and only this machine's
   libraries can be read — remote skill discovery is not implemented, so a remote
   thread offers none rather than a local path the far side cannot see.
-  MCP is enforced for claude only (see above).
+  MCP is injected per turn for all five harnesses: claude and opencode take a
+  config file, codex takes `-c` overrides, and pi and gemini run from a mirrored
+  config directory that is deleted afterwards (see "Shared MCP servers").
 - Remote placement and ssh deploy are not implemented; a directory in Finder is
   still the honest interface for a workspace that needs to be moved by hand.
 - The in-run tool is still the CLI. Account → MCP additionally exposes a

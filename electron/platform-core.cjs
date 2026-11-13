@@ -377,12 +377,16 @@ function normaliseArgs(value) {
 }
 
 function describeServer(entry) {
+  const env = entry.env
   return {
     command: entry.command || '',
     url: entry.url || '',
     args: Array.isArray(entry.args) ? entry.args : [],
-    /* names, never values — this is the whole reason the field is a list */
-    envKeys: Array.isArray(entry.env) ? entry.env : [],
+    /* keys only, never values: the pool may hold a token, but nothing that
+       reads it back — an agent, a log line, or a transcript — gets to see it */
+    envKeys: Array.isArray(env) ? env : env && typeof env === 'object' ? Object.keys(env) : [],
+    headerKeys:
+      entry.headers && typeof entry.headers === 'object' ? Object.keys(entry.headers) : [],
   }
 }
 

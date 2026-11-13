@@ -222,12 +222,25 @@ function normaliseServer(name, raw) {
   if (typeof args === 'string') args = [args]
   if (!Array.isArray(args)) args = []
 
+  /* env is either a list of names or a name → value object; both are copied so
+     attaching a working server brings its secret with it. Nothing here is ever
+     printed: the inventory shows names only. */
+  const rawEnv = raw.env || raw.environment
+  const env =
+    rawEnv && typeof rawEnv === 'object' && !Array.isArray(rawEnv)
+      ? Object.fromEntries(Object.entries(rawEnv).map(([key, value]) => [key, String(value)]))
+      : tableKeys(rawEnv)
+
   return {
     name: String(name),
     command: String(command || ''),
     args: args.map(String),
     url: String(raw.url || raw.serverUrl || raw.server_url || ''),
-    env: tableKeys(raw.env || raw.environment),
+    env,
+    headers:
+      raw.headers && typeof raw.headers === 'object' && !Array.isArray(raw.headers)
+        ? Object.fromEntries(Object.entries(raw.headers).map(([key, value]) => [key, String(value)]))
+        : undefined,
     type: String(raw.type || ''),
   }
 }

@@ -61,6 +61,8 @@ function definitions(workspace) {
             command: server.command,
             args: server.args,
             url: server.url,
+            headers: server.headers,
+            env: server.env,
           },
           source: server.harness,
           enabled: false,
@@ -105,7 +107,12 @@ function stdioTools(definition) {
     try {
       /* An MCP server may itself fork helpers; the tree is ours to close. */
       child = spawnTracked(String(definition.command), (definition.args || []).map(String), {
-        env: { ...process.env },
+        env: {
+          ...process.env,
+          /* a name → value map travels with the definition; a list of names is
+             already in process.env or is not there at all */
+          ...(definition.env && !Array.isArray(definition.env) ? definition.env : {}),
+        },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         kind: 'mcp',
@@ -245,6 +252,14 @@ function parsePayload(text, contentType) {
 
 async function httpTools(definition) {
   const url = String(definition.url || '')
+  /* the pool carries the bearer some servers need; a discovery call without it
+     would report "no tools" for a server the harness can use perfectly well */
+  const auth =
+    definition.headers && typeof definition.headers === 'object' && !Array.isArray(definition.headers)
+      ? Object.fromEntries(
+          Object.entries(definition.headers).filter(([, value]) => typeof value === 'string'),
+        )
+      : {}
   let session = ''
   const call = async (message) => {
     const controller = new AbortController()
@@ -253,6 +268,7 @@ async function httpTools(definition) {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
+          ...auth,
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
           ...(session ? { 'Mcp-Session-Id': session } : {}),
