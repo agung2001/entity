@@ -2,19 +2,21 @@
 
 This is the reference for anything that touches the interface: dialogs,
 popovers, keyboard handling, the top bar, the composer. It exists because the
-same two mistakes kept coming back:
+same mistakes kept coming back:
 
 1. a modal that only closes with the X button or the scrim, so `Esc` does
    nothing when focus is anywhere else;
 2. a shortcut typed into a component instead of registered once, so the hint
-   drifts from the handler and never appears in the guide.
+   drifts from the handler and never appears in the guide;
+3. a harness/model inventory rendered as bare text with no search, so a long
+   list is unusable and the brand mark is missing.
 
 Read this before adding a surface or a key. When a new class of mistake is
 found, add it to **Common mistakes** below — that is how this file stays
 useful. The rules that can be checked mechanically are enforced by
 `electron/ui-contract.test.cjs` (`npm test`).
 
-## Two non-negotiables
+## Three non-negotiables
 
 ### 1. Every dismissible surface closes on `Esc`
 
@@ -71,6 +73,44 @@ const hint = shortcutLabel('rail')                  // tooltip / <kbd>
 - If an action gets a shortcut, it belongs in the guide. A shortcut nobody can
   discover is a private joke.
 
+### 3. Inventories are searchable and carry their brand marks
+
+A machine's harness/model inventory is a list, not a paragraph. It can hold
+hundreds of model ids, so the page must let a person narrow it without relying
+on the browser's Find.
+
+- Every harness id/name shown in a list, card, detail row or picker uses
+  `<HarnessIcon :name="id" />` from `src/components/HarnessIcon.vue` next to the
+  label. The icon is the `thesvg.org` mark for that harness, not a generic dot.
+- A harness/model list (machine detail, capability panel, future runtime picker)
+  has a visible search input. It filters case-insensitively over the harness id,
+  label, path, default model and model ids.
+- Show the result count and an empty state ("No harness or model matches …").
+  Do not render an empty panel with no explanation.
+- Keep the search input on the page; do not hide it behind a menu or require
+  `Ctrl/Cmd+F`.
+- Long model lists stay inside a bounded scroll area; do not let the page grow
+  by hundreds of rows.
+
+#### Inventory row density
+
+A capability row is a compact control, not a card heading.
+
+- Keep three visual levels in the summary: `HarnessIcon` (12px), the label
+  (12px / 600), and one muted count (10px). Do not let the row inherit the
+  page's heading or body size.
+- Use **one separator system**. Put a top border on rows after the first
+  (`border-top` + `:first-child { border-top: 0 }`), or a bottom border on all
+  but the last. Never add a container top border *and* a row bottom border —
+  the first row then reads as a double border.
+- Do not repeat a state that the count already implies. “0 models” is enough in
+  the summary; put “no model list reported” in a tooltip or the expanded body.
+- Keep model/ID chips at 9.5–10px, and their container scrollable.
+- Check at least one zero-model harness and one harness with hundreds of models
+  before calling the row finished.
+- The expanded body is where the path, default model, source note and model
+  list belong. The summary stays one line.
+
 ## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
@@ -87,6 +127,14 @@ const hint = shortcutLabel('rail')                  // tooltip / <kbd>
 | Two surfaces open and both close on one `Esc` | One stack entry per surface, last opened is top | `useDialog.js` |
 | A new shortcut exists but is not in `?` | Add it to `SHORTCUT_GROUPS`; render the guide from the catalog | Review + guide |
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
+| A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
+| A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
+| Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
+| A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
+| A summary row inherits the card heading size | Set label/meta sizes explicitly: 12px label, 10px count | Review |
+| The first inventory row has a double border | Use one separator system: no container top border plus row borders | Review |
+| “No models” is repeated in the summary and the body | Keep the summary to `0 models`; explain once in the body/tooltip | Review |
+| An inventory row is taller than a normal list row | Keep 8px vertical padding and details behind the disclosure | Review |
 
 ## Surfaces and where they live
 
@@ -153,6 +201,11 @@ build` prints the chunk list — the entry chunk should not grow without a reaso
 3. Render every hint through `shortcutLabel` — never a literal.
 4. Run `npm test` (static contract) and open the guide with `?` to confirm the
    new row appears and closes the surface it belongs to.
-5. If the change taught you a new failure mode, add a row to **Common
+5. If the page renders harnesses, use `HarnessIcon` beside every label.
+6. If the page renders an inventory (harnesses, models, MCP tools, files), add
+   a search input unless it is guaranteed to stay shorter than one screen.
+7. For inventory rows, test zero data, hundreds of items, one separator system,
+   and a compact summary. Details belong in the expanded body.
+8. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.

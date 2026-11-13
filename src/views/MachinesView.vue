@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import HarnessIcon from '@/components/HarnessIcon.vue'
 import { fleet, loadFleet, probeHost, probeState } from '@/stores/fleet'
 import { hub, toast } from '@/stores/hub'
 import { forgetMachineFacts, machineFactsFor, workspaces } from '@/stores/workspaces'
@@ -65,8 +66,7 @@ const factFor = (alias) => machineFactsFor(alias)
 const harnessCount = (alias) => factFor(alias)?.harnesses?.length || 0
 const modelCount = (alias) =>
   (factFor(alias)?.harnesses || []).reduce((sum, entry) => sum + entry.models.length, 0)
-const harnessNames = (alias) =>
-  (factFor(alias)?.harnesses || []).slice(0, 3).map((entry) => entry.label).join(', ')
+const harnessPreview = (alias) => (factFor(alias)?.harnesses || []).slice(0, 3)
 const when = (alias) => {
   const at = factFor(alias)?.checkedAt
   if (!at) return ''
@@ -167,9 +167,16 @@ async function forget(alias) {
           <span v-else class="mono">not scanned</span>
         </div>
 
-        <p v-if="factFor(machine.alias)" class="mnote">
-          {{ harnessNames(machine.alias) }}{{ harnessCount(machine.alias) > 3 ? ' …' : '' }}
-          <span class="mono"> · {{ when(machine.alias) }}</span>
+        <p v-if="factFor(machine.alias)" class="mnote cap-preview">
+          <span
+            v-for="entry in harnessPreview(machine.alias)"
+            :key="entry.id"
+            class="cap-preview-item"
+          >
+            <HarnessIcon :name="entry.id" :size="10" />{{ entry.label }}
+          </span>
+          <span v-if="harnessCount(machine.alias) > 3">…</span>
+          <span class="mono">{{ when(machine.alias) }}</span>
         </p>
 
         <div class="mcard-actions">
@@ -206,3 +213,21 @@ async function forget(alias) {
     </p>
   </div>
 </template>
+
+<style scoped>
+.cap-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.cap-preview-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.cap-preview > .mono {
+  margin-left: auto;
+  opacity: 0.7;
+}
+</style>

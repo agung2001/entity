@@ -43,3 +43,16 @@ server). Keep it that way when adding a feature.
 
 Use `ENTITY_HOME=/tmp/…` for a scratch profile when testing, so real workspaces
 are never touched.
+
+## Do not commit or push without an explicit go-ahead
+
+An implementation request is **not** permission to publish it.
+
+1. Make the change locally, run the relevant tests/build, and stop.
+2. Do **not** `git commit`, `git push`, amend, rebase, tag, or trigger a deploy
+   until the user explicitly says to do so **after testing it manually**.
+3. Report the changed files, what was tested, and the exact manual-test steps.
+4. Wait for the user's approval before any git or deployment action.
+
+If a previous instruction said "commit and push", a later instruction to test
+manually first wins.

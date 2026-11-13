@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MachineIcon from '@/components/MachineIcon.vue'
+import HarnessIcon from '@/components/HarnessIcon.vue'
 import { fleet, loadFleet, probeHost, probeState } from '@/stores/fleet'
 import { hub, toast } from '@/stores/hub'
 import { forgetMachineFacts, machineFactsFor, workspaces } from '@/stores/workspaces'
@@ -14,6 +15,7 @@ import { forgetMachineFacts, machineFactsFor, workspaces } from '@/stores/worksp
 const route = useRoute()
 const router = useRouter()
 const busy = ref('')
+const query = ref('')
 
 onMounted(loadFleet)
 
@@ -64,6 +66,34 @@ const scannedAt = computed(() => {
 })
 const modelCount = computed(
   () => (facts.value?.harnesses || []).reduce((sum, entry) => sum + entry.models.length, 0),
+)
+
+/* One search box for both axes: a person may remember a harness, a binary path
+   or a model id, and should not have to scan hundreds of ids to find it. */
+const matchingModels = (entry) => {
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) return entry.models || []
+  const harnessText = [entry.id, entry.label, entry.path, entry.default]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  if (harnessText.includes(needle)) return entry.models || []
+  return (entry.models || []).filter((model) => model.toLowerCase().includes(needle))
+}
+
+const matchesHarness = (entry) => {
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) return true
+  const harnessText = [entry.id, entry.label, entry.path, entry.default]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return harnessText.includes(needle) || (entry.models || []).some((model) => model.toLowerCase().includes(needle))
+}
+
+const filteredHarnesses = computed(() => (facts.value?.harnesses || []).filter(matchesHarness))
+const visibleModelCount = computed(() =>
+  filteredHarnesses.value.reduce((sum, entry) => sum + matchingModels(entry).length, 0),
 )
 
 async function scan() {
@@ -186,23 +216,46 @@ const sourceLabel = (entry) => {
               <dd>{{ facts.harnesses.length }}</dd>
             </dl>
 
-            <div v-if="facts.harnesses.length" class="cap-list">
-              <details v-for="entry in facts.harnesses" :key="entry.id" class="cap-entry">
+            <div v-if="facts.harnesses.length" class="cap-search">
+              <input
+                v-model="query"
+                class="acct-input"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Search harness, path or model…"
+                aria-label="Search harnesses and models"
+              />
+              <span v-if="query" class="mnote">
+                {{ filteredHarnesses.length }} harnesses · {{ visibleModelCount }} models
+              </span>
+            </div>
+
+            <div v-if="filteredHarnesses.length" class="cap-list">
+              <details
+                v-for="entry in filteredHarnesses"
+                :key="entry.id"
+                class="cap-entry"
+                :open="query ? true : undefined"
+              >
                 <summary>
+                  <HarnessIcon :name="entry.id" :size="12" />
                   <b>{{ entry.label }}</b>
-                  <span>{{ entry.models.length }} models</span>
-                  <em>{{ sourceLabel(entry) }}</em>
+                  <span :title="sourceLabel(entry)">{{ matchingModels(entry).length }} models</span>
                 </summary>
                 <p v-if="entry.path" class="mono cap-path">{{ entry.path }}</p>
                 <p v-if="entry.default" class="mnote">
                   Default: <code class="mono">{{ entry.default }}</code>
                 </p>
-                <div v-if="entry.models.length" class="cap-models">
-                  <code v-for="model in entry.models" :key="model" class="mono">{{ model }}</code>
+                <div v-if="matchingModels(entry).length" class="cap-models">
+                  <code v-for="model in matchingModels(entry)" :key="model" class="mono">{{ model }}</code>
                 </div>
-                <p v-else class="mnote">This CLI did not report a model list.</p>
+                <p v-else class="mnote">No model list reported by this CLI.</p>
               </details>
             </div>
+            <p v-else-if="facts.harnesses.length" class="mnote">
+              No harness or model matches “{{ query }}”.
+            </p>
             <p v-else class="mnote">
               Connected, but none of the known harnesses are installed on this host.
             </p>
@@ -231,40 +284,53 @@ const sourceLabel = (entry) => {
 </template>
 
 <style scoped>
-.cap-list {
+.cap-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 14px;
-  border-top: 1px solid currentColor;
-  border-color: color-mix(in srgb, currentColor 14%, transparent);
+}
+.cap-search .acct-input {
+  width: 100%;
+}
+.cap-list {
+  margin-top: 8px;
 }
 .cap-entry {
-  border-bottom: 1px solid currentColor;
-  border-color: color-mix(in srgb, currentColor 14%, transparent);
+  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.cap-entry:first-child {
+  border-top: 0;
 }
 .cap-entry summary {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 10px 0;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
   cursor: pointer;
   list-style: none;
+  font-size: 12px;
 }
 .cap-entry summary::-webkit-details-marker {
   display: none;
 }
 .cap-entry summary b {
   flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
-.cap-entry summary span,
-.cap-entry summary em {
-  font-size: 11px;
-  opacity: 0.7;
+.cap-entry summary :deep(.harness-icon) {
+  flex: 0 0 auto;
+}
+.cap-entry summary span {
+  font-size: 10px;
+  opacity: 0.62;
   font-style: normal;
-}
-.cap-entry summary em {
-  display: none;
+  white-space: nowrap;
 }
 .cap-path {
-  font-size: 11px;
+  font-size: 10px;
   opacity: 0.7;
   word-break: break-all;
   margin: 0 0 8px;
@@ -278,7 +344,7 @@ const sourceLabel = (entry) => {
   padding: 0 0 12px;
 }
 .cap-models code {
-  font-size: 10px;
+  font-size: 9.5px;
   padding: 2px 5px;
   border: 1px solid currentColor;
   border-color: color-mix(in srgb, currentColor 18%, transparent);

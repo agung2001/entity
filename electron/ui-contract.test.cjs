@@ -28,6 +28,13 @@ const FILES = walk(SRC).map((file) => ({
   text: fs.readFileSync(file, 'utf8'),
 }))
 
+test('the machine capability page brands harnesses and offers search', () => {
+  const file = path.join(SRC, 'views', 'MachineDetailView.vue')
+  const text = fs.readFileSync(file, 'utf8')
+  assert.match(text, /<HarnessIcon\b/, 'harnesses need their thesvg mark')
+  assert.match(text, /type="search"/, 'the harness/model inventory needs a search input')
+})
+
 test('every modal registers an Escape handler', () => {
   const modals = FILES.filter((entry) => /class="[^"]*\bmodal\b/.test(entry.text))
   assert.ok(modals.length > 0, 'expected at least one modal in src/')
