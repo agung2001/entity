@@ -508,4 +508,11 @@ function createRunner({ emit = () => {} } = {}) {
   return { start, cancel, list, latest, snapshot, closeAll, activeCount: () => active.size }
 }
 
-module.exports = { createRunner, invocation, chatInvocation, HARNESSES: entities.HARNESSES }
+module.exports = {
+  createRunner,
+  invocation,
+  chatInvocation,
+  /* A one-shot prompt with no MCP and no run log; used by the sync evaluator. */
+  oneShotInvocation: baseInvocation,
+  HARNESSES: entities.HARNESSES,
+}

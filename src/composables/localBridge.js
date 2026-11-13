@@ -52,21 +52,63 @@ export async function call(fn, args = {}) {
   return payload?.data
 }
 
-/** Subscribe to streamed run events. Returns an unsubscribe function. */
-export function onRunEvent(cb) {
-  if (hasDesktopBridge() && typeof bridge().onRunEvent === 'function') {
-    return bridge().onRunEvent(cb)
+/**
+ * Streamed events: one transport for the whole window, however many stores
+ * subscribe. In the browser that is one EventSource instead of one per store
+ * (the run console and remote sync both need frames); in Electron it is one
+ * IPC listener with the same fan-out.
+ */
+const eventListeners = new Set()
+let eventStreamStarted = false
+let eventStreamStop = () => {}
+
+function startEventStream() {
+  if (eventStreamStarted) return
+  eventStreamStarted = true
+  const dispatch = (payload) => {
+    for (const listener of eventListeners) {
+      try {
+        listener(payload)
+      } catch {
+        /* one bad listener must not starve the others */
+      }
+    }
   }
-  if (typeof EventSource === 'undefined') return () => {}
+  if (hasDesktopBridge() && typeof bridge().onRunEvent === 'function') {
+    eventStreamStop = bridge().onRunEvent(dispatch)
+    return
+  }
+  if (typeof EventSource === 'undefined') {
+    eventStreamStop = () => {}
+    return
+  }
   const source = new EventSource(`${LOCAL}/events`)
   source.onmessage = (event) => {
     try {
-      cb(JSON.parse(event.data))
+      dispatch(JSON.parse(event.data))
     } catch {
       /* a malformed frame is not worth killing the stream over */
     }
   }
-  return () => source.close()
+  eventStreamStop = () => source.close()
+}
+
+/** Subscribe to streamed events. Returns an unsubscribe function. */
+export function onRunEvent(cb) {
+  eventListeners.add(cb)
+  startEventStream()
+  return () => {
+    eventListeners.delete(cb)
+    if (!eventListeners.size) {
+      try {
+        eventStreamStop()
+      } catch {
+        /* already closed */
+      }
+      eventStreamStarted = false
+      eventStreamStop = () => {}
+    }
+  }
 }
 
 export async function readSshHosts() {

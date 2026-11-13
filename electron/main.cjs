@@ -4,6 +4,7 @@ const { createRpc } = require('./rpc.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
 const registry = require('./child-registry.cjs')
 const workspaces = require('./workspace-store.cjs')
+const remoteSync = require('./remote-sync.cjs')
 
 // Set by `npm run dev:desktop`; empty when running a built app.
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL
@@ -63,6 +64,15 @@ function createWindow() {
 
 /** Run events go to every window; they carry their own workspace id. */
 function broadcast(event) {
+  /* A local edit in a connected workspace is the push half of two-way sync.
+     The debounce lives in the sync module, so a burst of writes is one pass. */
+  if (event?.kind === 'workspace-changed' && event.workspace) {
+    try {
+      remoteSync.noteLocalChange(event.workspace)
+    } catch {
+      /* a sync that cannot start is reported by the next poll */
+    }
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('entity:event', event)
   }

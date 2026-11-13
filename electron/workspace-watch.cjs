@@ -15,7 +15,17 @@
  */
 const fs = require('node:fs')
 
-const RELEVANT = [/^entities\/.+\.md$/, /^skills\//, /^workspace\.json$/, /^mcp\.json$/]
+const RELEVANT = [
+  /^entities\/.+\.md$/,
+  /^skills\//,
+  /^workspace\.json$/,
+  /^mcp\.json$/,
+  /* Artifacts are not read by the entity list, but they are part of a remote
+     workspace. Including them here is what makes a local artifact edit push
+     without waiting for the six-hour poll. The renderer reload is debounced and
+     cheap; the sync pass hashes only changed files. */
+  /^artifacts\//,
+]
 
 /** `<id>/entities/foo.md` → `{ id, rest }` */
 function split(relative) {

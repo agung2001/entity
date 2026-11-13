@@ -20,7 +20,12 @@
     "clean:dev": "bash scripts/clean-dev.sh",
     "start": "electron .",
     "test": "node --test \"electron/**/*.test.cjs\"",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "serve": "node server/index.cjs",
+    "start:server": "npm run build && node server/index.cjs",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f entity"
   },
   "dependencies": {
     "dompurify": "^3.4.17",

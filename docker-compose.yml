@@ -1,0 +1,66 @@
+services:
+  entity:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: entity:latest
+    container_name: entity
+    restart: unless-stopped
+    # PID 1 for a Node app: forwards SIGTERM, reaps children.
+    init: true
+
+    # nginx (already handling TLS) proxies https://entity.example.com to
+    # this port. Keep the Host header and set X-Forwarded-Proto https.
+    ports:
+      - "${ENTITY_PORT:-1020}:1020"
+
+    environment:
+      ENTITY_HOME: /data
+      ENTITY_HOST: 0.0.0.0
+      ENTITY_PORT: "1020"
+
+      # Created only when the account store is empty. Changing the password later
+      # in the UI is not overwritten by a restart.
+      ENTITY_ADMIN_EMAIL: ${ENTITY_ADMIN_EMAIL:?Set ENTITY_ADMIN_EMAIL in .env}
+      ENTITY_ADMIN_PASSWORD: ${ENTITY_ADMIN_PASSWORD:?Set ENTITY_ADMIN_PASSWORD in .env (min 8 chars)}
+      ENTITY_ADMIN_NAME: ${ENTITY_ADMIN_NAME:-}
+
+      ENTITY_SESSION_DAYS: ${ENTITY_SESSION_DAYS:-30}
+      # Behind the HTTPS reverse proxy this must stay true.
+      ENTITY_SECURE_COOKIE: ${ENTITY_SECURE_COOKIE:-true}
+      # The client-side poll interval is separate; this one is kept for parity
+      # with a sync client that runs inside the container.
+      ENTITY_SYNC_INTERVAL_MS: ${ENTITY_SYNC_INTERVAL_MS:-21600000}
+
+      # Optional second-opinion model for the sync guard. Empty = deterministic
+      # pattern scan only.
+      ENTITY_GUARD_AI_URL: ${ENTITY_GUARD_AI_URL:-}
+      ENTITY_GUARD_AI_MODEL: ${ENTITY_GUARD_AI_MODEL:-}
+      ENTITY_GUARD_AI_KEY: ${ENTITY_GUARD_AI_KEY:-}
+
+    volumes:
+      - entity-data:/data
+
+    # The container never needs to change its own filesystem: workspaces live in
+    # the volume, temp files in tmpfs, the image stays read-only.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:1020/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  entity-data:

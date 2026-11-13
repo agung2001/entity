@@ -13,6 +13,7 @@ const RPC_PATH = require.resolve('./electron/rpc.cjs')
 const WATCH_PATH = require.resolve('./electron/workspace-watch.cjs')
 const STORE_PATH = require.resolve('./electron/workspace-store.cjs')
 const REGISTRY_PATH = require.resolve('./electron/child-registry.cjs')
+const REMOTE_SYNC_PATH = require.resolve('./electron/remote-sync.cjs')
 
 /** Resolved each time: the dev server drops `electron/*.cjs` from the module
     cache on edit, and a cached registry would forget processes it still owns. */
@@ -59,6 +60,13 @@ function localDataPlugin() {
 
   /** one SSE frame per event, to every open window */
   function push(event) {
+    if (event?.kind === 'workspace-changed' && event.workspace) {
+      try {
+        require(REMOTE_SYNC_PATH).noteLocalChange(event.workspace)
+      } catch {
+        /* reported by the next poll */
+      }
+    }
     const line = `data: ${JSON.stringify(event)}\n\n`
     for (const res of clients) {
       try {

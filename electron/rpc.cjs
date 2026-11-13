@@ -22,10 +22,21 @@ const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const platform = require('./platform-core.cjs')
+const remoteSync = require('./remote-sync.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
-function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
+function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {}) {
   const runner = createRunner({ emit })
+  /* A six-hour poll plus a debounce after the watcher reports a local edit.
+     `start` is idempotent, so a dev-server reload does not stack timers. */
+  remoteSync.start({ emit })
+  /* The desktop app has one account in `~/.entity/auth.json`. The server build
+     passes the signed-in server user instead, so the same call table writes the
+     right owner without a second implementation. */
+  const currentUser = () => (typeof identity === 'function' ? identity() : auth.get())
+  /* Threads are private to their account; the server's per-request identity has
+     to reach the chat store, not just the call table. */
+  chats.setIdentityResolver(() => currentUser())
 
   const handlers = {
     /* workspace */
@@ -33,8 +44,10 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.needsSetup': () => workspaces.needsSetup(),
     'workspace.open': ({ id }) => workspaces.open(id),
     'workspace.create': (args) => {
-      const user = auth.get()
-      const owner = user ? { name: user.username, email: user.email } : args?.owner || null
+      const user = currentUser()
+      const owner = user
+        ? { name: user.name || user.username, email: user.email }
+        : args?.owner || null
       return workspaces.create({ ...args, owner })
     },
     'workspace.update': (args) => workspaces.update(args),
@@ -55,8 +68,10 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'workspace.context': ({ id }) => workspaces.open(id).context || '',
     'workspace.setContext': (args) => workspaces.setContext(args),
     'workspace.claimOwner': (args) => {
-      const user = auth.get()
-      const owner = user ? { name: user.username, email: user.email } : args?.owner || null
+      const user = currentUser()
+      const owner = user
+        ? { name: user.name || user.username, email: user.email }
+        : args?.owner || null
       return workspaces.claimOwner({ ...args, owner })
     },
     'workspace.library': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
@@ -80,6 +95,9 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     'mcpServer.rotate': () => mcpServer.rotate(),
     'mcpServer.test': () => mcpServer.test(),
     'auth.status': () => auth.status(),
+    /* The desktop and the dev server answer false; the shared server build
+       intercepts this before the call table and answers true. */
+    'server.mode': () => ({ server: false }),
     'auth.verify': (args) => auth.verify(args),
     'auth.register': (args) => auth.register(args),
     'auth.adopt': (args) => auth.adopt(args),
@@ -162,6 +180,22 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
       return localData.probeSshHost(target, { configFile })
     },
     'skills.scan': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
+
+    /* remote workspace sync: one connection per workspace, kept in
+       <ws>/.remote.json and <ws>/.remote.token (0600) */
+    'remote.discover': (args) => remoteSync.discover(args),
+    'remote.connect': (args) => remoteSync.connect(args, { emit }),
+    'remote.reconnect': (args) => remoteSync.reconnect(args, { emit }),
+    'remote.sync': (args) => remoteSync.sync({ id: args?.id, reason: args?.reason || 'manual' }, { emit }),
+    'remote.status': (args) => remoteSync.status(args),
+    'remote.list': () => remoteSync.list(),
+    'remote.disconnect': (args) => remoteSync.disconnect(args),
+    'remote.approve': (args) => remoteSync.approve(args),
+    'remote.setGuard': (args) => remoteSync.setGuard(args),
+    'remote.noteLocalChange': ({ id } = {}) => {
+      remoteSync.noteLocalChange(id)
+      return { noted: true }
+    },
     'skills.read': ({ harness, name }) =>
       localData.readSkillEntry(String(harness || ''), String(name || '')),
 
@@ -199,6 +233,7 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
         /* the runner still has children to stop */
       }
       runner.closeAll()
+      remoteSync.stop()
       await mcpServer.stop()
     },
     activeCount: () => runner.activeCount() + chats.activeCount(),

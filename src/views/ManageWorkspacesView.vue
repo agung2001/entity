@@ -1,12 +1,23 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { onRunEvent } from '@/composables/localBridge'
 import BrandMark from '@/components/BrandMark.vue'
+import RemoteConnectDialog from '@/components/RemoteConnectDialog.vue'
+import RemoteSyncPanel from '@/components/RemoteSyncPanel.vue'
 import { matchesQuery } from '@/composables/search'
 import { hub, openWizard, toast } from '@/stores/hub'
 import {
+  ensureRemoteStream,
+  loadRemote,
+  openRemotePanel,
+  remote,
+  remoteFor,
+} from '@/stores/remote'
+import {
   exportWorkspace,
   importWorkspace,
+  loadWorkspaceList,
   openWorkspace,
   removeWorkspace,
   workspaces,
@@ -20,6 +31,7 @@ const router = useRouter()
 const busy = ref('')
 const confirming = ref('')
 const importing = ref(false)
+const remoteOpen = ref(false)
 const fileInput = ref(null)
 const query = ref('')
 const view = ref('grid')
@@ -38,6 +50,55 @@ const displayName = computed(() => {
       .join(' ') || 'there'
   )
 })
+
+/* Remote state is loaded once for the page; streamed events keep it fresh. A
+   workspace created outside this tab (an import, a remote connect) becomes a
+   card without a reload, and an entity edit updates the counts. */
+let reloadTimer = 0
+let unsubscribe = null
+onMounted(() => {
+  ensureRemoteStream()
+  loadRemote().catch(() => {})
+  loadWorkspaceList().catch(() => {})
+  unsubscribe = onRunEvent((event) => {
+    if (event?.kind !== 'workspace-changed') return
+    clearTimeout(reloadTimer)
+    reloadTimer = setTimeout(() => {
+      loadWorkspaceList().catch(() => {})
+      loadRemote().catch(() => {})
+    }, 400)
+  })
+})
+onBeforeUnmount(() => {
+  clearTimeout(reloadTimer)
+  unsubscribe?.()
+})
+
+const remoteTone = (state) => {
+  if (!state) return 'off'
+  if (state.status === 'blocked') return 'blocked'
+  if (state.status === 'error' || state.status === 'unauthorized') return 'error'
+  if (state.status === 'syncing') return 'busy'
+  return 'ok'
+}
+
+const remoteTitle = (state) => {
+  if (!state) return ''
+  if (state.status === 'blocked') return 'Sync stopped — review required'
+  if (state.status === 'syncing') return 'Syncing…'
+  if (state.status === 'error') return state.lastError || 'Last sync failed'
+  if (state.status === 'unauthorized') return 'Session rejected — reconnect'
+  return state.lastSyncAt ? `Synced ${new Date(state.lastSyncAt).toLocaleString()}` : 'Connected'
+}
+
+function openConnect() {
+  remoteOpen.value = true
+}
+
+function onConnected(result) {
+  const id = result?.record?.id
+  if (id) openRemotePanel(id)
+}
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -229,6 +290,13 @@ async function deleteOne(record) {
         </p>
       </div>
       <div class="wsl-hero-actions">
+        <button v-if="!remote.server" class="btn" type="button" @click="openConnect">
+          <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="5.4" />
+            <path d="M2.6 8h10.8M8 2.6c1.6 1.5 2.4 3.3 2.4 5.4s-.8 3.9-2.4 5.4C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.6z" />
+          </svg>
+          Connect remote
+        </button>
         <button class="btn" type="button" :disabled="importing" @click="pickImport">
           <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M8 10.5V2.6M4.8 5.8L8 2.5l3.2 3.3" />
@@ -295,7 +363,15 @@ async function deleteOne(record) {
         >
           <div class="wsl-card-top">
             <div class="wsl-card-id">
-              <h3>{{ record.label }}</h3>
+              <h3>
+                {{ record.label }}
+                <span
+                  v-if="remoteFor(record.id)"
+                  class="wsl-remote"
+                  :data-tone="remoteTone(remoteFor(record.id))"
+                  :title="remoteTitle(remoteFor(record.id))"
+                >remote</span>
+              </h3>
               <p>{{ record.displayPath }}</p>
             </div>
             <details class="wsl-menu" @click.stop>
@@ -305,6 +381,8 @@ async function deleteOne(record) {
               <div class="wsl-menu-pop" role="menu">
                 <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
                 <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
+                <button v-if="remoteFor(record.id)" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
+                <button v-else-if="!remote.server" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
                 <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">{{ busy === `export:${record.id}` ? 'Exporting…' : 'Export as one file' }}</button>
                 <button class="danger" type="button" role="menuitem" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
               </div>
@@ -316,7 +394,13 @@ async function deleteOne(record) {
             <span><b>{{ record.counts.machines }}</b><span>machines</span></span>
           </div>
           <div class="wsl-foot">
-            <span class="wsl-lf"><span class="wsl-kt">{{ record.kind }}</span><span>{{ createdLabel(record) }}</span></span>
+            <span class="wsl-lf">
+              <span v-if="remoteFor(record.id)" class="wsl-remote-chip" :data-tone="remoteTone(remoteFor(record.id))">
+                <i></i>{{ remoteTitle(remoteFor(record.id)) }}
+              </span>
+              <span v-else class="wsl-kt">{{ record.kind }}</span>
+              <span>{{ createdLabel(record) }}</span>
+            </span>
             <span v-if="record.id === workspaces.active" class="wsl-cur"><i></i>current</span>
             <button v-else class="wsl-open-link" type="button" @click.stop="settingsOne(record)">Settings →</button>
           </div>
@@ -329,7 +413,7 @@ async function deleteOne(record) {
         </div>
         <div v-for="record in filtered" :key="record.id" class="wsl-row" :data-active="record.id === workspaces.active ? '1' : '0'">
           <button class="wsl-row-name" type="button" @click="openOne(record)">
-            <b>{{ record.label }}</b><span>{{ record.displayPath }}</span>
+            <b>{{ record.label }} <span v-if="remoteFor(record.id)" class="wsl-remote" :data-tone="remoteTone(remoteFor(record.id))">remote</span></b><span>{{ record.displayPath }}</span>
           </button>
           <span class="num">{{ record.counts.entities }}</span>
           <span class="num">{{ record.counts.skills }}</span>
@@ -343,6 +427,8 @@ async function deleteOne(record) {
             <div class="wsl-menu-pop" role="menu">
               <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
               <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
+              <button v-if="remoteFor(record.id)" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
+              <button v-else-if="!remote.server" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
               <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">Export as one file</button>
               <button class="danger" type="button" role="menuitem" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
             </div>
@@ -361,5 +447,8 @@ async function deleteOne(record) {
       <span><b>{{ workspaces.items.length }}</b> workspaces · <b>{{ totals.entities }}</b> entities · <b>{{ totals.skills }}</b> skills · <b>{{ totals.machines }}</b> machines</span>
       <span class="r">Copyright by Agung Sundoro</span>
     </p>
+
+    <RemoteConnectDialog :open="remoteOpen" @close="remoteOpen = false" @connected="onConnected" />
+    <RemoteSyncPanel :workspace="remote.panel" />
   </div>
 </template>

@@ -259,7 +259,7 @@ function isActive(item) {
 }
 const user = computed(() => hub.session?.user || 'no session')
 
-/* "agung@studio.dev" → "Agung" in the account menu, the full handle underneath */
+/* "you@example.dev" → "You" in the account menu, the full handle underneath */
 const displayName = computed(() => {
   const local = user.value.split('@')[0]
   return (

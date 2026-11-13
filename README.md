@@ -8,10 +8,11 @@ produce. A **workspace is a directory** — `~/.entity/workspaces/<id>/` — so
 switching workspaces changes the entities, skills, machines and run history at
 once, and everything survives quitting the app.
 
-This step runs entities **on this Mac**: a real harness process (`claude`,
-`codex`, `pi`, `opencode`, `gemini`), a real working directory, a real exit code.
-Remote execution is deliberately not implemented yet; an attached ssh host is the
-frame that step fills in.
+Entities run **on this machine**: a real harness process (`claude`, `codex`,
+`pi`, `opencode`, `gemini`), a real working directory, a real exit code. The app
+can also run as a shared server and keep a workspace **two-way synced** with it
+(see "Deploy the server" and "Remote workspaces"); remote *agent execution* over
+ssh is still deliberately not implemented.
 
 ## Requirements
 
@@ -52,6 +53,102 @@ Visual checks use disposable headless Chrome profiles under
 leftover dev server and those headless browsers without touching a normal Chrome
 window.
 
+## Deploy the server (Docker)
+
+The same app can run as a shared server. It serves the built renderer and the
+call table behind a login, so a teammate can open the workspaces their account
+is a member of.
+
+```bash
+cp .env.example .env        # set ENTITY_ADMIN_EMAIL + a long ENTITY_ADMIN_PASSWORD
+docker compose up -d --build
+docker compose logs -f entity
+```
+
+The admin account is created only while the account store is empty, so changing
+the password later is not overwritten by a compose restart. Server accounts are
+separate from the desktop's `~/.entity/auth.json`. Add teammates from the
+container (the password is read from the environment, never argv):
+
+```bash
+docker compose exec -e ENTITY_NEW_PASSWORD='a long password' entity \
+  node server/users.cjs add teammate@example.com "Teammate"
+docker compose exec entity node server/users.cjs list
+```
+
+Then open the server URL, sign in, create a workspace, and add the teammate's
+email under Workspace settings → Members. The teammate connects from their own
+machine as described below.
+
+`docker-compose.yml` publishes **port 1020** and nothing else. Point the
+existing nginx at it (for example `proxy_pass http://127.0.0.1:1020;`) for
+`https://entity.example.com`. nginx must forward `Host` and set
+`X-Forwarded-Proto: https`, and should disable buffering for
+`/__entity/events` so run output streams. Keep `ENTITY_SECURE_COOKIE=true`;
+for a direct plain-`http://` smoke test set it to `false`, or the browser will
+not send the session cookie back.
+
+The data directory is the named volume `entity-data` mounted at `/data`
+(`ENTITY_HOME`). A bind mount works too, but the directory must be writable by
+uid `10001` (`sudo chown -R 10001:10001 ./data`). The image runs as an
+unprivileged user (uid 10001), with a
+read-only root filesystem, a tmpfs `/tmp`, `cap_drop: ALL` and
+`no-new-privileges`. The server only needs Node built-ins; there is no
+`npm install` at runtime.
+
+```bash
+npm run serve             # local server against the current dist/
+npm run start:server      # build, then serve
+npm run docker:up         # compose up -d --build
+```
+
+## Remote workspaces (two-way sync)
+
+On the workspace picker, **Connect remote** asks for the server URL, your email
+and password, finds the workspaces that account may open, and clones the one you
+pick into a local workspace of the same name (kind `remote`).
+
+- **What syncs.** `entities/**`, `artifacts/**`, the attached skill names and
+  harnesses, the enabled MCP pool, and the shared workspace metadata (label,
+  context, `mcpStrict`, owner and member roster).
+- **What does not.** Skill bodies (each machine re-links its own harness
+  library), MCP secrets (`env`/`header` values become `***`), copied SSH keys,
+  generated `machines/CONFIG`, chats and run logs.
+- **Incremental.** Both ends hash the same content-addressed manifest. The local
+  side keeps the manifest from the last successful pass and does a three-way
+  diff (base / local / remote), so only changed paths move.
+- **When.** A pass every six hours (`ENTITY_SYNC_INTERVAL_MS` for the client
+  process), a debounced push ~2.5 s after the workspace watcher sees a local
+  edit, and **Sync now** in the remote panel.
+- **Conflicts.** If both sides changed one file, the remote version keeps the
+  path and the local bytes are written to
+  `artifacts/conflicts/<path>.<timestamp>.local.<ext>`, then pushed. Nothing is
+  silently discarded.
+- **Deletes** move the file to `.remote-trash/<timestamp>/` on the deleting
+  side instead of unlinking it. Writes are conditional (`x-entity-base`), so a
+  concurrent edit answers `409` and is resolved on the next pass rather than
+  clobbered.
+- **MCP is quarantined, not trusted.** A server that is new to this machine
+  lands in `mcp.json`'s `disabled[]` until a person enables it; a remote
+  `command` is code.
+- **The guard runs first.** Every pulled text blob is scanned for prompt
+  injection, credential export, shell pipes, invisible unicode and injected
+  markup. A high-severity finding aborts the pass *before any write*, marks the
+  connection `blocked`, and shows the excerpt. Approving binds to the exact
+  sha256; editing the file arms the guard again.
+- **Second opinion: your own local harness.** The connect dialog (and the
+  remote panel afterwards) can enable an agent reviewer and choose which
+  installed CLI — `claude`, `codex`, `pi`, `opencode`, `gemini` — and which
+  model reviews the pulled bytes. It runs one-shot in a scratch directory with
+  a strict JSON brief. If the configured evaluator cannot run, the sync stops
+  with an error rather than pretending it was checked. The deterministic scan
+  always runs first. (`ENTITY_GUARD_AI_URL` + `ENTITY_GUARD_AI_MODEL` +
+  `ENTITY_GUARD_AI_KEY` remain available as an HTTP-model alternative when no
+  local harness is selected.)
+
+Connection state lives in `<ws>/.remote.json`; the bearer token in
+`<ws>/.remote.token` (mode 0600). The password is not stored.
+
 ## Where data lives
 
 ```
@@ -71,6 +168,12 @@ window.
   runs/<runId>.jsonl               append-only run log
   audit.jsonl                      one line per agent-initiated write
   .bin/entity                      launcher for the CLI, regenerated per run
+  .remote.json                     connection + the base manifest after a sync
+  .remote.token                    bearer token for the server, mode 0600
+  .remote-trash/<stamp>/<path>     files a remote delete removed locally
+~/.entity/server-users.json        server build: multi-user scrypt verifiers (0600)
+~/.entity/server-secret            server build: HMAC session key (0600)
+~/.entity/trash/<ws>/<stamp>/      files a remote delete removed on the server
 ```
 
 `~/.entity/harnesses.json` holds the optional machine-wide binary path overrides (`{ "paths": { "claude": "/opt/.../claude" } }`).
@@ -305,6 +408,10 @@ electron/
   platform-core.cjs   the agent-facing verbs: the only writer an agent can reach
   platform-brief.cjs  what every run is told (brief + workspace context) and env
   platform-audit.cjs  <ws>/audit.jsonl — one line per agent-initiated write
+  remote-manifest.cjs content-addressed workspace manifest + path scoping
+  remote-guard.cjs    pre-write scan: prompt injection, credential export, payloads
+  harness-review.cjs  optional second opinion: one-shot local CLI over pulled files
+  remote-sync.cjs     three-way incremental sync, 6h poll, conflict copies, quarantine
   workspace-watch.cjs fs.watch over workspaces → "a file changed, re-read it"
   cli.cjs             the `entity` CLI; a transport over platform-core, no fs
   frontmatter.cjs     the flat frontmatter parser shared by entities and skills
@@ -312,6 +419,14 @@ electron/
   local-data.cjs      ~/.ssh/config parser, ssh probes, harness skill scanner
 scripts/
   dev-desktop.mjs     runs Vite programmatically, then launches Electron
+server/
+  index.cjs           HTTP server: static renderer, auth, call table, sync API
+  auth.cjs            multi-user scrypt accounts + HMAC sessions
+  sync.cjs            manifest/blob routes, membership, conditional writes
+  static.cjs          dist serving + history fallback
+  users.cjs           terminal account admin (add / list / password / remove)
+Dockerfile            renderer build stage + non-root runtime
+docker-compose.yml    volume, read-only rootfs, healthcheck, port 1020
 bin/
   entity              the same CLI for a terminal, a hook or CI
 src/
@@ -335,7 +450,8 @@ src/
     MachinesView.vue  workspace attachments + fleet tabs from ~/.ssh/config
     MachineDetailView.vue  one host: connection, key copy, probe, attachment
     ActivityView.vue  thread journal + one tab per harness session store (cached counts)
-    ManageWorkspacesView.vue  the post-login room picker: search, sort, new/import/export/delete
+    ManageWorkspacesView.vue  the post-login room picker: search, sort, new/import/export/delete,
+                              connect remote, per-workspace remote status
   components/
     EntityMark.vue    the animated voxel character
     HarnessIcon.vue   brand marks for the skill filter pills
@@ -360,11 +476,14 @@ src/
     NewThreadDialog.vue    searchable entity/harness picks, detected models before a thread starts
     TranscriptDialog / TraceTimeline  one execution's command, timing, thinking, tools
     CommandPalette.vue    categorized search: workspaces, chat, entities, skills, machines, activity
+    RemoteConnectDialog.vue  server URL + credentials → workspace picker → connect & pull
+    RemoteSyncPanel.vue      last pass, conflicts, guard findings, approve, disconnect
     ToastHost.vue
   composables/
     entityMark.js     30 pixel silhouettes, renderer, colour wheel + one shared rAF loop
     useDesktop.js     wrapper over the preload bridge
     localBridge.js    `call()` and `onRunEvent()`: IPC in Electron, HTTP+SSE in a browser
+                      (one event stream shared by every subscribing store)
   stores/
     hub.js            session, the active workspace's view model and chat state
     workspaces.js     list/open/create, machines, skills, mcp; scope loading
@@ -373,6 +492,7 @@ src/
     entities.js       entity files mapped onto the table rows
     runs.js           run summaries, live output, stale-event guard
     fleet.js          ssh hosts from ~/.ssh/config + per-host probe state
+    remote.js         connection badges, manual sync, approval, streamed sync events
   data/
     mock.js           harness ids, model hints and the four built-in slash commands
   styles/
@@ -631,8 +751,20 @@ packaged app renders a blank window.
   MCP is injected per turn for all five harnesses: claude and opencode take a
   config file, codex takes `-c` overrides, and pi and gemini run from a mirrored
   config directory that is deleted afterwards (see "Shared MCP servers").
-- Remote placement and ssh deploy are not implemented; a directory in Finder is
-  still the honest interface for a workspace that needs to be moved by hand.
+- Remote **workspace sync** is implemented (above). Remote **agent placement**
+  and ssh deploy are not: a run still executes on the machine whose window
+  started it. The server image has no harness binaries, so a run started on the
+  server reports the same "binary missing" error a desktop would.
+- Sync is file-level, not a CRDT: two simultaneous edits of the same file keep
+  both bytes via a conflict copy, but they are not merged line by line. The MCP
+  pool and skill names are union-merged; removing one on one side does not
+  remove it on the other.
+- The remote guard is a deterministic pattern scan plus an optional model
+  reviewer, not a sandbox. The local-harness evaluator is a one-shot process in
+  a scratch directory, but it still inherits your user account and that CLI's
+  own permissions. It catches the obvious instruction-override and
+  credential-export payloads before they reach a harness; it cannot prove a
+  file is benign.
 - The in-run tool is still the CLI. Account → MCP additionally exposes a
   loopback Streamable HTTP MCP server (`127.0.0.1`, bearer token, writes opt-in)
   for clients outside a run. Both transports read the same workspace modules;
@@ -644,6 +776,22 @@ packaged app renders a blank window.
   or renaming the directory by hand breaks the key reference. Attach a host again
   after such a move.
 
+## Security notes (server + sync)
+
+- The server requires a session for every `/__entity/call`, every `/api/*` and
+  the event stream. Sign-in is scrypt-verified, rate-limited per address, and
+  the browser gets an `HttpOnly`, `SameSite=Lax` cookie; a sync client uses a
+  bearer token. `Origin` is checked on the call table.
+- Workspace membership is enforced on the server: `workspace.list` is filtered,
+  a workspace-scoped call opens the record and checks the role, roster edits
+  require owner/admin, and host-level actions (harness paths, ssh probes, the
+  loopback MCP server) are administrator-only.
+- Sync paths are scoped to `entities/` and `artifacts/` on both ends, resolved
+  and re-checked against the workspace root. Dotfiles, `..`, absolute paths,
+  symlinks and files over 25 MB are refused or skipped (and reported).
+- MCP secrets never travel as secrets: the shared form carries the keys with
+  `***` values, and both ends merge the redacted copy over their own values.
+
 ## Not included (add when you need them)
 
-State management (`pinia`), TypeScript, tests, auto-update.
+State management (`pinia`), TypeScript, auto-update.

@@ -205,7 +205,11 @@ function readRecord(id) {
   return {
     id: raw.id,
     label: raw.label,
-    kind: raw.kind === 'self-hosted' ? 'self-hosted' : 'local',
+    /* `remote` is a local clone of a shared workspace (see remote-sync.cjs).
+       It still lives in a directory here; the kind only says where changes
+       come from and go to. */
+    kind:
+      raw.kind === 'self-hosted' ? 'self-hosted' : raw.kind === 'remote' ? 'remote' : 'local',
     createdAt: raw.createdAt || new Date(0).toISOString(),
     mcpStrict: raw.mcpStrict !== false,
     /* the workspace-level system prompt: rules that belong to the scope rather
@@ -726,7 +730,15 @@ function writeMachines(record, attached) {
     /* best effort */
   }
 
-  const kind = next.some((id) => id !== 'local') ? 'self-hosted' : 'local'
+  /* A remote clone stays remote even when a host is attached to it: the kind
+     describes where its data syncs, not whether it may use ssh. */
+  const currentKind = readJson(path.join(record.path, 'workspace.json'), {})?.kind
+  const kind =
+    currentKind === 'remote'
+      ? 'remote'
+      : next.some((id) => id !== 'local')
+        ? 'self-hosted'
+        : 'local'
   /* read first: a machine write must not drop fields this module does not own
      (members today, whatever the next step adds tomorrow) */
   const current = readJson(path.join(record.path, 'workspace.json'), {}) || {}
@@ -910,6 +922,26 @@ function mcpPath(record) {
   return path.join(record.path, 'mcp.json')
 }
 
+/** A read redacts (`•••`/`***`); a write carrying that placeholder keeps the
+    stored value instead of overwriting a credential with bullets. */
+function preserveSecrets(existing, incoming) {
+  if (!existing || typeof existing !== 'object') return incoming
+  const out = { ...incoming }
+  for (const field of ['env', 'headers']) {
+    if (!out[field] || !existing[field] || Array.isArray(out[field]) || Array.isArray(existing[field])) {
+      continue
+    }
+    const merged = { ...out[field] }
+    for (const key of Object.keys(merged)) {
+      if ((merged[key] === '•••' || merged[key] === '***') && existing[field][key]) {
+        merged[key] = existing[field][key]
+      }
+    }
+    out[field] = merged
+  }
+  return out
+}
+
 function validServer(name, entry) {
   if (!String(name || '').trim()) throw new Error('Every MCP server needs a name.')
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -978,9 +1010,17 @@ function writeMcp({ id, servers, disabled }) {
   const parked = disabled && typeof disabled === 'object' && !Array.isArray(disabled)
     ? disabled
     : current.disabled
-  for (const [name, entry] of Object.entries(servers)) validServer(name, entry)
-  for (const [name, entry] of Object.entries(parked)) validServer(name, entry)
-  writeJson(mcpPath(record), { schema: 1, servers, disabled: parked }, { mode: 0o600 })
+  const keep = (source) => {
+    const out = {}
+    for (const [name, entry] of Object.entries(source)) {
+      out[name] = preserveSecrets(current.servers[name] || current.disabled[name], entry)
+      validServer(name, out[name])
+    }
+    return out
+  }
+  const nextServers = keep(servers)
+  const nextParked = keep(parked)
+  writeJson(mcpPath(record), { schema: 1, servers: nextServers, disabled: nextParked }, { mode: 0o600 })
   return mcp(id)
 }
 

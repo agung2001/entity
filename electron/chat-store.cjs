@@ -62,9 +62,18 @@ function now() {
   return new Date().toISOString()
 }
 
+/* The desktop resolves the account from `auth.json`. The server build has a
+   different user per request, so `createRpc` installs an identity resolver that
+   reads the request's signed-in user. Without it every teammate would share the
+   first account's threads. */
+let identityResolver = null
+function setIdentityResolver(resolver) {
+  identityResolver = typeof resolver === 'function' ? resolver : null
+}
+
 /** One stable key per signed-in account. No account means tests/CLI local mode. */
 function currentUser() {
-  const user = auth.get()
+  const user = identityResolver ? identityResolver() : auth.get()
   return String(user?.email || user?.username || '').trim().toLowerCase()
 }
 
@@ -958,6 +967,7 @@ function cancel({ workspace, id } = {}) {
 }
 
 module.exports = {
+  setIdentityResolver,
   list,
   read,
   create,
