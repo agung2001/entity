@@ -9,6 +9,7 @@ import EntityCloneDialog from '@/components/EntityCloneDialog.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
+import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import {
   agentById,
   ago,
@@ -20,6 +21,7 @@ import {
   toast,
 } from '@/stores/hub'
 import { findEntity, revealEntity, saveEntity } from '@/stores/entities'
+import { colorById, markFor } from '@/composables/entityMark'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 
 /**
@@ -71,6 +73,20 @@ const threads = computed(() =>
 )
 const recentThreads = computed(() => threads.value.slice(0, 4))
 const threadTurns = (thread) => (thread.queries || 0) + (thread.replies || 0)
+const turnCount = computed(() =>
+  threads.value.reduce((sum, thread) => sum + threadTurns(thread), 0),
+)
+const conversationCount = computed(() => threads.value.length)
+/* Every conversation opens a chapter; every turn writes a line. */
+const experience = computed(() => conversationCount.value * 20 + turnCount.value * 10)
+const level = computed(() => Math.floor(experience.value / 100) + 1)
+const levelXp = computed(() => experience.value % 100)
+const levelLabel = computed(() => String(level.value).padStart(2, '0'))
+const heroColor = computed(() => {
+  if (!agent.value) return 'var(--accent)'
+  const mark = markFor(route.params.workspace, agent.value.name, agent.value.mark || null)
+  return colorById(mark.color, mark.custom).hex
+})
 const threadLink = (thread) => ({
   name: 'chat',
   params: { workspace: route.params.workspace },
@@ -219,20 +235,56 @@ async function copyPath() {
         </div>
       </div>
 
-      <header class="entp-idhead">
-        <MarkPicker :entity="agent.name" class="entp-picker" />
-        <div class="entp-title">
-          <p class="eyebrow">Entity · {{ hub.workspaceLabel || hub.workspace }}</p>
-          <h1>{{ agent.name }}</h1>
-          <p class="entp-desc">{{ agent.desc }}</p>
-          <div class="entp-chips">
-            <span class="state" :data-s="statusState"><i></i>{{ agent.status }}</span>
-            <span class="entp-chip" data-kind="harness"><HarnessIcon :name="agent.harness" :size="10" />{{ agent.harnessLabel }}</span>
-            <span class="entp-chip">{{ agent.model || 'harness default' }}</span>
-            <span class="entp-chip">{{ agent.skills.length }} {{ agent.skills.length === 1 ? 'skill' : 'skills' }}</span>
-          </div>
+      <section class="entp-hero" :style="{ '--hero': heroColor }">
+        <PixelBackdrop variant="hero" :color="heroColor" :count="18" />
+        <div class="entp-hero-inner">
+          <header class="entp-idhead">
+            <MarkPicker :entity="agent.name" class="entp-picker" />
+            <div class="entp-title">
+              <p class="eyebrow">Entity · {{ hub.workspaceLabel || hub.workspace }}</p>
+              <h1>{{ agent.name }}</h1>
+              <p class="entp-desc">{{ agent.desc }}</p>
+              <div class="entp-chips">
+                <span class="state" :data-s="statusState"><i></i>{{ agent.status }}</span>
+                <span class="entp-chip" data-kind="harness"><HarnessIcon :name="agent.harness" :size="10" />{{ agent.harnessLabel }}</span>
+                <span class="entp-chip">{{ agent.model || 'harness default' }}</span>
+                <span class="entp-chip">{{ agent.skills.length }} {{ agent.skills.length === 1 ? 'skill' : 'skills' }}</span>
+              </div>
+            </div>
+          </header>
+
+          <aside
+            class="entp-xp"
+            title="Every conversation and every turn earns experience."
+            :aria-label="`Level ${level}, ${levelXp} of 100 experience. ${conversationCount} conversations and ${turnCount} turns.`"
+          >
+            <div class="entp-lv">
+              <span>LV</span>
+              <b>{{ levelLabel }}</b>
+            </div>
+            <div class="entp-xp-main">
+              <div class="entp-xp-head">
+                <span>Experience</span>
+                <b>{{ levelXp }} / 100 XP</b>
+              </div>
+              <div
+                class="entp-xp-track"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-valuenow="levelXp"
+                :aria-valuetext="`${levelXp} of 100 XP to level ${level + 1}`"
+              >
+                <i :style="{ width: `${levelXp}%` }"></i>
+              </div>
+              <div class="entp-xp-foot">
+                <span>{{ conversationCount }} {{ conversationCount === 1 ? 'conversation' : 'conversations' }}</span>
+                <span>{{ turnCount }} {{ turnCount === 1 ? 'turn' : 'turns' }}</span>
+              </div>
+            </div>
+          </aside>
         </div>
-      </header>
+      </section>
 
       <div class="entp-grid">
         <div class="entp-main">

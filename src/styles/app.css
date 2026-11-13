@@ -15504,3 +15504,477 @@ button.empty-link {
 .rail-entity-row[data-on='1'] .row-actions {
   opacity: 1;
 }
+
+/* ── pixel backdrops: CSS-only, compositor-friendly ───────────────────── */
+.pxbg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  contain: paint;
+  color: var(--px, var(--accent));
+}
+.pxbg-glow {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+}
+.pxbg--hero .pxbg-glow {
+  background:
+    radial-gradient(55% 85% at 14% 0%, color-mix(in oklab, var(--px) 28%, transparent), transparent 64%),
+    radial-gradient(42% 65% at 92% 100%, color-mix(in oklab, var(--px) 16%, transparent), transparent 70%);
+  opacity: 0.9;
+}
+.pxbg--chat .pxbg-glow {
+  background:
+    radial-gradient(38% 44% at 84% 4%, color-mix(in oklab, var(--px) 12%, transparent), transparent 68%),
+    radial-gradient(45% 40% at 6% 96%, color-mix(in oklab, var(--px) 8%, transparent), transparent 70%);
+  opacity: 0.62;
+}
+.pxbg-grid {
+  position: absolute;
+  left: -25%;
+  right: -25%;
+  bottom: -55%;
+  height: 140%;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--px) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--px) 16%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.42;
+  transform-origin: 50% 100%;
+  animation: pxbg-grid 12s linear infinite;
+  will-change: transform;
+}
+.pxbg--chat .pxbg-grid {
+  left: -10%;
+  right: -10%;
+  top: -20%;
+  bottom: -20%;
+  height: auto;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--px) 48%, var(--border-strong)) 1.1px,
+    transparent 1.6px
+  );
+  background-size: 18px 18px;
+  opacity: 0.7;
+  animation: pxbg-chat-grid 20s linear infinite;
+}
+@keyframes pxbg-grid {
+  from { transform: perspective(220px) rotateX(58deg) translate3d(0, 0, 0); }
+  to { transform: perspective(220px) rotateX(58deg) translate3d(0, 32px, 0); }
+}
+@keyframes pxbg-chat-grid {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-18px, -18px, 0); }
+}
+.pxbg-px {
+  position: absolute;
+  display: block;
+  width: 2px;
+  height: 2px;
+  background: color-mix(in oklab, var(--px) 64%, white);
+  opacity: 0;
+  animation-name: pxbg-float;
+  animation-timing-function: steps(6, end);
+  animation-iteration-count: infinite;
+}
+.pxbg--hero .pxbg-px {
+  --travel: -90px;
+  box-shadow: 0 0 6px color-mix(in oklab, var(--px) 45%, transparent);
+}
+.pxbg--chat .pxbg-px {
+  --travel: -180px;
+  background: color-mix(in oklab, var(--px) 55%, var(--muted));
+}
+@keyframes pxbg-float {
+  0% { transform: translate3d(0, 14px, 0); opacity: 0; }
+  16% { opacity: 0.7; }
+  78% { opacity: 0.3; }
+  100% { transform: translate3d(var(--dx), var(--travel), 0); opacity: 0; }
+}
+.pxbg-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--px) 58%, white),
+    transparent
+  );
+  opacity: 0.42;
+  animation: pxbg-scan 7s linear infinite;
+  will-change: transform;
+}
+.pxbg--hero {
+  --scan: 280px;
+}
+.pxbg--chat {
+  --scan: 100vh;
+  opacity: 0.86;
+}
+.pxbg--chat[data-active='1'] {
+  opacity: 1;
+}
+@keyframes pxbg-scan {
+  from { transform: translate3d(0, -10px, 0); }
+  to { transform: translate3d(0, var(--scan), 0); }
+}
+
+/* ── entity hero ───────────────────────────────────────────────────────── */
+.entp-hero {
+  position: relative;
+  isolation: isolate;
+  margin-top: 14px;
+  padding: 22px 24px;
+  overflow: visible;
+  border: 1px solid color-mix(in oklab, var(--hero) 28%, #263022);
+  border-radius: 16px;
+  background:
+    radial-gradient(85% 120% at 16% 0%, color-mix(in oklab, var(--hero) 14%, #0a0e09), transparent 66%),
+    linear-gradient(120deg, #0a0d09, #0d120b 58%, #090b08);
+  color: #f6f2dd;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+}
+.entp-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--hero) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--hero) 22%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.12;
+}
+.entp-hero-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 26px;
+}
+.entp-hero .entp-idhead {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+.entp-hero .entp-picker .mk-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.entp-hero .entp-picker .mk-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: color-mix(in oklab, var(--hero) 55%, rgba(255, 255, 255, 0.25));
+}
+.entp-hero .eyebrow {
+  color: color-mix(in oklab, var(--hero) 56%, #c5cfae);
+}
+.entp-hero .entp-title h1 {
+  color: #f7f3df;
+}
+.entp-hero .entp-desc {
+  color: #b9c1a8;
+}
+.entp-hero .state {
+  color: #c9d2b7;
+}
+.entp-hero .state[data-s='live'] i {
+  background: var(--hero, var(--ok));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--hero, var(--ok)) 20%, transparent);
+}
+.entp-hero .state[data-s='fail'] {
+  color: #ff8f75;
+}
+.entp-hero .entp-chip {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #b9c1a8;
+}
+.entp-xp {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  width: 300px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.24);
+}
+.entp-lv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 48px;
+  min-height: 62px;
+  border: 1px solid color-mix(in oklab, var(--hero) 32%, rgba(255, 255, 255, 0.14));
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.28);
+  font-family: var(--mono);
+}
+.entp-lv span {
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: #9eaa8c;
+}
+.entp-lv b {
+  margin-top: 2px;
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in oklab, var(--hero) 58%, #fff);
+  font-variant-numeric: tabular-nums;
+}
+.entp-xp-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.entp-xp-head,
+.entp-xp-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9eaa8c;
+}
+.entp-xp-head b {
+  font-weight: 500;
+  color: #dbe1ca;
+  white-space: nowrap;
+}
+.entp-xp-foot {
+  font-size: 8px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.entp-xp-track {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.36);
+}
+.entp-xp-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--hero) 60%, #fff),
+    var(--hero)
+  );
+  box-shadow: 0 0 10px color-mix(in oklab, var(--hero) 30%, transparent);
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.entp-xp-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 7px,
+    rgba(0, 0, 0, 0.4) 7px 9px
+  );
+}
+
+/* ── chat: the backdrop sits behind the thread, not under the controls ─── */
+.cpanel {
+  isolation: isolate;
+}
+.cpanel > .cp-head,
+.cpanel > .thread-shell {
+  position: relative;
+  z-index: 1;
+}
+.cpanel > .cp-head {
+  background: color-mix(in oklab, var(--bg) 86%, transparent);
+}
+.cpanel > .thread-shell .c-thread {
+  background: transparent;
+}
+.cpanel > .pxbg--chat {
+  z-index: 0;
+}
+
+@media (max-width: 900px) {
+  .entp-hero-inner {
+    flex-direction: column;
+    gap: 18px;
+  }
+  .entp-xp {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  .entp-hero {
+    padding: 18px 16px;
+    border-radius: 14px;
+  }
+  .entp-hero .entp-title h1 {
+    font-size: 26px;
+  }
+  .entp-hero .entp-desc {
+    font-size: 12.5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pxbg-px,
+  .pxbg-grid,
+  .pxbg-scan {
+    animation: none !important;
+  }
+  .pxbg-px {
+    opacity: 0.35;
+  }
+}
+
+/* Mood stickers stay legible in the three compact entity lists. */
+.ovd-rrow .mark .mood,
+.ovd-actrow .mark .mood,
+.ovd-wcard .mark .mood,
+.rail-entity-open .mark .mood,
+.jrn-ent .mark .mood {
+  display: grid;
+  right: -4px;
+  bottom: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  font-size: 9px;
+  border-width: 1px;
+}
+
+/* ── chat header: a small pane of frosted glass over the pixel field ────── */
+.cpanel > .cp-head {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg) 58%, transparent),
+    color-mix(in oklab, var(--bg) 48%, transparent)
+  );
+  border-bottom-color: color-mix(in oklab, var(--border) 58%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  backdrop-filter: blur(18px) saturate(1.18);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 26%, transparent);
+}
+
+/* ── entity hero: light mode is a bright arcade cabinet ─────────────────── */
+:root:not([data-theme='dark']) .entp-hero {
+  border-color: color-mix(in oklab, var(--hero) 34%, var(--border));
+  background:
+    radial-gradient(72% 95% at 10% 0%, color-mix(in oklab, var(--hero) 24%, #fff), transparent 62%),
+    radial-gradient(48% 80% at 96% 100%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%),
+    linear-gradient(120deg, #fffdf8, #fff8ec 54%, #fffdf9);
+  color: var(--ink);
+  box-shadow:
+    0 18px 50px color-mix(in oklab, var(--hero) 10%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 70%, transparent);
+}
+:root:not([data-theme='dark']) .entp-hero::before {
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--hero) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--hero) 28%, transparent) 1px, transparent 1px);
+  background-size: 30px 30px;
+  opacity: 0.16;
+}
+:root:not([data-theme='dark']) .pxbg--hero .pxbg-glow {
+  background:
+    radial-gradient(55% 85% at 14% 0%, color-mix(in oklab, var(--px) 30%, transparent), transparent 64%),
+    radial-gradient(42% 65% at 92% 100%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%);
+  opacity: 0.72;
+}
+:root:not([data-theme='dark']) .pxbg--hero .pxbg-grid {
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--px) 34%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--px) 34%, transparent) 1px, transparent 1px);
+  opacity: 0.3;
+}
+:root:not([data-theme='dark']) .pxbg--hero .pxbg-px {
+  background: color-mix(in oklab, var(--px) 58%, var(--ink));
+  box-shadow: 0 0 4px color-mix(in oklab, var(--px) 32%, transparent);
+}
+:root:not([data-theme='dark']) .pxbg--hero .pxbg-scan {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--px) 56%, var(--ink)),
+    transparent
+  );
+  opacity: 0.24;
+}
+:root:not([data-theme='dark']) .entp-hero .entp-picker .mk-btn {
+  background: color-mix(in oklab, #fff 72%, transparent);
+  border-color: color-mix(in oklab, var(--hero) 22%, var(--border));
+}
+:root:not([data-theme='dark']) .entp-hero .entp-picker .mk-btn:hover {
+  background: color-mix(in oklab, #fff 88%, transparent);
+  border-color: color-mix(in oklab, var(--hero) 45%, var(--border-strong));
+}
+:root:not([data-theme='dark']) .entp-hero .eyebrow {
+  color: color-mix(in oklab, var(--hero) 48%, var(--ink-2));
+}
+:root:not([data-theme='dark']) .entp-hero .entp-title h1 {
+  color: var(--ink);
+}
+:root:not([data-theme='dark']) .entp-hero .entp-desc {
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-hero .state {
+  color: var(--muted);
+}
+:root:not([data-theme='dark']) .entp-hero .entp-chip {
+  border-color: color-mix(in oklab, var(--hero) 20%, var(--border));
+  background: color-mix(in oklab, #fff 62%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-xp {
+  border-color: color-mix(in oklab, var(--hero) 24%, var(--border));
+  background: color-mix(in oklab, #fff 66%, transparent);
+}
+:root:not([data-theme='dark']) .entp-lv {
+  border-color: color-mix(in oklab, var(--hero) 28%, var(--border));
+  background: color-mix(in oklab, var(--hero) 10%, #fff);
+}
+:root:not([data-theme='dark']) .entp-lv span {
+  color: var(--muted);
+}
+:root:not([data-theme='dark']) .entp-lv b {
+  color: color-mix(in oklab, var(--hero) 42%, var(--ink));
+}
+:root:not([data-theme='dark']) .entp-xp-head,
+:root:not([data-theme='dark']) .entp-xp-foot {
+  color: var(--muted);
+}
+:root:not([data-theme='dark']) .entp-xp-head b {
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-xp-track {
+  border-color: var(--border-strong);
+  background: color-mix(in oklab, var(--surface-2) 68%, #fff);
+}
+:root:not([data-theme='dark']) .entp-xp-track::after {
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 7px,
+    color-mix(in oklab, #fff 58%, transparent) 7px 9px
+  );
+}

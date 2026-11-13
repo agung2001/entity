@@ -8,10 +8,11 @@ import HarnessIcon from '@/components/HarnessIcon.vue'
 import MessageList from '@/components/MessageList.vue'
 import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
+import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
 import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
-import { playReaction } from '@/composables/entityMark'
+import { colorById, markFor, playReaction } from '@/composables/entityMark'
 import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
 import {
@@ -86,6 +87,11 @@ const contextOptions = {
 const thread = computed(() => activeThread())
 const ctx = computed(() => threadContext())
 const agent = computed(() => agentById(ctx.value.entity) || hub.agents[0])
+const agentColor = computed(() => {
+  if (!agent.value) return ''
+  const mark = markFor(hub.workspace, agent.value.name, agent.value.mark || null)
+  return colorById(mark.color, mark.custom).hex
+})
 const counts = computed(() => threadCounts(thread.value))
 const contextLocked = computed(() => threadStarted(thread.value))
 const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
@@ -493,6 +499,12 @@ watch(
         </section>
 
         <section v-else-if="thread" class="cpanel">
+          <PixelBackdrop
+            variant="chat"
+            :color="agentColor"
+            :active="hub.chat.sending"
+            :count="10"
+          />
           <header class="cp-head">
             <router-link
               class="cp-mark-link"

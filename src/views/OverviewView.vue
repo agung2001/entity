@@ -174,7 +174,7 @@ function openEntities() {
           @keydown.space.prevent="openChatThread(thread.id)"
         >
           <time>{{ ago(thread.updatedAt) }}</time>
-          <EntityMark mini :entity="thread.entity" />
+          <EntityMark mini animate :entity="thread.entity" />
           <span class="q"><b>{{ threadTitle(thread) }}</b></span>
           <span class="where">
             {{ machineLabel(thread.machine) }} · {{ harnessById(thread.harness).label }}
@@ -203,7 +203,7 @@ function openEntities() {
           @click="openEntity(agent)"
           @keydown="openFromKeyboard($event, agent)"
         >
-          <EntityMark mini :entity="agent.name" />
+          <EntityMark mini animate :entity="agent.name" />
           <span class="n">
             <b>{{ agent.name }}</b>
             <em>{{ agent.harnessLabel }}<template v-if="agent.model"> · {{ agent.model }}</template></em>

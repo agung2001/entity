@@ -111,7 +111,7 @@ defineExpose({
       :data-on="route.name === 'entity' && route.params.name === entity.id ? '1' : '0'"
     >
       <button class="rail-entity-open" type="button" @click="open(entity)">
-        <EntityMark mini animate :badge="false" :entity="entity.name" />
+        <EntityMark mini animate :badge="true" :entity="entity.name" />
         <span class="rail-entity-copy">
           <b>{{ entity.name }}</b>
           <span class="rail-entity-meta">

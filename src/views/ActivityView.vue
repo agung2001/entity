@@ -317,7 +317,7 @@ async function copyResume(session) {
         >
           <time>{{ ago(thread.updatedAt) }}</time>
           <span class="jrn-ent">
-            <EntityMark mini animate :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
+            <EntityMark mini animate :badge="true" :entity="thread.entity" /><span class="nm2">{{ thread.entity }}</span>
           </span>
           <span class="jrn-act">
             <b>{{ thread.title || snippet(thread.preview) || 'New thread' }}</b>
