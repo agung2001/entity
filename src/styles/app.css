@@ -8700,6 +8700,9 @@ label.pick:has(input:focus-visible) {
   align-items: center;
   gap: 7px;
 }
+.entp-actions .btn {
+  height: 32px;
+}
 .entp-idhead {
   display: flex;
   align-items: flex-start;
@@ -9835,47 +9838,44 @@ label.pick:has(input:focus-visible) {
 .entp-fact-btn[aria-expanded='true'] svg {
   transform: rotate(180deg);
 }
-.entp-config-pop {
-  position: absolute;
-  z-index: 60;
-  top: 78px;
-  right: 0;
-  width: min(370px, calc(100vw - 40px));
-  max-height: min(72vh, 660px);
-  overflow: auto;
-  padding: 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: 0 20px 48px rgba(10, 10, 10, 0.18), 0 2px 6px rgba(10, 10, 10, 0.06);
+.entp-config-modal {
+  width: min(580px, 94vw);
+  max-height: min(88vh, 720px);
 }
-.entp-config-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-  padding-bottom: 9px;
+.entp-config-modal .mo-head {
+  padding: 18px 18px 12px;
   border-bottom: 1px solid var(--border);
 }
-.entp-config-head h3 {
-  margin: 0;
-  font-family: var(--font);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+.entp-config-modal .mo-head h2 {
+  margin: 0 0 4px;
 }
-.entp-config-pop .fld {
-  margin-bottom: 13px;
+.entp-config-modal .mo-head p {
+  max-width: 58ch;
 }
-.entp-config-pop .harness-paths {
-  margin: 4px 0 12px;
+.entp-config-body {
+  padding: 16px 18px 18px;
+}
+.entp-config-body .fld {
+  margin-bottom: 16px;
+}
+.entp-config-body .harness-paths {
+  margin: 2px 0 4px;
+}
+.entp-config-modal .field-select .pickmenu {
+  top: calc(100% + 6px);
+  bottom: auto;
+  width: 100%;
+  min-width: 0;
+  max-height: 240px;
+  overflow: auto;
 }
 .entp-config-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 11px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 18px;
   border-top: 1px solid var(--border);
 }
 .entp-config-foot .entp-saved,
@@ -9885,6 +9885,30 @@ label.pick:has(input:focus-visible) {
 .entp-config-foot .btn {
   margin-left: auto;
   flex: none;
+}
+.entp-config-modal .harness-path-row {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 7px;
+}
+.entp-config-modal .harness-path-main {
+  grid-column: 2;
+}
+.entp-config-modal .harness-paths .state {
+  grid-column: 3;
+}
+.entp-config-modal .harness-path-input {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.entp-config-modal .harness-path-actions {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.harness-path-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 /* slash menu: names-only scan status + progressive disclosure */
@@ -12954,5 +12978,62 @@ button.empty-link {
   .wsl-hero-mark .brand-mark {
     width: 42px;
     height: 42px;
+  }
+}
+
+/* ── chat rail: a slightly bolder reading scale, with a living mood sticker ─ */
+.rchat-open {
+  gap: 9px;
+  padding: 8px 4px 8px 8px;
+}
+.rchat-open .mark {
+  width: 30px;
+  height: 30px;
+  margin-top: 0;
+}
+.rchat-title b {
+  font-size: 13.8px;
+  font-weight: 560;
+  line-height: 1.32;
+}
+.rchat-state {
+  font-size: 10px;
+  line-height: 1.35;
+}
+.rchat-open .mark--xs .mood {
+  right: -5px;
+  bottom: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  font-size: 11px;
+  transform-origin: 50% 82%;
+  animation: rchat-emoji 3.4s ease-in-out infinite;
+}
+.rchat-section-head {
+  min-height: 26px;
+  font-size: 9px;
+}
+.rchat-empty {
+  font-size: 11.5px;
+}
+@keyframes rchat-emoji {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  32% {
+    transform: translateY(-2px) rotate(-5deg) scale(1.06);
+  }
+  52% {
+    transform: translateY(-1px) rotate(4deg) scale(1.03);
+  }
+  70% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rchat-open .mark--xs .mood {
+    animation: none;
   }
 }

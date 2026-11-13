@@ -349,46 +349,67 @@ async function copyPath() {
             <div><dt>Last chat</dt><dd>{{ lastChat }}</dd></div>
           </dl>
 
-          <div v-if="configOpen" ref="configRoot" class="entp-config-pop" @click.stop>
-            <div class="entp-config-head">
-              <h3>Configuration</h3>
-              <button class="x" type="button" aria-label="Close configuration" @click="configOpen = false">
-                <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
-              </button>
+          <Teleport to="body">
+            <div
+              v-if="configOpen"
+              class="scrim"
+              data-open="1"
+              aria-hidden="true"
+              @click="configOpen = false"
+            ></div>
+            <div
+              v-if="configOpen"
+              ref="configRoot"
+              class="modal entp-config-modal"
+              data-open="1"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="entp-config-title"
+              @click.stop
+            >
+              <div class="mo-head">
+                <h2 id="entp-config-title">Configuration</h2>
+                <p>Default harness and model for this entity, plus the machine-wide executable that runs it.</p>
+                <button class="x mo-x" type="button" aria-label="Close configuration" @click="configOpen = false">
+                  <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+                </button>
+              </div>
+              <div class="mo-body entp-config-body">
+                <div class="fld">
+                  <span class="lbl">Default harness</span>
+                  <PickMenu
+                    class="field-select"
+                    head="Default harness"
+                    icons="harness"
+                    :options="harnessOptions"
+                    :model-value="form.harness"
+                    :disabled="saving"
+                    @update:model-value="form.harness = $event"
+                  />
+                </div>
+                <div class="fld">
+                  <span class="lbl">Default model</span>
+                  <ModelInput
+                    :model-value="form.model"
+                    :options="modelOptions"
+                    :loading="modelLoading"
+                    :disabled="saving"
+                    label="Default model"
+                    :placeholder="modelData?.default || 'harness default'"
+                    @update:model-value="form.model = $event"
+                  />
+                </div>
+                <HarnessPaths :active="form.harness" />
+              </div>
+              <div class="mo-foot entp-config-foot">
+                <span v-if="dirty" class="entp-dirty"><i></i> Unsaved changes</span>
+                <span v-else class="entp-saved">Saved with the entity file.</span>
+                <button class="btn btn-ink btn-sm" type="button" :disabled="saving || !dirty" @click="save">
+                  {{ saving ? 'Saving…' : 'Save entity' }}
+                </button>
+              </div>
             </div>
-            <div class="fld">
-              <span class="lbl">Default harness</span>
-              <PickMenu
-                class="field-select"
-                head="Default harness"
-                icons="harness"
-                :options="harnessOptions"
-                :model-value="form.harness"
-                :disabled="saving"
-                @update:model-value="form.harness = $event"
-              />
-            </div>
-            <div class="fld">
-              <span class="lbl">Default model</span>
-              <ModelInput
-                :model-value="form.model"
-                :options="modelOptions"
-                :loading="modelLoading"
-                :disabled="saving"
-                label="Default model"
-                :placeholder="modelData?.default || 'harness default'"
-                @update:model-value="form.model = $event"
-              />
-            </div>
-            <HarnessPaths :active="form.harness" />
-            <div class="entp-config-foot">
-              <span v-if="dirty" class="entp-dirty"><i></i> Unsaved changes</span>
-              <span v-else class="entp-saved">Saved with the entity file.</span>
-              <button class="btn btn-ink btn-sm" type="button" :disabled="saving || !dirty" @click="save">
-                {{ saving ? 'Saving…' : 'Save entity' }}
-              </button>
-            </div>
-          </div>
+          </Teleport>
           <div class="entp-rail-actions">
             <button type="button" @click="copyPath">Copy file path <span>file</span></button>
             <button type="button" @click="chat">Open chat <span>↵</span></button>

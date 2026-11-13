@@ -87,23 +87,25 @@ async function save(item, value = draft[item.id]) {
         :aria-label="`${item.label} executable path`"
         @keydown.enter.prevent="save(item)"
       />
-      <button
-        class="btn btn-sm"
-        type="button"
-        :disabled="Boolean(busy) || !draft[item.id]"
-        @click="save(item)"
-      >
-        {{ busy === item.id ? 'Saving…' : 'Save' }}
-      </button>
-      <button
-        v-if="item.custom"
-        class="btn btn-sm btn-ghost"
-        type="button"
-        :disabled="Boolean(busy)"
-        @click="save(item, '')"
-      >
-        Use PATH
-      </button>
+      <div class="harness-path-actions">
+        <button
+          class="btn btn-sm"
+          type="button"
+          :disabled="Boolean(busy) || !draft[item.id]"
+          @click="save(item)"
+        >
+          {{ busy === item.id ? 'Saving…' : 'Save' }}
+        </button>
+        <button
+          v-if="item.custom"
+          class="btn btn-sm btn-ghost"
+          type="button"
+          :disabled="Boolean(busy)"
+          @click="save(item, '')"
+        >
+          Use PATH
+        </button>
+      </div>
     </div>
     <p v-if="!harnesses.items.length && !harnesses.loading" class="mnote">
       No harness information yet.
