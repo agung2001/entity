@@ -11,6 +11,7 @@ import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
 import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
+import { playReaction } from '@/composables/entityMark'
 import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
 import {
@@ -313,6 +314,7 @@ async function retryFailed(message) {
 
 function onCreated(created) {
   playSfx('success')
+  playReaction(hub.workspace, created?.entity)
   newOpen.value = false
   if (created?.id && route.query.thread !== created.id) {
     router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query: { thread: created.id } })
@@ -321,15 +323,18 @@ function onCreated(created) {
 
 async function stopTurn() {
   playSfx('stop')
+  playReaction(hub.workspace, thread.value?.entity)
   await cancelChat()
 }
 
 async function send(text) {
   playSfx('send')
+  playReaction(hub.workspace, thread.value?.entity)
   try {
     await chatSend(text)
   } catch (error) {
     playSfx('error')
+    playReaction(hub.workspace, thread.value?.entity)
     throw error
   }
 }
@@ -378,6 +383,7 @@ function onLiveEvent(event) {
     }
     live.value = null
     playSfx(message?.error ? 'error' : 'receive')
+    playReaction(hub.workspace, event.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})
   }
@@ -488,7 +494,14 @@ watch(
 
         <section v-else-if="thread" class="cpanel">
           <header class="cp-head">
-            <EntityMark :entity="agent.name" />
+            <router-link
+              class="cp-mark-link"
+              :to="{ name: 'entity', params: { workspace: hub.workspace, name: agent.name } }"
+              :aria-label="`Open ${agent.name}`"
+              :title="`Open ${agent.name}`"
+            >
+              <EntityMark :entity="agent.name" />
+            </router-link>
             <div class="cp-id">
               <form v-if="titleEditing" class="cp-title-form" @submit.prevent="saveTitle">
                 <input

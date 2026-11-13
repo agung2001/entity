@@ -15403,3 +15403,104 @@ button.empty-link {
   background: var(--bg);
   color: var(--ink);
 }
+
+/* Entity reactions are transform-only: no silhouette morphing. The brand mark
+   never gets this class; its own hop remains exactly as it was. */
+.mark--react {
+  transform: translate(var(--mx, 0px), var(--lift, 0%)) rotate(var(--roll, 0deg))
+    scale(var(--sxf, 1), var(--syf, 1));
+}
+
+/* The entity mark in the chat header is a door into its entity file. */
+.cp-mark-link {
+  display: inline-flex;
+  flex: none;
+  border-radius: 8px;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.cp-mark-link:hover,
+.cp-mark-link:focus-visible {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  outline: none;
+}
+
+/* ── entity directory rows use the chat-history row anatomy ────────────── */
+.rail-entity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: 64px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.rail-entity-row:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.rail-entity-row[data-on='1'] {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+.rail-entity-open {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rail-entity-open .mark {
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+}
+.rail-entity-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rail-entity-copy b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.rail-entity-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.rail-entity-sep {
+  opacity: 0.45;
+}
+.rail-entity-row .row-actions {
+  margin-top: 3px;
+  opacity: 0;
+}
+.rail-entity-row:hover .row-actions,
+.rail-entity-row:focus-within .row-actions,
+.rail-entity-row[data-on='1'] .row-actions {
+  opacity: 1;
+}

@@ -22,6 +22,7 @@ const props = defineProps({
 })
 
 const el = ref(null)
+const reacts = computed(() => Boolean(props.entity) && !props.hop)
 const seed = computed(() =>
   props.entity ? hub.agents.find((agent) => agent.name === props.entity)?.mark || null : null,
 )
@@ -37,6 +38,9 @@ function mount() {
     shape: props.shape,
     /* the brand mark is a logo; entity marks keep their mood badge */
     badge: props.badge && Boolean(props.entity),
+    reactions: reacts.value,
+    entity: props.entity,
+    workspace: props.workspace || hub.workspace,
   })
 }
 
@@ -56,6 +60,7 @@ watch(
     () => props.shape,
     () => mark.value.shape,
     () => seed.value,
+    () => reacts.value,
     () => hub.workspace,
   ],
   remount,
@@ -67,7 +72,7 @@ onBeforeUnmount(() => releaseMark(el.value))
   <span
     ref="el"
     class="mark"
-    :class="{ 'mark--xs': mini, 'mark--hop': hop }"
+    :class="{ 'mark--xs': mini, 'mark--hop': hop, 'mark--react': reacts }"
     data-avatar
     aria-hidden="true"
   ></span>

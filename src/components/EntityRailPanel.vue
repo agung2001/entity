@@ -39,6 +39,12 @@ function open(entity) {
   router.push({ name: 'entity', params: { workspace: hub.workspace, name: entity.id } })
 }
 
+const healthOf = (status) => {
+  if (status === 'running') return 'working'
+  if (status === 'error') return 'failed'
+  return 'done'
+}
+
 function created(entity) {
   adding.value = false
   router.push({ name: 'entity', params: { workspace: hub.workspace, name: entity.name } })
@@ -101,14 +107,19 @@ defineExpose({
     <div
       v-for="entity in list"
       :key="entity.id"
-      class="rail-t2-row rail-entity-row"
+      class="rail-entity-row"
       :data-on="route.name === 'entity' && route.params.name === entity.id ? '1' : '0'"
     >
-      <button class="rail-t2-open" type="button" @click="open(entity)">
-        <EntityMark mini :entity="entity.name" />
-        <span class="t">
+      <button class="rail-entity-open" type="button" @click="open(entity)">
+        <EntityMark mini animate :badge="false" :entity="entity.name" />
+        <span class="rail-entity-copy">
           <b>{{ entity.name }}</b>
-          <span class="m">{{ entity.status }} · {{ threadsFor(entity.name) }} threads</span>
+          <span class="rail-entity-meta">
+            <span class="rchat-health" :data-s="healthOf(entity.status)"><i></i>{{ entity.status }}</span>
+            <span>{{ threadsFor(entity.name) }} {{ threadsFor(entity.name) === 1 ? 'thread' : 'threads' }}</span>
+            <span class="rail-entity-sep" aria-hidden="true">·</span>
+            <span>{{ entity.harnessLabel }}</span>
+          </span>
         </span>
       </button>
       <EntityActions :entity="entity" />

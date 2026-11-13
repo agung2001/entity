@@ -775,6 +775,351 @@ function hopCurve(u) {
   return [0, 1, 1]
 }
 
+/* ── reactions ────────────────────────────────────────────────────
+   The reference's seventeen reaction states, reduced to the channels this
+   pixel character already has: lift, squash, roll, gaze, head tilt and lids.
+   No silhouette morphing — the shape stays the same before, during and after. */
+const TAU = Math.PI * 2
+const clamp01 = (u) => Math.min(1, Math.max(0, u))
+const pulseAt = (u) => Math.sin(Math.PI * clamp01(u))
+const bounceAt = (u, n = 1) => Math.abs(Math.sin(Math.PI * clamp01(u) * n))
+const easeAt = (u) => {
+  const x = clamp01(u)
+  return x * x * (3 - 2 * x)
+}
+
+export const REACTIONS = [
+  {
+    id: 'happy',
+    label: 'Happy',
+    duration: 1.15,
+    frame: (u) => {
+      const b = bounceAt(u, 2) * (1 - u * 0.18)
+      return {
+        lift: -8 * b,
+        sx: 1 - 0.035 * b,
+        sy: 1 + 0.055 * b,
+        tilt: 2.4 * Math.sin(TAU * 2 * u),
+        lida: 0.55,
+        lidb: 0.55,
+        ey: -0.7,
+      }
+    },
+  },
+  {
+    id: 'excited',
+    label: 'Excited',
+    duration: 1.35,
+    frame: (u) => {
+      const b = bounceAt(u, 3) * (1 - u * 0.12)
+      return {
+        lift: -15 * b,
+        sx: 1 - 0.06 * b,
+        sy: 1 + 0.09 * b,
+        roll: 3 * Math.sin(TAU * 4 * u),
+        tilt: 4 * Math.sin(TAU * 3 * u),
+        ex: 1.5 * Math.sin(TAU * 2 * u),
+        ey: -1,
+      }
+    },
+  },
+  {
+    id: 'laughing',
+    label: 'Laughing',
+    duration: 1.3,
+    frame: (u) => {
+      const b = bounceAt(u, 4) * (1 - u * 0.1)
+      return {
+        lift: -5 * b,
+        sx: 1 + 0.018 * b,
+        sy: 1 - 0.018 * b,
+        mx: 2.2 * Math.sin(TAU * 6 * u),
+        tilt: 6 * Math.sin(TAU * 5 * u),
+        lida: 0.86,
+        lidb: 0.86,
+        ey: -0.4,
+      }
+    },
+  },
+  {
+    id: 'proud',
+    label: 'Proud',
+    duration: 1.45,
+    frame: (u) => {
+      const p = pulseAt(u)
+      return {
+        lift: -1.5 * p,
+        sx: 1 + 0.045 * p,
+        sy: 1 + 0.06 * p,
+        tilt: -3 * p,
+        ey: -1.4,
+        lida: 0.12,
+        lidb: 0.12,
+      }
+    },
+  },
+  {
+    id: 'curious',
+    label: 'Curious',
+    duration: 1.3,
+    frame: (u) => {
+      const p = pulseAt(u)
+      return {
+        tilt: 10 * p,
+        roll: 2 * p,
+        ex: 3.5 * p,
+        ey: -1.8 * p,
+        lida: 0.12,
+        lidb: 0.46,
+        sy: 1 + 0.02 * p,
+      }
+    },
+  },
+  {
+    id: 'playful',
+    label: 'Playful',
+    duration: 1.35,
+    frame: (u) => ({
+      lift: -6 * bounceAt(u, 3),
+      mx: 3 * Math.sin(TAU * 3 * u),
+      roll: 8 * Math.sin(TAU * 2 * u),
+      tilt: 4 * Math.sin(TAU * 3 * u),
+      lida: 0.35,
+      lidb: 0.15,
+    }),
+  },
+  {
+    id: 'shy',
+    label: 'Shy',
+    duration: 1.4,
+    frame: (u) => {
+      const p = pulseAt(u)
+      return {
+        sx: 0.94 + 0.02 * p,
+        sy: 0.9 + 0.03 * p,
+        tilt: -8 * p,
+        mx: -2 * p,
+        ex: -2.6 * p,
+        ey: 1.8 * p,
+        lida: 0.45,
+        lidb: 0.45,
+      }
+    },
+  },
+  {
+    id: 'surprised',
+    label: 'Surprised',
+    duration: 1.05,
+    frame: (u) => {
+      const p = pulseAt(u)
+      const jump = Math.sin(Math.PI * clamp01(u * 1.6))
+      return {
+        lift: -19 * jump,
+        sx: 1 - 0.07 * p,
+        sy: 1 + 0.1 * p,
+        tilt: -2 * p,
+        ey: -1.2,
+        ex: 0,
+        lida: 0,
+        lidb: 0,
+      }
+    },
+  },
+  {
+    id: 'suspicious',
+    label: 'Suspicious',
+    duration: 1.5,
+    frame: (u) => {
+      const p = pulseAt(u)
+      return {
+        tilt: 7 * p,
+        ex: 3 * p,
+        ey: 0.4,
+        lida: 0.7,
+        lidb: 0.18,
+        sx: 1 + 0.01 * p,
+      }
+    },
+  },
+  {
+    id: 'angry',
+    label: 'Angry',
+    duration: 1.15,
+    frame: (u) => {
+      const shake = Math.sin(TAU * 10 * u) * (1 - u * 0.2)
+      return {
+        mx: 3.2 * shake,
+        lift: -2 * bounceAt(u, 5),
+        sx: 1.035,
+        sy: 1.015,
+        tilt: -2,
+        ey: 1,
+        lida: 0.66,
+        lidb: 0.66,
+      }
+    },
+  },
+  {
+    id: 'confused',
+    label: 'Confused',
+    duration: 1.55,
+    frame: (u) => {
+      const sway = Math.sin(TAU * 1.5 * u)
+      return {
+        tilt: 8 * sway,
+        ex: 2.2 * sway,
+        ey: -1,
+        lida: 0.7,
+        lidb: 0.18,
+      }
+    },
+  },
+  {
+    id: 'sad',
+    label: 'Sad',
+    duration: 1.6,
+    frame: (u) => {
+      const p = pulseAt(u)
+      return {
+        lift: 3 * p,
+        sx: 0.96,
+        sy: 0.93,
+        tilt: -4 * p,
+        ey: 2.1 * p,
+        lida: 0.55,
+        lidb: 0.55,
+      }
+    },
+  },
+  {
+    id: 'drowsy',
+    label: 'Drowsy',
+    duration: 1.9,
+    frame: (u) => ({
+      lift: 2 * pulseAt(u),
+      sy: 0.96,
+      tilt: 3 * Math.sin(Math.PI * u),
+      ey: 1.6,
+      lida: 0.8,
+      lidb: 0.8,
+    }),
+  },
+  {
+    id: 'bored',
+    label: 'Bored',
+    duration: 1.7,
+    frame: (u) => {
+      const p = pulseAt(u)
+      return {
+        ex: 3.2 * p,
+        ey: 1.1 * p,
+        tilt: 2.4 * p,
+        sy: 0.975,
+        lida: 0.62,
+        lidb: 0.62,
+      }
+    },
+  },
+  {
+    id: 'scared',
+    label: 'Scared',
+    duration: 1.25,
+    frame: (u) => {
+      const shake = Math.sin(TAU * 12 * u) * (1 - u * 0.15)
+      return {
+        mx: 2.8 * shake,
+        lift: -6 * bounceAt(u, 4),
+        roll: 2 * shake,
+        sx: 0.94,
+        sy: 0.9,
+        ey: -1,
+        lida: 0,
+        lidb: 0,
+      }
+    },
+  },
+  {
+    id: 'celebrate',
+    label: 'Celebrate',
+    duration: 1.8,
+    frame: (u) => {
+      const b = Math.sin(Math.PI * clamp01(u))
+      return {
+        lift: -22 * b,
+        roll: 360 * easeAt(u),
+        sx: 1 - 0.05 * b,
+        sy: 1 + 0.08 * b,
+        lida: 0.35,
+        lidb: 0.35,
+      }
+    },
+  },
+  {
+    id: 'approving',
+    label: 'Approving',
+    duration: 1.2,
+    frame: (u) => {
+      const nod = Math.sin(Math.PI * clamp01(u * 1.4))
+      return {
+        lift: 3.5 * nod,
+        tilt: -2 * nod,
+        ey: -0.6 * nod,
+        lida: 0,
+        lidb: 1,
+      }
+    },
+  },
+]
+
+const REACTION_BY_ID = new Map(REACTIONS.map((entry) => [entry.id, entry]))
+
+function reactionDefaults() {
+  return { lift: 0, sx: 1, sy: 1, mx: 0, roll: 0, tilt: 0, ex: 0, ey: 0, lida: 0, lidb: 0 }
+}
+
+function reactionFrameFor(p) {
+  if (!p.reaction) return null
+  const raw = p.reaction.frame(Math.min(1, p.reactionT / p.reaction.duration))
+  const amp = p.mini ? 0.5 : 1
+  return {
+    ...reactionDefaults(),
+    ...raw,
+    lift: (raw.lift || 0) * amp,
+    mx: (raw.mx || 0) * amp,
+    roll: (raw.roll || 0) * amp,
+    tilt: (raw.tilt || 0) * amp,
+    sx: 1 + ((raw.sx ?? 1) - 1) * amp,
+    sy: 1 + ((raw.sy ?? 1) - 1) * amp,
+    lida: Math.min(1, Math.max(0, raw.lida ?? 0)),
+    lidb: Math.min(1, Math.max(0, raw.lidb ?? 0)),
+  }
+}
+
+function startReaction(p, id = 'random') {
+  let entry = id === 'random' ? null : REACTION_BY_ID.get(id)
+  if (!entry) {
+    const pool = REACTIONS.filter((item) => item.id !== p.lastReaction)
+    entry = pool[Math.floor(rnd() * pool.length)]
+  }
+  if (!entry) return false
+  p.reaction = entry
+  p.reactionT = 0
+  p.lastReaction = entry.id
+  return true
+}
+
+/** Trigger one of the seventeen reactions on every mark for an entity. */
+export function playReaction(workspace, entity, id = 'random') {
+  if (!entity) return false
+  let played = false
+  for (const p of marks) {
+    if (p.entity !== entity) continue
+    if (workspace && p.workspace !== workspace) continue
+    if (startReaction(p, id)) played = true
+  }
+  return played
+}
+
 function tick(now) {
   for (let q = marks.length - 1; q >= 0; q--) {
     if (marks[q].el.isConnected === false) {
@@ -791,6 +1136,24 @@ function tick(now) {
     const dmp = Math.pow(0.85, dt)
     const pn = BASE
     const base = pn.lid
+
+    /* Reactions are random punctuation for the large entity marks; forced
+       reactions (chat events, the picker) may also play on a mini mark. */
+    let rx = null
+    if (p.reactions) {
+      if (!p.reaction && !p.mini && t > p.nextReaction) startReaction(p)
+      if (p.reaction) {
+        p.reactionT += dtms / 1000
+        if (p.reactionT >= p.reaction.duration) {
+          p.reaction = null
+          p.nextReaction = t + 3000 + rnd() * 4200
+          el.dataset.reaction = ''
+        } else {
+          rx = reactionFrameFor(p)
+          el.dataset.reaction = p.reaction.id
+        }
+      }
+    }
 
     /* where to look next — the xs tier holds the gaze dead centre */
     if (t > p.lookAt) {
@@ -812,30 +1175,36 @@ function tick(now) {
     p.tilt.v = (p.tilt.v + (p.tt - p.tilt.x) * k) * dmp
     p.tilt.x += p.tilt.v
 
-    /* blink: 0.26s, closes in two hard steps, sometimes one eye only */
-    if (p.blinkNow < 0 && t > p.blinkAt) {
-      p.blinkNow = 0
-      p.wink = rnd() < pn.wink
-      p.blinkAt = t + pn.blinkEvery[0] + rnd() * pn.blinkEvery[1]
-    }
-    if (p.blinkNow >= 0) {
-      p.blinkNow += dtms / 1000
-      const bu = p.blinkNow / 0.26
-      if (bu >= 1) {
-        p.blinkNow = -1
+    /* A reaction owns the eyelids; otherwise idle blinks continue. */
+    if (rx) {
+      p.lida = rx.lida
+      p.lidb = rx.lidb
+    } else {
+      /* blink: 0.26s, closes in two hard steps, sometimes one eye only */
+      if (p.blinkNow < 0 && t > p.blinkAt) {
+        p.blinkNow = 0
+        p.wink = rnd() < pn.wink
+        p.blinkAt = t + pn.blinkEvery[0] + rnd() * pn.blinkEvery[1]
+      }
+      if (p.blinkNow >= 0) {
+        p.blinkNow += dtms / 1000
+        const bu = p.blinkNow / 0.26
+        if (bu >= 1) {
+          p.blinkNow = -1
+          p.lida = base
+          p.lidb = base
+        } else {
+          let bv = bu < 0.44 ? bu / 0.44 : bu < 0.56 ? 1 : 1 - (bu - 0.56) / 0.44
+          bv = Math.min(1, Math.round(bv * 2) / 2)
+          /* a resting lid sits under the blink, so the eye never opens wider
+             than the preset allows */
+          p.lidb = Math.max(base, bv)
+          p.lida = p.wink ? base : Math.max(base, bv)
+        }
+      } else {
         p.lida = base
         p.lidb = base
-      } else {
-        let bv = bu < 0.44 ? bu / 0.44 : bu < 0.56 ? 1 : 1 - (bu - 0.56) / 0.44
-        bv = Math.min(1, Math.round(bv * 2) / 2)
-        /* a resting lid sits under the blink, so the eye never opens wider
-           than the preset allows */
-        p.lidb = Math.max(base, bv)
-        p.lida = p.wink ? base : Math.max(base, bv)
       }
-    } else {
-      p.lida = base
-      p.lidb = base
     }
 
     /* hop — only where the mark is the whole statement */
@@ -862,18 +1231,31 @@ function tick(now) {
     }
 
     const br = Math.sin(t / pn.breathe)
+    const ex = rx ? rx.ex : p.ex.x
+    const ey = rx ? rx.ey : p.ey.x
+    const tilt = rx ? rx.tilt : p.tilt.x
+    const sy = rx ? 1 : 1 + 0.022 * br
+    const sx = rx ? 1 : 1 - 0.015 * br
 
-    el.style.setProperty('--ex', p.ex.x.toFixed(2) + 'px')
-    el.style.setProperty('--ey', p.ey.x.toFixed(2) + 'px')
-    el.style.setProperty('--tilt', p.tilt.x.toFixed(2) + 'deg')
-    el.style.setProperty('--lida', p.lida)
-    el.style.setProperty('--lidb', p.lidb)
-    el.style.setProperty('--sy', (1 + 0.022 * br).toFixed(4))
-    el.style.setProperty('--sx', (1 - 0.015 * br).toFixed(4))
+    el.style.setProperty('--ex', ex.toFixed(2) + 'px')
+    el.style.setProperty('--ey', ey.toFixed(2) + 'px')
+    el.style.setProperty('--tilt', tilt.toFixed(2) + 'deg')
+    el.style.setProperty('--lida', rx ? rx.lida : p.lida)
+    el.style.setProperty('--lidb', rx ? rx.lidb : p.lidb)
+    el.style.setProperty('--sy', sy.toFixed(4))
+    el.style.setProperty('--sx', sx.toFixed(4))
     if (p.hop) {
       el.style.setProperty('--lift', (p.lift * 100).toFixed(2) + '%')
       el.style.setProperty('--syf', p.syf.toFixed(3))
       el.style.setProperty('--sxf', p.sxf.toFixed(3))
+    }
+    if (p.reactions) {
+      const rv = rx || reactionDefaults()
+      el.style.setProperty('--lift', rv.lift.toFixed(2) + '%')
+      el.style.setProperty('--mx', rv.mx.toFixed(2) + 'px')
+      el.style.setProperty('--roll', rv.roll.toFixed(2) + 'deg')
+      el.style.setProperty('--sxf', rv.sx.toFixed(3))
+      el.style.setProperty('--syf', rv.sy.toFixed(3))
     }
   }
 
@@ -896,7 +1278,17 @@ function start() {
  */
 export function hydrateMark(
   el,
-  { mini = false, hop = false, animate = false, mark = markSettings, shape = '', badge = true } = {},
+  {
+    mini = false,
+    hop = false,
+    animate = false,
+    mark = markSettings,
+    shape = '',
+    badge = true,
+    reactions = false,
+    entity = '',
+    workspace = '',
+  } = {},
 ) {
   if (!el || el.dataset.ready === '1') return
   el.dataset.ready = '1'
@@ -920,6 +1312,13 @@ export function hydrateMark(
     mini,
     hop,
     mark,
+    reactions,
+    entity,
+    workspace,
+    reaction: null,
+    reactionT: 0,
+    lastReaction: '',
+    nextReaction: 2200 + rnd() * 2800,
     phase: idx * 431,
     prev: 0,
     ex: { x: 0, v: 0 },
