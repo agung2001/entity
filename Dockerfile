@@ -4,6 +4,12 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
+# The child-registry tests read process groups with `ps`; bookworm-slim omits
+# procps. Keep this in the build stage so the runtime image stays unchanged.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends procps \
+ && rm -rf /var/lib/apt/lists/*
+
 # The lockfile is the only thing that decides versions; `npm ci` fails loudly
 # instead of quietly installing a different tree than the one that was tested.
 COPY package.json package-lock.json ./
