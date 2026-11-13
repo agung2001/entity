@@ -3,7 +3,7 @@
 #
 #   ./scripts/deploy.sh pull    fetch origin/main, reset the checkout, keep .env
 #   ./scripts/deploy.sh build   docker compose build
-#   ./scripts/deploy.sh test    run the test suite in the built image
+#   ./scripts/deploy.sh test    run the test suite in the build stage
 #   ./scripts/deploy.sh up      start the built image
 #
 # TeamCity calls these four actions over SSH from the same checkout. The script
@@ -36,7 +36,10 @@ case "${1:-}" in
     docker compose build
     ;;
   test)
-    docker run --rm --init entity:latest node --test electron/*.test.cjs
+    # The runtime image is intentionally lean (dist/server/electron only), while
+    # the UI contract tests read src/. Build the test stage, not the prod image.
+    docker build --target build -t entity-test:latest .
+    docker run --rm --init entity-test:latest node --test electron/*.test.cjs
     ;;
   up)
     docker compose up -d --remove-orphans
