@@ -737,9 +737,8 @@ export async function createThread(overrides = {}) {
   const entity = overrides.entity || previous.entity || hub.agents[0]?.id
   if (!entity) throw new Error('Create an entity before starting a chat.')
   const machine = overrides.machine || previous.machine || hub.machines[0]?.id || 'local'
-  const harness =
-    overrides.harness || previous.harness || agentById(entity)?.harness || 'claude'
   const agent = agentById(entity)
+  const harness = overrides.harness || agent?.harness || previous.harness || 'claude'
   const model =
     overrides.model !== undefined
       ? String(overrides.model || '')

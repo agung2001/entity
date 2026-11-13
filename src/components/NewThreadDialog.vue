@@ -62,6 +62,30 @@ watch(
   { immediate: true, deep: true },
 )
 const remote = computed(() => Boolean(machine.value && !machine.value.thisMachine))
+const entityDefaultHarness = computed(() => agent.value?.harness || '')
+/* A model default only belongs to the entity's own harness; once the harness
+   is overridden, the model is the harness's choice until the user types one. */
+const modelDefault = computed(() =>
+  form.harness === agent.value?.harness ? agent.value?.model || '' : '',
+)
+const harnessOverridden = computed(
+  () => Boolean(agent.value) && form.harness !== entityDefaultHarness.value,
+)
+const modelOverridden = computed(
+  () => Boolean(agent.value) && form.model !== modelDefault.value,
+)
+
+function useEntityHarness() {
+  if (!agent.value) return
+  form.harness = agent.value.harness || form.harness
+  form.model = agent.value.model || ''
+  loadModels(form.harness).catch(() => {})
+}
+
+function useEntityModel() {
+  if (!agent.value) return
+  form.model = form.harness === agent.value.harness ? agent.value.model || '' : ''
+}
 
 function reset() {
   const defaults = props.defaults || {}
@@ -72,12 +96,12 @@ function reset() {
   form.machine = machines.value.some((entry) => entry.id === wantedMachine)
     ? wantedMachine
     : machines.value[0]?.id || 'local'
-  form.harness =
-    defaults.harness || last.harness || agentById(form.entity)?.harness || harnesses.items[0]?.id || ''
-  form.model =
-    defaults.model ||
-    (agent.value?.harness === form.harness ? agent.value.model || '' : '') ||
-    ''
+  /* The entity owns the run defaults. A new thread starts from those, not from
+     whichever harness the previous conversation happened to use; the picker and
+     model field below are the explicit per-thread override. */
+  const chosen = agentById(form.entity)
+  form.harness = chosen?.harness || harnesses.items[0]?.id || ''
+  form.model = chosen?.model || ''
   error.value = ''
   loadHarnesses().catch(() => {})
   loadModels(form.harness).catch(() => {})
@@ -205,6 +229,15 @@ async function submit() {
           :disabled="busy"
           @update:model-value="form.harness = $event"
         />
+        <p class="mnote thread-inherit" :data-override="harnessOverridden ? '1' : '0'">
+          <template v-if="harnessOverridden">
+            Thread override. {{ agent?.name }} uses <b>{{ agent?.harnessLabel }}</b>.
+            <button type="button" :disabled="busy" @click="useEntityHarness">Use default</button>
+          </template>
+          <template v-else-if="agent">
+            From {{ agent.name }}. Change it only for this thread.
+          </template>
+        </p>
       </div>
 
       <div class="fld">
@@ -218,13 +251,19 @@ async function submit() {
           :placeholder="modelData?.default || 'harness default'"
           @update:model-value="form.model = $event"
         />
-        <p class="mnote">
-          <template v-if="modelData?.detected">
-            Detected from {{ form.harness }}<template v-if="modelData.default"> · default
-            <code class="mono">{{ modelData.default }}</code></template>.
+        <p class="mnote thread-inherit" :data-override="modelOverridden ? '1' : '0'">
+          <template v-if="modelOverridden">
+            Thread override. {{ agent?.name }} uses
+            <b>{{ modelDefault || 'the harness default' }}</b>.
+            <button type="button" :disabled="busy" @click="useEntityModel">Use default</button>
           </template>
-          Leave blank to use the harness default or the entity's own
-          <code class="mono">model:</code>.
+          <template v-else-if="modelDefault">
+            From {{ agent?.name }}: <code class="mono">{{ modelDefault }}</code>.
+          </template>
+          <template v-else-if="modelData?.detected">
+            No entity model; {{ form.harness }} will choose<template v-if="modelData.default">&nbsp;·&nbsp;<code class="mono">{{ modelData.default }}</code></template>.
+          </template>
+          <template v-else>No entity model; blank uses the harness default.</template>
         </p>
       </div>
 

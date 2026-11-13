@@ -14108,3 +14108,37 @@ button.empty-link {
     transform: none;
   }
 }
+
+/* ── new thread: entity defaults vs. per-thread override ──────────────── */
+.thread-inherit {
+  margin-top: 5px;
+  min-height: 0;
+}
+.thread-inherit b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.thread-inherit[data-override='1'] {
+  color: var(--accent-ink);
+}
+.thread-inherit[data-override='1'] b {
+  color: inherit;
+}
+.thread-inherit button {
+  margin-left: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.thread-inherit button:hover:not(:disabled) {
+  color: var(--accent-ink);
+}
+.thread-inherit button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
