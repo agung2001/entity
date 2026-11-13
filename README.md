@@ -88,6 +88,11 @@ existing nginx at it (for example `proxy_pass http://127.0.0.1:1020;`) for
 for a direct plain-`http://` smoke test set it to `false`, or the browser will
 not send the session cookie back.
 
+The TeamCity build calls the repository's own `scripts/deploy.sh` from the
+server checkout (`pull`, `build`, `test`, `up`); there is no host-local deploy
+script to maintain. `pull` resets the checkout to `origin/main` and deliberately
+keeps `.env`.
+
 The data directory is the named volume `entity-data` mounted at `/data`
 (`ENTITY_HOME`). A bind mount works too, but the directory must be writable by
 uid `10001` (`sudo chown -R 10001:10001 ./data`). The image runs as an
