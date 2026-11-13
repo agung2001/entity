@@ -680,6 +680,21 @@ function svgFor(shapeId) {
   return svg
 }
 
+/* Parsing one SVG string per mark was the expensive part of mounting a list
+   of avatars. The markup depends only on the silhouette, so each shape is
+   parsed once into a template and cloned from there. */
+const shapeTemplates = new Map()
+
+function shapeTemplate(shapeId) {
+  let template = shapeTemplates.get(shapeId)
+  if (!template) {
+    template = document.createElement('template')
+    template.innerHTML = svgFor(shapeId)
+    shapeTemplates.set(shapeId, template)
+  }
+  return template
+}
+
 const reduced =
   typeof window !== 'undefined' &&
   window.matchMedia &&
@@ -1307,7 +1322,7 @@ export function hydrateMark(
 ) {
   if (!el || el.dataset.ready === '1') return
   el.dataset.ready = '1'
-  el.innerHTML = svgFor(shape || mark.shape || DEFAULT_SHAPE)
+  el.replaceChildren(shapeTemplate(shape || mark.shape || DEFAULT_SHAPE).content.cloneNode(true))
   if (badge) {
     const pin = document.createElement('span')
     pin.className = 'mood'

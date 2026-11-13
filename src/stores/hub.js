@@ -713,12 +713,47 @@ export async function openThread(id) {
   return thread
 }
 
+/**
+ * Switching to a thread that is already in memory paints it immediately and
+ * refreshes it underneath. Waiting for the disk read before showing anything
+ * made every switch feel like a load, even one made a second earlier.
+ */
 export async function selectThread(id) {
-  return openThread(id)
+  if (!id || !hub.workspace) return null
+  const known = hub.chat.threads[id]
+  if (!known) return openThread(id)
+
+  const previous = hub.chat.active
+  activate(known)
+  try {
+    const fetched = await call('chat.read', { workspace: hub.workspace, id })
+    if (!fetched) throw new Error('That thread no longer exists.')
+    /* Identical content is not worth a second render of every message. */
+    const same =
+      fetched.updatedAt === known.updatedAt && fetched.messages?.length === known.messages?.length
+    if (!same) {
+      hub.chat.threads = { ...hub.chat.threads, [fetched.id]: fetched }
+      activate(fetched)
+    }
+    return hub.chat.threads[id]
+  } catch (error) {
+    hub.chat.active = previous
+    throw error
+  }
 }
 
 export function setChatFilter(kind, value) {
   hub.chat.filters[kind] = value
+}
+
+function activate(thread) {
+  hub.chat.active = thread.id
+  hub.chat.last = {
+    entity: thread.entity,
+    machine: thread.machine,
+    harness: thread.harness,
+    model: thread.model || '',
+  }
 }
 
 function remember(thread) {

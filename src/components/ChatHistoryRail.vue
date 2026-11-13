@@ -11,6 +11,7 @@ import {
   pinThread,
   removeThread,
   renameThread,
+  selectThread,
   snippet,
   toast,
 } from '@/stores/hub'
@@ -163,6 +164,9 @@ function stateOf(thread) {
 
 function openThread(thread) {
   menuItem.value = null
+  /* Put the thread on screen now and let the address catch up. Waiting for the
+     router guard before rendering added a round trip to every switch. */
+  if (hub.chat.active !== thread.id) selectThread(thread.id).catch(() => {})
   router.push({ name: 'chat', params: { workspace: hub.workspace }, query: { thread: thread.id } })
 }
 

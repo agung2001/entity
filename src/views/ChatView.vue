@@ -422,6 +422,8 @@ watch(
   () => route.query.thread,
   async (id) => {
     if (typeof id !== 'string' || !id) return
+    /* Clicking a row already opened it; the URL is only catching up. */
+    if (id === hub.chat.active) return
     if (await pickThread(id)) return
     /* A dead link falls back to what is open, or the newest thread. */
     const fallback = hub.chat.active || newestThreadId()

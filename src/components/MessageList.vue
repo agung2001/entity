@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import ThreadMinimap from '@/components/ThreadMinimap.vue'
 import MessageBody from '@/components/MessageBody.vue'
@@ -36,13 +36,168 @@ const openTraces = ref(new Set())
 const accountEmail = computed(() => hub.session?.email || credentials().email || '')
 const userAvatar = computed(() => gravatarUrl(accountEmail.value, 96))
 
+/* A long transcript is mounted newest-first: the rows a person actually lands
+   on are painted now, a screenful of history follows on the next frames, and
+   anything older is mounted when someone scrolls back into it. */
+const INITIAL_ROWS = 24
+const ROWS_PER_STEP = 24
+/* Everything past this is mounted only when someone scrolls back into it.
+   Filling a four-hundred-message thread in the background was a second of
+   main-thread work nobody had asked to see. */
+const PREFILL_ROWS = 96
+const firstShown = ref(0)
+let growing = 0
+/* While older rows are being filled in, keep the newest message pinned to the
+   bottom — a switch is not a reason to scroll someone into the middle of a
+   transcript. A wheel, touch or key hands control back. */
+let pin = true
+
+function releasePin() {
+  pin = false
+}
+
+let settleToken = 0
+
+/** Late layout (a screenshot decode, an artifact list, the dock settling) can
+    move the bottom after the switch. While the newest message is still pinned,
+    confirm it a couple of times instead of chasing every mutation. */
+function settleLater() {
+  const token = ++settleToken
+  for (const delay of [60, 240, 700]) {
+    setTimeout(() => {
+      if (token !== settleToken || !pin || !box.value) return
+      box.value.scrollTop = box.value.scrollHeight
+    }, delay)
+  }
+}
+
+function resetWindow() {
+  const total = props.messages.length
+  const focused = props.focusIndex >= 0
+  firstShown.value = focused ? 0 : Math.max(0, total - INITIAL_ROWS)
+  /* A link to one message owns the scroll position; nothing may snap away. */
+  pin = !focused
+  grow()
+  if (pin) settleLater()
+}
+
+/* One step per frame. `requestIdleCallback` is not used: the entity mark runs
+   its own animation loop, so an idle window can be a long time coming and a
+   thread would finish filling in half a second later. */
+function grow(force = false) {
+  if (firstShown.value <= 0 || growing) return
+  const rendered = props.messages.length - firstShown.value
+  if (!force && rendered >= PREFILL_ROWS) return
+  growing = requestAnimationFrame(() => {
+    growing = 0
+    firstShown.value = Math.max(0, firstShown.value - ROWS_PER_STEP)
+    /* Scroll anchoring keeps the reader where they are while rows are inserted
+       above them; the last prefill step confirms the newest message is still
+       under the eye. Growth the reader asked for never moves them. */
+    const renderedNow = props.messages.length - firstShown.value
+    const settled = firstShown.value === 0 || (!force && renderedNow >= PREFILL_ROWS)
+    if (pin && settled) {
+      nextTick(() => {
+        if (pin && box.value) box.value.scrollTop = box.value.scrollHeight
+      })
+    }
+    /* Keep going while the reader is still near the top: reaching the oldest
+       mounted message should reveal the next batch, not stop at a dead end. */
+    if (firstShown.value > 0 && box.value && box.value.scrollTop < 800) grow(true)
+    else grow()
+  })
+}
+
+/* Someone is reading backwards: continue a step at a time for as long as the
+   top is near. */
+function onScroll() {
+  const el = box.value
+  if (!el) return
+  /* Clearly away from the end: stop following resizes (a growing composer
+     should not pull a reader down). Small gaps are just rows settling. */
+  const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+  if (gap > 400) pin = false
+  else if (gap < 8) pin = true
+  if (firstShown.value <= 0 || el.scrollTop >= 800) return
+  /* Reading backwards means the newest message no longer owns the viewport. */
+  pin = false
+  grow(true)
+}
+
+/** Mount the rows down to `index`, so the minimap can jump to any message. */
+function revealThrough(index) {
+  if (typeof index !== 'number' || index < 0) return
+  if (firstShown.value <= index) return
+  firstShown.value = Math.max(0, index - 2)
+}
+
+/* A live turn replaces the message array with the same conversation in it; only
+   a different conversation (or a deep link to an old message) resets the
+   window, or every reply would re-mount the transcript around it. */
+let shownFor = ''
+watch(
+  () => [props.threadId, props.messages[0]?.id || '', props.focusIndex],
+  ([threadId, firstId, focus]) => {
+    const key = `${threadId}:${firstId}:${focus >= 0 ? focus : ''}`
+    if (key === shownFor) return
+    shownFor = key
+    if (growing) {
+      cancelAnimationFrame(growing)
+      growing = 0
+    }
+    resetWindow()
+  },
+  { immediate: true },
+)
+
+let pinned = false
+
 function toBottom() {
+  /* Three watchers can fire in the same tick; one scroll is enough, and each
+     one forces a layout of the whole transcript. */
+  if (pinned) return
+  pinned = true
   nextTick(() => {
+    pinned = false
     if (box.value) box.value.scrollTop = box.value.scrollHeight
   })
 }
 
 watch(() => props.messages.length, toBottom, { immediate: true })
+watch(() => props.threadId, toBottom)
+
+let resizes = null
+
+onMounted(() => {
+  const el = box.value
+  if (!el) return
+  /* The composer dock can settle a frame later and take height from the
+     transcript. While the newest message is pinned, follow that resize. */
+  resizes = new ResizeObserver(() => {
+    if (pin) el.scrollTop = el.scrollHeight
+  })
+  resizes.observe(el)
+  el.addEventListener('wheel', releasePin, { passive: true })
+  el.addEventListener('scroll', onScroll, { passive: true })
+  el.addEventListener('touchmove', releasePin, { passive: true })
+  el.addEventListener('keydown', releasePin)
+})
+
+onBeforeUnmount(() => {
+  resizes?.disconnect()
+  resizes = null
+  const el = box.value
+  if (el) {
+    el.removeEventListener('wheel', releasePin)
+    el.removeEventListener('scroll', onScroll)
+    el.removeEventListener('touchmove', releasePin)
+    el.removeEventListener('keydown', releasePin)
+  }
+  if (growing) {
+    cancelAnimationFrame(growing)
+    growing = 0
+  }
+})
 watch(() => props.live?.steps?.length || 0, toBottom)
 
 async function scrollToFocus() {
@@ -54,7 +209,13 @@ async function scrollToFocus() {
   if (!target) return false
   const top =
     target.getBoundingClientRect().top - boxEl.getBoundingClientRect().top + boxEl.scrollTop - 16
-  boxEl.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+  const distance = Math.abs(top - boxEl.scrollTop)
+  /* A smooth scroll over a long transcript reads as a slow load; only animate
+     when the destination is close enough to see the movement. */
+  boxEl.scrollTo({
+    top: Math.max(0, top),
+    behavior: distance > boxEl.clientHeight * 2 ? 'auto' : 'smooth',
+  })
   return true
 }
 
@@ -208,6 +369,7 @@ function traceSummary(message) {
       aria-label="Conversation with entity"
     >
     <template v-for="(m, i) in messages" :key="m.id || i">
+      <template v-if="i >= firstShown">
       <template v-if="m.who === 'sys'">
         <div
           :id="`chat-msg-${i}`"
@@ -309,6 +471,7 @@ function traceSummary(message) {
           </svg>
         </button>
       </div>
+      </template>
     </template>
 
     <details v-if="hasTrace(live)" class="msg-trace msg-trace--live" open>
@@ -331,6 +494,12 @@ function traceSummary(message) {
       </div>
     </div>
 
-    <ThreadMinimap :messages="messages" :scroll-el="box" :entity-name="entityName" />
+    <ThreadMinimap
+      :messages="messages"
+      :scroll-el="box"
+      :entity-name="entityName"
+      :reveal="revealThrough"
+      :rendered="messages.length - firstShown"
+    />
   </div>
 </template>

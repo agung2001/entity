@@ -33,6 +33,8 @@ export function loadProse() {
 }
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
+const MAX_CACHED = 600
+const cache = new Map()
 
 /** The same contract as `prose-engine.render`, with a text-only stand-in until
     the chunk is here. A failed fetch leaves readable text rather than nothing. */
@@ -43,5 +45,13 @@ export function renderProse(text) {
       .replace(/[&<>]/g, (ch) => ESCAPES[ch])
       .replace(/\n/g, '<br>')
   }
-  return engine.render(text)
+  const key = String(text || '')
+  const hit = cache.get(key)
+  if (hit !== undefined) return hit
+  const html = engine.render(key)
+  /* One entry per distinct reply, shared by every message component: opening
+     a thread a second time parses nothing. */
+  if (cache.size >= MAX_CACHED) cache.delete(cache.keys().next().value)
+  cache.set(key, html)
+  return html
 }

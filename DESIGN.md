@@ -135,6 +135,10 @@ inventory, and Markdown parsing must not happen until a reply needs it.
   never reaches for it. Never prefetch on the critical path.
 - **Read locally, in parallel.** Independent reads go out together
   (`loadScope`), and nothing is awaited that the first paint does not need.
+- **Long lists mount from the end.** A thread paints its newest rows first and
+  fills older ones on the next frames or when someone scrolls back into them
+  (`MessageList`). Do not measure every row on scroll — `ThreadMinimap` tracks
+  the reading position with an IntersectionObserver, not a per-row rect loop.
 
 `npm test` fails if a view is imported statically, if the entry reaches for a
 screen, or if `marked`/`dompurify` appear outside the prose engine. `npm run
@@ -152,15 +156,3 @@ build` prints the chunk list — the entry chunk should not grow without a reaso
 5. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.
-
-## Log
-
-- **2026-11-13** — renderer split into per-screen chunks; the Markdown parser
-  moved behind a lazy prose engine; the palette became an async component; the
-  entity mark loop skips hidden frames and halves the rate for mini marks; the
-  workspace scope reads its six stores in one parallel pass.
-- **2026-11-13** — Escape handling moved to one window-level stack
-  (`useDialogDismiss`); every modal and popover migrated. Top-bar keyboard
-  guide added (`ShortcutsDialog` + `src/lib/shortcuts.js`); hard-coded combos
-  removed from `AppRail`, `ChatView`, `SlashComposer` and `RailContext`. Static
-  contract test added in `electron/ui-contract.test.cjs`.

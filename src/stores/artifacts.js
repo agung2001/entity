@@ -15,6 +15,21 @@ export const artifacts = reactive({
   items: [],
 })
 
+/* Read-once cache. A thread renders its attached screenshots and documents
+   every time it is opened; re-reading a data URL over the call table for each
+   visit is pure waste. Writes clear the entry they touch. */
+const reads = new Map()
+const MAX_READS = 24
+const readKey = (workspace, id) => `${workspace}:${id}`
+
+function forgetRead(workspace, id) {
+  if (id) {
+    reads.delete(readKey(workspace, id))
+    return
+  }
+  for (const key of [...reads.keys()]) if (key.startsWith(`${workspace}:`)) reads.delete(key)
+}
+
 export function resetArtifacts() {
   artifacts.loading = false
   artifacts.loaded = false
@@ -22,6 +37,7 @@ export function resetArtifacts() {
   artifacts.workspace = ''
   artifacts.path = ''
   artifacts.items = []
+  reads.clear()
 }
 
 export async function loadArtifacts(workspace = hub.workspace) {
@@ -72,6 +88,7 @@ export async function uploadArtifact(file) {
     dataUrl,
   })
   await loadArtifacts()
+  forgetRead(hub.workspace, item?.id)
   return item
 }
 
@@ -86,7 +103,13 @@ export async function saveTextArtifact(name, text) {
 }
 
 export async function readArtifact(id) {
-  return call('artifact.read', { workspace: hub.workspace, id })
+  const key = readKey(hub.workspace, id)
+  const hit = reads.get(key)
+  if (hit) return hit
+  const value = await call('artifact.read', { workspace: hub.workspace, id })
+  if (reads.size >= MAX_READS) reads.delete(reads.keys().next().value)
+  reads.set(key, value)
+  return value
 }
 
 export async function downloadArtifact(id) {
@@ -95,6 +118,7 @@ export async function downloadArtifact(id) {
 
 export async function removeArtifact(id) {
   const result = await call('artifact.remove', { workspace: hub.workspace, id })
+  forgetRead(hub.workspace, id)
   await loadArtifacts()
   return result
 }

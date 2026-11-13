@@ -19,19 +19,12 @@ const props = defineProps({
 const cache = new Map()
 const resolved = reactive({})
 
-/* Parsed HTML per reply, so a streamed turn or a scroll re-render does not
-   re-parse every message. The ready flag is part of the key: the plain-text
-   stand-in is replaced once the Markdown chunk arrives. */
-const htmlCache = new Map()
-
+/* The ready flag is read here so the plain-text stand-in is replaced the
+   moment the parser chunk lands. Parsed HTML is cached in `lib/prose`, one
+   entry per distinct reply, so a thread switch re-parses nothing. */
 function renderMarkdown(text) {
-  const key = `${proseReady.value ? 'md' : 'text'}:${text}`
-  const hit = htmlCache.get(key)
-  if (hit !== undefined) return hit
-  const html = renderProse(text)
-  if (htmlCache.size > 400) htmlCache.clear()
-  htmlCache.set(key, html)
-  return html
+  void proseReady.value
+  return renderProse(text)
 }
 
 const TOKEN =

@@ -12,6 +12,12 @@ const props = defineProps({
   messages: { type: Array, default: () => [] },
   scrollEl: { type: Object, default: null },
   entityName: { type: String, default: 'entity' },
+  /* Long transcripts mount on demand; a jump to an unmounted message asks the
+     list to mount down to it first. */
+  reveal: { type: Function, default: null },
+  /* How many rows are mounted right now. New anchors are observed as the list
+     fills in, so the rail keeps tracking the reading position. */
+  rendered: { type: Number, default: 0 },
 })
 
 const MAX_RAIL_TICKS = 80
@@ -20,7 +26,6 @@ const previewIndex = ref(-1)
 const nav = ref(null)
 const card = ref(null)
 let closeTimer = 0
-let frame = 0
 let observer = null
 
 const textOf = (message) => {
@@ -71,71 +76,83 @@ const activeRailIndex = computed(() => {
   )
 })
 
-function scheduleMeasure() {
-  if (frame) return
-  frame = requestAnimationFrame(() => {
-    frame = 0
-    measure()
-  })
+/* The reading position is whichever message crosses a thin strip at the top
+   of the transcript. An IntersectionObserver answers that without measuring
+   every row: a long thread used to cost one layout read per message on every
+   scroll frame and on every switch. */
+const visible = new Set()
+const observed = new WeakSet()
+
+function observeAnchors() {
+  const box = props.scrollEl
+  if (!box || !observer) return
+  for (const el of box.querySelectorAll('[data-thread-anchor]')) {
+    if (observed.has(el)) continue
+    observed.add(el)
+    observer.observe(el)
+  }
 }
 
-function measure() {
+function observe() {
   const box = props.scrollEl
-  if (!box || !items.value.length) {
+  if (!box) {
     activeIndex.value = -1
     return
   }
-  const top = box.getBoundingClientRect().top
-  let current = items.value[0].index
-  for (const item of items.value) {
-    const el = box.querySelector(`[data-thread-anchor="${item.index}"]`)
-    if (!el) continue
-    if (el.getBoundingClientRect().top - top <= 72) current = item.index
-    else break
+  if (!observer) {
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const index = Number(entry.target.dataset.threadAnchor)
+          if (!Number.isFinite(index)) continue
+          if (entry.isIntersecting) visible.add(index)
+          else visible.delete(index)
+        }
+        if (visible.size) activeIndex.value = Math.min(...visible)
+      },
+      { root: box, rootMargin: '0px 0px -95% 0px', threshold: 0 },
+    )
   }
-  activeIndex.value = current
+  observeAnchors()
 }
 
-function jump(index) {
+function jump(index, retry = true) {
   const box = props.scrollEl
   if (!box) return
   const el = box.querySelector(`[data-thread-anchor="${index}"]`)
-  if (!el) return
+  if (!el) {
+    if (retry && props.reveal) {
+      props.reveal(index)
+      nextTick(() => jump(index, false))
+    }
+    return
+  }
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const top =
     el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 16
-  box.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
+  const far = Math.abs(top - box.scrollTop) > box.clientHeight * 2
+  box.scrollTo({ top: Math.max(0, top), behavior: reduce || far ? 'auto' : 'smooth' })
   activeIndex.value = index
 }
 
 function detach() {
-  const box = props.scrollEl
-  if (!box) return
-  box.removeEventListener('scroll', scheduleMeasure)
   observer?.disconnect()
   observer = null
-  if (frame) cancelAnimationFrame(frame)
-  frame = 0
+  visible.clear()
 }
 
 function attach() {
   detach()
-  const box = props.scrollEl
-  if (!box) return
-  box.addEventListener('scroll', scheduleMeasure, { passive: true })
-  observer = new ResizeObserver(scheduleMeasure)
-  observer.observe(box)
-  if (box.firstElementChild) observer.observe(box.firstElementChild)
-  nextTick(scheduleMeasure)
+  nextTick(observe)
 }
 
 watch(() => props.scrollEl, attach, { immediate: true })
-watch(() => props.messages.length, () => nextTick(scheduleMeasure))
+watch(() => props.rendered, () => nextTick(observeAnchors))
 watch(
   () => props.messages,
   () => {
     previewIndex.value = -1
-    nextTick(scheduleMeasure)
+    nextTick(observeAnchors)
   },
   { deep: false },
 )
