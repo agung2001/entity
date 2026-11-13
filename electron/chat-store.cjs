@@ -258,6 +258,7 @@ function titleOf(thread) {
 function summarise(thread) {
   const queries = thread.messages.filter((message) => message.who === 'me').length
   const replies = thread.messages.filter((message) => message.who === 'agent').length
+  const lastMessage = thread.messages[thread.messages.length - 1]
   return {
     id: thread.id,
     entity: thread.entity,
@@ -272,6 +273,7 @@ function summarise(thread) {
     replies,
     messageCount: queries + replies,
     working: sending.has(thread.id),
+    failed: Boolean(lastMessage?.who === 'sys' && lastMessage.error),
     preview: previewOf(thread),
     /* A summary is a row, not the transcript: do not ship every thinking block
        and tool output through the history list. */

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { matchesQuery } from '@/composables/search'
@@ -39,25 +39,29 @@ const RANGE_OPTIONS = [
   { id: '7d', label: 'Last 7 days' },
   { id: '30d', label: 'Last 30 days' },
 ]
-const GROUPS_KEY = 'entity.rail.chatGroups'
+const STATUS_OPTIONS = [
+  { id: 'working', label: 'Working' },
+  { id: 'done', label: 'Done' },
+  { id: 'failed', label: 'Failed' },
+]
+const STATUS_KEY = 'entity.rail.chatStatus'
+const status = ref(readStatus())
 
-const collapsed = reactive(readCollapsed())
-
-function readCollapsed() {
+function readStatus() {
   try {
-    const value = JSON.parse(localStorage.getItem(GROUPS_KEY) || 'null')
-    return { working: Boolean(value?.working), done: Boolean(value?.done) }
+    const saved = localStorage.getItem(STATUS_KEY)
+    return STATUS_OPTIONS.some((entry) => entry.id === saved) ? saved : 'done'
   } catch {
-    return { working: false, done: false }
+    return 'done'
   }
 }
 
-function toggleGroup(id) {
-  collapsed[id] = !collapsed[id]
+function pickStatus(id) {
+  status.value = id
   try {
-    localStorage.setItem(GROUPS_KEY, JSON.stringify({ working: collapsed.working, done: collapsed.done }))
+    localStorage.setItem(STATUS_KEY, id)
   } catch {
-    /* session-only fold state */
+    /* session-only */
   }
 }
 
@@ -66,6 +70,22 @@ const threads = computed(() => hub.chat.summaries || [])
 function isWorking(thread) {
   return Boolean(thread.working) || (hub.chat.sending && thread.id === hub.chat.active)
 }
+
+function statusOf(thread) {
+  if (isWorking(thread)) return 'working'
+  if (thread.failed) return 'failed'
+  return 'done'
+}
+
+const statusCounts = computed(() => {
+  const counts = { working: 0, done: 0, failed: 0 }
+  for (const thread of threads.value) counts[statusOf(thread)] += 1
+  return counts
+})
+
+const statusLabel = computed(
+  () => STATUS_OPTIONS.find((entry) => entry.id === status.value)?.label || 'Done',
+)
 
 function titleOf(thread) {
   return thread.title || (thread.queries ? snippet(thread.preview) : `New thread · ${thread.entity}`)
@@ -93,13 +113,16 @@ function inRange(thread) {
 }
 
 const filteredThreads = computed(() =>
-  threads.value.filter((thread) => {
-    if (!inRange(thread)) return false
-    return matchesQuery(
-      `${titleOf(thread)} ${thread.preview || ''} ${thread.entity || ''}`,
-      query.value,
-    )
-  }),
+  threads.value
+    .filter((thread) => {
+      if (statusOf(thread) !== status.value) return false
+      if (!inRange(thread)) return false
+      return matchesQuery(
+        `${titleOf(thread)} ${thread.preview || ''} ${thread.entity || ''}`,
+        query.value,
+      )
+    })
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))),
 )
 
 function stateOf(thread) {
@@ -107,22 +130,6 @@ function stateOf(thread) {
   if (!thread.queries) return 'New'
   return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${ago(thread.updatedAt)}`
 }
-
-const sections = computed(() => {
-  const working = []
-  const done = []
-  const ordered = [...filteredThreads.value].sort((a, b) =>
-    String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
-  )
-  for (const thread of ordered) {
-    if (isWorking(thread)) working.push(thread)
-    else done.push(thread)
-  }
-  return [
-    { id: 'working', label: 'Working', threads: working },
-    { id: 'done', label: 'Done', threads: done },
-  ]
-})
 
 function openThread(thread) {
   menuItem.value = null
@@ -294,107 +301,96 @@ defineExpose({ newThread })
           </option>
         </select>
       </label>
+      <div class="rchat-status-switch" role="group" aria-label="Filter threads by status">
+        <button
+          v-for="option in STATUS_OPTIONS"
+          :key="option.id"
+          type="button"
+          :data-status="option.id"
+          :aria-pressed="status === option.id ? 'true' : 'false'"
+          @click="pickStatus(option.id)"
+        >
+          {{ option.label }} <b>{{ statusCounts[option.id] }}</b>
+        </button>
+      </div>
     </div>
 
     <div class="rchat-list">
       <template v-if="filteredThreads.length">
-        <section
-          v-for="section in sections"
-          :key="section.id"
-          class="rchat-section"
-          :data-group="section.id"
-        >
-          <button
-            class="rchat-section-head"
-            type="button"
-            :aria-expanded="collapsed[section.id] ? 'false' : 'true'"
-            @click="toggleGroup(section.id)"
-          >
-            <svg class="rchat-group-chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M4 2l4 4-4 4" />
-            </svg>
-            <span class="rchat-section-label">{{ section.label }}</span>
-            <span class="rchat-section-count">{{ section.threads.length }}</span>
-            <span v-if="section.id === 'working' && section.threads.length" class="rchat-live-dot"></span>
-          </button>
-
-          <div v-show="!collapsed[section.id]" class="rchat-section-body">
-            <p v-if="!section.threads.length" class="rchat-empty">
-              {{ section.id === 'working' ? 'Nothing running.' : 'No finished chats yet.' }}
-            </p>
             <div
-              v-for="thread in section.threads"
+              v-for="thread in filteredThreads"
               :key="thread.id"
-                class="rchat-row"
-                :data-on="thread.id === hub.chat.active ? '1' : '0'"
-                :data-pinned="thread.pinned ? '1' : '0'"
-                :data-working="isWorking(thread) ? '1' : '0'"
+              class="rchat-row"
+              :data-on="thread.id === hub.chat.active ? '1' : '0'"
+              :data-pinned="thread.pinned ? '1' : '0'"
+              :data-working="isWorking(thread) ? '1' : '0'"
+              :data-status="statusOf(thread)"
+            >
+              <div
+                class="rchat-open"
+                role="button"
+                tabindex="0"
+                :aria-current="thread.id === hub.chat.active ? 'page' : undefined"
+                :title="titleOf(thread)"
+                @click="openThread(thread)"
+                @keydown.enter="openThread(thread)"
+                @keydown.space.prevent="openThread(thread)"
               >
-                <div
-                  class="rchat-open"
-                  role="button"
-                  tabindex="0"
-                  :aria-current="thread.id === hub.chat.active ? 'page' : undefined"
-                  :title="titleOf(thread)"
-                  @click="openThread(thread)"
-                  @keydown.enter="openThread(thread)"
-                  @keydown.space.prevent="openThread(thread)"
-                >
-                  <EntityMark mini animate :entity="thread.entity" />
-                  <span class="rchat-text">
-                    <span class="rchat-title">
-                      <svg
-                        v-if="thread.pinned"
-                        class="rchat-pin"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.4"
-                        aria-label="Pinned"
-                      >
-                        <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
-                      </svg>
-                      <input
-                        v-if="editing === thread.id"
-                        :id="`rchat-rename-${thread.id}`"
-                        v-model="editTitle"
-                        class="rchat-rename"
-                        type="text"
-                        placeholder="Thread title"
-                        spellcheck="false"
-                        @click.stop
-                        @keydown="onRenameKey($event, thread)"
-                        @blur="cancelRename"
-                      />
-                      <b v-else>{{ titleOf(thread) }}</b>
-                    </span>
-                    <span class="rchat-state">
-                      <i v-if="isWorking(thread)" class="rchat-working-dot"></i>
-                      {{ stateOf(thread) }}
-                    </span>
+                <EntityMark mini animate :entity="thread.entity" />
+                <span class="rchat-text">
+                  <span class="rchat-title">
+                    <svg
+                      v-if="thread.pinned"
+                      class="rchat-pin"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      aria-label="Pinned"
+                    >
+                      <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
+                    </svg>
+                    <input
+                      v-if="editing === thread.id"
+                      :id="`rchat-rename-${thread.id}`"
+                      v-model="editTitle"
+                      class="rchat-rename"
+                      type="text"
+                      placeholder="Thread title"
+                      spellcheck="false"
+                      @click.stop
+                      @keydown="onRenameKey($event, thread)"
+                      @blur="cancelRename"
+                    />
+                    <b v-else>{{ titleOf(thread) }}</b>
                   </span>
-                </div>
-                <button
-                  class="rchat-dots"
-                  type="button"
-                  :aria-expanded="menuItem?.id === thread.id ? 'true' : 'false'"
-                  title="Thread actions"
-                  aria-label="Thread actions"
-                  @click="openRowMenu($event, thread)"
-                >
-                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <circle cx="3.2" cy="8" r="1.2" />
-                    <circle cx="8" cy="8" r="1.2" />
-                    <circle cx="12.8" cy="8" r="1.2" />
-                  </svg>
-                </button>
+                  <span class="rchat-state">
+                    <span class="rchat-health" :data-s="statusOf(thread)"><i></i>{{ statusOf(thread) }}</span>
+                    <span class="rchat-entity">{{ thread.entity }}</span>
+                    <span class="rchat-sep" aria-hidden="true">·</span>
+                    <span>{{ stateOf(thread) }}</span>
+                  </span>
+                </span>
+              </div>
+              <button
+                class="rchat-dots"
+                type="button"
+                :aria-expanded="menuItem?.id === thread.id ? 'true' : 'false'"
+                title="Thread actions"
+                aria-label="Thread actions"
+                @click="openRowMenu($event, thread)"
+              >
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3.2" cy="8" r="1.2" />
+                  <circle cx="8" cy="8" r="1.2" />
+                  <circle cx="12.8" cy="8" r="1.2" />
+                </svg>
+              </button>
             </div>
-          </div>
-        </section>
       </template>
 
       <p v-else-if="threads.length" class="rchat-empty">
-        No threads match this search and time filter.
+        No {{ statusLabel.toLowerCase() }} threads match this search and time filter.
       </p>
       <p v-else class="rchat-empty">
         No chats yet. Use + to start one.

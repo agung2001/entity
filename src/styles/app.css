@@ -13124,3 +13124,242 @@ button.empty-link {
     animation: none;
   }
 }
+
+/* ── chat history: the larger reading row from the history-page study ──── */
+.rchat-list {
+  gap: 0;
+  padding: 0 6px 10px;
+}
+.rchat-section {
+  margin: 0;
+}
+.rchat-section + .rchat-section {
+  margin-top: 3px;
+  padding-top: 0;
+  border-top: 0;
+}
+.rchat-section-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  align-items: center;
+  min-height: 31px;
+  padding: 9px 7px 6px;
+  border-radius: 0;
+  background: var(--rail-bg);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+}
+.rchat-section-head:hover {
+  background: var(--rail-bg);
+  color: var(--ink-2);
+}
+.rchat-section-label {
+  flex: 1;
+  text-align: left;
+}
+.rchat-hide {
+  margin-left: 3px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted);
+  opacity: 0.72;
+}
+.rchat-section-head:hover .rchat-hide {
+  opacity: 1;
+  color: var(--ink-2);
+}
+.rchat-section-body {
+  gap: 2px;
+}
+.rchat-row {
+  min-height: 64px;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 9px 7px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.rchat-row:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.rchat-row[data-on='1'] {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+.rchat-open {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0;
+}
+.rchat-open .mark {
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+}
+.rchat-text {
+  gap: 4px;
+}
+.rchat-title {
+  align-items: flex-start;
+  gap: 5px;
+}
+.rchat-title b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.32;
+  letter-spacing: -0.015em;
+}
+.rchat-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  overflow: visible;
+  white-space: normal;
+  font-size: 9.8px;
+  letter-spacing: 0.02em;
+}
+.rchat-entity {
+  color: var(--ink-2);
+}
+.rchat-sep {
+  opacity: 0.45;
+}
+.rchat-dots {
+  margin-top: 4px;
+  opacity: 0;
+}
+.rchat-row:hover .rchat-dots,
+.rchat-row[data-on='1'] .rchat-dots,
+.rchat-dots[aria-expanded='true'] {
+  opacity: 1;
+}
+.rchat-empty {
+  padding: 10px 8px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.rchat-section .rchat-empty {
+  padding-left: 10px;
+}
+
+/* ── chat rail: status switch and per-thread health chip ───────────────── */
+.rchat-status-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.rchat-status-switch button {
+  flex: 1;
+  min-width: 0;
+  height: 23px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rchat-status-switch button b {
+  margin-left: 2px;
+  font-weight: 500;
+  opacity: 0.55;
+}
+.rchat-status-switch button:hover {
+  color: var(--ink-2);
+}
+.rchat-status-switch button[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.rchat-status-switch button[data-status='working'][aria-pressed='true'] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.rchat-status-switch button[data-status='done'][aria-pressed='true'] {
+  border-color: color-mix(in oklab, var(--ok) 38%, var(--border));
+  background: color-mix(in oklab, var(--ok) 11%, var(--bg));
+  color: var(--ok);
+}
+.rchat-status-switch button[data-status='failed'][aria-pressed='true'] {
+  border-color: color-mix(in oklab, var(--danger) 35%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.rchat-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 15px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rchat-health i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.rchat-health[data-s='working'] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.rchat-health[data-s='working'] i {
+  animation: rchat-health-pulse 1.4s ease-in-out infinite;
+}
+.rchat-health[data-s='done'] {
+  border-color: color-mix(in oklab, var(--ok) 32%, var(--border));
+  background: color-mix(in oklab, var(--ok) 9%, var(--bg));
+  color: var(--ok);
+}
+.rchat-health[data-s='failed'] {
+  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.rchat-list {
+  padding-top: 6px;
+}
+@keyframes rchat-health-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rchat-health[data-s='working'] i {
+    animation: none;
+  }
+}
