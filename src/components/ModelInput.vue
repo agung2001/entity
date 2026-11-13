@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesQuery } from '@/composables/search'
 
 /**
@@ -94,9 +95,6 @@ function onKey(event) {
   } else if (event.key === 'Enter' && open.value && active.value >= 0) {
     event.preventDefault()
     pick(visible.value[active.value])
-  } else if (event.key === 'Escape' && open.value) {
-    event.preventDefault()
-    open.value = false
   }
 }
 
@@ -104,6 +102,8 @@ function onDocumentClick(event) {
   if (!open.value || root.value?.contains(event.target)) return
   open.value = false
 }
+
+useDialogDismiss({ active: () => open.value, close: () => (open.value = false) })
 
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))

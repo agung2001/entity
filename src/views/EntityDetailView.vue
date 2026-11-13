@@ -10,6 +10,7 @@ import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import {
   agentById,
   ago,
@@ -43,6 +44,8 @@ const seeding = ref(false)
 const configOpen = ref(false)
 const configRoot = ref(null)
 const cloneOpen = ref(false)
+
+useDialogDismiss({ active: () => configOpen.value, close: () => (configOpen.value = false) })
 
 const agent = computed(
   () => agentById(route.params.name) || hub.agents.find((item) => item.name === route.params.name),

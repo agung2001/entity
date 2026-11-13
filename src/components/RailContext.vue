@@ -8,6 +8,7 @@ import MachineIcon from '@/components/MachineIcon.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import { hub } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
+import { shortcutLabel } from '@/lib/shortcuts'
 import { workspaces } from '@/stores/workspaces'
 
 /**
@@ -18,6 +19,7 @@ import { workspaces } from '@/stores/workspaces'
  */
 const route = useRoute()
 const router = useRouter()
+const newThreadKey = shortcutLabel('new-thread')
 const history = ref(null)
 const entityPanel = ref(null)
 const artifactPanel = ref(null)
@@ -102,7 +104,7 @@ function backToWorkspaces() {
         v-if="section.id === 'chat'"
         class="rail-t2-add"
         type="button"
-        title="New chat (⌘N)"
+        :title="`New chat (${newThreadKey})`"
         aria-label="New chat"
         data-sfx="spark"
         @click="newChat"

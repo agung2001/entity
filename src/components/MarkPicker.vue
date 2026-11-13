@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import {
   COLORS,
   EMOJI_GROUPS,
@@ -183,16 +184,14 @@ function onDocumentClick(e) {
   open.value = false
   drawerOpen.value = false
 }
-function onDocumentKey(e) {
-  if (e.key === 'Escape' && open.value) {
-    if (drawerOpen.value) {
-      drawerOpen.value = false
-      return
-    }
+useDialogDismiss({ active: () => drawerOpen.value, close: () => (drawerOpen.value = false) })
+useDialogDismiss({
+  active: () => open.value,
+  close: () => {
     open.value = false
     root.value?.querySelector('.mk-btn')?.focus()
-  }
-}
+  },
+})
 
 /** both groups are radiogroups, so arrows move between options */
 function arrowNav(e, selector) {
@@ -205,14 +204,8 @@ function arrowNav(e, selector) {
   items[(i + (forward ? 1 : items.length - 1)) % items.length].focus()
 }
 
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  document.addEventListener('keydown', onDocumentKey)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onDocumentKey)
-})
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>

@@ -15978,3 +15978,77 @@ button.empty-link {
     color-mix(in oklab, #fff 58%, transparent) 7px 9px
   );
 }
+
+/* ── keyboard guide ───────────────────────────────────────────── */
+.shortcut-help {
+  width: min(560px, 94vw);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+.shortcut-body {
+  overflow: auto;
+}
+.shortcut-group + .shortcut-group {
+  margin-top: 18px;
+}
+.shortcut-group h3 {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.shortcut-help .help-list > div {
+  grid-template-columns: 104px minmax(0, 1fr);
+  padding: 7px 0;
+}
+.shortcut-help .help-note {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+.shortcut-help .help-list dt {
+  flex-wrap: wrap;
+}
+.shortcut-help .help-list kbd {
+  font-size: 10px;
+  padding: 2px 5px;
+  color: var(--ink-2);
+}
+.shortcut-foot {
+  align-items: center;
+  justify-content: space-between;
+}
+.shortcut-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* top-bar guide button: the small keyboard next to Search */
+.helpbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+.helpbtn:hover,
+.helpbtn[aria-expanded='1'] {
+  border-color: var(--muted);
+  color: var(--ink);
+  background: var(--surface);
+}
+.helpbtn kbd {
+  padding: 0 3px;
+  font-size: 9px;
+}

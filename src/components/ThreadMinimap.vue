@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 
 /**
  * A right-edge outline of the conversation. Long replies are hard to navigate
@@ -55,6 +56,9 @@ const railItems = computed(() =>
 )
 
 const tickLabel = (item) => `${item.role}: ${item.title}`
+
+/* The jump card is a surface: Escape closes it before anything behind it. */
+useDialogDismiss({ active: () => previewIndex.value >= 0, close: () => (previewIndex.value = -1) })
 
 /* With reply ticks dropped, the reply currently being read still lights the
    question it belongs to. */
@@ -180,7 +184,6 @@ function onTickClick(item) {
       aria-label="Jump between messages"
       @pointerleave="closeSoon"
       @focusout="closeSoon"
-      @keydown.esc.prevent="previewIndex = -1"
     >
       <button
         v-for="item in railItems"
@@ -208,7 +211,6 @@ function onTickClick(item) {
       @pointerleave="closeSoon"
       @focusin="cancelClose"
       @focusout="closeSoon"
-      @keydown.esc.prevent="previewIndex = -1"
     >
       <ul>
         <li v-for="item in items" :key="item.id" :data-kind="item.who" :data-index="item.index">

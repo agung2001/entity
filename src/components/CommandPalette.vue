@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { fleet, loadFleet } from '@/stores/fleet'
 import { loadLibrary, openWorkspace, workspaces } from '@/stores/workspaces'
 import { matchesQuery } from '@/composables/search'
@@ -17,6 +18,8 @@ import { ago, ensureChats, hub, initials, snippet, toast } from '@/stores/hub'
  */
 const router = useRouter()
 const input = ref(null)
+
+useDialogDismiss({ active: () => hub.palette.open, close: () => (hub.palette.open = false) })
 const limits = reactive({ navigation: 6, workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 })
 
 const LIMIT_START = { navigation: 6, workspace: 3, chat: 4, entity: 4, skill: 4, machine: 4, activity: 4 }

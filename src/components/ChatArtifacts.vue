@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { downloadArtifact, readArtifact } from '@/stores/artifacts'
 import { toast } from '@/stores/hub'
 
@@ -86,9 +87,7 @@ function closeZoom() {
   zoom.value = null
 }
 
-function onKey(event) {
-  if (event.key === 'Escape' && zoom.value) closeZoom()
-}
+useDialogDismiss({ active: () => Boolean(zoom.value), close: closeZoom })
 
 async function download(item) {
   if (busy.value) return
@@ -112,13 +111,11 @@ async function download(item) {
 onMounted(async () => {
   await nextTick()
   observe()
-  document.addEventListener('keydown', onKey)
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   observer = null
-  document.removeEventListener('keydown', onKey)
 })
 
 watch(

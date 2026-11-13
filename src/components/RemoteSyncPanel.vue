@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import {
   approveRemote,
   closeRemotePanel,
@@ -43,6 +44,13 @@ const findings = computed(() => {
 })
 const blocked = computed(() => state.value?.status === 'blocked' || findings.value.length > 0)
 const summary = computed(() => state.value?.summary || null)
+const isOpen = computed(() => Boolean(props.workspace) && remote.panel === props.workspace)
+
+useDialogDismiss({
+  active: () => isOpen.value,
+  close: () => closeRemotePanel(),
+  guard: () => busy.value,
+})
 
 const hostOf = (url) => {
   try {
@@ -178,14 +186,14 @@ async function disconnect() {
 </script>
 
 <template>
+  <div v-if="isOpen" class="scrim" data-open="1" @click="busy || closeRemotePanel()"></div>
   <div
-    v-if="workspace && remote.panel === workspace"
+    v-if="isOpen"
     class="modal modal-narrow rmt-panel"
     data-open="1"
     role="dialog"
     aria-modal="true"
     aria-label="Remote workspace status"
-    @click.self="closeRemotePanel()"
   >
     <header class="mo-head">
       <p class="kicker">remote workspace</p>

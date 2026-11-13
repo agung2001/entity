@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { markFor } from '@/composables/entityMark'
 import { cloneEntity } from '@/stores/entities'
 import { toast } from '@/stores/hub'
@@ -23,6 +24,12 @@ const name = ref(props.entity?.name || '')
 const busy = ref(false)
 const loading = ref(true)
 const error = ref('')
+
+useDialogDismiss({
+  active: true,
+  close: () => emit('close'),
+  guard: () => busy.value,
+})
 
 const others = computed(() => workspaces.items.filter((item) => item.id !== props.workspace))
 const sourceLabel = computed(
@@ -91,14 +98,13 @@ async function submit() {
 
 <template>
   <Teleport to="body">
-    <div class="scrim" data-open="1" @click="emit('close')"></div>
+    <div class="scrim" data-open="1" @click="busy || emit('close')"></div>
     <div
       class="modal modal-narrow clone-modal"
       data-open="1"
       role="dialog"
       aria-modal="true"
       aria-label="Clone entity to another workspace"
-      @keydown.esc="emit('close')"
     >
       <div class="mo-head">
         <h2>Clone entity</h2>

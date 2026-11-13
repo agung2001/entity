@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
@@ -94,10 +95,6 @@ function onMenuKey(e) {
     /* focus is still in the search field — take the first match */
     e.preventDefault()
     if (opts[0]) pick(opts[0].dataset.val)
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    open.value = false
-    root.value?.querySelector('.pickbtn')?.focus()
   } else if (e.key === 'Tab') {
     open.value = false
   }
@@ -107,18 +104,16 @@ function onDocumentClick(e) {
   if (!open.value || root.value?.contains(e.target)) return
   open.value = false
 }
-function onDocumentKey(e) {
-  if (e.key === 'Escape' && open.value) open.value = false
-}
+useDialogDismiss({
+  active: () => open.value,
+  close: () => {
+    open.value = false
+    root.value?.querySelector('.pickbtn')?.focus()
+  },
+})
 
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  document.addEventListener('keydown', onDocumentKey)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onDocumentKey)
-})
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>

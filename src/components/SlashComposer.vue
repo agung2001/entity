@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { call } from '@/composables/localBridge'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, slashMenu } from '@/stores/hub'
 import { loadSkillNames, workspaces } from '@/stores/workspaces'
 
@@ -32,9 +33,7 @@ const menu = ref([])
 const active = ref(0)
 const input = ref(null)
 const scanning = ref(false)
-const isMac =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
-const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
+const sendShortcut = shortcutLabel('send')
 /* one library read per machine per composer mount, even if the scan fails */
 const requested = new Set()
 
@@ -341,7 +340,7 @@ function pick(cmd) {
 }
 
 function onKey(e) {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+  if (matchesShortcut('send', e)) {
     e.preventDefault()
     submit()
     return

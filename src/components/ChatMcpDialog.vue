@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { call } from '@/composables/localBridge'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { hub } from '@/stores/hub'
 import { workspaces } from '@/stores/workspaces'
 
@@ -14,6 +15,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
+
+useDialogDismiss({ active: () => props.open, close: () => emit('close') })
 
 const selectedName = ref('')
 const states = reactive({})

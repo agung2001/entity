@@ -4,6 +4,7 @@ import EntityMark from '@/components/EntityMark.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import { COLORS, MOODS, SHAPES, setMark } from '@/composables/entityMark'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { scaffoldEntity } from '@/stores/entities'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 import { hub, toast } from '@/stores/hub'
@@ -28,6 +29,12 @@ const error = ref('')
 const busy = ref(false)
 const samplesLoading = ref(true)
 const nameInput = ref(null)
+
+useDialogDismiss({
+  active: true,
+  close: () => emit('close'),
+  guard: () => busy.value,
+})
 
 const samples = computed(() => workspaces.samples)
 const harnessOptions = computed(() =>
@@ -174,14 +181,13 @@ async function create() {
 
 <template>
   <Teleport to="body">
-    <div class="scrim" data-open="1" @click="emit('close')"></div>
+    <div class="scrim" data-open="1" @click="busy || emit('close')"></div>
     <div
       class="modal ent-wizard"
       data-open="1"
       role="dialog"
       aria-modal="true"
       aria-label="Add entity"
-      @keydown.esc="emit('close')"
     >
       <div class="mo-head ent-wiz-head">
         <span class="ent-wiz-kicker">New entity</span>

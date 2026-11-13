@@ -1,14 +1,16 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
+import ShortcutsDialog from '@/components/ShortcutsDialog.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import { closeWizard, hub, toast } from '@/stores/hub'
 import { toggleTheme } from '@/lib/theme'
-import { hasDesktopBridge } from '@/composables/localBridge'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { useDialogDismiss } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,7 +46,17 @@ const crumbs = computed(() => {
 
 const overlayOpen = computed(() => hub.wizard.open || hub.palette.open)
 
-const isDesktop = hasDesktopBridge()
+const shortcutsOpen = ref(false)
+
+/* The wizard and the guide are the two overlays this layout owns; the palette
+   registers itself. One Escape stack closes whichever opened last. */
+useDialogDismiss({ active: () => hub.wizard.open, close: closeWizard })
+useDialogDismiss({ active: () => shortcutsOpen.value, close: () => (shortcutsOpen.value = false) })
+
+function openGuide() {
+  hub.palette.open = false
+  shortcutsOpen.value = true
+}
 
 function openPalette() {
   hub.palette.open = true
@@ -67,34 +79,35 @@ function onScrim() {
   else if (hub.wizard.open) closeWizard()
 }
 
-function onKey(e) {
-  const key = e.key.toLowerCase()
-  const primary = (e.metaKey || e.ctrlKey) && !e.altKey
-  const primaryShift = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey
-  const alternateShift = e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey
+function isEditable(target) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+  )
+}
 
-  if ((primaryShift || alternateShift) && (key === 'l' || e.code === 'KeyL')) {
+function onKey(e) {
+  if (matchesShortcut('guide', e)) {
+    /* `?` is a character a person can type; only take it outside a field. */
+    if (isEditable(e.target)) return
+    e.preventDefault()
+    openGuide()
+    return
+  }
+  if (matchesShortcut('theme', e)) {
     e.preventDefault()
     toggleTheme()
     return
   }
-  if (primary && key === 'k') {
+  if (matchesShortcut('palette', e)) {
     e.preventDefault()
     openPalette()
     return
   }
-  const barePrimary = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey
-  if (
-    ((isDesktop && barePrimary) || primaryShift || alternateShift) &&
-    (key === 'n' || e.code === 'KeyN')
-  ) {
+  if (matchesShortcut('new-thread', e)) {
     e.preventDefault()
     openNewThread()
-    return
   }
-  if (e.key !== 'Escape') return
-  if (hub.palette.open) hub.palette.open = false
-  else if (hub.wizard.open) closeWizard()
 }
 
 /** `createWorkspace()` already opened and loaded it — here we only close. */
@@ -124,7 +137,21 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             <circle cx="7" cy="7" r="4.6" />
             <path d="M10.5 10.5L14 14" />
           </svg>
-          Search <kbd>⌘K</kbd>
+          Search <kbd>{{ shortcutLabel('palette') }}</kbd>
+        </button>
+        <button
+          class="helpbtn"
+          type="button"
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+          :aria-expanded="shortcutsOpen ? 'true' : 'false'"
+          @click="openGuide"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <rect x="1.6" y="3.6" width="12.8" height="8.8" rx="1.6" />
+            <path d="M4.4 6.4h.1M6.9 6.4h.1M9.4 6.4h.1M11.9 6.4h.1M4.4 9.4h.1M6.9 9.4h2.2M11.9 9.4h.1" stroke-linecap="round" />
+          </svg>
+          <kbd>?</kbd>
         </button>
       </AppTopbar>
 
@@ -132,6 +159,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         <router-view />
       </div>
     </main>
+
+    <ShortcutsDialog :open="shortcutsOpen" @close="shortcutsOpen = false" />
 
     <div class="scrim" :data-open="overlayOpen ? '1' : '0'" @click="onScrim"></div>
     <div class="modal modal-wizard" :data-open="hub.wizard.open ? '1' : '0'" role="dialog" aria-modal="true" aria-label="New workspace">

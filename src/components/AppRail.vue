@@ -6,7 +6,7 @@ import NavIcon from '@/components/NavIcon.vue'
 import RailContext from '@/components/RailContext.vue'
 import { ensureChats, hub, initials, roleById, signOut } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
-import { hasDesktopBridge } from '@/composables/localBridge'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { gravatarUrl } from '@/lib/gravatar'
 import { themeMode, toggleTheme } from '@/lib/theme'
 
@@ -16,16 +16,7 @@ const router = useRouter()
 const accountOpen = ref(false)
 const accountRoot = ref(null)
 const railEl = ref(null)
-const isMac =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
-const isDesktop = hasDesktopBridge()
-const themeShortcut = isDesktop
-  ? isMac
-    ? '⌘⇧L'
-    : 'Ctrl+Shift+L'
-  : isMac
-    ? '⌥⇧L'
-    : 'Alt+Shift+L'
+const themeShortcut = shortcutLabel('theme')
 
 /* The second tier is a working surface, not fixed chrome: some histories need
    more width than others. The width belongs to the window, like the fold. */
@@ -208,19 +199,17 @@ function onDocumentClick(event) {
 }
 
 function onDocumentKey(event) {
-  if (event.key === 'Escape') accountOpen.value = false
   const target = event.target
   const editable =
     target instanceof HTMLElement &&
     (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
   if (editable) return
 
-  const key = event.key.toLowerCase()
-  const code = event.code
-  const primary = (event.metaKey || event.ctrlKey) && !event.altKey
-
-  if (!primary || event.shiftKey) return
-  if (key !== 'b' && code !== 'KeyB') return
+  if (event.key === 'Escape') {
+    accountOpen.value = false
+    return
+  }
+  if (!matchesShortcut('rail', event)) return
   event.preventDefault()
   toggleRail()
 }

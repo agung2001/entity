@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import HarnessIcon from '@/components/HarnessIcon.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
 import { commandLine, definitionOf, envNames, poolEntries, transportOf } from '@/lib/mcp'
@@ -26,6 +27,7 @@ const harness = ref('all')
 const sortKey = ref('name')
 const sortDir = ref('asc')
 const globals = reactive({ loading: false, loaded: false, error: '', groups: [], count: 0 })
+
 const addOpen = ref(false)
 const addBusy = ref(false)
 const addError = ref('')
@@ -35,6 +37,16 @@ const jsonOpen = ref(false)
 const jsonText = ref('')
 const jsonError = ref('')
 const jsonBusy = ref(false)
+
+function closeAdd() {
+  if (!addBusy.value) addOpen.value = false
+}
+function closeJson() {
+  if (!jsonBusy.value) jsonOpen.value = false
+}
+
+useDialogDismiss({ active: () => addOpen.value, close: closeAdd })
+useDialogDismiss({ active: () => jsonOpen.value, close: closeJson })
 
 const pool = computed(() => poolEntries(workspaces.mcp))
 const poolServers = computed(() => poolEntries(workspaces.mcp).filter((entry) => entry.enabled))
@@ -448,12 +460,12 @@ onMounted(() => {
     </div>
 
     <Teleport to="body">
-      <div class="scrim" :data-open="addOpen || jsonOpen ? '1' : '0'" @click="addOpen = false; jsonOpen = false"></div>
+      <div class="scrim" :data-open="addOpen || jsonOpen ? '1' : '0'" @click="closeAdd(); closeJson()"></div>
       <div class="modal mcp-modal" :data-open="addOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP server">
         <div class="mo-head">
           <h2>Add MCP server</h2>
           <p>Write the definition into this workspace's pool. Env holds variable names only.</p>
-          <button class="x mo-x" type="button" aria-label="Close" @click="addOpen = false">
+          <button class="x mo-x" type="button" aria-label="Close" @click="closeAdd">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
           </button>
         </div>
@@ -490,7 +502,7 @@ onMounted(() => {
           </div>
           <p v-if="addError" class="acct-error" role="alert">{{ addError }}</p>
           <div class="mo-foot" style="padding: 8px 0 0; border: 0">
-            <button class="btn" type="button" :disabled="addBusy" @click="addOpen = false">Cancel</button>
+            <button class="btn" type="button" :disabled="addBusy" @click="closeAdd">Cancel</button>
             <button class="btn btn-ink" type="submit" :disabled="addBusy">{{ addBusy ? 'Saving…' : 'Add server' }}</button>
           </div>
         </form>
@@ -500,7 +512,7 @@ onMounted(() => {
         <div class="mo-head">
           <h2>Pool JSON</h2>
           <p>{{ workspaces.mcp?.path || 'mcp.json' }}</p>
-          <button class="x mo-x" type="button" aria-label="Close" @click="jsonOpen = false">
+          <button class="x mo-x" type="button" aria-label="Close" @click="closeJson">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
           </button>
         </div>
@@ -508,7 +520,7 @@ onMounted(() => {
           <textarea v-model="jsonText" class="mcp-editor mono" rows="16" spellcheck="false"></textarea>
           <p v-if="jsonError" class="acct-error" role="alert">{{ jsonError }}</p>
           <div class="mo-foot" style="padding: 8px 0 0; border: 0">
-            <button class="btn" type="button" @click="jsonOpen = false">Cancel</button>
+            <button class="btn" type="button" @click="closeJson">Cancel</button>
             <button class="btn btn-ink" type="button" :disabled="jsonBusy" @click="saveJson">{{ jsonBusy ? 'Saving…' : 'Save pool' }}</button>
           </div>
         </div>

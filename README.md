@@ -203,6 +203,7 @@ Coding is one of the things you can do here, not the thing the app is about.
 **Also in the box:**
 
 - **Notifications that stay quiet**: a banner when a reply lands or a turn fails, only while you are elsewhere, never carrying a token or a transcript.
+- **A keyboard guide**: the `?` in the top bar lists every shortcut, grouped by where you are. It is generated from one catalog, so it cannot drift from the handlers.
 - **Mentions that resolve before the assistant sees them**: `@entity`, `@artifact:`, `@maka:`, `@youtrack:`, `@orca:`.
 - **A CLI your agents can call**: `entity` can list workspaces, read and rewrite an entity, add an MCP server, and every write is audited.
 - **Remote workspaces**: two-way sync with a shared server, with a guard that runs before any pulled byte is written.
@@ -585,9 +586,10 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
 ## Status
 
 The app is growing and this README tracks what exists today, not what is planned.
-There is no separate documentation site yet; the code is the reference, and the
-test suite (`npm test`) is the closest thing to a specification. Interfaces may
-move while the shape settles.
+There is no separate documentation site yet; the code is the reference, the
+interface rules live in [`DESIGN.md`](DESIGN.md), and the test suite (`npm test`)
+is the closest thing to a specification. Interfaces may move while the shape
+settles.
 
 Not included on purpose: state management (`pinia`), TypeScript, auto-update.
 

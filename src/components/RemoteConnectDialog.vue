@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { connectRemote, discoverRemote, remote } from '@/stores/remote'
 import { toast } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
@@ -35,6 +36,12 @@ const busy = ref(false)
 const reviewEnabled = ref(false)
 const reviewHarness = ref('')
 const reviewModel = ref('')
+
+useDialogDismiss({
+  active: () => props.open,
+  close: () => emit('close'),
+  guard: () => busy.value,
+})
 
 const installedHarnesses = computed(() => harnesses.items.filter((item) => item.installed))
 const reviewModelState = computed(() => harnesses.models[reviewHarness.value] || null)
@@ -177,6 +184,7 @@ async function connect() {
 </script>
 
 <template>
+  <div v-if="open" class="scrim" data-open="1" @click="busy || emit('close')"></div>
   <div
     v-if="open"
     class="modal modal-narrow rmt-modal"
@@ -184,7 +192,6 @@ async function connect() {
     role="dialog"
     aria-modal="true"
     aria-label="Connect to a remote server"
-    @click.self="emit('close')"
   >
     <header class="mo-head">
       <p class="kicker">remote workspace</p>

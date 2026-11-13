@@ -11,8 +11,10 @@ import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
-import { hasDesktopBridge, onRunEvent } from '@/composables/localBridge'
+import { onRunEvent } from '@/composables/localBridge'
 import { colorById, markFor, playReaction } from '@/composables/entityMark'
+import { useDialogDismiss } from '@/composables/useDialog'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
 import {
@@ -56,27 +58,15 @@ const titleDraft = ref('')
 const titleInput = ref(null)
 let offEvent = null
 
-const isMac =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
-const isDesktop = hasDesktopBridge()
-/* Browser chrome owns several Cmd/Ctrl+Shift combinations. In a browser use
-   Option/Alt+Shift instead, while the packaged app keeps the native-looking
-   shortcut. Both are accepted by the handler. */
-const timelineShortcut = isDesktop
-  ? isMac
-    ? '⌘⇧E'
-    : 'Ctrl+Shift+E'
-  : isMac
-    ? '⌥⇧E'
-    : 'Alt+Shift+E'
-const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
-const focusShortcut = isDesktop
-  ? isMac
-    ? '⌘⇧M'
-    : 'Ctrl+Shift+M'
-  : isMac
-    ? '⌥⇧M'
-    : 'Alt+Shift+M'
+/* Every combo comes from the catalog in `src/lib/shortcuts.js`, which also
+   renders the guide in the top bar. */
+const timelineShortcut = shortcutLabel('timeline')
+const sendShortcut = shortcutLabel('send')
+const focusShortcut = shortcutLabel('focus')
+
+/* The composer help belongs to this page; the harness, MCP, new-thread and
+   timeline dialogs register their own Escape entry. */
+useDialogDismiss({ active: () => helpOpen.value, close: () => (helpOpen.value = false) })
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
 
@@ -226,40 +216,17 @@ function startThread() {
 }
 
 function onChatKey(event) {
-  if (event.key === 'Escape') {
-    if (harnessOpen.value) {
-      harnessOpen.value = false
+  if (matchesShortcut('focus', event)) {
+    if (newOpen.value || timelineOpen.value || helpOpen.value || harnessOpen.value || mcpOpen.value) {
       return
     }
-    if (mcpOpen.value) {
-      mcpOpen.value = false
-      return
-    }
-    if (helpOpen.value) {
-      helpOpen.value = false
-      return
-    }
-  }
-  const key = event.key.toLowerCase()
-  const shiftPrimary = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey
-  const alternate = event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey
-  if (!shiftPrimary && !alternate) return
-
-  if (
-    (key === 'm' || event.code === 'KeyM') &&
-    !newOpen.value &&
-    !timelineOpen.value &&
-    !helpOpen.value &&
-    !harnessOpen.value &&
-    !mcpOpen.value
-  ) {
     event.preventDefault()
     event.stopPropagation()
     composer.value?.focus()
     return
   }
 
-  if ((key === 'e' || event.code === 'KeyE') && canTimeline.value) {
+  if (matchesShortcut('timeline', event) && canTimeline.value) {
     event.preventDefault()
     event.stopPropagation()
     timelineOpen.value = true
@@ -747,7 +714,8 @@ watch(
           </dl>
           <p class="help-note">
             The menu shows ten at a time. <b>Show 10 more</b> fetches the next page of a mention
-            search, or reveals more of a skill library.
+            search, or reveals more of a skill library. App-wide keys — palette, rail, theme,
+            new conversation — are in the keyboard guide, behind <kbd>?</kbd> in the top bar.
           </p>
           </div>
 

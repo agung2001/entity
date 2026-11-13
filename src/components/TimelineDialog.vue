@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import ExecutionTimeline from '@/components/ExecutionTimeline.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { toast } from '@/stores/hub'
 
 /**
@@ -15,6 +16,8 @@ const props = defineProps({
   live: { type: Object, default: null },
 })
 const emit = defineEmits(['close'])
+
+useDialogDismiss({ active: () => props.open, close: () => emit('close') })
 
 const selectedKey = ref('')
 const selectedSeq = ref(-1)
@@ -204,10 +207,6 @@ function firstSeq(entry) {
 
 function onKey(event) {
   if (!props.open) return
-  if (event.key === 'Escape') {
-    emit('close')
-    return
-  }
   if (event.key === 'ArrowDown') {
     event.preventDefault()
     stepBy(1)

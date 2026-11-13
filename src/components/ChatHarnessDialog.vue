@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { harnesses } from '@/stores/harnesses'
 
 /**
@@ -14,6 +15,8 @@ const props = defineProps({
   model: { type: String, default: '' },
 })
 const emit = defineEmits(['close'])
+
+useDialogDismiss({ active: () => props.open, close: () => emit('close') })
 
 const label = computed(
   () => harnesses.items.find((item) => item.id === props.harness)?.label || props.harness || 'No harness',

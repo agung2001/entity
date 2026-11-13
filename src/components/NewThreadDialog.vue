@@ -2,6 +2,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { agentById, createThread, hub } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
@@ -22,6 +23,14 @@ const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: 
 const error = ref('')
 const busy = ref(false)
 const resetting = ref(false)
+
+/* Escape is ignored while a provider call is in flight; the footer's Cancel is
+   disabled for the same reason. */
+useDialogDismiss({
+  active: () => props.open,
+  close: () => emit('close'),
+  guard: () => busy.value,
+})
 
 const machines = computed(() =>
   hub.machines.length
@@ -174,7 +183,7 @@ async function submit() {
 </script>
 
 <template>
-  <div class="scrim" :data-open="open ? '1' : '0'" @click="emit('close')"></div>
+  <div class="scrim" :data-open="open ? '1' : '0'" @click="busy || emit('close')"></div>
   <div
     class="modal modal-narrow"
     :data-open="open ? '1' : '0'"
