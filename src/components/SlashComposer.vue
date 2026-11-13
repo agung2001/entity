@@ -1,18 +1,22 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { slashMenu } from '@/stores/hub'
+import { call } from '@/composables/localBridge'
+import { hub, slashMenu } from '@/stores/hub'
 import { loadSkillNames, workspaces } from '@/stores/workspaces'
 
 /**
- * The composer, with the `/` menu above it. The menu is a skill picker: the
- * workspace's skills as `/workspace:<name>`, every harness library as
- * `/<harness>:<name>`, and a bare `/` finds a name when exactly one library has
- * it. Picking one inserts the reference; the backend turns it into a path on the
- * machine this thread is pinned to.
+ * The composer, with one menu above it for two triggers.
+ *
+ *   `/`  a skill: `/workspace:<name>`, `/<harness>:<name>`, or a bare `/<name>`
+ *   `@`  a mention: an entity (that entity runs the job), an Orca project file,
+ *        an artifact, a Maka note, a YouTrack issue
+ *
+ * Picking inserts text and nothing else. Resolution happens in the backend when
+ * the message is sent, so typing never starts a process or a network call.
  */
 const props = defineProps({
   agent: { type: Object, required: true },
-  placeholder: { type: String, default: 'Ask anything, or type / for a skill' },
+  placeholder: { type: String, default: 'Ask anything — / for a skill, @ to mention' },
   /* the thread's machine: only this machine's skill libraries can be read */
   machine: { type: String, default: 'local' },
   /* a thread answers one turn at a time; the composer waits for it */
@@ -28,7 +32,6 @@ const menu = ref([])
 const active = ref(0)
 const input = ref(null)
 const scanning = ref(false)
-const expanded = ref(false)
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
 const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
@@ -36,7 +39,172 @@ const sendShortcut = isMac ? '⌘↵' : 'Ctrl+↵'
 const requested = new Set()
 
 const open = computed(() => menu.value.length > 0)
-const shown = computed(() => (expanded.value ? menu.value : menu.value.slice(0, 5)))
+const menuMode = ref('slash')
+const mentionSources = ref(null)
+let mentionAsked = false
+
+/* The four typed mentions. A bare `@name` is an entity, so entities are listed
+   from the workspace rather than from this table. */
+const MENTION_KINDS = [
+  { name: '@orca:', desc: 'A path from an Orca project — project:file' },
+  { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
+  { name: '@maka:', desc: 'A note in a Maka vault — vault:query' },
+  { name: '@youtrack:', desc: 'An issue — project:query' },
+]
+
+/** `@` right before the caret, with the partial word typed after it. */
+function mentionTrigger() {
+  const before = draft.value.slice(0, typeof input.value?.selectionStart === 'number' ? input.value.selectionStart : draft.value.length)
+  const match = before.match(/(^|[\s(\[])@([A-Za-z0-9._-]*)$/)
+  return match ? { start: before.length - match[2].length - 1, query: match[2] } : null
+}
+
+function mentionMenu(query) {
+  const q = String(query || '').toLowerCase()
+  const items = []
+  for (const kind of MENTION_KINDS) {
+    if (kind.name.slice(1).toLowerCase().includes(q)) items.push({ ...kind, kind: 'mention' })
+  }
+  for (const agent of hub.agents || []) {
+    if (!String(agent.name || '').toLowerCase().includes(q)) continue
+    items.push({
+      name: `@${agent.name}`,
+      desc: `Entity · ${agent.harnessLabel || agent.harness || 'harness'}`,
+      kind: 'entity',
+    })
+  }
+  for (const project of mentionSources.value?.orca || []) {
+    if (!String(project.name || '').toLowerCase().includes(q)) continue
+    items.push({ name: `@orca:${project.name}`, desc: `Orca · ${project.path}`, kind: 'orca' })
+  }
+  return items.slice(0, 8)
+}
+
+/** One RPC per composer mount, only once an `@` is actually typed. */
+async function loadMentionSources() {
+  if (mentionAsked) return
+  mentionAsked = true
+  try {
+    mentionSources.value = await call('mention.sources')
+  } catch {
+    mentionSources.value = { orca: [] }
+  }
+}
+
+/* ── live results while a typed mention is being written ──────────── */
+
+const KIND_NAMES = new Set(MENTION_KINDS.map((kind) => kind.name.slice(1, -1)))
+const PAGE = 10
+const searching = ref(false)
+const loadingMore = ref(false)
+const searchState = ref({ key: '', more: false, error: '' })
+/* how many rows the menu paints; "Show more" either appends a fetched page or
+   raises this, depending on whether the source has more to give */
+const visible = ref(PAGE)
+let searchTimer = null
+let searchSeq = 0
+let searchKind = ''
+let searchFields = []
+
+/** `@kind:fields` under the caret, still on one word — the live-search trigger. */
+function typedMention() {
+  const caret =
+    typeof input.value?.selectionStart === 'number'
+      ? input.value.selectionStart
+      : draft.value.length
+  const before = draft.value.slice(0, caret)
+  const match = before.match(/(^|[\s(\[])@([A-Za-z0-9._-]+):([^\s]*)$/)
+  if (!match) return null
+  const kind = match[2].toLowerCase()
+  if (!KIND_NAMES.has(kind)) return null
+  return { kind, fields: match[3] === '' ? [''] : match[3].split(':') }
+}
+
+function toMenuItems(items) {
+  return (items || []).map((item) => ({
+    name: item.insert,
+    desc: item.label,
+    title: item.detail || '',
+    kind: 'result',
+  }))
+}
+
+function stopSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = null
+  searching.value = false
+  loadingMore.value = false
+  searchSeq += 1
+  searchState.value = { key: '', more: false, error: '' }
+}
+
+/* Debounced, and stale answers are dropped: typing fast must never paint the
+   results of a query two keystrokes ago. */
+function scheduleSearch(kind, fields) {
+  const key = `${kind}:${fields.join(':')}`
+  searchKind = kind
+  searchFields = fields
+  if (searchState.value.key === key) return
+
+  clearTimeout(searchTimer)
+  const seq = ++searchSeq
+  searching.value = true
+  visible.value = PAGE
+  searchTimer = setTimeout(async () => {
+    try {
+      const data = await call('mention.search', {
+        workspace: hub.workspace,
+        kind,
+        fields,
+        limit: PAGE,
+        offset: 0,
+      })
+      if (seq !== searchSeq) return
+      searchState.value = { key, more: Boolean(data?.more), error: '' }
+      menu.value = toMenuItems(data?.items)
+    } catch (error) {
+      if (seq !== searchSeq) return
+      searchState.value = { key, more: false, error: String(error?.message || error) }
+      menu.value = []
+    } finally {
+      if (seq === searchSeq) searching.value = false
+    }
+  }, 180)
+}
+
+/** Fetch the next page from the source, or reveal rows already in hand. */
+async function loadMore() {
+  if (loadingMore.value || searching.value) return
+  if (menuMode.value === 'mention-search' && searchState.value.more) {
+    loadingMore.value = true
+    const seq = searchSeq
+    try {
+      const data = await call('mention.search', {
+        workspace: hub.workspace,
+        kind: searchKind,
+        fields: searchFields,
+        limit: PAGE,
+        offset: menu.value.length,
+      })
+      if (seq !== searchSeq) return
+      menu.value = [...menu.value, ...toMenuItems(data?.items)]
+      searchState.value = { ...searchState.value, more: Boolean(data?.more) }
+      visible.value = menu.value.length
+    } catch (error) {
+      if (seq === searchSeq) searchState.value = { ...searchState.value, error: String(error?.message || error), more: false }
+    } finally {
+      if (seq === searchSeq) loadingMore.value = false
+    }
+    return
+  }
+  visible.value += PAGE
+}
+const shown = computed(() => menu.value.slice(0, visible.value))
+const hasMore = computed(
+  () =>
+    menu.value.length > visible.value ||
+    (menuMode.value === 'mention-search' && searchState.value.more),
+)
 const machineInfo = computed(() => workspaces.skillNamesByMachine[props.machine] || null)
 
 /* The menu is the only feedback the composer has, so an empty list still needs
@@ -44,7 +212,11 @@ const machineInfo = computed(() => workspaces.skillNamesByMachine[props.machine]
    machine that simply has no skills. */
 const note = computed(() => {
   if (props.disabled) return ''
-  if (!draft.value.startsWith('/') || menu.value.length) return ''
+  if (menu.value.length || searching.value) return ''
+  if (menuMode.value === 'mention-search') {
+    return searchState.value.error || 'No match yet — keep typing, or Esc and send it as written.'
+  }
+  if (!draft.value.startsWith('/')) return ''
   const info = machineInfo.value
   if (!info) return ''
   if (info.note) return info.note
@@ -54,12 +226,7 @@ const note = computed(() => {
   }
   return ''
 })
-const boxOpen = computed(() => open.value || Boolean(note.value) || scanning.value)
-
-function toggleExpanded() {
-  expanded.value = !expanded.value
-  active.value = 0
-}
+const boxOpen = computed(() => open.value || Boolean(note.value) || scanning.value || searching.value)
 
 async function scanNames() {
   const cached = workspaces.skillNamesByMachine[props.machine]
@@ -74,7 +241,27 @@ async function scanNames() {
 
 function refresh() {
   if (props.disabled) return
-  expanded.value = false
+
+  const typed = typedMention()
+  if (typed) {
+    menuMode.value = 'mention-search'
+    scheduleSearch(typed.kind, typed.fields)
+    if (active.value > menu.value.length - 1) active.value = 0
+    return
+  }
+  stopSearch()
+
+  const at = mentionTrigger()
+  if (at) {
+    menuMode.value = 'mention'
+    menu.value = mentionMenu(at.query)
+    if (active.value > menu.value.length - 1) active.value = 0
+    loadMentionSources()
+    return
+  }
+
+  menuMode.value = 'slash'
+  visible.value = PAGE
   menu.value = slashMenu(draft.value, props.agent, props.machine)
   if (active.value > menu.value.length - 1) active.value = 0
   /* The names-only scan is the expensive half of the menu; it starts the first
@@ -135,13 +322,14 @@ function pick(cmd) {
   /* replace the partial token under the caret instead of appending, so a
      reference picked mid-draft lands where it was being typed */
   const before = text.slice(0, caret)
-  const partial = before.match(/(^|\s)\/[^\s]*$/)
+  const partial = before.match(/(^|\s)[/@][^\s]*$/) || before.match(/(^|\s)@$/)
   const start = partial ? before.length - partial[0].trimStart().length : caret
-  const next = `${text.slice(0, start)}${cmd.name} ${text.slice(caret)}`
+  const insert = cmd.name.endsWith(':') ? cmd.name : `${cmd.name} `
+  const next = `${text.slice(0, start)}${insert}${text.slice(caret)}`
   draft.value = next
   closeMenu()
   nextTick(() => {
-    const at = start + cmd.name.length + 1
+    const at = start + insert.length
     el?.focus()
     try {
       el?.setSelectionRange(at, at)
@@ -178,6 +366,7 @@ function onKey(e) {
     }
   } else if (e.key === 'Escape') {
     closeMenu()
+    stopSearch()
   }
 }
 
@@ -199,11 +388,11 @@ defineExpose({ focus })
       class="ask-cmdbox"
       :data-open="boxOpen ? '1' : '0'"
       :role="open ? 'listbox' : null"
-      aria-label="Skills"
+      :aria-label="menuMode === 'mention' ? 'Mentions' : 'Skills'"
     >
-      <div v-if="scanning" class="ask-cmd-loading" role="status">
+      <div v-if="scanning || searching" class="ask-cmd-loading" role="status">
         <span class="model-spin" aria-hidden="true"></span>
-        Scanning skill libraries…
+        {{ searching ? 'Searching…' : 'Scanning skill libraries…' }}
       </div>
       <p v-if="note" class="ask-cmd-note" role="status">{{ note }}</p>
       <button
@@ -212,6 +401,7 @@ defineExpose({ focus })
         class="ask-cmd"
         type="button"
         role="option"
+        :title="c.title || undefined"
         :aria-selected="i === active ? 'true' : 'false'"
         :data-on="i === active ? '1' : '0'"
         @mousedown.prevent
@@ -222,13 +412,14 @@ defineExpose({ focus })
         <span class="k">{{ c.kind }}</span>
       </button>
       <button
-        v-if="menu.length > 5"
+        v-if="hasMore"
         class="ask-cmd-more"
         type="button"
+        :disabled="loadingMore"
         @mousedown.prevent
-        @click="toggleExpanded"
+        @click="loadMore"
       >
-        {{ expanded ? 'Show top 5 results' : `Show all ${menu.length} results` }}
+        {{ loadingMore ? 'Loading…' : `Show ${PAGE} more` }}
       </button>
     </div>
 

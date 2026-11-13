@@ -28,6 +28,19 @@ const thoughtChars = computed(() =>
 const mcpServers = computed(() =>
   Array.isArray(props.execution?.mcp) ? props.execution.mcp : [],
 )
+/* what the @mentions in the question resolved to, before the harness ran */
+const mentions = computed(() =>
+  Array.isArray(props.execution?.mentions) ? props.execution.mentions : [],
+)
+
+function mentionSummary(mention) {
+  if (mention.kind === 'entity') {
+    const answer = String(mention.answer || '').replace(/\s+/g, ' ').trim()
+    return answer ? `answer: ${answer.slice(0, 180)}` : mention.note || 'no answer'
+  }
+  if (!mention.items?.length) return mention.note || 'nothing found'
+  return mention.items.map((item) => item.label).join(' · ')
+}
 
 const tools = computed(() => {
   const rows = []
@@ -146,6 +159,10 @@ function errorText(step) {
       <span v-if="errors.length" class="trace-stat trace-stat--bad">
         {{ errors.length }} error{{ errors.length === 1 ? '' : 's' }}
       </span>
+      <span v-if="mentions.length" class="trace-stat">
+        <i class="trace-stat-dot" data-kind="mention"></i>
+        {{ mentions.length }} mention{{ mentions.length === 1 ? '' : 's' }}
+      </span>
       <span v-if="mcpServers.length" class="trace-stat" :title="`MCP: ${mcpServers.join(', ')}`">
         <i class="trace-stat-dot" data-kind="mcp"></i>
         {{ mcpServers.join(', ') }}
@@ -153,6 +170,25 @@ function errorText(step) {
     </div>
 
     <p v-if="execution?.mcpNote" class="trace-digest-note">{{ execution.mcpNote }}</p>
+
+    <details v-if="mentions.length" class="trace-thoughts trace-mentions">
+      <summary>
+        <span class="trace-thought-title">Mentions</span>
+        <span class="trace-thought-meta">{{ mentions.length }} resolved</span>
+        <svg class="trace-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M6 3.5L10.5 8 6 12.5" />
+        </svg>
+      </summary>
+      <div class="trace-thought-list">
+        <div v-for="mention in mentions" :key="mention.token || mention.raw" class="trace-thought">
+          <span class="trace-off">{{ mention.kind }}</span>
+          <p>
+            <code class="trace-mention-raw">{{ mention.token || mention.raw }}</code>
+            <span class="trace-mention-what">{{ mentionSummary(mention) }}</span>
+          </p>
+        </div>
+      </div>
+    </details>
 
     <details v-if="thoughts.length" class="trace-thoughts">
       <summary>

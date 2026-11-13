@@ -18,6 +18,7 @@ const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
+const mentionRef = require('./mention-ref.cjs')
 const mcpRuntime = require('./mcp-runtime.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const artifacts = require('./artifact-store.cjs')
@@ -129,6 +130,11 @@ function normaliseExecution(raw) {
   }
   if (raw.usage && typeof raw.usage === 'object') execution.usage = raw.usage
   if (Number.isFinite(raw.costUsd)) execution.costUsd = raw.costUsd
+  /* what the turn ran with, and what it resolved before running — both survive
+     a reload so the answer's fold still explains itself tomorrow */
+  if (Array.isArray(raw.mcp)) execution.mcp = raw.mcp.map(String)
+  if (typeof raw.mcpNote === 'string' && raw.mcpNote) execution.mcpNote = raw.mcpNote
+  if (Array.isArray(raw.mentions)) execution.mentions = raw.mentions
   return Object.keys(execution).length ? execution : null
 }
 
@@ -571,7 +577,7 @@ function commandPreview(spec) {
  * managed to produce, so the transcript is available even when the answer is
  * not. Only an unexpected programming error rejects.
  */
-function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () => {} } = {}) {
+function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () => {}, mentions = [] } = {}) {
   return new Promise((resolve) => {
     let dir
     try {
@@ -635,6 +641,7 @@ function runHarness(entity, thread, prompt, { onStart = () => {}, onStep = () =>
       /* what actually reached the harness, and what did not and why */
       ...(mcp.servers.length ? { mcp: mcp.servers } : {}),
       ...(mcp.notes.length ? { mcpNote: mcp.notes.join(' · ') } : {}),
+      ...(mentions.length ? { mentions } : {}),
     }
     onStart(execution)
 
@@ -762,6 +769,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
 
   const retryTurn = Boolean(retry)
+  let turnMentions = []
   const message = String(text || '').trim()
   if (!retryTurn && !message) throw new Error('Write a message first.')
   if (thread.machine !== 'local') {
@@ -791,11 +799,19 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
        before anything is written, so a typo leaves no half-turn in the
        transcript */
     const applied = skillRef.rewrite(record, message, { machine: thread.machine })
+    /* `@…` mentions resolve after the skill reference, so the block lands above
+       the prompt and the `/skill` rewrite keeps its anchor at the start */
+    const mentioned = await mentionRef.rewrite(record, applied.text, {
+      entity,
+      machine: thread.machine,
+    })
+    turnMentions = mentioned.mentions
     thread.messages.push({
       who: 'me',
       text: message,
       at: now(),
-      ...(applied.ref ? { sent: applied.text } : {}),
+      ...(applied.ref || mentioned.mentions.length ? { sent: mentioned.text } : {}),
+      ...(mentioned.mentions.length ? { mentions: mentioned.mentions } : {}),
     })
   }
   thread.updatedAt = now()
@@ -868,6 +884,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
     const run = await runHarness(entity, thread, prompt, {
       onStart: (execution) => emitTurn('start', { execution }),
       onStep,
+      mentions: turnMentions,
     })
     flushStep()
 

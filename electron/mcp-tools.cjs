@@ -101,7 +101,12 @@ function lines(onMessage) {
   }
 }
 
-function stdioTools(definition) {
+/**
+ * One stdio JSON-RPC session. `work` gets a `request(method, params)` that
+ * resolves with the reply, so `tools/list` and `tools/call` share the handshake
+ * (and the process teardown) instead of duplicating it.
+ */
+function stdioSession(definition, work) {
   return new Promise((resolve, reject) => {
     let child
     try {
@@ -127,7 +132,6 @@ function stdioTools(definition) {
     let stderr = ''
     let nextId = 1
     const pending = new Map()
-    const tools = []
 
     const finish = (error, value) => {
       if (done) return
@@ -139,7 +143,7 @@ function stdioTools(definition) {
     }
 
     const timer = setTimeout(
-      () => finish(new Error('The MCP server did not answer tools/list in time.')),
+      () => finish(new Error('The MCP server did not answer in time.')),
       TIMEOUT_MS,
     )
 
@@ -178,19 +182,8 @@ function stdioTools(definition) {
     const request = (method, params) => {
       const id = nextId++
       const promise = new Promise((res, rej) => pending.set(id, { res, rej }))
-      send({ jsonrpc: '2.0', id, method, params })
+      send({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) })
       return promise
-    }
-
-    const askTools = async () => {
-      let cursor
-      for (let page = 0; page < 20; page += 1) {
-        const result = await request('tools/list', cursor ? { cursor } : {})
-        for (const tool of result?.tools || []) tools.push(normaliseTool(tool))
-        if (!result?.nextCursor || tools.length >= MAX_TOOLS) break
-        cursor = result.nextCursor
-      }
-      finish(null, { tools: tools.slice(0, MAX_TOOLS) })
     }
 
     child.stdout?.on(
@@ -201,7 +194,6 @@ function stdioTools(definition) {
           pending.delete(message.id)
           if (message.error) entry.rej(new Error(message.error.message || 'MCP request failed.'))
           else entry.res(message.result)
-          return
         }
         /* servers may send notifications after initialize; nothing to do */
       }),
@@ -218,9 +210,24 @@ function stdioTools(definition) {
     })
       .then(() => {
         send({ jsonrpc: '2.0', method: 'notifications/initialized' })
-        return askTools()
+        return work({ request })
       })
+      .then((value) => finish(null, value))
       .catch((error) => finish(error))
+  })
+}
+
+function stdioTools(definition) {
+  return stdioSession(definition, async ({ request }) => {
+    const tools = []
+    let cursor
+    for (let page = 0; page < 20; page += 1) {
+      const result = await request('tools/list', cursor ? { cursor } : {})
+      for (const tool of result?.tools || []) tools.push(normaliseTool(tool))
+      if (!result?.nextCursor || tools.length >= MAX_TOOLS) break
+      cursor = result.nextCursor
+    }
+    return { tools: tools.slice(0, MAX_TOOLS) }
   })
 }
 
@@ -250,10 +257,13 @@ function parsePayload(text, contentType) {
   }
 }
 
-async function httpTools(definition) {
+/**
+ * One Streamable-HTTP JSON-RPC session. Same shape as `stdioSession`, and the
+ * auth headers are the reason it exists: a discovery call without the pool's
+ * bearer would report "no tools" for a server the harness can use perfectly.
+ */
+async function httpSession(definition, work) {
   const url = String(definition.url || '')
-  /* the pool carries the bearer some servers need; a discovery call without it
-     would report "no tools" for a server the harness can use perfectly well */
   const auth =
     definition.headers && typeof definition.headers === 'object' && !Array.isArray(definition.headers)
       ? Object.fromEntries(
@@ -261,7 +271,13 @@ async function httpTools(definition) {
         )
       : {}
   let session = ''
-  const call = async (message) => {
+  let nextId = 1
+
+  const request = async (method, params) => {
+    const notify = method.startsWith('notifications/')
+    const payload = { jsonrpc: '2.0', method, ...(params ? { params } : {}) }
+    if (!notify) payload.id = nextId++
+
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
     try {
@@ -273,7 +289,7 @@ async function httpTools(definition) {
           Accept: 'application/json, text/event-stream',
           ...(session ? { 'Mcp-Session-Id': session } : {}),
         },
-        body: JSON.stringify(message),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       })
       session = response.headers.get('mcp-session-id') || session
@@ -282,11 +298,9 @@ async function httpTools(definition) {
         throw new Error(`MCP server returned HTTP ${response.status}${text ? `: ${text.slice(0, 160)}` : ''}`)
       }
       const messages = parsePayload(text, response.headers.get('content-type'))
-      const reply = messages.find((entry) => entry.id === message.id)
-      if (!reply) {
-        if (!message.id) return null
-        throw new Error('The MCP server sent no JSON-RPC response.')
-      }
+      if (notify) return null
+      const reply = messages.find((entry) => entry.id === payload.id)
+      if (!reply) throw new Error('The MCP server sent no JSON-RPC response.')
       if (reply.error) throw new Error(reply.error.message || 'MCP request failed.')
       return reply.result
     } catch (error) {
@@ -297,33 +311,65 @@ async function httpTools(definition) {
     }
   }
 
-  await call({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: 'entity', version: '0.1.0' },
-    },
+  await request('initialize', {
+    protocolVersion: '2024-11-05',
+    capabilities: {},
+    clientInfo: { name: 'entity', version: '0.1.0' },
   })
-  await call({ jsonrpc: '2.0', method: 'notifications/initialized' }).catch(() => {})
+  await request('notifications/initialized').catch(() => {})
+  return work({ request })
+}
 
-  const tools = []
-  let cursor
-  for (let page = 0; page < 20; page += 1) {
-    const id = page + 2
-    const result = await call({
-      jsonrpc: '2.0',
-      id,
-      method: 'tools/list',
-      params: cursor ? { cursor } : {},
-    })
-    for (const tool of result?.tools || []) tools.push(normaliseTool(tool))
-    if (!result?.nextCursor || tools.length >= MAX_TOOLS) break
-    cursor = result.nextCursor
+async function httpTools(definition) {
+  return httpSession(definition, async ({ request }) => {
+    const tools = []
+    let cursor
+    for (let page = 0; page < 20; page += 1) {
+      const result = await request('tools/list', cursor ? { cursor } : {})
+      for (const tool of result?.tools || []) tools.push(normaliseTool(tool))
+      if (!result?.nextCursor || tools.length >= MAX_TOOLS) break
+      cursor = result.nextCursor
+    }
+    return { tools: tools.slice(0, MAX_TOOLS) }
+  })
+}
+
+/** Everything a `tools/call` reply can carry, in one predictable shape. */
+function callResult(result) {
+  const structured = result?.structuredContent
+  if (structured && typeof structured === 'object') return structured
+  const text = (result?.content || [])
+    .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n')
+    .trim()
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
   }
-  return { tools: tools.slice(0, MAX_TOOLS) }
+}
+
+/**
+ * Call one tool on a server this machine knows: the workspace pool first, then
+ * the harness configs. Used by the mention resolver, which needs a search
+ * result, not a tool list.
+ */
+async function callTool({ workspace, server, tool, arguments: args = {} }) {
+  const key = String(server || '').trim()
+  const name = String(tool || '').trim()
+  if (!key) throw new Error('An MCP server needs a name.')
+  if (!name) throw new Error('An MCP tool needs a name.')
+  const found = definitions(workspace).get(key)
+  if (!found) throw new Error(`No MCP server called "${key}" on this machine.`)
+  const definition = found.definition || {}
+  if (!definition.command && !definition.url) {
+    throw new Error(`${key} has neither a command nor a URL.`)
+  }
+  const work = ({ request }) => request('tools/call', { name, arguments: args })
+  const result = definition.url ? await httpSession(definition, work) : await stdioSession(definition, work)
+  return { server: key, tool: name, data: callResult(result), isError: Boolean(result?.isError) }
 }
 
 async function tools({ workspace, name }) {
@@ -349,4 +395,4 @@ async function tools({ workspace, name }) {
   })
 }
 
-module.exports = { tools, definitions }
+module.exports = { tools, callTool, definitions }

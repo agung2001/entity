@@ -208,6 +208,38 @@ alone: those belong to the harness. This is the one place the workspace's
 `skills/` directory is load-bearing, and it is why a harness-only skill can be
 used without attaching it first.
 
+### Mentions are resolved before the agent sees them
+
+`@` names something concrete, and the app resolves it when you press send — the
+message itself is never rewritten, and no work happens while you type.
+
+| mention | becomes |
+| --- | --- |
+| `@py-agent fix the build` | that entity **runs** the job first; its answer is injected into this turn |
+| `@orca:One:src/app.ts` | an absolute path inside an Orca project (`orca repo list`), root when the file is omitted |
+| `@artifact:login shot` | a file on this workspace's artifact shelf, as `artifact://…` plus its path |
+| `@maka:one:plan` | notes found through the Maka MCP server (vault, then query) |
+| `@youtrack:AC:login bug` | issues found through the YouTrack MCP server, scoped to `project: AC` |
+
+While a mention is being typed on one word (`@youtrack:AC:log`, `@maka:`, `@orca:One:`)
+the composer lists what matches, ten at a time, and picking one inserts it. A
+**Show 10 more** row asks the source for the next page (`search_issues` reports
+`hasNextPage`; the rest are paged by offset) and the same button reveals more of
+a skill library. A space ends that live search and the rest of the sentence
+becomes the query. The search is debounced, cached for 30 s per page, and a slow
+answer for a stale prefix is dropped rather than painted.
+
+A mention owns the text after it, up to the next `@` — which is how a query can
+contain spaces without quotes. The resolution is prepended to the prompt as a
+`Resolved mentions` block, so the harness sees both the token and the thing it
+refers to, and each answer's fold lists what was resolved.
+
+Two failure modes, deliberately different: a **name** that does not exist (an
+entity, an Orca project) stops the message before it is sent, while a **search**
+with no hits only adds a note. Entity mentions are one level deep (a mentioned
+entity's own `@` is left as text), at most two per message, and bounded at two
+minutes each.
+
 The **Skills** page opens on the workspace's own list. The machine-wide harness
 libraries are a second tab, and they are scanned lazily — on first open of that
 tab (or the first `/` typed in a composer for that machine), then cached per

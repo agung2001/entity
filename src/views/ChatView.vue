@@ -43,6 +43,7 @@ const router = useRouter()
 const newOpen = ref(false)
 const timelineOpen = ref(false)
 const helpOpen = ref(false)
+const helpTab = ref('keys')
 const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const composer = ref(null)
@@ -618,7 +619,7 @@ watch(
                   ref="composer"
                   :agent="agent"
                   :machine="ctx.machine || 'local'"
-                  :placeholder="`Message ${agent.name}`"
+                  :placeholder="`Message ${agent.name} — / skills · @ mentions`"
                   :focus-shortcut="focusShortcut"
                   :disabled="hub.chat.sending"
                   :sending="hub.chat.sending"
@@ -647,7 +648,7 @@ watch(
     <Teleport to="body">
       <div class="scrim" :data-open="helpOpen ? '1' : '0'" @click="helpOpen = false"></div>
       <div
-        class="modal modal-narrow composer-help"
+        class="modal composer-help"
         :data-open="helpOpen ? '1' : '0'"
         role="dialog"
         aria-modal="true"
@@ -655,26 +656,51 @@ watch(
       >
         <div class="mo-head">
           <h2>Composer help</h2>
-          <p>Type a message, or use these keys in the chat composer.</p>
+          <p>Everything the message box understands: keys, mentions and skills.</p>
           <button class="x mo-x" aria-label="Close" @click="helpOpen = false">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
               <path d="M2 2l8 8M10 2l-8 8" />
             </svg>
           </button>
         </div>
+
+        <div class="help-tabs" role="tablist" aria-label="Help sections">
+          <button
+            v-for="tab in [
+              { id: 'keys', label: 'Keys' },
+              { id: 'mentions', label: 'Mentions' },
+              { id: 'skills', label: 'Skills' },
+            ]"
+            :key="tab.id"
+            class="help-tab"
+            type="button"
+            role="tab"
+            :aria-selected="helpTab === tab.id ? 'true' : 'false'"
+            :data-on="helpTab === tab.id ? '1' : '0'"
+            @click="helpTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
         <div class="mo-body">
+          <div v-if="helpTab === 'keys'">
           <dl class="help-list">
             <div>
               <dt><kbd>/</kbd></dt>
               <dd><b>Skills</b><span>Open the menu, then pick a skill from any harness on this machine.</span></dd>
             </div>
             <div>
+              <dt><kbd>@</kbd></dt>
+              <dd><b>Mentions</b><span>Another entity, an Orca file, an artifact, a Maka note, a YouTrack issue.</span></dd>
+            </div>
+            <div>
               <dt><kbd>↑</kbd><kbd>↓</kbd></dt>
-              <dd><b>Move through the menu</b><span>Choose the skill you want.</span></dd>
+              <dd><b>Move through the menu</b><span>Choose the item you want.</span></dd>
             </div>
             <div>
               <dt><kbd>tab</kbd></dt>
-              <dd><b>Complete</b><span>Insert the highlighted command.</span></dd>
+              <dd><b>Complete</b><span>Insert the highlighted item.</span></dd>
             </div>
             <div>
               <dt><kbd>{{ focusShortcut }}</kbd></dt>
@@ -693,6 +719,56 @@ watch(
               <dd><b>Close the menu</b><span>Stay in the composer without choosing anything.</span></dd>
             </div>
           </dl>
+          <p class="help-note">
+            The menu shows ten at a time. <b>Show 10 more</b> fetches the next page of a mention
+            search, or reveals more of a skill library.
+          </p>
+          </div>
+
+          <div v-else-if="helpTab === 'mentions'" class="help-mentions">
+            <p class="help-lede">
+              A mention owns the text after it, up to the next <code class="mono">@</code>. A name that
+              does not exist stops the message; a search that finds nothing only adds a note.
+            </p>
+            <div v-for="row in [
+              { token: '@py-agent fix the build', what: 'That entity runs the job first, and its answer is injected into this turn. At most two per message.' },
+              { token: '@orca:One:src/app.ts', what: 'A path inside an Orca project. The project is one word; the file after the second colon is optional — omit it for the project root.' },
+              { token: '@artifact:login shot', what: 'A file on this workspace’s artifact shelf, matched by name.' },
+              { token: '@maka:one:plan', what: 'A note found through the Maka MCP server — vault, then what to search for.' },
+              { token: '@youtrack:AC:login bug', what: 'Issues found through the YouTrack MCP server, scoped to the project key you name. The rows show the project and the issue title.' },
+            ]" :key="row.token" class="help-mention">
+              <code class="mono">{{ row.token }}</code>
+              <span>{{ row.what }}</span>
+            </div>
+            <p class="help-note">
+              Results appear while you type a mention on one word — <code class="mono">@youtrack:AC:log</code>
+              lists issues to pick from, <code class="mono">@maka:</code> lists vaults. A space ends the live
+              search, and the rest of the sentence becomes the query. The project or vault right after
+              the colon is always one word — <code class="mono">@orca:maka tell me about it</code> is the
+              maka project plus a sentence. Resolution happens once, when you send: your text stays as
+              typed, the resolved items are added above it for the entity, and listed under the answer
+              afterwards.
+            </p>
+          </div>
+
+          <div v-else class="help-mentions">
+            <p class="help-lede">
+              A skill is a file the harness opens. Start the message with one of these and the app turns
+              it into an absolute path on this machine.
+            </p>
+            <div v-for="row in [
+              { token: '/workspace:<name>', what: 'A skill attached to this workspace.' },
+              { token: '/<harness>:<name>', what: 'A skill in that harness’s own library — e.g. /claude:pdf-ocr.' },
+              { token: '/<name>', what: 'Any library on this machine, when exactly one has that name.' },
+            ]" :key="row.token" class="help-mention">
+              <code class="mono">{{ row.token }}</code>
+              <span>{{ row.what }}</span>
+            </div>
+            <p class="help-note">
+              Type <code class="mono">/</code> to see what is available. A name this app owns that does
+              not resolve is an error, so a typo never becomes an answer without the skill.
+            </p>
+          </div>
         </div>
         <div class="mo-foot">
           <button class="btn" type="button" @click="helpOpen = false">Got it</button>

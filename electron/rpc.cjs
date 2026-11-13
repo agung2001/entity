@@ -10,6 +10,7 @@
  * workspace you just switched away from cannot be painted into the new one.
  */
 const localData = require('./local-data.cjs')
+const mentionRef = require('./mention-ref.cjs')
 const workspaces = require('./workspace-store.cjs')
 const entities = require('./entity-store.cjs')
 const chats = require('./chat-store.cjs')
@@ -60,6 +61,17 @@ function createRpc({ emit = () => {}, reveal = () => {} } = {}) {
     },
     'workspace.library': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
     'skills.names': ({ machine } = {}) => localData.scanSkillNames({ machine }),
+    /* Orca project names for the composer's `@` menu; cached in main for a minute */
+    'mention.sources': () => mentionRef.sources(),
+    /* what the composer offers while an `@kind:` is being typed */
+    'mention.search': ({ workspace, kind, fields, limit, offset }) =>
+      mentionRef.search({
+        record: workspaces.open(workspace),
+        kind: String(kind || ''),
+        fields: Array.isArray(fields) ? fields : [],
+        limit: Number.isFinite(limit) ? limit : 10,
+        offset: Number.isFinite(offset) ? offset : 0,
+      }),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
     'mcp.globals': () => mcpStore.globals(),

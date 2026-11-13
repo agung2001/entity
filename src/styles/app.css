@@ -3465,7 +3465,78 @@ kbd {
   height: 13px;
 }
 .composer-help {
-  width: min(430px, 94vw);
+  width: min(620px, 94vw);
+  max-height: min(78vh, 720px);
+  display: flex;
+  flex-direction: column;
+}
+.composer-help .mo-body {
+  overflow: auto;
+}
+.help-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+.help-tab {
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.help-tab:hover {
+  color: var(--ink-2);
+}
+.help-tab[data-on='1'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.help-lede {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.help-mentions {
+  display: flex;
+  flex-direction: column;
+}
+.help-mention {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.help-mention:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.help-mention code {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.help-mention span {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.help-note {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--faint, var(--muted));
 }
 .help-list {
   margin: 0;
@@ -11578,6 +11649,22 @@ label.pick:has(input:focus-visible) {
 }
 .trace-stat-dot[data-kind='mcp'] {
   background: var(--accent, #d6a300);
+}
+.trace-stat-dot[data-kind='mention'] {
+  background: var(--ok);
+}
+.trace-mentions {
+  margin-top: 8px;
+}
+.trace-mention-raw {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-2);
+}
+.trace-mention-what {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
 }
 .trace-digest-note {
   margin: 8px 0 0;

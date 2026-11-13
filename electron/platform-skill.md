@@ -24,6 +24,12 @@ machine has it; the app resolves it to a path before you see the prompt. If
 someone asks how to use a skill, that is the answer — `entity skill list` shows
 what this workspace has attached.
 
+A message may also start with a `/…` skill reference or contain `@…` mentions
+(an entity, an Orca path, an artifact, a Maka note, a YouTrack issue). Both are
+resolved before you see the prompt, and the resolved values are listed above it.
+Treat the `@tokens` as references to those values; do not try to resolve them
+yourself.
+
 The same works for MCP: servers in `<workspace>/mcp.json` apply to every entity in
 this workspace, so a server someone added there is already yours to use — do not
 ask to have it bound. An entity may narrow the pool with `mcp: a, b`, and a named

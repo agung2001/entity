@@ -619,7 +619,9 @@ export function slashMenu(value, agent, machine = 'local') {
 
   /* A bare `/` should reach the harness libraries, so the cap is high enough to
      hold a whole machine library; the menu scrolls and offers to expand. */
-  return items.filter((item) => item.name.slice(1).toLowerCase().includes(q)).slice(0, 100)
+  /* the composer shows ten at a time and fetches the rest on demand, so keep a
+     generous ceiling rather than hiding a machine's library behind it */
+  return items.filter((item) => item.name.slice(1).toLowerCase().includes(q)).slice(0, 500)
 }
 
 /* ── chat ─────────────────────────────────────────────────────────── */

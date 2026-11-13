@@ -12,6 +12,7 @@ const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
+const mentionRef = require('./mention-ref.cjs')
 const mcpRuntime = require('./mcp-runtime.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
@@ -37,7 +38,9 @@ function withMcp(harness, argv, mcp) {
 }
 
 function invocation(harness, instructions, prompt, model = '', mcp = null) {
-  return withMcp(harness, baseInvocation(harness, instructions, prompt, model), mcp)
+  const spec = baseInvocation(harness, instructions, prompt, model)
+  spec.argv = withMcp(harness, spec.argv, mcp)
+  return spec
 }
 
 function baseInvocation(harness, instructions, prompt, model = '') {
@@ -83,7 +86,9 @@ function baseInvocation(harness, instructions, prompt, model = '') {
  * already append-only run files.
  */
 function chatInvocation(harness, instructions, prompt, model = '', mcp = null) {
-  return withMcp(harness, baseChatInvocation(harness, instructions, prompt, model), mcp)
+  const spec = baseChatInvocation(harness, instructions, prompt, model)
+  spec.argv = withMcp(harness, spec.argv, mcp)
+  return spec
 }
 
 function baseChatInvocation(harness, instructions, prompt, model = '') {
@@ -282,7 +287,7 @@ function createRunner({ emit = () => {} } = {}) {
     if (locks.get(key) === run.runId) locks.delete(key)
   }
 
-  function start({ workspace, name, prompt }) {
+  async function start({ workspace, name, prompt }) {
     const entity = entities.read(workspace, name)
     if (!entity) throw new Error(`No entity called "${name}" in this workspace.`)
     if (!prompt || !String(prompt).trim()) throw new Error('Write a prompt first.')
@@ -296,6 +301,12 @@ function createRunner({ emit = () => {} } = {}) {
        to a path on this machine and the prompt becomes `use this skill <path>`;
        a reference that does not resolve throws here, before a run id is spent */
     const applied = skillRef.rewrite(record, String(prompt), { machine: 'local' })
+    /* `@…` mentions resolve against this workspace before a run id is spent;
+       a name that does not exist throws, a search that finds nothing notes it */
+    const mentioned = await mentionRef.rewrite(record, applied.text, {
+      entity,
+      machine: 'local',
+    })
     const runId = newRunId()
     const run = {
       runId,
@@ -331,7 +342,7 @@ function createRunner({ emit = () => {} } = {}) {
       entity,
       extra: artifacts.brief(workspace),
     })
-    const spec = invocation(entity.harness, instructions, applied.text, entity.model, run.mcp)
+    const spec = invocation(entity.harness, instructions, mentioned.text, entity.model, run.mcp)
     spec.cmd = harnesses.binary(entity.harness) || spec.cmd
     locks.set(key, runId)
     active.set(runId, run)
@@ -341,8 +352,10 @@ function createRunner({ emit = () => {} } = {}) {
       entity: entity.name,
       harness: entity.harness,
       dir,
-      /* `prompt` is what the user typed; `skill` is what it resolved to */
+      /* `prompt` is what the user typed; `skill` and `mentions` are what it
+         resolved to */
       prompt: String(prompt),
+      mentions: mentioned.mentions,
       skill: applied.ref
         ? {
             namespace: applied.ref.namespace,
