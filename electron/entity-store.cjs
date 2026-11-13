@@ -253,6 +253,33 @@ function duplicate({ workspace, name, nextName = '', shape = '', color = '', moo
   })
 }
 
+/** Copy one entity file into another workspace, never replacing an existing file. */
+function cloneTo({ from, to, name, nextName = '', shape = '', color = '', mood = '' }) {
+  if (!from || !to) throw new Error('Both the source and target workspace are required.')
+  if (from === to) return duplicate({ workspace: from, name, nextName, shape, color, mood })
+  const source = read(from, name)
+  if (!source) throw new Error(`${name}.md does not exist in ${from}.`)
+  const base = safeName(nextName || source.name)
+  let target = base
+  if (fs.existsSync(entityPath(to, target))) {
+    let n = 2
+    while (fs.existsSync(entityPath(to, `${base}-${n}`))) n += 1
+    target = `${base}-${n}`
+  }
+  return write({
+    ...source,
+    workspace: to,
+    name: target,
+    frontmatter: {
+      ...source.frontmatter,
+      name: target,
+      ...(shape ? { shape: String(shape).trim() } : {}),
+      ...(color ? { color: String(color).trim() } : {}),
+      ...(mood ? { mood: String(mood).trim() } : {}),
+    },
+  })
+}
+
 /** Delete the entity file. Conversations stay where they are. */
 function remove({ workspace, name }) {
   const safe = safeName(name)
@@ -285,6 +312,7 @@ module.exports = {
   write,
   scaffold,
   duplicate,
+  cloneTo,
   remove,
   locate,
   resolveDir,

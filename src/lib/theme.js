@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { playSfx } from './sfx'
 
 /**
  * One window preference, stored beside the other UI settings. The root data
@@ -31,6 +32,7 @@ export function initTheme() {
 
 export function setTheme(mode) {
   const next = mode === 'dark' ? 'dark' : 'light'
+  if (next !== themeMode.value) playSfx(next === 'dark' ? 'theme-dark' : 'theme-light')
   themeMode.value = next
   paint(next)
   try {

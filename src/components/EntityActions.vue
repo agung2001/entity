@@ -1,14 +1,15 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import EntityCloneDialog from '@/components/EntityCloneDialog.vue'
 import { forgetMark, markFor } from '@/composables/entityMark'
 import { duplicateEntity, removeEntity, revealEntity } from '@/stores/entities'
 import { chatFocusEntity, hub, toast } from '@/stores/hub'
 
 /**
  * The row's rare actions live behind one three-dot menu: chat, reveal,
- * duplicate and delete. The row itself opens the entity page; every control
- * here stops propagation so clicking an action never also opens the detail page.
+ * duplicate, clone and delete. The row itself opens the entity page; every
+ * control here stops propagation so clicking an action never also opens it.
  */
 const props = defineProps({
   entity: { type: Object, required: true },
@@ -21,10 +22,11 @@ const menuEl = ref(null)
 const menuOpen = ref(false)
 const menuPos = ref({ top: '0px', left: '0px' })
 const confirming = ref(false)
+const cloneOpen = ref(false)
 let confirmTimer = 0
 
 const WIDTH = 184
-const HEIGHT = 150
+const HEIGHT = 186
 
 function stop(event) {
   event.stopPropagation()
@@ -70,6 +72,11 @@ async function reveal() {
   } catch (error) {
     toast(error?.message || 'Could not reveal the file')
   }
+}
+
+function openClone() {
+  closeMenu()
+  cloneOpen.value = true
 }
 
 async function duplicate() {
@@ -187,6 +194,13 @@ onBeforeUnmount(() => {
         </svg>
         Duplicate entity
       </button>
+      <button class="row-menu-item" type="button" role="menuitem" @click="openClone">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M3.2 5.2h4.2l1.2 1.5h4.2v6H3.2z" />
+          <path d="M5.2 3.2h4.2l1.2 1.5h2.2" />
+        </svg>
+        Clone to workspace…
+      </button>
       <button
         class="row-menu-item row-menu-danger"
         type="button"
@@ -201,4 +215,12 @@ onBeforeUnmount(() => {
       </button>
     </div>
   </Teleport>
+
+  <EntityCloneDialog
+    v-if="cloneOpen"
+    :entity="entity"
+    :workspace="hub.workspace"
+    @close="cloneOpen = false"
+    @cloned="cloneOpen = false"
+  />
 </template>

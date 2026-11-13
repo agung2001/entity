@@ -18,6 +18,7 @@ import MachineDetailView from '@/views/MachineDetailView.vue'
 import AccountView from '@/views/AccountView.vue'
 import AccountProfileView from '@/views/account/AccountProfileView.vue'
 import AccountSoundView from '@/views/account/AccountSoundView.vue'
+import AccountNotificationsView from '@/views/account/AccountNotificationsView.vue'
 import AccountMcpView from '@/views/account/AccountMcpView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
 import ManageWorkspacesView from '@/views/ManageWorkspacesView.vue'
@@ -233,6 +234,12 @@ const router = createRouter({
               name: 'account-sound',
               component: AccountSoundView,
               meta: { crumb: 'account', title: 'Sound · entity' },
+            },
+            {
+              path: 'notifications',
+              name: 'account-notifications',
+              component: AccountNotificationsView,
+              meta: { crumb: 'account', title: 'Notifications · entity' },
             },
             {
               path: 'mcp',

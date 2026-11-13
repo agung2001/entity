@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { fleet, loadFleet } from '@/stores/fleet'
 import { loadLibrary, openWorkspace, workspaces } from '@/stores/workspaces'
 import { matchesQuery } from '@/composables/search'
+import { playSfx } from '@/lib/sfx'
 import { ago, ensureChats, hub, initials, snippet, toast } from '@/stores/hub'
 
 /**
@@ -88,6 +89,12 @@ const navigationItems = computed(() => [
     act: () => router.push('/account/sound'),
   },
   {
+    id: 'nav:account-notifications',
+    label: 'Notification settings',
+    meta: 'Replies, failures and browser permission',
+    act: () => router.push('/account/notifications'),
+  },
+  {
     id: 'nav:account-mcp',
     label: 'MCP server',
     meta: 'Status, bearer token and tools',
@@ -160,6 +167,7 @@ const workspaceItems = computed(() =>
     id: `workspace:${workspace.id}`,
     label: workspace.label,
     meta: `${workspace.id}${workspace.id === workspaces.active ? ' · current' : ''} · ${workspace.counts?.entities || 0} entities`,
+    sfx: 'workspace',
     act: async () => {
       if (workspace.id !== workspaces.active) await openWorkspace(workspace.id)
       hub.rail.entities = false
@@ -287,6 +295,7 @@ function close() {
 
 async function run(item) {
   if (!item) return
+  playSfx(item.sfx || 'nav')
   close()
   try {
     await item.act()
@@ -357,6 +366,7 @@ function onKey(event) {
             :data-on="flat.indexOf(item) === hub.palette.active ? '1' : '0'"
             role="option"
             :aria-selected="flat.indexOf(item) === hub.palette.active ? 'true' : 'false'"
+            data-sfx="off"
             @click="run(item)"
           >
             <span class="sq">{{ initials(item.label) }}</span>

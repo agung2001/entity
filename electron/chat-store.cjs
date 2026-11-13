@@ -835,6 +835,8 @@ async function send({ workspace, id, text, emit = () => {}, retry = false }) {
         kind: 'chat.turn',
         workspace: record.id,
         threadId: thread.id,
+        entity: thread.entity,
+        title: thread.title || '',
         messageId,
         phase,
         data,

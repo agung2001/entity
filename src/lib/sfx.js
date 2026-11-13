@@ -18,16 +18,23 @@ export const SFX_THEMES = [
   },
 ]
 
-const defaults = { enabled: true, volume: 0.34, theme: 'area51' }
+const defaults = { enabled: true, volume: 0.65, theme: 'area51', version: 2 }
 
 function stored() {
   try {
     const value = JSON.parse(localStorage.getItem(KEY) || 'null')
     if (!value || typeof value !== 'object') return { ...defaults }
+    let volume = Number.isFinite(value.volume)
+      ? Math.min(1, Math.max(0, value.volume))
+      : defaults.volume
+    /* The old default was 34%; move a profile that never chose a volume to the
+       new 65% default once, without touching anyone's custom level. */
+    if (value.version !== 2 && volume === 0.34) volume = defaults.volume
     return {
       enabled: value.enabled !== false,
-      volume: Number.isFinite(value.volume) ? Math.min(1, Math.max(0, value.volume)) : defaults.volume,
+      volume,
       theme: SFX_THEMES.some((item) => item.id === value.theme) ? value.theme : defaults.theme,
+      version: 2,
     }
   } catch {
     return { ...defaults }
@@ -142,6 +149,66 @@ const cues = {
     tone(180, { dur: 0.24, gain: 0.035, type: 'sawtooth', to: 1200 })
     staticBurst({ dur: 0.12, gain: 0.016, high: 700 })
   },
+  nav() {
+    tone(520, { dur: 0.032, gain: 0.03, to: 690 })
+    tone(690, { at: 0.035, dur: 0.04, gain: 0.022, type: 'triangle' })
+  },
+  workspace() {
+    tone(130, { dur: 0.22, gain: 0.05, type: 'sine', to: 430 })
+    tone(430, { at: 0.13, dur: 0.16, gain: 0.034, type: 'triangle', to: 860 })
+    staticBurst({ at: 0.1, dur: 0.08, gain: 0.014, high: 1100 })
+  },
+  'theme-light'() {
+    ;[440, 660, 880, 1100].forEach((freq, index) => {
+      tone(freq, { at: index * 0.045, dur: 0.1, gain: 0.032, type: 'triangle' })
+    })
+    staticBurst({ at: 0.02, dur: 0.04, gain: 0.012, high: 1700 })
+  },
+  'theme-dark'() {
+    ;[440, 330, 247, 165].forEach((freq, index) => {
+      tone(freq, { at: index * 0.055, dur: 0.12, gain: 0.034, type: 'sine' })
+    })
+    staticBurst({ at: 0.04, dur: 0.07, gain: 0.014, high: 500 })
+  },
+  spark() {
+    tone(780, { dur: 0.035, gain: 0.035, to: 1040 })
+    tone(1180, { at: 0.04, dur: 0.06, gain: 0.028, type: 'triangle', to: 1560 })
+    staticBurst({ at: 0.02, dur: 0.035, gain: 0.01, high: 2200 })
+  },
+  confirm() {
+    tone(520, { dur: 0.06, gain: 0.04 })
+    tone(780, { at: 0.065, dur: 0.11, gain: 0.04, type: 'triangle' })
+  },
+  remove() {
+    tone(300, { dur: 0.14, gain: 0.05, type: 'sawtooth', to: 90 })
+    tone(150, { at: 0.08, dur: 0.13, gain: 0.032, type: 'square', to: 60 })
+    staticBurst({ dur: 0.06, gain: 0.016, high: 600 })
+  },
+  copy() {
+    tone(900, { dur: 0.022, gain: 0.03 })
+    tone(1160, { at: 0.04, dur: 0.028, gain: 0.028 })
+  },
+  upload() {
+    tone(280, { dur: 0.18, gain: 0.038, type: 'triangle', to: 1020 })
+    staticBurst({ at: 0.03, dur: 0.05, gain: 0.012, high: 1300 })
+  },
+  download() {
+    tone(1020, { dur: 0.18, gain: 0.038, type: 'triangle', to: 280 })
+    tone(260, { at: 0.17, dur: 0.06, gain: 0.025, type: 'sine' })
+  },
+  pin() {
+    tone(1320, { dur: 0.02, gain: 0.032 })
+    tone(760, { at: 0.035, dur: 0.055, gain: 0.03, type: 'triangle' })
+  },
+  signal() {
+    tone(880, { dur: 0.12, gain: 0.03, type: 'sine', to: 1320 })
+    tone(1320, { at: 0.11, dur: 0.18, gain: 0.024, type: 'sine', to: 880 })
+    staticBurst({ at: 0.02, dur: 0.04, gain: 0.008, high: 1900 })
+  },
+  stop() {
+    tone(360, { dur: 0.16, gain: 0.05, type: 'sawtooth', to: 80 })
+    tone(180, { at: 0.09, dur: 0.12, gain: 0.03, type: 'square', to: 55 })
+  },
 }
 
 export const SFX_CUES = [
@@ -152,6 +219,19 @@ export const SFX_CUES = [
   { id: 'success', name: 'Success', desc: 'A file, entity or workspace is ready.' },
   { id: 'error', name: 'Error', desc: 'A harness or file operation fails.' },
   { id: 'scan', name: 'Scan', desc: 'The Area 51 sweep.' },
+  { id: 'nav', name: 'Rail step', desc: 'Moving between sections.' },
+  { id: 'workspace', name: 'Workspace door', desc: 'A room opens and the air changes.' },
+  { id: 'theme-light', name: 'Daylight', desc: 'Switching to the light theme.' },
+  { id: 'theme-dark', name: 'Nightfall', desc: 'Switching to the dark theme.' },
+  { id: 'spark', name: 'Spark', desc: 'A new entity, chat or workspace.' },
+  { id: 'confirm', name: 'Confirm', desc: 'A setting or file is saved.' },
+  { id: 'remove', name: 'Remove', desc: 'Deleting something for good.' },
+  { id: 'copy', name: 'Copy', desc: 'A path or link lands on the clipboard.' },
+  { id: 'upload', name: 'Upload', desc: 'Something is coming in.' },
+  { id: 'download', name: 'Download', desc: 'Something is going out.' },
+  { id: 'pin', name: 'Pin', desc: 'A thread is pinned or unpinned.' },
+  { id: 'signal', name: 'Signal', desc: 'A notification calls you back.' },
+  { id: 'stop', name: 'Stop', desc: 'A running turn is cut short.' },
 ]
 
 export function setSfx(patch = {}) {
@@ -177,17 +257,40 @@ export function playSfx(name, { force = false } = {}) {
   }
 }
 
+function cueFor(target) {
+  const explicit = target.closest('[data-sfx]')?.getAttribute('data-sfx')
+  if (explicit) return explicit
+  if (target.matches('[role="switch"], input[type="checkbox"], input[type="radio"]')) {
+    return 'toggle'
+  }
+  const label = `${target.getAttribute('aria-label') || ''} ${target.textContent || ''}`
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+  if (target.matches('.danger') || /\b(delete|remove|trash)\b/.test(label)) return 'remove'
+  if (/\b(save|confirm|apply|publish)\b/.test(label)) return 'confirm'
+  if (/\b(create|add|new|duplicate|start blank)\b/.test(label)) return 'spark'
+  if (/\bcopy\b/.test(label)) return 'copy'
+  if (/\b(upload|import)\b/.test(label)) return 'upload'
+  if (/\b(download|export)\b/.test(label)) return 'download'
+  if (/\bstop\b/.test(label)) return 'stop'
+  if (/\b(close|cancel|dismiss)\b/.test(label)) return 'close'
+  if (/\b(open|timeline|workspace)\b/.test(label)) return 'open'
+  return 'tap'
+}
+
 function onDocumentClick(event) {
   if (!sfxSettings.enabled) return
   const target = event.target instanceof Element
     ? event.target.closest(
-        'button, a[href], [role="menuitem"], [role="option"], [role="tab"], input[type="checkbox"], input[type="radio"]',
+        'button, a[href], summary, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], input[type="checkbox"], input[type="radio"]',
       )
     : null
   if (!target) return
   if (target.closest('[data-sfx="off"], [data-sfx-preview]')) return
   if (target.disabled || target.getAttribute('aria-disabled') === 'true') return
-  playSfx('tap')
+  const cue = cueFor(target)
+  if (cue && cue !== 'off') playSfx(cue)
 }
 
 export function initSfx() {

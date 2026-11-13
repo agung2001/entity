@@ -14142,3 +14142,215 @@ button.empty-link {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ── account: notification desk ───────────────────────────────────────── */
+.notif-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 292px;
+  gap: 16px;
+  align-items: start;
+  max-width: 900px;
+}
+.notif-permission {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.notif-permission > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.notif-permission b {
+  font-size: 11.8px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.notif-permission span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.notif-permission[data-tone='ok'] span {
+  color: var(--ok);
+}
+.notif-permission[data-tone='wait'] span {
+  color: var(--accent-ink);
+}
+.notif-permission[data-tone='error'] span {
+  color: var(--danger);
+}
+.notif-help {
+  margin-top: 7px;
+  color: var(--danger);
+}
+.notif-options {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface);
+}
+.notif-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.notif-option:last-child {
+  border-bottom: 0;
+}
+.notif-option .sfx-copy b {
+  font-size: 12px;
+}
+.notif-option .sfx-copy span {
+  font-size: 11px;
+}
+.notif-option .sfx-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.notif-test {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.notif-test > div {
+  min-width: 0;
+}
+.notif-test b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.notif-test .mnote {
+  margin: 0;
+}
+.notif-note .ws-meta {
+  margin-top: 12px;
+}
+.notif-note .account-card-note {
+  margin-top: 12px;
+}
+@media (max-width: 860px) {
+  .notif-page {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── clone entity into another workspace ─────────────────────────────── */
+.clone-modal {
+  width: min(470px, 94vw);
+}
+.clone-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.clone-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 6px;
+  border-radius: 7px;
+}
+.clone-side .mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+.clone-side[data-empty='1'] {
+  opacity: 0.45;
+}
+.clone-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.clone-copy em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.clone-copy b {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clone-copy span {
+  font-size: 9.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clone-arrow {
+  font-size: 14px;
+  color: var(--muted);
+}
+.clone-foot {
+  padding: 14px 0 0;
+  border: 0;
+}
+.clone-empty {
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.clone-empty b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.clone-empty p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+@media (max-width: 480px) {
+  .clone-flow {
+    grid-template-columns: 1fr;
+  }
+  .clone-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+}
+
+.notif-system-note {
+  margin-top: 6px;
+}

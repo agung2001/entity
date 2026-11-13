@@ -299,6 +299,7 @@ function leave() {
           to="/workspaces"
           aria-label="All workspaces"
           data-tip="All workspaces"
+          data-sfx="workspace"
           :aria-current="onWorkspaces ? 'page' : undefined"
         >
           <BrandMark />
@@ -314,6 +315,7 @@ function leave() {
             :aria-current="isActive(item) ? 'page' : undefined"
             :aria-label="item.label"
             :data-tip="item.label"
+            data-sfx="nav"
             @click="onNavClick(item, $event)"
           >
             <NavIcon :name="item.icon" />
@@ -326,6 +328,7 @@ function leave() {
             :aria-current="isActive(item) ? 'page' : undefined"
             :aria-label="item.label"
             :data-tip="item.label"
+            data-sfx="nav"
             @click="onPanelClick(item)"
           >
             <NavIcon :name="item.icon" />
@@ -342,6 +345,7 @@ function leave() {
         :aria-pressed="themeMode === 'dark' ? 'true' : 'false'"
         :aria-label="`${themeMode === 'dark' ? 'Switch to light' : 'Switch to dark'} mode (${themeShortcut})`"
         :data-tip="`${themeMode === 'dark' ? 'Switch to light' : 'Switch to dark'} (${themeShortcut})`"
+        data-sfx="off"
         @click="toggleTheme"
       >
         <svg
@@ -376,7 +380,7 @@ function leave() {
             <span class="acct-nm">{{ displayName }}</span>
             <span class="acct-em">{{ role.label }}</span>
           </div>
-          <button class="pickopt" type="button" role="menuitem" @click="openAccountPage">
+          <button class="pickopt" type="button" role="menuitem" data-sfx="nav" @click="openAccountPage">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
               <circle cx="8" cy="8" r="2.2" />
               <path
@@ -385,7 +389,7 @@ function leave() {
             </svg>
             Account settings
           </button>
-          <button class="pickopt acct-signout" type="button" role="menuitem" @click="leave">
+          <button class="pickopt acct-signout" type="button" role="menuitem" data-sfx="close" @click="leave">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
               <path d="M6 2.5H3.5A1.5 1.5 0 002 4v8a1.5 1.5 0 001.5 1.5H6" />
               <path d="M10.5 5l3 3-3 3M6.8 8h6.7" />
@@ -401,6 +405,7 @@ function leave() {
           :aria-expanded="accountOpen ? 'true' : 'false'"
           :aria-label="accountTip"
           :data-tip="accountTip"
+          data-sfx="nav"
           @click="toggleAccount"
         >
           <img v-if="avatarUrl" class="avatar avatar-img" :src="avatarUrl" alt="" />

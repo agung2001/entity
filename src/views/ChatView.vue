@@ -320,6 +320,7 @@ function onCreated(created) {
 }
 
 async function stopTurn() {
+  playSfx('stop')
   await cancelChat()
 }
 

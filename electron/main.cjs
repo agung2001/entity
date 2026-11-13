@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
@@ -13,6 +13,34 @@ const isDev = Boolean(RENDERER_URL)
 let mainWindow = null
 let rpc = null
 let watcher = null
+
+function focusWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** Native notifications in the desktop app; the renderer still owns the copy. */
+function showNotification({ title, body, route, tag } = {}) {
+  if (!Notification.isSupported()) return false
+  const note = new Notification({
+    title: String(title || 'entity'),
+    body: String(body || ''),
+    silent: true,
+  })
+  note.on('click', () => {
+    focusWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:notification-click', {
+        route: String(route || ''),
+        tag: String(tag || 'entity'),
+      })
+    }
+  })
+  note.show()
+  return true
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -78,6 +106,8 @@ function broadcast(event) {
   }
 }
 
+if (process.platform === 'win32') app.setAppUserModelId('com.artistudio.entity')
+
 app.whenReady().then(() => {
   /* Anything a previous instance left behind — a crash runs no handler — is
      still running and still spending the machine's CPU. Kill it before the
@@ -108,6 +138,8 @@ app.whenReady().then(() => {
     platform: process.platform,
     arch: process.arch,
   }))
+
+  ipcMain.handle('app:notify', (_event, payload) => showNotification(payload || {}))
 
   /* One channel for every local call. The renderer never gets a path or a
      shell — it asks for a parsed result, and the call table decides what that

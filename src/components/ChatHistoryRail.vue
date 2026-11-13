@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { matchesQuery } from '@/composables/search'
+import { playSfx } from '@/lib/sfx'
 import {
   ago,
   ensureChats,
@@ -196,6 +197,7 @@ async function saveRename(thread) {
   const title = editTitle.value.trim()
   try {
     await renameThread(thread.id, title)
+    playSfx('confirm')
     toast(title ? 'Thread title saved' : 'Thread title cleared')
     cancelRename()
   } catch (error) {
@@ -407,7 +409,7 @@ defineExpose({ newThread })
         :style="{ top: menuPos.top, left: menuPos.left }"
         @click.stop
       >
-        <button class="rchat-menu-item" type="button" role="menuitem" @click="menuPin">
+        <button class="rchat-menu-item" type="button" role="menuitem" data-sfx="pin" @click="menuPin">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
             <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
           </svg>

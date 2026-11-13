@@ -5,6 +5,7 @@ import MarkPicker from '@/components/MarkPicker.vue'
 import HarnessPaths from '@/components/HarnessPaths.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import EntityCloneDialog from '@/components/EntityCloneDialog.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
@@ -39,6 +40,7 @@ const form = reactive({ harness: '', model: '', instructions: '' })
 const seeding = ref(false)
 const configOpen = ref(false)
 const configRoot = ref(null)
+const cloneOpen = ref(false)
 
 const agent = computed(
   () => agentById(route.params.name) || hub.agents.find((item) => item.name === route.params.name),
@@ -210,6 +212,7 @@ async function copyPath() {
         <span class="entp-crumb">{{ agent.name }}</span>
         <span class="spacer"></span>
         <div class="entp-actions">
+          <button class="btn btn-sm" type="button" @click="cloneOpen = true">Clone to…</button>
           <button class="btn btn-sm" type="button" @click="copyPath">Copy path</button>
           <button class="btn btn-sm" type="button" @click="reveal">Reveal file</button>
           <button class="btn btn-ink" type="button" @click="chat">Chat</button>
@@ -416,6 +419,14 @@ async function copyPath() {
           </div>
         </aside>
       </div>
+
+      <EntityCloneDialog
+        v-if="cloneOpen && agent"
+        :entity="agent"
+        :workspace="route.params.workspace"
+        @close="cloneOpen = false"
+        @cloned="cloneOpen = false"
+      />
     </template>
 
     <div v-else class="empty-note">

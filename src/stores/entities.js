@@ -124,6 +124,20 @@ export async function duplicateEntity(name, mark = null) {
   return copy
 }
 
+export async function cloneEntity({ from, to, name, nextName = '', mark = null }) {
+  const copy = await call('entity.clone', {
+    from,
+    to,
+    name,
+    nextName,
+    shape: mark?.shape || '',
+    color: mark?.color || '',
+    mood: mark?.mood || '',
+  })
+  if (to === hub.workspace) await loadEntities(hub.workspace)
+  return copy
+}
+
 export async function removeEntity(name) {
   const result = await call('entity.remove', { workspace: hub.workspace, name })
   await loadEntities(hub.workspace)

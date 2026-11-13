@@ -38,7 +38,7 @@ function preview(id) {
       <div class="sfx-row">
         <div class="sfx-copy">
           <b>Interface sound</b>
-          <span>Buttons, menus, sending, replies and errors. The whole hub shares this setting.</span>
+          <span>Navigation, workspace doors, theme polarity, creation, sending, replies and errors. The whole hub shares this setting.</span>
         </div>
         <button
           class="sfx-switch"

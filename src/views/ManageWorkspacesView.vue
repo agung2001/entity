@@ -357,6 +357,7 @@ async function deleteOne(record) {
           role="link"
           tabindex="0"
           :aria-label="`Open ${record.label}`"
+          data-sfx="workspace"
           @click="openOne(record)"
           @keydown.enter.self="openOne(record)"
           @keydown.space.prevent.self="openOne(record)"
@@ -374,17 +375,17 @@ async function deleteOne(record) {
               </h3>
               <p>{{ record.displayPath }}</p>
             </div>
-            <details class="wsl-menu" @click.stop>
+            <details class="wsl-menu" data-sfx="tap" @click.stop>
               <summary :aria-label="`Actions for ${record.label}`" aria-haspopup="menu">
                 <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
               </summary>
               <div class="wsl-menu-pop" role="menu">
-                <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
-                <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
-                <button v-if="remoteFor(record.id)" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
-                <button v-else-if="!remote.server" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
-                <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">{{ busy === `export:${record.id}` ? 'Exporting…' : 'Export as one file' }}</button>
-                <button class="danger" type="button" role="menuitem" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
+                <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
+                <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
+                <button v-if="remoteFor(record.id)" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
+                <button v-else-if="!remote.server" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
+                <button type="button" role="menuitem" data-sfx="download" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">{{ busy === `export:${record.id}` ? 'Exporting…' : 'Export as one file' }}</button>
+                <button class="danger" type="button" role="menuitem" data-sfx="remove" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
               </div>
             </details>
           </div>
@@ -402,7 +403,7 @@ async function deleteOne(record) {
               <span>{{ createdLabel(record) }}</span>
             </span>
             <span v-if="record.id === workspaces.active" class="wsl-cur"><i></i>current</span>
-            <button v-else class="wsl-open-link" type="button" @click.stop="settingsOne(record)">Settings →</button>
+            <button v-else class="wsl-open-link" type="button" data-sfx="workspace" @click.stop="settingsOne(record)">Settings →</button>
           </div>
         </article>
       </div>
@@ -412,7 +413,7 @@ async function deleteOne(record) {
           <span>Workspace</span><span>Entities</span><span>Skills</span><span>Machines</span><span>Kind</span><span>Created</span><span></span>
         </div>
         <div v-for="record in filtered" :key="record.id" class="wsl-row" :data-active="record.id === workspaces.active ? '1' : '0'">
-          <button class="wsl-row-name" type="button" @click="openOne(record)">
+          <button class="wsl-row-name" type="button" data-sfx="workspace" @click="openOne(record)">
             <b>{{ record.label }} <span v-if="remoteFor(record.id)" class="wsl-remote" :data-tone="remoteTone(remoteFor(record.id))">remote</span></b><span>{{ record.displayPath }}</span>
           </button>
           <span class="num">{{ record.counts.entities }}</span>
@@ -420,17 +421,17 @@ async function deleteOne(record) {
           <span class="num">{{ record.counts.machines }}</span>
           <span><span class="wsl-kt">{{ record.kind }}</span></span>
           <span class="wsl-date">{{ createdLabel(record) }}</span>
-          <details class="wsl-menu" @click.stop>
+          <details class="wsl-menu" data-sfx="tap" @click.stop>
             <summary :aria-label="`Actions for ${record.label}`" aria-haspopup="menu">
               <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
             </summary>
             <div class="wsl-menu-pop" role="menu">
-              <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
-              <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
-              <button v-if="remoteFor(record.id)" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
-              <button v-else-if="!remote.server" type="button" role="menuitem" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
-              <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">Export as one file</button>
-              <button class="danger" type="button" role="menuitem" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
+              <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
+              <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
+              <button v-if="remoteFor(record.id)" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
+              <button v-else-if="!remote.server" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
+              <button type="button" role="menuitem" data-sfx="download" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">Export as one file</button>
+              <button class="danger" type="button" role="menuitem" data-sfx="remove" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
             </div>
           </details>
         </div>

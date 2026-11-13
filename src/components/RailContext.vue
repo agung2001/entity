@@ -32,6 +32,7 @@ const WORKSPACE_TABS = [
 const ACCOUNT_ROWS = [
   { to: '/account', label: 'Profile', hint: 'identity and password' },
   { to: '/account/sound', label: 'Sound', hint: 'Area 51 feedback' },
+  { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
 ]
 
@@ -56,7 +57,7 @@ const section = computed(() => {
       back: true,
     }
   }
-  if (name === 'account' || name === 'account-sound' || name === 'account-mcp') {
+  if (name === 'account' || name === 'account-sound' || name === 'account-notifications' || name === 'account-mcp') {
     return { id: 'account', title: 'Account', count: null }
   }
   if (name === 'mcp') {
