@@ -13,9 +13,12 @@ const search = ref('')
 const ext = ref('all')
 const sort = ref('newest')
 const uploading = ref(false)
+const filtersOpen = ref(false)
 const fileInput = ref(null)
 
-onMounted(loadArtifacts)
+onMounted(() => {
+  if (!artifacts.loaded || artifacts.workspace !== hub.workspace) loadArtifacts()
+})
 
 const extensions = computed(() => {
   const counts = new Map()
@@ -87,11 +90,15 @@ function open(item) {
   hub.rail.artifacts = false
   router.push({ name: 'artifact', params: { workspace: hub.workspace, id: item.id } })
 }
+
+const filtersActive = computed(() => ext.value !== 'all' || sort.value !== 'newest')
+
+defineExpose({ pickUpload })
 </script>
 
 <template>
   <div class="rail-panel rail-artifact-panel">
-    <div class="rail-panel-tools">
+    <div class="rail-panel-tools rail-search-row">
       <label class="rail-search">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
           <circle cx="7" cy="7" r="4.6" />
@@ -100,38 +107,46 @@ function open(item) {
         <input v-model="search" type="search" placeholder="Search artifacts" aria-label="Search artifacts" autocomplete="off" />
       </label>
       <button
-        class="rail-panel-add"
+        class="rail-filter-btn"
         type="button"
-        title="Upload artifact"
-        aria-label="Upload artifact"
-        :disabled="uploading"
-        @click="pickUpload"
+        :data-active="filtersActive ? '1' : '0'"
+        :aria-expanded="filtersOpen ? 'true' : 'false'"
+        aria-controls="rail-artifact-filters"
+        title="Advanced filters"
+        aria-label="Advanced filters"
+        @click="filtersOpen = !filtersOpen"
       >
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-          <path d="M8 10.5V2.6M4.8 5.8L8 2.5l3.2 3.3" />
-          <path d="M2.6 10.2v2.4a1 1 0 001 1h8.8a1 1 0 001-1v-2.4" />
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
         </svg>
+        <i v-if="filtersActive" aria-hidden="true"></i>
       </button>
       <input ref="fileInput" class="hidden-file" type="file" multiple @change="onFiles" />
     </div>
 
-    <div class="rail-select-row">
-      <select v-model="ext" aria-label="Filter artifacts by extension">
-        <option value="all">All types</option>
-        <option v-for="entry in extensions" :key="entry.value" :value="entry.value">
-          {{ entry.value }} · {{ entry.count }}
-        </option>
-      </select>
-      <select v-model="sort" aria-label="Sort artifacts">
-        <option value="newest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="name">Name</option>
-        <option value="size">Largest</option>
-      </select>
+    <div v-if="filtersOpen" id="rail-artifact-filters" class="rail-advanced">
+      <div class="rail-filter">
+        <label class="rail-filter-label" for="rail-artifact-type">Type</label>
+        <select id="rail-artifact-type" v-model="ext" class="rail-adv-select" aria-label="Filter artifacts by extension">
+          <option value="all">All types</option>
+          <option v-for="entry in extensions" :key="entry.value" :value="entry.value">
+            {{ entry.value }} · {{ entry.count }}
+          </option>
+        </select>
+      </div>
+      <div class="rail-filter">
+        <label class="rail-filter-label" for="rail-artifact-sort">Sort</label>
+        <select id="rail-artifact-sort" v-model="sort" class="rail-adv-select" aria-label="Sort artifacts">
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="name">Name</option>
+          <option value="size">Largest</option>
+        </select>
+      </div>
     </div>
 
     <p v-if="!list.length" class="rail-t2-empty">
-      {{ artifacts.items.length ? 'No artifact matches this view.' : 'No artifacts yet. Upload one from the + button.' }}
+      {{ artifacts.items.length ? 'No artifact matches this view.' : 'No artifacts yet. Upload one from the header.' }}
     </p>
     <button
       v-for="item in list"

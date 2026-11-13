@@ -16,9 +16,9 @@ import {
 } from '@/stores/hub'
 
 /**
- * The rail history is two shelves: WORKING and DONE. Each shelf folds, and
- * within a shelf the rows are grouped by the day they last changed. The date
- * header carries the date so a row only needs its query count and time.
+ * The rail history is one list. Search is always visible; time and status live
+ * behind the advanced-filter button so the rows get the default space. Status
+ * starts on All, and the time menu adds an explicit custom date range.
  */
 const props = defineProps({
   /* the second-tier shell owns the heading and the new-chat control */
@@ -39,23 +39,36 @@ const RANGE_OPTIONS = [
   { id: 'yesterday', label: 'Yesterday' },
   { id: '7d', label: 'Last 7 days' },
   { id: '30d', label: 'Last 30 days' },
+  { id: 'custom', label: 'Custom range…' },
 ]
 const STATUS_OPTIONS = [
+  { id: 'all', label: 'All' },
   { id: 'working', label: 'Working' },
   { id: 'done', label: 'Done' },
   { id: 'failed', label: 'Failed' },
 ]
-const STATUS_KEY = 'entity.rail.chatStatus'
+const STATUS_KEY = 'entity.rail.chatStatus.v2'
 const status = ref(readStatus())
+const filtersOpen = ref(false)
+const customStart = ref('')
+const customEnd = ref('')
 
 function readStatus() {
   try {
     const saved = localStorage.getItem(STATUS_KEY)
-    return STATUS_OPTIONS.some((entry) => entry.id === saved) ? saved : 'done'
+    return STATUS_OPTIONS.some((entry) => entry.id === saved) ? saved : 'all'
   } catch {
-    return 'done'
+    return 'all'
   }
 }
+
+const advancedActive = computed(
+  () =>
+    status.value !== 'all' ||
+    range.value !== 'all' ||
+    Boolean(customStart.value) ||
+    Boolean(customEnd.value),
+)
 
 function pickStatus(id) {
   status.value = id
@@ -79,13 +92,16 @@ function statusOf(thread) {
 }
 
 const statusCounts = computed(() => {
-  const counts = { working: 0, done: 0, failed: 0 }
+  const counts = { all: threads.value.length, working: 0, done: 0, failed: 0 }
   for (const thread of threads.value) counts[statusOf(thread)] += 1
   return counts
 })
 
 const statusLabel = computed(
-  () => STATUS_OPTIONS.find((entry) => entry.id === status.value)?.label || 'Done',
+  () => STATUS_OPTIONS.find((entry) => entry.id === status.value)?.label || 'All',
+)
+const statusNoun = computed(() =>
+  status.value === 'all' ? 'threads' : `${statusLabel.value.toLowerCase()} threads`,
 )
 
 function titleOf(thread) {
@@ -96,6 +112,12 @@ function dayStart(value) {
   const date = new Date(value || '')
   if (!Number.isFinite(date.getTime())) return null
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function dateBoundary(value, end = false) {
+  if (!value) return null
+  const date = new Date(`${value}T${end ? '23:59:59.999' : '00:00:00'}`)
+  return Number.isFinite(date.getTime()) ? date : null
 }
 
 function inRange(thread) {
@@ -109,6 +131,13 @@ function inRange(thread) {
     start.setDate(start.getDate() - 1)
     return date >= start && date < today
   }
+  if (range.value === 'custom') {
+    const start = dateBoundary(customStart.value)
+    const end = dateBoundary(customEnd.value, true)
+    if (start && date < start) return false
+    if (end && date > end) return false
+    return true
+  }
   const days = range.value === '7d' ? 7 : 30
   return date >= new Date(today.getTime() - days * 86_400_000)
 }
@@ -116,7 +145,7 @@ function inRange(thread) {
 const filteredThreads = computed(() =>
   threads.value
     .filter((thread) => {
-      if (statusOf(thread) !== status.value) return false
+      if (status.value !== 'all' && statusOf(thread) !== status.value) return false
       if (!inRange(thread)) return false
       return matchesQuery(
         `${titleOf(thread)} ${thread.preview || ''} ${thread.entity || ''}`,
@@ -281,39 +310,74 @@ defineExpose({ newThread })
     </div>
 
     <div class="rchat-tools">
-      <label class="rchat-search">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-          <circle cx="7" cy="7" r="4.6" />
-          <path d="M10.5 10.5L14 14" />
-        </svg>
-        <input
-          v-model="query"
-          type="search"
-          placeholder="Search threads"
-          aria-label="Search threads"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button v-if="query" type="button" aria-label="Clear search" @click="query = ''">×</button>
-      </label>
-      <label class="rchat-range">
-        <select v-model="range" aria-label="Filter threads by time">
-          <option v-for="option in RANGE_OPTIONS" :key="option.id" :value="option.id">
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
-      <div class="rchat-status-switch" role="group" aria-label="Filter threads by status">
+      <div class="rchat-search-row">
+        <label class="rchat-search">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.6" />
+            <path d="M10.5 10.5L14 14" />
+          </svg>
+          <input
+            v-model="query"
+            type="search"
+            placeholder="Search threads"
+            aria-label="Search threads"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button v-if="query" type="button" aria-label="Clear search" @click="query = ''">×</button>
+        </label>
         <button
-          v-for="option in STATUS_OPTIONS"
-          :key="option.id"
+          class="rchat-filter-btn"
           type="button"
-          :data-status="option.id"
-          :aria-pressed="status === option.id ? 'true' : 'false'"
-          @click="pickStatus(option.id)"
+          :data-active="advancedActive ? '1' : '0'"
+          :aria-expanded="filtersOpen ? 'true' : 'false'"
+          aria-controls="rchat-advanced"
+          title="Advanced filters"
+          aria-label="Advanced filters"
+          @click="filtersOpen = !filtersOpen"
         >
-          {{ option.label }} <b>{{ statusCounts[option.id] }}</b>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
+          </svg>
+          <i v-if="advancedActive" aria-hidden="true"></i>
         </button>
+      </div>
+
+      <div v-if="filtersOpen" id="rchat-advanced" class="rchat-advanced">
+        <div class="rchat-filter">
+          <label class="rchat-filter-label" for="rchat-time">Time</label>
+          <select id="rchat-time" v-model="range" class="rchat-time-select" aria-label="Filter threads by time">
+            <option v-for="option in RANGE_OPTIONS" :key="option.id" :value="option.id">
+              {{ option.label }}
+            </option>
+          </select>
+          <div v-if="range === 'custom'" class="rchat-custom-range">
+            <label>
+              <span>From</span>
+              <input v-model="customStart" type="date" :max="customEnd || undefined" aria-label="Start date" />
+            </label>
+            <label>
+              <span>To</span>
+              <input v-model="customEnd" type="date" :min="customStart || undefined" aria-label="End date" />
+            </label>
+          </div>
+        </div>
+        <div class="rchat-filter">
+          <span class="rchat-filter-label">Status</span>
+          <div class="rchat-status-switch rchat-status-switch--grid" role="group" aria-label="Filter threads by status">
+            <button
+              v-for="option in STATUS_OPTIONS"
+              :key="option.id"
+              type="button"
+              :data-status="option.id"
+              :aria-pressed="status === option.id ? 'true' : 'false'"
+              @click="pickStatus(option.id)"
+            >
+              <span>{{ option.label }}</span>
+              <b>{{ statusCounts[option.id] }}</b>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -392,7 +456,7 @@ defineExpose({ newThread })
       </template>
 
       <p v-else-if="threads.length" class="rchat-empty">
-        No {{ statusLabel.toLowerCase() }} threads match this search and time filter.
+        No {{ statusNoun }} match this search and time filter.
       </p>
       <p v-else class="rchat-empty">
         No chats yet. Use + to start one.

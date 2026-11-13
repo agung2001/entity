@@ -19,6 +19,8 @@ import { workspaces } from '@/stores/workspaces'
 const route = useRoute()
 const router = useRouter()
 const history = ref(null)
+const entityPanel = ref(null)
+const artifactPanel = ref(null)
 
 const WORKSPACE_TABS = [
   { id: 'general', label: 'General', hint: 'name, id and directory' },
@@ -81,7 +83,7 @@ function backToWorkspaces() {
 
 <template>
   <aside class="rail-t2" aria-label="Context">
-    <header class="rail-t2-head">
+    <header class="rail-t2-head" :data-chat="section.id === 'chat' ? '1' : '0'">
       <button
         v-if="section.back"
         class="rail-t2-back"
@@ -100,12 +102,40 @@ function backToWorkspaces() {
         v-if="section.id === 'chat'"
         class="rail-t2-add"
         type="button"
-        title="New chat"
+        title="New chat (⌘N)"
         aria-label="New chat"
+        data-sfx="spark"
         @click="newChat"
       >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
           <path d="M8 3.2v9.6M3.2 8h9.6" />
+        </svg>
+      </button>
+      <button
+        v-else-if="section.id === 'entities'"
+        class="rail-t2-add"
+        type="button"
+        title="Add entity"
+        aria-label="Add entity"
+        data-sfx="spark"
+        @click="entityPanel?.openCreate()"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M8 3.2v9.6M3.2 8h9.6" />
+        </svg>
+      </button>
+      <button
+        v-else-if="section.id === 'artifacts'"
+        class="rail-t2-add"
+        type="button"
+        title="Upload artifact"
+        aria-label="Upload artifact"
+        data-sfx="upload"
+        @click="artifactPanel?.pickUpload()"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M8 10.5V2.6M4.8 5.8L8 2.5l3.2 3.3" />
+          <path d="M2.6 10.2v2.4a1 1 0 001 1h8.8a1 1 0 001-1v-2.4" />
         </svg>
       </button>
     </header>
@@ -115,11 +145,11 @@ function backToWorkspaces() {
     </div>
 
     <div v-else-if="section.id === 'entities'" class="rail-t2-body">
-      <EntityRailPanel />
+      <EntityRailPanel ref="entityPanel" />
     </div>
 
     <div v-else-if="section.id === 'artifacts'" class="rail-t2-body">
-      <ArtifactRailPanel />
+      <ArtifactRailPanel ref="artifactPanel" />
     </div>
 
     <div v-else-if="section.id === 'overview' || section.id === 'machines'" class="rail-t2-body">

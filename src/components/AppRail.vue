@@ -159,6 +159,8 @@ function onPanelClick(item) {
 
 function onNavClick(item, event) {
   if (item.view === 'overview') {
+    hub.rail.entities = false
+    hub.rail.artifacts = false
     if (collapsed.value) expandRail()
     return
   }
@@ -167,6 +169,11 @@ function onNavClick(item, event) {
     toggleRail()
     return
   }
+  /* A directory panel belongs to the section that opened it. Moving to Chat or
+     Configurations must close it before the duplicate-navigation check, or a
+     click on the same route leaves the old shelf in the rail. */
+  hub.rail.entities = false
+  hub.rail.artifacts = false
   expandRail()
 }
 

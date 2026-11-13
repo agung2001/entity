@@ -5,13 +5,16 @@ import { workspaces } from '@/stores/workspaces'
 
 /**
  * The overview opens on the state of the workspace, not on a chat prompt. The
- * conversation surface lives on /chat; this is the dashboard that answers
- * "what is in here, and is anything wrong?" before a decision is made.
+ * four tiles are the reference dashboard's attention-first order: what exists,
+ * where it runs, what has been said, and what needs a look.
  */
 const summaries = computed(() => hub.chat.summaries || [])
 
 const running = computed(() => hub.agents.filter((agent) => agent.status === 'running').length)
 const problems = computed(() => problemCount())
+const problemEntities = computed(
+  () => hub.agents.filter((agent) => agent.problems?.length).length,
+)
 const queries = computed(() =>
   summaries.value.reduce((sum, thread) => sum + (thread.queries || 0), 0),
 )
@@ -31,42 +34,54 @@ const lastActivity = computed(() => {
   const newest = summaries.value[0]
   return newest ? ago(newest.updatedAt) : 'never'
 })
+
+function focusAttention() {
+  document.getElementById('ovd-attention')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 </script>
 
 <template>
-  <section class="stat-grid" aria-label="Workspace statistics">
-    <button class="stat-card" type="button" @click="hub.rail.entities = true">
-      <span class="stat-k">Entities</span>
-      <span class="stat-v">{{ hub.agents.length }}</span>
-      <span class="stat-m">
-        {{ running }} running · {{ problems }} {{ problems === 1 ? 'problem' : 'problems' }}
-      </span>
+  <section class="ovd-stats" aria-label="Workspace statistics">
+    <button class="ovd-stat" type="button" @click="hub.rail.entities = true">
+      <b>{{ hub.agents.length }}</b>
+      <span>entities</span>
+      <em>{{ running }} running · {{ problems }} {{ problems === 1 ? 'problem' : 'problems' }}</em>
     </button>
 
-    <router-link class="stat-card" :to="{ name: 'chat', params: { workspace: hub.workspace } }">
-      <span class="stat-k">Conversations</span>
-      <span class="stat-v">{{ summaries.length }}</span>
-      <span class="stat-m">{{ queries }} queries · {{ replies }} responses</span>
+    <router-link class="ovd-stat" :to="{ name: 'machines', params: { workspace: hub.workspace } }">
+      <b>{{ workspaces.machines.length }}</b>
+      <span>machines</span>
+      <em>{{ localMachines }} local · {{ remoteMachines }} remote</em>
     </router-link>
 
-    <router-link class="stat-card" :to="{ name: 'skills', params: { workspace: hub.workspace } }">
-      <span class="stat-k">Skills</span>
-      <span class="stat-v">{{ hub.skills.length }}</span>
-      <span class="stat-m">
-        {{ skillsDeclared }} {{ skillsDeclared === 1 ? 'declaration' : 'declarations' }} on entities
-      </span>
+    <router-link class="ovd-stat" :to="{ name: 'chat', params: { workspace: hub.workspace } }">
+      <b>{{ summaries.length }}</b>
+      <span>conversations</span>
+      <em>{{ queries }} {{ queries === 1 ? 'query' : 'queries' }} · {{ replies }} {{ replies === 1 ? 'response' : 'responses' }}</em>
     </router-link>
 
-    <router-link class="stat-card" :to="{ name: 'machines', params: { workspace: hub.workspace } }">
-      <span class="stat-k">Machines</span>
-      <span class="stat-v">{{ workspaces.machines.length }}</span>
-      <span class="stat-m">{{ localMachines }} local · {{ remoteMachines }} remote</span>
-    </router-link>
+    <button
+      class="ovd-stat"
+      type="button"
+      :data-tone="problems ? 'warn' : 'ok'"
+      @click="focusAttention"
+    >
+      <b>{{ problems }}</b>
+      <span>needs a look</span>
+      <em>{{ problemEntities ? `${problemEntities} ${problemEntities === 1 ? 'entity' : 'entities'}` : 'all clear' }}</em>
+    </button>
   </section>
 
-  <p class="stat-foot">
-    Last activity <b>{{ lastActivity }}</b>
-    <span aria-hidden="true">·</span>
-    <router-link :to="{ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }">Open the journal</router-link>
+  <p class="ovd-stat-foot">
+    <span>
+      <b>{{ hub.skills.length }}</b> skills
+      <span aria-hidden="true">·</span>
+      <b>{{ skillsDeclared }}</b> declarations
+      <span aria-hidden="true">·</span>
+      last activity <b>{{ lastActivity }}</b>
+    </span>
+    <router-link :to="{ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'activity' } }">
+      Open the journal →
+    </router-link>
   </p>
 </template>

@@ -12,6 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const search = ref('')
 const adding = ref(false)
+const filtersOpen = ref(false)
 const FILTERS = ['all', 'running', 'idle', 'sleep', 'error']
 
 onMounted(ensureChats)
@@ -42,11 +43,17 @@ function created(entity) {
   adding.value = false
   router.push({ name: 'entity', params: { workspace: hub.workspace, name: entity.name } })
 }
+
+defineExpose({
+  openCreate() {
+    adding.value = true
+  },
+})
 </script>
 
 <template>
   <div class="rail-panel rail-entity-panel">
-    <div class="rail-panel-tools">
+    <div class="rail-panel-tools rail-search-row">
       <label class="rail-search">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
           <circle cx="7" cy="7" r="4.6" />
@@ -54,23 +61,38 @@ function created(entity) {
         </svg>
         <input v-model="search" type="search" placeholder="Search entities" aria-label="Search entities" autocomplete="off" />
       </label>
-      <button class="rail-panel-add" type="button" title="Add entity" aria-label="Add entity" @click="adding = true">
+      <button
+        class="rail-filter-btn"
+        type="button"
+        :data-active="hub.entityFilter !== 'all' ? '1' : '0'"
+        :aria-expanded="filtersOpen ? 'true' : 'false'"
+        aria-controls="rail-entity-filters"
+        title="Advanced filters"
+        aria-label="Advanced filters"
+        @click="filtersOpen = !filtersOpen"
+      >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <path d="M8 3.2v9.6M3.2 8h9.6" />
+          <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
         </svg>
+        <i v-if="hub.entityFilter !== 'all'" aria-hidden="true"></i>
       </button>
     </div>
 
-    <div class="rail-filter-chips" role="group" aria-label="Filter entities by state">
-      <button
-        v-for="state in FILTERS"
-        :key="state"
-        type="button"
-        :aria-pressed="hub.entityFilter === state ? 'true' : 'false'"
-        @click="hub.entityFilter = state"
-      >
-        {{ state === 'all' ? 'All' : state }} <b>{{ filterCounts[state] }}</b>
-      </button>
+    <div v-if="filtersOpen" id="rail-entity-filters" class="rail-advanced">
+      <div class="rail-filter">
+        <span class="rail-filter-label">State</span>
+        <div class="rail-filter-chips rail-filter-chips--grid" role="group" aria-label="Filter entities by state">
+          <button
+            v-for="state in FILTERS"
+            :key="state"
+            type="button"
+            :aria-pressed="hub.entityFilter === state ? 'true' : 'false'"
+            @click="hub.entityFilter = state"
+          >
+            {{ state === 'all' ? 'All' : state }} <b>{{ filterCounts[state] }}</b>
+          </button>
+        </div>
+      </div>
     </div>
 
     <p v-if="!list.length" class="rail-t2-empty">
