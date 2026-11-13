@@ -1,16 +1,21 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
-import CommandPalette from '@/components/CommandPalette.vue'
 import ShortcutsDialog from '@/components/ShortcutsDialog.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import { closeWizard, hub, toast } from '@/stores/hub'
+import { loadHarnesses } from '@/stores/harnesses'
 import { toggleTheme } from '@/lib/theme'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { useDialogDismiss } from '@/composables/useDialog'
+
+/* The palette is twenty kilobytes of search that nobody needs to paint the
+   hub. Kept mounted so its open/close transition still runs, but parsed and
+   evaluated only after the rail is on screen. */
+const CommandPalette = defineAsyncComponent(() => import('@/components/CommandPalette.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -116,7 +121,11 @@ function onCreated(record) {
   toast(`${record.label} is ready`)
 }
 
-onMounted(() => document.addEventListener('keydown', onKey))
+onMounted(() => {
+  document.addEventListener('keydown', onKey)
+  /* Harness labels are needed by the rail and every picker, not by sign-in. */
+  loadHarnesses().catch(() => {})
+})
 onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 </script>
 

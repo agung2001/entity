@@ -114,6 +114,32 @@ to hand-edit when a combo changes.
 documents everything the composer itself understands — `/` skills, `@` mentions,
 arrow keys, `Tab`, Enter/Shift+Enter and sending — not app-wide navigation.
 
+## Loading budget
+
+The renderer starts as a shell and fetches a screen only when it is opened. The
+sign-in page must not download the chat, the chat must not download the MCP
+inventory, and Markdown parsing must not happen until a reply needs it.
+
+- **Screens are chunks.** Every `component:` in `src/router.js` is a
+  `() => import(...)`. The entry (`main.js`, stores, `App.vue`) imports no view,
+  no layout and no component.
+- **The parser is a chunk.** `marked` and `dompurify` are imported only by
+  `src/lib/prose-engine.js`; components call `renderProse()` / `proseReady`
+  from `src/lib/prose.js`, which loads the engine on first use and renders
+  escaped text until it arrives.
+- **Heavy overlays are async.** The command palette uses
+  `defineAsyncComponent`; the workspace wizard is `v-if`-mounted. A dialog that
+  is only opened from an already-loaded screen does not need its own chunk.
+- **Prefetch on intent.** The sign-in form warms the hub shell when a field is
+  focused or the submit button is hovered; nothing is fetched for a visitor who
+  never reaches for it. Never prefetch on the critical path.
+- **Read locally, in parallel.** Independent reads go out together
+  (`loadScope`), and nothing is awaited that the first paint does not need.
+
+`npm test` fails if a view is imported statically, if the entry reaches for a
+screen, or if `marked`/`dompurify` appear outside the prose engine. `npm run
+build` prints the chunk list — the entry chunk should not grow without a reason.
+
 ## When you add a surface or a key
 
 1. New dialog/drawer/popover: add the close button, the scrim, and
@@ -129,6 +155,10 @@ arrow keys, `Tab`, Enter/Shift+Enter and sending — not app-wide navigation.
 
 ## Log
 
+- **2026-11-13** — renderer split into per-screen chunks; the Markdown parser
+  moved behind a lazy prose engine; the palette became an async component; the
+  entity mark loop skips hidden frames and halves the rate for mini marks; the
+  workspace scope reads its six stores in one parallel pass.
 - **2026-11-13** — Escape handling moved to one window-level stack
   (`useDialogDismiss`); every modal and popover migrated. Top-bar keyboard
   guide added (`ShortcutsDialog` + `src/lib/shortcuts.js`); hard-coded combos

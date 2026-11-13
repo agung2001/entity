@@ -3,7 +3,6 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { onRunEvent } from '@/composables/localBridge'
 import { notify, onNotificationActivate, prepareNotifications } from '@/lib/notifications'
-import { loadHarnesses } from '@/stores/harnesses'
 
 /**
  * Root component. It marks the platform on <body> so the rail can leave room for
@@ -35,7 +34,6 @@ function notificationFor(event) {
 }
 
 onMounted(async () => {
-  loadHarnesses().catch(() => {})
   document.body.classList.toggle('is-desktop', Boolean(globalThis.desktop?.isElectron))
   if (globalThis.desktop?.isElectron) {
     const info = await globalThis.desktop.getAppInfo()

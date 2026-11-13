@@ -693,6 +693,7 @@ const statics = []
 let seq = 0
 let seed = 20241111
 let raf = 0
+let frame = 0
 
 const rnd = () => {
   seed = (seed * 1664525 + 1013904223) >>> 0
@@ -1121,12 +1122,26 @@ export function playReaction(workspace, entity, id = 'random') {
 }
 
 function tick(now) {
+  /* A hidden window has no frames to show; keep the loop alive but write
+     nothing until it is visible again. */
+  if (document.hidden) {
+    raf = requestAnimationFrame(tick)
+    return
+  }
+
+  /* Mini marks are 20–28px tall. Half the frame rate is invisible at that size
+     and halves the style writes on a list of them. Reactions still run at full
+     speed, because those are the ones a person is meant to notice. */
+  frame += 1
+  const half = frame % 2 === 0
+
   for (let q = marks.length - 1; q >= 0; q--) {
     if (marks[q].el.isConnected === false) {
       marks.splice(q, 1)
       continue
     }
     const p = marks[q]
+    if (p.mini && !p.reaction && !half) continue
     const el = p.el
     const dtms = p.prev ? Math.min(48, now - p.prev) : 16.7
     p.prev = now

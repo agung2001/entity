@@ -78,3 +78,44 @@ test('the shortcut catalog is well formed and unique', () => {
     assert.ok(ids.includes(id), `missing shortcut ${id}`)
   }
 })
+
+/* ── loading budget ────────────────────────────────────────────────────────
+   The app is a desktop shell around local files; a screen that is never
+   opened should never be downloaded. These checks keep the entry chunk from
+   quietly collecting every view again. */
+
+const MODULES = []
+function walkModules(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) walkModules(full)
+    else if (entry.name.endsWith('.js')) {
+      MODULES.push({ file: full, rel: path.relative(ROOT, full), text: fs.readFileSync(full, 'utf8') })
+    }
+  }
+}
+walkModules(SRC)
+
+test('every route component is a dynamic import', () => {
+  const router = fs.readFileSync(path.join(SRC, 'router.js'), 'utf8')
+  assert.doesNotMatch(router, /^import \w+ from '@\/views\//m, 'a view is imported statically')
+  assert.doesNotMatch(router, /^import \w+ from '@\/layouts\//m, 'the layout is imported statically')
+  const lazy = new Set([...router.matchAll(/const (\w+) = \(\) => import\('@\/[^']+'\)/g)].map((m) => m[1]))
+  const used = [...router.matchAll(/component: (\w+)/g)].map((m) => m[1])
+  const eager = used.filter((name) => !lazy.has(name))
+  assert.deepEqual(eager, [], `route components without a dynamic import: ${eager.join(', ')}`)
+})
+
+test('the entry module does not pull a screen or the parser', () => {
+  const main = fs.readFileSync(path.join(SRC, 'main.js'), 'utf8')
+  assert.doesNotMatch(main, /@\/views\//)
+  assert.doesNotMatch(main, /@\/layouts\//)
+  assert.doesNotMatch(main, /@\/components\//)
+})
+
+test('marked and dompurify live behind the lazy prose engine', () => {
+  const importers = MODULES.filter((entry) => /from '(marked|dompurify)'/.test(entry.text)).map(
+    (entry) => entry.rel,
+  )
+  assert.deepEqual(importers, ['src/lib/prose-engine.js'])
+})

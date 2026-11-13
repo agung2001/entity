@@ -1,9 +1,8 @@
 <script setup>
 import { computed, onMounted, reactive, watch } from 'vue'
-import DOMPurify from 'dompurify'
-import { marked } from 'marked'
 import { downloadArtifact, readArtifact } from '@/stores/artifacts'
 import { hub } from '@/stores/hub'
+import { loadProse, proseReady, renderProse } from '@/lib/prose'
 
 /**
  * Assistant text with lightweight media support.
@@ -20,19 +19,19 @@ const props = defineProps({
 const cache = new Map()
 const resolved = reactive({})
 
-/* Harness replies are Markdown. Keep links safe and open them outside the app. */
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName !== 'A') return
-  node.setAttribute('target', '_blank')
-  node.setAttribute('rel', 'noreferrer noopener')
-})
+/* Parsed HTML per reply, so a streamed turn or a scroll re-render does not
+   re-parse every message. The ready flag is part of the key: the plain-text
+   stand-in is replaced once the Markdown chunk arrives. */
+const htmlCache = new Map()
 
 function renderMarkdown(text) {
-  const html = marked.parse(String(text || ''), { gfm: true, breaks: true })
-  return DOMPurify.sanitize(String(html), {
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
-  })
+  const key = `${proseReady.value ? 'md' : 'text'}:${text}`
+  const hit = htmlCache.get(key)
+  if (hit !== undefined) return hit
+  const html = renderProse(text)
+  if (htmlCache.size > 400) htmlCache.clear()
+  htmlCache.set(key, html)
+  return html
 }
 
 const TOKEN =
@@ -146,7 +145,10 @@ async function download(segment) {
   }
 }
 
-onMounted(resolve)
+onMounted(() => {
+  loadProse().catch(() => {})
+  resolve()
+})
 watch(() => props.text, resolve)
 </script>
 
@@ -161,6 +163,7 @@ watch(() => props.text, resolve)
           :src="imageSource(segment) || segment.src"
           :alt="segment.alt"
           loading="lazy"
+          decoding="async"
         />
         <span v-else class="msg-artifact">
           <span class="msg-artifact-name">{{ artifactInfo(segment).name }}</span>

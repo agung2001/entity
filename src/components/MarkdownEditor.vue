@@ -1,7 +1,6 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
-import DOMPurify from 'dompurify'
-import { marked } from 'marked'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { loadProse, proseReady, renderProse } from '@/lib/prose'
 
 /**
  * A small Markdown editor and reviewer: toolbar in write mode, rendered
@@ -19,17 +18,17 @@ const mode = ref('write')
 const area = ref(null)
 
 const preview = computed(() => {
-  const html = marked.parse(String(props.modelValue || ''), { gfm: true, breaks: true })
-  return DOMPurify.sanitize(String(html), {
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
-  })
+  /* reading the flag re-runs this the moment the parser chunk lands */
+  void proseReady.value
+  return renderProse(props.modelValue)
 })
 
 const words = computed(() => {
   const text = String(props.modelValue || '').trim()
   return text ? text.split(/\s+/).length : 0
 })
+
+onMounted(() => loadProse().catch(() => {}))
 
 function update(value) {
   emit('update:modelValue', value)

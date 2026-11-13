@@ -2,26 +2,30 @@ import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router
 import { hub, restoreSession } from '@/stores/hub'
 import { loadWorkspaces, openWorkspace, workspaces } from '@/stores/workspaces'
 
-import LoginView from '@/views/LoginView.vue'
-import SetupView from '@/views/SetupView.vue'
-import HubLayout from '@/layouts/HubLayout.vue'
-import OverviewView from '@/views/OverviewView.vue'
-import ChatView from '@/views/ChatView.vue'
-import EntityDetailView from '@/views/EntityDetailView.vue'
-import SkillsView from '@/views/SkillsView.vue'
-import SkillDetailView from '@/views/SkillDetailView.vue'
-import McpView from '@/views/McpView.vue'
-import McpServerView from '@/views/McpServerView.vue'
-import ArtifactDetailView from '@/views/ArtifactDetailView.vue'
-import MachinesView from '@/views/MachinesView.vue'
-import MachineDetailView from '@/views/MachineDetailView.vue'
-import AccountView from '@/views/AccountView.vue'
-import AccountProfileView from '@/views/account/AccountProfileView.vue'
-import AccountSoundView from '@/views/account/AccountSoundView.vue'
-import AccountNotificationsView from '@/views/account/AccountNotificationsView.vue'
-import AccountMcpView from '@/views/account/AccountMcpView.vue'
-import WorkspaceView from '@/views/WorkspaceView.vue'
-import ManageWorkspacesView from '@/views/ManageWorkspacesView.vue'
+/* Every screen is its own chunk: the sign-in page does not download the chat,
+   the chat does not download the MCP inventory, and a workspace that is never
+   opened costs nothing. The guard below awaits the session and workspace calls,
+   so these fetches overlap with that work instead of blocking it. */
+const LoginView = () => import('@/views/LoginView.vue')
+const SetupView = () => import('@/views/SetupView.vue')
+const HubLayout = () => import('@/layouts/HubLayout.vue')
+const OverviewView = () => import('@/views/OverviewView.vue')
+const ChatView = () => import('@/views/ChatView.vue')
+const EntityDetailView = () => import('@/views/EntityDetailView.vue')
+const SkillsView = () => import('@/views/SkillsView.vue')
+const SkillDetailView = () => import('@/views/SkillDetailView.vue')
+const McpView = () => import('@/views/McpView.vue')
+const McpServerView = () => import('@/views/McpServerView.vue')
+const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
+const MachinesView = () => import('@/views/MachinesView.vue')
+const MachineDetailView = () => import('@/views/MachineDetailView.vue')
+const AccountView = () => import('@/views/AccountView.vue')
+const AccountProfileView = () => import('@/views/account/AccountProfileView.vue')
+const AccountSoundView = () => import('@/views/account/AccountSoundView.vue')
+const AccountNotificationsView = () => import('@/views/account/AccountNotificationsView.vue')
+const AccountMcpView = () => import('@/views/account/AccountMcpView.vue')
+const WorkspaceView = () => import('@/views/WorkspaceView.vue')
+const ManageWorkspacesView = () => import('@/views/ManageWorkspacesView.vue')
 
 /* Clean URLs wherever an HTTP server can resolve a path. The packaged app
    loads `dist/index.html` over `file://`, where there is no server to answer a

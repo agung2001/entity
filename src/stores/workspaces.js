@@ -52,19 +52,20 @@ function persist(id) {
 
 /** Everything a workspace owns, in one read pass. */
 export async function loadScope(id) {
+  /* Six independent reads. Every one of them is a file walk in the main
+     process, so they all start together instead of in two waves. */
   const [machines, skills, mcp] = await Promise.all([
     call('workspace.machines', { id }).catch(() => []),
     call('workspace.skills', { id }).catch(() => []),
     call('workspace.mcp', { id }).catch(() => ({ schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true })),
+    loadEntities(id),
+    loadRuns(id),
+    loadArtifacts(id),
   ])
 
   workspaces.machines = machines
   workspaces.skills = skills
   workspaces.mcp = mcp
-
-  /* These read independent files. Sequential awaits made a workspace switch
-     pay three round trips back-to-back. */
-  await Promise.all([loadEntities(id), loadRuns(id), loadArtifacts(id)])
 
   applyScope({
     agents: hub.agents,

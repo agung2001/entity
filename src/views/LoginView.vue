@@ -79,6 +79,17 @@ const changeLabel = computed(() => (busy.value ? 'Saving…' : 'Update password'
 let timer = 0
 onBeforeUnmount(() => clearTimeout(timer))
 
+/* The hub is the only place this screen can lead to. Fetching its shell when
+   the pointer reaches the submit button gives the click a head start without
+   spending bandwidth on someone who never signs in. */
+let warmed = false
+function warmHub() {
+  if (warmed) return
+  warmed = true
+  import('@/layouts/HubLayout.vue').catch(() => {})
+  import('@/views/ManageWorkspacesView.vue').catch(() => {})
+}
+
 onMounted(async () => {
   /* Both reads are independent; doing them in sequence made a cold sign-in
      wait for one round trip after another. */
@@ -297,7 +308,7 @@ function backToSignIn() {
           </p>
           <p v-if="accountHint" class="auth-hint">{{ accountHint }}</p>
 
-          <form novalidate @submit.prevent="submitCredentials">
+          <form novalidate @submit.prevent="submitCredentials" @focusin="warmHub">
             <div class="field">
               <label for="ident">Email or handle</label>
               <div class="control">
@@ -353,6 +364,8 @@ function backToSignIn() {
               type="submit"
               :data-busy="busy ? '1' : '0'"
               :disabled="busy || done"
+              @mouseenter="warmHub"
+              @focus="warmHub"
             >
               <span class="spinner" aria-hidden="true"></span>
               <span class="label">{{ credLabel }}</span>
@@ -367,7 +380,7 @@ function backToSignIn() {
             own to continue.
           </p>
 
-          <form novalidate @submit.prevent="submitChange">
+          <form novalidate @submit.prevent="submitChange" @focusin="warmHub">
             <div class="field">
               <label for="new-pw">New password</label>
               <div class="control has-toggle">
@@ -415,7 +428,14 @@ function backToSignIn() {
               <p class="msg">{{ error }}</p>
             </div>
 
-            <button class="btn-primary" type="submit" :data-busy="busy ? '1' : '0'" :disabled="busy">
+            <button
+              class="btn-primary"
+              type="submit"
+              :data-busy="busy ? '1' : '0'"
+              :disabled="busy"
+              @mouseenter="warmHub"
+              @focus="warmHub"
+            >
               <span class="spinner" aria-hidden="true"></span>
               <span class="label">{{ changeLabel }}</span>
             </button>

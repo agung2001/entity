@@ -27,6 +27,22 @@ import { onBeforeUnmount, watch } from 'vue'
 const stack = []
 let listening = false
 
+/**
+ * A closed surface can leave focus behind on an input that is only faded out,
+ * making the next shortcut look broken (the character goes into a hidden
+ * field). Once the DOM has settled, hand focus back to the page.
+ */
+function releaseFocus() {
+  const active = document.activeElement
+  if (!active || active === document.body || typeof active.blur !== 'function') return
+  if (active.closest('[data-open="0"], [aria-hidden="true"]')) active.blur()
+}
+
+function afterClose() {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(releaseFocus)
+  else releaseFocus()
+}
+
 function onKeydown(event) {
   if (event.key !== 'Escape' || event.isComposing) return
   const entry = stack[stack.length - 1]
@@ -35,6 +51,7 @@ function onKeydown(event) {
   event.preventDefault()
   event.stopPropagation()
   entry.close()
+  afterClose()
 }
 
 function listen() {
@@ -56,6 +73,7 @@ function push(entry) {
     const at = stack.indexOf(entry)
     if (at >= 0) stack.splice(at, 1)
     if (!stack.length) unlisten()
+    afterClose()
   }
 }
 
