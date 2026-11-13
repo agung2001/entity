@@ -13,12 +13,13 @@ import {
   machineById,
   snippet,
 } from '@/stores/hub'
-import { workspaces } from '@/stores/workspaces'
+import { fleet, loadFleet } from '@/stores/fleet'
 
 const router = useRouter()
 
 onMounted(() => {
   ensureChats()
+  if (!fleet.loaded) loadFleet()
 })
 
 const runningAgents = computed(() => hub.agents.filter((agent) => agent.status === 'running'))
@@ -29,7 +30,7 @@ const problemRows = computed(() =>
   ),
 )
 const problemCount = computed(() => problemRows.value.length)
-const machineCount = computed(() => workspaces.machines.length)
+const machineCount = computed(() => 1 + fleet.hosts.length)
 const summaries = computed(() => hub.chat.summaries || [])
 const recentThreads = computed(() => summaries.value.slice(0, 5))
 const sortedAgents = computed(() => [...hub.agents].sort((a, b) => a.name.localeCompare(b.name)))

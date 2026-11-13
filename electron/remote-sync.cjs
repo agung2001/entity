@@ -1205,12 +1205,11 @@ async function disconnect({ id, forget = true } = {}) {
     }
     const file = path.join(record.path, 'workspace.json')
     const raw = readJson(file, {}) || {}
-    const attached = workspaces.machines(record.id).some((machine) => machine.id !== 'local')
     writeJson(file, {
       ...raw,
       schema: 1,
       id: record.id,
-      kind: attached ? 'self-hosted' : 'local',
+      kind: 'local',
     })
   } else {
     writeState(record, { ...state, auto: false, status: 'paused', lastError: '' })

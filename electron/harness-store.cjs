@@ -259,6 +259,33 @@ function models({ id, force = false } = {}) {
   return value
 }
 
+/** A read-only inventory of this machine, shaped like `machine-scan.cjs` facts. */
+function snapshot() {
+  const installed = list().filter((entry) => entry.installed)
+  const harnesses = installed.map((entry) => {
+    let detail = { models: [], default: '', source: 'none' }
+    try {
+      detail = models({ id: entry.id })
+    } catch {
+      /* one broken CLI must not hide the others */
+    }
+    return {
+      id: entry.id,
+      label: entry.label,
+      path: entry.absolutePath,
+      models: detail.models,
+      default: detail.default,
+      source: detail.source,
+    }
+  })
+  return {
+    hostname: os.hostname(),
+    platform: process.platform,
+    arch: process.arch,
+    harnesses,
+  }
+}
+
 module.exports = {
   CONFIG,
   META,
@@ -267,5 +294,6 @@ module.exports = {
   resolvedPath,
   setPath,
   models,
+  snapshot,
   which,
 }

@@ -1,20 +1,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { harnesses, loadHarnesses } from '@/stores/harnesses'
-import {
-  createWorkspace,
-  loadHosts,
-  loadSamples,
-  workspaces,
-} from '@/stores/workspaces'
+import { createWorkspace, loadSamples, workspaces } from '@/stores/workspaces'
 
 /**
  * The first-run form, reused as a modal from the workspace picker.
  *
- * It is one screen on purpose: a name, the machines this workspace may use, and
- * — optionally — which sample entities to start with. Skills are not asked for:
- * the harness libraries are already on this machine, so a skill is attached from
- * the Skills view (one symlink) when the workspace actually needs it.
+ * It is one screen on purpose: a name, and — optionally — which sample entities
+ * to start with. A workspace is data, not a machine: any entity can be sent to a
+ * host from the Fleet view later, without copying credentials into the folder.
  */
 const props = defineProps({
   open: { type: Boolean, default: true },
@@ -23,13 +17,11 @@ const props = defineProps({
 const emit = defineEmits(['created', 'close'])
 
 const label = ref('my-workspace')
-const selectedMachines = ref([])
 const seed = ref(false)
 const selectedSamples = ref([])
 const error = ref('')
 const busy = ref(false)
 
-const hosts = computed(() => workspaces.hosts)
 const samples = computed(() => workspaces.samples)
 
 const harnessLabel = (id) =>
@@ -45,14 +37,6 @@ const slug = computed(() =>
     .slice(0, 40)
     .replace(/-+$/g, ''),
 )
-
-const isMachineOn = (alias) => selectedMachines.value.includes(alias)
-
-function toggleMachine(alias) {
-  const at = selectedMachines.value.indexOf(alias)
-  if (at > -1) selectedMachines.value.splice(at, 1)
-  else selectedMachines.value.push(alias)
-}
 
 const isSampleOn = (name) => selectedSamples.value.includes(name)
 
@@ -80,14 +64,12 @@ function applySampleDefaults() {
 
 async function sync() {
   if (!workspaces.samples.length) await loadSamples()
-  if (!workspaces.hosts.length) await loadHosts()
   if (!harnesses.items.length) await loadHarnesses()
   applySampleDefaults()
 }
 
 function reset() {
   label.value = 'my-workspace'
-  selectedMachines.value = []
   selectedSamples.value = []
   seed.value = false
   error.value = ''
@@ -116,7 +98,6 @@ async function submit() {
   try {
     const record = await createWorkspace({
       label: label.value,
-      machines: selectedMachines.value,
       seed: seed.value,
       seedEntities: selectedSamples.value,
     })
@@ -135,7 +116,7 @@ async function submit() {
       <p class="kicker">entity</p>
       <h1>Create a workspace</h1>
       <p class="sub">
-        A workspace is a folder: its entities, skills, machines and run history live
+        A workspace is a folder: its entities, skills, artifacts and run history live
         in <code class="mono">~/.entity/workspaces/{{ slug || '…' }}</code>. The signed-in
         account becomes its owner.
       </p>
@@ -156,42 +137,6 @@ async function submit() {
         />
         <p class="mnote">
           Folder: <code class="mono">~/.entity/workspaces/{{ slug || '…' }}</code>
-        </p>
-      </div>
-
-      <div class="fld">
-        <span class="lbl">Machines</span>
-        <div class="picks picks--scroll">
-          <!-- local is part of every workspace, so it is checked and locked -->
-          <label class="pick" data-locked="1" title="A workspace always includes the machine it runs on">
-            <input type="checkbox" checked disabled />
-            <i>✓</i>
-            <span>local</span>
-            <span class="pick-meta">this machine</span>
-          </label>
-          <label
-            v-for="host in hosts"
-            :key="host.id"
-            class="pick"
-            :data-on="isMachineOn(host.alias) ? '1' : '0'"
-            :title="host.spec"
-          >
-            <input
-              type="checkbox"
-              :checked="isMachineOn(host.alias)"
-              :disabled="busy"
-              @change="toggleMachine(host.alias)"
-            />
-            <i>✓</i>
-            <span>{{ host.alias }}</span>
-          </label>
-        </div>
-        <p class="mnote">
-          {{
-            hosts.length
-              ? 'local stays attached. The others are optional; you can attach more later in Machines.'
-              : 'No Host blocks in ~/.ssh/config — this workspace runs here.'
-          }}
         </p>
       </div>
 

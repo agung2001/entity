@@ -76,7 +76,7 @@ const navigationItems = computed(() => [
   {
     id: 'nav:workspace',
     label: 'Configurations',
-    meta: 'General, members, skills, MCP, machines',
+    meta: 'General, members, skills, MCP, fleet',
     act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace } }),
   },
   {
@@ -135,8 +135,8 @@ const navigationItems = computed(() => [
   },
   {
     id: 'nav:machines',
-    label: 'Machines',
-    meta: 'Attached machines and the fleet',
+    label: 'Fleet',
+    meta: 'Ssh hosts and their harness inventory',
     act: () => router.push({ name: 'machines', params: { workspace: hub.workspace } }),
   },
   {
@@ -219,7 +219,7 @@ const machineItems = computed(() => {
     seen.set(machine.id, {
       id: `machine:${machine.id}`,
       label: machine.label || machine.id,
-      meta: `${machine.thisMachine ? 'local' : 'ssh'} · attached`,
+      meta: machine.thisMachine ? 'local' : 'in the fleet',
       act: () => router.push({ name: 'machine', params: { workspace: hub.workspace, id: machine.id } }),
     })
   }
@@ -285,7 +285,7 @@ const groups = computed(() => {
     make('chat', 'Chat', chatItems.value),
     make('entity', 'Entities', entityItems.value),
     make('skill', 'Skills', skillItems.value),
-    make('machine', 'Machines', machineItems.value),
+    make('machine', 'Fleet', machineItems.value),
     make('activity', 'Activity', activityItems.value),
   ].filter((group) => group.items.length || (q && group.total))
 })
@@ -347,7 +347,7 @@ function onKey(event) {
       <input
         ref="input"
         :value="hub.palette.query"
-        placeholder="Search pages, workspaces, chats, entities, skills, machines…"
+        placeholder="Search pages, workspaces, chats, entities, skills, fleet…"
         autocomplete="off"
         spellcheck="false"
         @input="onInput"

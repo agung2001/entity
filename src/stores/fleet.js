@@ -1,14 +1,15 @@
 /**
  * The fleet as it exists on this machine: every Host block in ~/.ssh/config.
  *
- * `hub.machines` stays the sample workspace for agents and skills; this store is
- * the real list the Machines view and the rail count from. A probe never runs on
- * its own — the user clicks a host, ssh connects with BatchMode, and the card
- * turns green only when that connection succeeds.
+ * `hub.machines` stays the local execution target for agents and skills; this
+ * store is the user's ssh fleet. A scan never runs on its own — the user clicks
+ * a host, ssh connects with BatchMode, and the workspace keeps the capability
+ * snapshot only when that connection and the read-only scan succeed.
  */
 import { computed, reactive } from 'vue'
-import { probeSshHost, readSshHosts } from '@/composables/localBridge'
+import { readSshHosts } from '@/composables/localBridge'
 import { hub } from '@/stores/hub'
+import { scanMachine } from '@/stores/workspaces'
 
 export const fleet = reactive({
   loading: false,
@@ -56,29 +57,27 @@ export const probeState = (alias) =>
   fleet.probes[alias] || { state: 'idle', ms: 0, message: '', reason: '' }
 
 export async function probeHost(host) {
-  const alias = host?.alias
+  const alias = host?.alias || host?.id || 'local'
   if (!alias) return
   const current = fleet.probes[alias]
   if (current?.state === 'testing') return
 
   fleet.probes[alias] = { state: 'testing', ms: 0, message: 'testing…', reason: '' }
-  const started = performance.now()
   try {
-    /* the workspace's own machines/CONFIG is what gets tested once a workspace
-       exists; a host that is only in ~/.ssh/config still works before setup */
-    const result = await probeSshHost(alias, hub.workspace || '')
+    if (!hub.workspace) throw new Error('Open a workspace before scanning a host.')
+    const facts = await scanMachine(alias)
     fleet.probes[alias] = {
-      state: result.ok ? 'ok' : 'fail',
-      ms: result.ms ?? Math.round(performance.now() - started),
-      message: result.message || (result.ok ? 'reachable' : 'unreachable'),
-      reason: result.reason || '',
+      state: 'ok',
+      ms: facts.durationMs || 0,
+      message: `${facts.harnesses.length} harness${facts.harnesses.length === 1 ? '' : 'es'} found`,
+      reason: '',
     }
   } catch (error) {
     fleet.probes[alias] = {
       state: 'fail',
-      ms: Math.round(performance.now() - started),
-      message: error?.message || 'The probe could not run.',
-      reason: 'local',
+      ms: 0,
+      message: error?.message || 'The scan could not run.',
+      reason: 'scan',
     }
   }
 }

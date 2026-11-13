@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ArtifactRailPanel from '@/components/ArtifactRailPanel.vue'
 import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
@@ -7,18 +7,21 @@ import EntityRailPanel from '@/components/EntityRailPanel.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import { hub } from '@/stores/hub'
+import { fleet, loadFleet } from '@/stores/fleet'
 import { artifacts } from '@/stores/artifacts'
 import { shortcutLabel } from '@/lib/shortcuts'
 import { workspaces } from '@/stores/workspaces'
 
 /**
  * The second tier. It belongs to the section in the URL, not to the whole app:
- * Overview lists machines, Entities lists entity files, Artifacts lists the
+ * Overview lists the fleet, Entities lists entity files, Artifacts lists the
  * shelf, Chat brings back the working/done history, and Configurations lists
  * the workspace settings tabs.
  */
 const route = useRoute()
 const router = useRouter()
+
+onMounted(loadFleet)
 const newThreadKey = shortcutLabel('new-thread')
 const history = ref(null)
 const entityPanel = ref(null)
@@ -29,7 +32,7 @@ const WORKSPACE_TABS = [
   { id: 'members', label: 'Members', hint: 'who belongs to this scope' },
   { id: 'skills', label: 'Skills', hint: 'attached to the workspace' },
   { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
-  { id: 'machines', label: 'Machines', hint: 'local and ssh hosts' },
+  { id: 'machines', label: 'Fleet', hint: 'ssh hosts and their harnesses' },
   { id: 'activity', label: 'Activity', hint: 'recent workspace events' },
 ]
 
@@ -40,6 +43,23 @@ const ACCOUNT_ROWS = [
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
 ]
 
+const railHosts = computed(() => {
+  const seen = new Set()
+  const local = {
+    id: 'local',
+    label: String(fleet.hostname || 'local').replace(/\.local$/i, ''),
+    desc: `${fleet.platform || 'local'} · this machine`,
+    thisMachine: true,
+    state: 'online',
+  }
+  return [local, ...fleet.hosts].filter((host) => {
+    const id = host.alias || host.id
+    if (!id || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+})
+
 const section = computed(() => {
   const name = String(route.name || 'overview')
   if (hub.rail.entities) return { id: 'entities', title: 'Entities', count: hub.agents.length }
@@ -48,7 +68,7 @@ const section = computed(() => {
   if (name === 'artifact') return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
   if (name === 'chat') return { id: 'chat', title: 'Chats', count: hub.chat.summaries.length }
   if (name === 'machines' || name === 'machine') {
-    return { id: 'machines', title: 'Machines', count: hub.machines.length }
+    return { id: 'machines', title: 'Fleet', count: railHosts.value.length }
   }
   if (name === 'skills' || name === 'skill') {
     return { id: 'skills', title: 'Skills', count: hub.skills.length }
@@ -155,21 +175,20 @@ function backToWorkspaces() {
     </div>
 
     <div v-else-if="section.id === 'overview' || section.id === 'machines'" class="rail-t2-body">
-      <p v-if="!hub.machines.length" class="rail-t2-empty">No machines attached.</p>
       <button
-        v-for="machine in hub.machines"
-        :key="machine.id"
+        v-for="machine in railHosts"
+        :key="machine.alias || machine.id"
         class="rail-t2-row"
         type="button"
-        :aria-current="route.name === 'machine' && route.params.id === machine.id ? 'page' : undefined"
-        @click="router.push({ name: 'machine', params: { workspace: hub.workspace, id: machine.id } })"
+        :aria-current="route.name === 'machine' && route.params.id === (machine.alias || machine.id) ? 'page' : undefined"
+        @click="router.push({ name: 'machine', params: { workspace: hub.workspace, id: machine.alias || machine.id } })"
       >
         <span class="rail-t2-ic"><MachineIcon :size="14" /></span>
         <span class="t">
           <b>{{ machine.label }}</b>
           <span class="m">{{ machine.desc || machine.id }}</span>
         </span>
-        <span class="c" :data-state="machine.state">{{ machine.thisMachine ? 'local' : machine.state }}</span>
+        <span class="c" :data-state="machine.state">{{ machine.thisMachine ? 'local' : 'ssh' }}</span>
       </button>
     </div>
 

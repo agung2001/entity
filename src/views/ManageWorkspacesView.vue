@@ -285,8 +285,8 @@ async function deleteOne(record) {
         <p class="eyebrow">{{ greeting }}, {{ displayName }} · {{ workspaces.items.length }} {{ workspaces.items.length === 1 ? 'room' : 'rooms' }}</p>
         <h1>Which workspace are we opening?</h1>
         <p class="lede">
-          Every workspace is its own room: separate entities, conversations, artifacts,
-          skills and machines. Pick one, or open a new room of your own.
+          Every workspace is its own room: separate entities, conversations, artifacts
+          and skills. Pick one, or open a new room of your own.
         </p>
       </div>
       <div class="wsl-hero-actions">
@@ -392,7 +392,7 @@ async function deleteOne(record) {
           <div class="wsl-counts">
             <span><b>{{ record.counts.entities }}</b><span>entities</span></span>
             <span><b>{{ record.counts.skills }}</b><span>skills</span></span>
-            <span><b>{{ record.counts.machines }}</b><span>machines</span></span>
+            <span><b>{{ record.counts.machines }}</b><span>scanned</span></span>
           </div>
           <div class="wsl-foot">
             <span class="wsl-lf">
@@ -410,7 +410,7 @@ async function deleteOne(record) {
 
       <div v-else class="wsl-table">
         <div class="wsl-thead">
-          <span>Workspace</span><span>Entities</span><span>Skills</span><span>Machines</span><span>Kind</span><span>Created</span><span></span>
+          <span>Workspace</span><span>Entities</span><span>Skills</span><span>Scanned</span><span>Kind</span><span>Created</span><span></span>
         </div>
         <div v-for="record in filtered" :key="record.id" class="wsl-row" :data-active="record.id === workspaces.active ? '1' : '0'">
           <button class="wsl-row-name" type="button" data-sfx="workspace" @click="openOne(record)">
@@ -445,7 +445,7 @@ async function deleteOne(record) {
     </div>
 
     <p class="wsl-footer">
-      <span><b>{{ workspaces.items.length }}</b> workspaces · <b>{{ totals.entities }}</b> entities · <b>{{ totals.skills }}</b> skills · <b>{{ totals.machines }}</b> machines</span>
+      <span><b>{{ workspaces.items.length }}</b> workspaces · <b>{{ totals.entities }}</b> entities · <b>{{ totals.skills }}</b> skills · <b>{{ totals.machines }}</b> scanned</span>
       <span class="r">Copyright by Agung Sundoro</span>
     </p>
 

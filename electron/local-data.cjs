@@ -139,9 +139,8 @@ function uniqueHosts(parsed) {
 }
 
 /**
- * Parse any file in ssh_config grammar — the user's config, or a workspace's
- * own `machines/CONFIG`. Same reader, so the two cannot disagree about what a
- * Host block is.
+ * Parse any file in ssh_config grammar — the user's config, or a test fixture.
+ * Same reader, so probes and the fleet agree about what a Host block is.
  */
 function parseSshHostsFile(file) {
   const resolved = path.resolve(String(file || ''))

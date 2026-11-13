@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { ago, hub, problemCount } from '@/stores/hub'
-import { workspaces } from '@/stores/workspaces'
+import { fleet, loadFleet } from '@/stores/fleet'
 
 /**
  * The overview opens on the state of the workspace, not on a chat prompt. The
@@ -24,12 +24,12 @@ const replies = computed(() =>
 const skillsDeclared = computed(() =>
   hub.agents.reduce((sum, agent) => sum + (agent.skills?.length || 0), 0),
 )
-const localMachines = computed(
-  () => workspaces.machines.filter((machine) => machine.thisMachine).length,
-)
-const remoteMachines = computed(
-  () => workspaces.machines.filter((machine) => !machine.thisMachine).length,
-)
+onMounted(() => {
+  if (!fleet.loaded) loadFleet()
+})
+const localMachines = computed(() => 1)
+const remoteMachines = computed(() => fleet.hosts.length)
+const machineCount = computed(() => localMachines.value + remoteMachines.value)
 const lastActivity = computed(() => {
   const newest = summaries.value[0]
   return newest ? ago(newest.updatedAt) : 'never'
@@ -49,9 +49,9 @@ function focusAttention() {
     </button>
 
     <router-link class="ovd-stat" :to="{ name: 'machines', params: { workspace: hub.workspace } }">
-      <b>{{ workspaces.machines.length }}</b>
-      <span>machines</span>
-      <em>{{ localMachines }} local · {{ remoteMachines }} remote</em>
+      <b>{{ machineCount }}</b>
+      <span>fleet</span>
+      <em>{{ localMachines }} local · {{ remoteMachines }} ssh</em>
     </router-link>
 
     <router-link class="ovd-stat" :to="{ name: 'chat', params: { workspace: hub.workspace } }">

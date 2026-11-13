@@ -125,15 +125,16 @@ disk and are never sent back to the window.
 
 ### Your other computers
 
-If you already reach a machine over ssh, attach it to a workspace. The workspace
-decides which hosts it may use and carries a copy of the key — attach, test and
-detach without editing a config by hand.
+If you already reach a machine over ssh, the fleet reads its host from
+`~/.ssh/config`. Test it once and the workspace keeps a non-secret inventory of
+the harnesses and models installed there — no key copy, no ssh config in the
+workspace.
 
-[Machines →](#machines)
+[Fleet →](#fleet)
 
 </td>
 <td width="50%">
-  <img src="docs/assets/readme-features/machines.webp" alt="Three machines attached to a workspace: this machine, a build runner and staging" width="100%" />
+  <img src="docs/assets/readme-features/machines.webp" alt="A fleet of ssh hosts with the harness and model inventory stored for one workspace" width="100%" />
 </td>
 </tr>
 <tr>
@@ -158,7 +159,7 @@ file on its own page.
 ### Find anything, fast
 
 One shortcut opens a palette over workspaces, conversations, assistants, skills,
-machines and the journal. Type three letters, press enter, and you are there.
+the fleet and the journal. Type three letters, press enter, and you are there.
 
 </td>
 <td width="50%">
@@ -267,7 +268,7 @@ email and the documented default password `123456` bootstraps it.
 ## Workspaces and entities
 
 A workspace is a directory, not a database row. Switching workspaces changes the
-entities, skills, machines, artifacts and run history at once, and everything
+entities, skills, artifacts and run history at once, and everything
 survives quitting the app.
 
 ```
@@ -280,7 +281,7 @@ survives quitting the app.
     entities/<name>.md          frontmatter = config, body = instructions
     skills/<name>               symlink into a harness skill library
     mcp.json                    the workspace MCP pool (mode 0600)
-    machines/CONFIG             this workspace's ssh_config, + one key per host
+    machine-facts.json          harness/model inventory from an explicit ssh test
     chats/<threadId>.json       one conversation per file, private to its account
     artifacts/<path>            documents, screenshots and other deliverables
     runs/<runId>.jsonl          append-only run log
@@ -393,23 +394,23 @@ value that makes it work. That is the point, and it is why the pool is 0600. No 
 returns a value back: the inventory reports `envKeys`/`headerKeys`, the MCP page
 shows names, and the audit log records the server name only.
 
-## Machines
+## Fleet
 
 Two rules make the scope coherent:
 
-1. **The workspace is the scope, the machine is the source.** `~/.ssh/config` says
-   which hosts exist; `machines/CONFIG` says which ones this workspace may use, and
-   carries the key copy so it can prove it.
+1. **The workspace is data; the fleet is the source.** `~/.ssh/config` is the only
+   list of hosts, and it stays user-local. Nothing is attached to a workspace.
 2. **No cross-workspace references.** `skills:` and `mcp:` resolve only inside their
    own workspace. The same name in two workspaces is two unrelated things.
 
-`machines/CONFIG` is rebuilt from `~/.ssh/config` on every attach and detach; a host
-that disappeared from your config stays attached as *missing*. Attaching copies the
-host's key into `machines/<host>` (0600) and rewrites that `Host` block to point at
-the copy.
+**Test & scan** probes a host, runs a read-only scanner over ssh, and stores the
+result in `machine-facts.json`: installed harnesses, their paths, the models each
+CLI reports, and the configured default. No private key and no ssh config enters
+the workspace. A host that disappears from `~/.ssh/config` simply stops appearing
+in the fleet.
 
-Runs still execute on the machine whose window started them. Machines are a scope
-and a set of credentials for a workspace, not a placement engine — see
+Runs still execute on the machine whose window started them. The stored inventory
+is a capability snapshot, not a placement engine or a credential — see
 [Ceilings](#ceilings-stated-not-hidden).
 
 ## Artifacts
@@ -462,7 +463,7 @@ clones the one you pick into a local workspace of the same name.
 - **What syncs:** `entities/**`, `artifacts/**`, attached skill names and harnesses,
   the MCP pool (secrets redacted) and the shared workspace metadata.
 - **What does not:** skill bodies (each machine links its own library), MCP secrets,
-  copied ssh keys, chats and run logs.
+  machine capability snapshots (they describe the local fleet), chats and run logs.
 - **Incremental:** both ends hash a content-addressed manifest; the local side keeps
   the base manifest and does a three-way diff, so only changed paths move.
 - **Conflict copies, never silent loss:** if both sides changed a file, the remote
@@ -578,10 +579,10 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
   sandbox. It catches the obvious payloads before they reach a harness; it cannot
   prove a file is benign.
 - `audit.jsonl` is written and readable from the CLI but has no window yet.
-- Export carries entities, chats, artifacts, copied skills and the MCP pool. Copied
-  private keys, generated ssh config and run logs are deliberately left out.
-- `machines/CONFIG` holds absolute `IdentityFile` paths, so moving a workspace
-  directory by hand breaks the key reference — attach the host again.
+- Export carries entities, chats, artifacts, copied skills and the MCP pool. Machine
+  capability facts and run logs are deliberately left out.
+- `machine-facts.json` is local to this copy of the workspace: host aliases and
+  installed CLIs describe this user's fleet, not a shared project file.
 
 ## Status
 

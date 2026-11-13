@@ -6,13 +6,12 @@
  *     entities/*.md    one file per entity
  *     skills/<name>    symlinks into the harness libraries
  *     mcp.json         the workspace's MCP server pool
- *     machines/CONFIG  this workspace's ssh_config (Host blocks, IdentityFile)
- *     machines/<host>  a copy of that host's private key, mode 0600
+ *     machine-facts.json  harness/model snapshots from an explicit ssh test
  *     chats/*.json     one conversation per file
  *     runs/*.jsonl     append-only run logs
  *
- * `machines.json` is the previous shape; it is migrated into `machines/CONFIG`
- * the first time an old workspace is opened.
+ * Machine facts are observations, not credentials. ssh itself is read from the
+ * user's ~/.ssh/config; this workspace never stores a key or an ssh config.
  *
  * Nothing here invents a workspace in memory: if the directory is not there, the
  * hub shows setup, because an in-memory workspace looks like success and loses
@@ -23,7 +22,7 @@ const os = require('node:os')
 const path = require('node:path')
 const localData = require('./local-data.cjs')
 const { HARNESSES } = localData
-const { tilde, expandHome } = require('./frontmatter.cjs')
+const { tilde } = require('./frontmatter.cjs')
 const { SAMPLES, sampleList } = require('./seed.cjs')
 
 const HOME = os.homedir()
@@ -208,8 +207,7 @@ function readRecord(id) {
     /* `remote` is a local clone of a shared workspace (see remote-sync.cjs).
        It still lives in a directory here; the kind only says where changes
        come from and go to. */
-    kind:
-      raw.kind === 'self-hosted' ? 'self-hosted' : raw.kind === 'remote' ? 'remote' : 'local',
+    kind: raw.kind === 'remote' ? 'remote' : 'local',
     createdAt: raw.createdAt || new Date(0).toISOString(),
     mcpStrict: raw.mcpStrict !== false,
     /* the workspace-level system prompt: rules that belong to the scope rather
@@ -249,7 +247,7 @@ function withCounts(record) {
     counts: {
       entities: countEntities(record.path),
       skills: countSkills(record.path),
-      machines: attachedMachines(record.path).length,
+      machines: countMachineFacts(record.path),
     },
   }
 }
@@ -327,11 +325,11 @@ function update({ id, label, nextId, members } = {}) {
 function open(id) {
   const record = withCounts(readRecord(String(id || '')))
   if (!record) throw new Error(`No workspace called "${id}".`)
-  /* An old workspace gets its `machines/CONFIG` on first open. A migration that
-     fails (read-only home, odd permissions) must not make the workspace
-     unreadable; the legacy list still answers until the next write. */
+  /* Drop the old machines/ config and key copies the first time an old
+     workspace is opened. A read-only home must not make the workspace
+     unreadable; the cleanup is best effort. */
   try {
-    migrateMachines(record)
+    cleanupLegacyMachines(record)
   } catch {
     /* keep going */
   }
@@ -394,413 +392,113 @@ function setContext({ id, context } = {}) {
   return withCounts(readRecord(record.id))
 }
 
-/* ── machines: one ssh config per workspace ───────────────────────── */
+/* ── machine facts: capability snapshots, never credentials ────────── */
 
 /*
- * A workspace carries its own `machines/CONFIG`, in the same grammar as
- * `~/.ssh/config`, plus a copy of each attached host's private key as
- * `machines/<host>` (mode 0600, directory 0700). Two reasons: the hub can show
- * exactly how a host is reached without reading the user's global config, and a
- * later remote runner has one file to read or deploy instead of guessing.
+ * A workspace remembers what a host can run, not how to become that host.
+ * The snapshot is written by `machine-scan.cjs` after an explicit connection
+ * test: installed harnesses, their paths, the models each one reports, and the
+ * configured default. There is no ssh_config and no private key here — ssh is
+ * read from the user's own `~/.ssh/config` and agent at test time.
  *
- * `~/.ssh/config` stays the source of truth for which hosts exist. CONFIG is
- * rebuilt from it on every attach and detach, so the two cannot drift. A
- * workspace made before this layout is migrated the first time it is opened:
- * `machines.json` is read once, CONFIG is written, and the old file is kept as
- * `.machines.json.bak`.
+ * This file is workspace-local. Remote sync deliberately does not carry it:
+ * host aliases and CLI inventories describe the machine doing the scan, not a
+ * shared project file.
  */
+const FACTS_FILE = 'machine-facts.json'
+const FACTS_SCHEMA = 1
 
-const MACHINES_DIR = 'machines'
-const MACHINES_CONFIG = 'CONFIG'
-const MACHINES_LEGACY = 'machines.json'
-const KEY_BYTES_MAX = 256 * 1024
-
-/* The attached list lives in a comment so a host that disappeared from
-   ~/.ssh/config still has a place in the file — ssh ignores the line, we read
-   it, and the Host blocks below stay the actual configuration. JSON, not commas:
-   an alias is a token, and a token can contain a comma. */
-const MANIFEST = /^\s*#\s*entity-machines:\s*(.+)$/m
-
-/** An ssh alias is one whitespace-free token; anything else cannot be a Host. */
+/* An alias is one whitespace-free token; facts are keyed by it. `local` is the
+   synthetic host that always exists. */
 const SAFE_ALIAS = /^[^\s,:"'`\\#]+$/
 
-function machinesDir(record) {
-  return path.join(record.path, MACHINES_DIR)
+function factsFile(record) {
+  return path.join(record.path, FACTS_FILE)
 }
 
-function machinesConfigPath(record) {
-  return path.join(machinesDir(record), MACHINES_CONFIG)
+function emptyFacts() {
+  return { schema: FACTS_SCHEMA, hosts: {}, updatedAt: '' }
 }
 
-/** `local` is synthetic and first; the rest keep the order they were attached in. */
-function normaliseAttached(list) {
-  const out = ['local']
-  for (const entry of Array.isArray(list) ? list : []) {
-    const id = String(entry || '').trim()
-    if (!id || id === 'local' || out.includes(id)) continue
-    /* a value that cannot be a Host line must never be written as one */
-    if (!SAFE_ALIAS.test(id)) continue
-    out.push(id)
+function readMachineFacts(dir) {
+  const raw = readJson(path.join(dir, FACTS_FILE), null)
+  if (!raw || raw.schema !== FACTS_SCHEMA || !raw.hosts || typeof raw.hosts !== 'object') {
+    return emptyFacts()
   }
-  return out
-}
-
-/** CONFIG is the list. `machines.json` is read only for pre-CONFIG workspaces. */
-function attachedMachines(dir) {
-  const config = path.join(dir, MACHINES_DIR, MACHINES_CONFIG)
-  if (fs.existsSync(config)) {
-    let text = ''
-    try {
-      text = fs.readFileSync(config, 'utf8')
-    } catch {
-      /* unreadable: fall back to the Host blocks we can parse */
-    }
-    const manifest = String(text).match(MANIFEST)
-    let declared = []
-    if (manifest) {
-      try {
-        const parsed = JSON.parse(manifest[1].trim())
-        if (Array.isArray(parsed)) declared = parsed.map(String)
-      } catch {
-        /* a hand-edited manifest line is not worth failing a read over */
-      }
-    }
-    /* manifest first (it keeps missing hosts), then any Host block a person
-       added by hand — so editing CONFIG directly is not silently ignored */
-    const hosts = localData.parseSshHostsFile(config).flatMap((host) => host.aliases)
-    return normaliseAttached([...declared, ...hosts])
+  const hosts = {}
+  for (const [alias, value] of Object.entries(raw.hosts)) {
+    if (alias !== 'local' && !SAFE_ALIAS.test(alias)) continue
+    if (!value || typeof value !== 'object') continue
+    if (value.alias !== undefined && value.alias !== alias) continue
+    hosts[alias] = value
   }
-  const legacy = readJson(path.join(dir, MACHINES_LEGACY), null)
-  return normaliseAttached(Array.isArray(legacy?.attached) ? legacy.attached : [])
-}
-
-/** An ssh alias is not a safe file name, and CONFIG is reserved on macOS too. */
-function keyFileName(alias) {
-  const base = String(alias || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[-._]+|[-._]+$/g, '')
-    .slice(0, 60)
-  return base || 'host'
-}
-
-/** alias → key file name, unique even where the filesystem ignores case. */
-function keyNames(aliases) {
-  const used = new Set([MACHINES_CONFIG.toLowerCase()])
-  const names = new Map()
-  for (const alias of aliases) {
-    const base = keyFileName(alias)
-    let name = base
-    let n = 2
-    while (used.has(name.toLowerCase())) name = `${base}-${n++}`
-    used.add(name.toLowerCase())
-    names.set(alias, name)
+  return {
+    schema: FACTS_SCHEMA,
+    hosts,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
   }
-  return names
 }
 
-function hostIndex(fleet) {
-  const byAlias = new Map()
-  for (const host of fleet.hosts || []) {
-    for (const alias of host.aliases || []) {
-      if (!byAlias.has(alias)) byAlias.set(alias, host)
-    }
-  }
-  return byAlias
+function countMachineFacts(dir) {
+  return Object.keys(readMachineFacts(dir).hosts).length
 }
 
-/**
- * The workspace's ssh_config. Only the fields this app understands are written;
- * an Include, a Match block or a ControlPath is deliberately not copied. `keys`
- * maps an alias to the key file that was actually copied, so a host whose key
- * could not be copied gets no IdentityFile line instead of a broken one.
- */
-function renderMachineConfig({ label, id, attached, fleet, keys, machinesPath }) {
-  const byAlias = hostIndex(fleet)
-  const lines = [
-    `# Entity workspace: ${label} (${id})`,
-    `# Rebuilt from ${fleet.displayPath || '~/.ssh/config'} on every attach or detach.`,
-    '# Change the host there, then attach or detach it here to refresh this file.',
-    `# entity-machines: ${JSON.stringify(attached)}`,
-    '',
+/** The only machine every workspace has: the one running this process. */
+function machines() {
+  const hostname = os.hostname()
+  return [
+    {
+      id: 'local',
+      label: String(hostname || 'local').replace(/\.local$/i, ''),
+      desc: `${os.platform()} ${os.arch()} · this machine`,
+      spec: hostname || 'localhost',
+      state: 'online',
+      thisMachine: true,
+      source: 'local',
+    },
   ]
-  const entries = []
-
-  for (const alias of attached) {
-    if (alias === 'local') continue
-    const host = byAlias.get(alias)
-    if (!host) {
-      lines.push(`# ${alias}: not found in ${fleet.displayPath || '~/.ssh/config'}`, '')
-      entries.push({ alias, missing: true })
-      continue
-    }
-    const key = (keys && keys.get(alias)) || ''
-    lines.push(`Host ${alias}`)
-    if (host.hostName) lines.push(`  HostName ${host.hostName}`)
-    if (host.user) lines.push(`  User ${host.user}`)
-    if (host.port) lines.push(`  Port ${host.port}`)
-    if (host.proxyJump) lines.push(`  ProxyJump ${host.proxyJump}`)
-    if (key) {
-      lines.push(`  IdentityFile ${path.join(machinesPath, key)}`)
-      lines.push('  IdentitiesOnly yes')
-    }
-    lines.push('')
-    entries.push({ alias, missing: false, key, identityFile: host.identityFile || '' })
-  }
-
-  return { text: `${lines.join('\n').replace(/\n+$/, '')}\n`, entries }
 }
 
-/** Copy one private key beside the workspace config, readable by this user only. */
-function copyIdentity(source, target) {
-  if (!source) return { copied: false, note: 'no IdentityFile in ~/.ssh/config' }
-  const file = expandHome(source)
-  let stat = null
-  try {
-    stat = fs.statSync(file)
-  } catch {
-    return { copied: false, note: `${source} is not readable` }
-  }
-  if (!stat.isFile()) return { copied: false, note: `${source} is not a regular file` }
-  if (stat.size > KEY_BYTES_MAX) return { copied: false, note: `${source} is too large for a key` }
-
-  const tmp = `${target}.${process.pid}.tmp`
-  try {
-    fs.copyFileSync(file, tmp)
-    fs.chmodSync(tmp, 0o600)
-    fs.renameSync(tmp, target)
-    return { copied: true, note: '' }
-  } catch (error) {
-    try {
-      fs.rmSync(tmp, { force: true })
-    } catch {
-      /* nothing staged */
-    }
-    return { copied: false, note: `${source} could not be copied: ${error.message}` }
-  }
+function machineFacts(id) {
+  return readMachineFacts(open(id).path)
 }
 
-/** Key files the previous CONFIG pointed at, so a detach can remove them. */
-function previousKeys(configPath) {
-  let text = ''
-  try {
-    text = fs.readFileSync(configPath, 'utf8')
-  } catch {
-    return []
+/** Store one host's snapshot. The caller has already probed the host. */
+function saveMachineFacts({ id, alias, facts } = {}) {
+  const target = String(alias || '').trim()
+  if (target !== 'local' && !SAFE_ALIAS.test(target)) {
+    throw new Error(`"${target}" is not a usable host alias.`)
   }
-  return [...text.matchAll(/^\s*IdentityFile\s+(.+)$/gm)].map((match) => match[1].trim())
+  if (!facts || typeof facts !== 'object') throw new Error('No machine facts to store.')
+  const record = open(id)
+  const doc = readMachineFacts(record.path)
+  doc.hosts[target] = { ...facts, alias: target }
+  doc.updatedAt = new Date().toISOString()
+  writeJson(factsFile(record), doc)
+  return doc
 }
 
-/** `local` is synthetic and always allowed; the rest must exist in ~/.ssh/config. */
-function machineList(record) {
-  const attached = attachedMachines(record.path)
-  const fleet = localData.readSshHosts()
-  const byAlias = hostIndex(fleet)
-  const names = keyNames(attached.filter((alias) => alias !== 'local'))
-  const config = tilde(machinesConfigPath(record))
-
-  return attached.map((id) => {
-    if (id === 'local') {
-      return {
-        id: 'local',
-        /* `MacBook.local` is the mDNS name, not what a person calls the machine */
-        label: String(fleet.hostname || 'local').replace(/\.local$/i, ''),
-        desc: `${os.platform()} ${os.arch()} · this machine`,
-        spec: fleet.hostname || 'localhost',
-        state: 'online',
-        thisMachine: true,
-        missing: false,
-        source: 'local',
-        config,
-        key: '',
-        keyPresent: false,
-        keyNote: '',
-      }
-    }
-    const host = byAlias.get(id)
-    if (!host) {
-      return {
-        id,
-        label: id,
-        desc: `missing from ${fleet.displayPath}`,
-        spec: '',
-        state: 'sleep',
-        thisMachine: false,
-        missing: true,
-        source: fleet.displayPath,
-        config,
-        key: '',
-        keyPresent: false,
-        keyNote: '',
-      }
-    }
-
-    const keyName = names.get(id) || ''
-    const keyFile = keyName ? path.join(machinesDir(record), keyName) : ''
-    const keyPresent = Boolean(keyFile) && fs.existsSync(keyFile)
-    /* why there is no local key copy — shown on the card, never guessed at */
-    const keyNote = !host.identityFile
-      ? 'ssh uses the agent or the default identities'
-      : keyPresent
-        ? ''
-        : `the copy of ${host.identityFile} did not land`
-
-    return {
-      id,
-      label: host.label,
-      desc: host.hostName || id,
-      spec: host.spec,
-      state: 'idle',
-      thisMachine: false,
-      missing: false,
-      source: host.source,
-      aliases: host.aliases,
-      config,
-      key: keyPresent ? tilde(keyFile) : '',
-      keyPresent,
-      keyName,
-      keyNote,
-    }
-  })
-}
-
-function machines(id) {
-  return machineList(open(id))
+function forgetMachineFacts({ id, alias } = {}) {
+  const target = String(alias || '').trim()
+  const record = open(id)
+  const doc = readMachineFacts(record.path)
+  if (!Object.prototype.hasOwnProperty.call(doc.hosts, target)) return doc
+  delete doc.hosts[target]
+  doc.updatedAt = new Date().toISOString()
+  writeJson(factsFile(record), doc)
+  return doc
 }
 
 /**
- * Rebuild `machines/CONFIG` (and the key copies) from ~/.ssh/config.
- * Returns the new machine list, which is what every caller hands to the UI.
+ * The old attachment layout copied an ssh config and private keys into the
+ * workspace. This build removes the feature, so opening an old workspace drops
+ * those app-generated files. A host that still matters is in ~/.ssh/config.
  */
-function writeMachines(record, attached) {
-  const next = normaliseAttached(attached)
-  const fleet = localData.readSshHosts()
-  const dir = machinesDir(record)
-  const configPath = machinesConfigPath(record)
-
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  try {
-    fs.chmodSync(dir, 0o700)
-  } catch {
-    /* a filesystem without modes still gets the files */
-  }
-
-  /* copy first: a key that cannot be copied must not leave an IdentityFile
-     line pointing at a file that is not there */
-  const names = keyNames(next.filter((alias) => alias !== 'local'))
-  const kept = new Map()
-  const byAlias = hostIndex(fleet)
-  for (const [alias, name] of names) {
-    const host = byAlias.get(alias)
-    if (!host) continue
-    if (copyIdentity(host.identityFile, path.join(dir, name)).copied) {
-      kept.set(alias, name)
-    }
-  }
-
-  const { text } = renderMachineConfig({
-    label: record.label,
-    id: record.id,
-    attached: next,
-    fleet,
-    keys: kept,
-    machinesPath: dir,
-  })
-
-  /* drop keys the old config referenced and the new one does not */
-  const resolvedDir = path.resolve(dir)
-  for (const old of previousKeys(configPath)) {
-    const resolved = path.resolve(expandHome(old))
-    if (path.dirname(resolved) !== resolvedDir) continue
-    const name = path.basename(resolved)
-    if ([...kept.values()].includes(name)) continue
-    try {
-      fs.rmSync(resolved, { force: true })
-    } catch {
-      /* already gone */
-    }
-  }
-
-  const tmp = `${configPath}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o644 })
-  fs.renameSync(tmp, configPath)
-  try {
-    fs.chmodSync(configPath, 0o644)
-  } catch {
-    /* best effort */
-  }
-
-  /* A remote clone stays remote even when a host is attached to it: the kind
-     describes where its data syncs, not whether it may use ssh. */
-  const currentKind = readJson(path.join(record.path, 'workspace.json'), {})?.kind
-  const kind =
-    currentKind === 'remote'
-      ? 'remote'
-      : next.some((id) => id !== 'local')
-        ? 'self-hosted'
-        : 'local'
-  /* read first: a machine write must not drop fields this module does not own
-     (members today, whatever the next step adds tomorrow) */
-  const current = readJson(path.join(record.path, 'workspace.json'), {}) || {}
-  writeJson(path.join(record.path, 'workspace.json'), {
-    ...current,
-    schema: 1,
-    id: record.id,
-    label: record.label,
-    kind,
-    createdAt: record.createdAt,
-    mcpStrict: record.mcpStrict !== false,
-  })
-
-  /* one-way: the old list is kept, but nothing reads it again */
-  const legacy = path.join(record.path, MACHINES_LEGACY)
-  if (fs.existsSync(legacy)) {
-    try {
-      fs.renameSync(legacy, path.join(record.path, `.${MACHINES_LEGACY}.bak`))
-    } catch {
-      /* an un-renamable legacy file is not worth failing a write over */
-    }
-  }
-
-  return machineList(record)
-}
-
-/** Pre-CONFIG workspace: read the old list once, write CONFIG, keep a backup. */
-function migrateMachines(record) {
-  if (fs.existsSync(machinesConfigPath(record))) return false
-  if (!fs.existsSync(path.join(record.path, MACHINES_LEGACY))) return false
-  writeMachines(record, attachedMachines(record.path))
-  return true
-}
-
-function attachMachine({ id, alias }) {
-  const record = open(id)
-  const target = String(alias || '').trim()
-  if (!target) throw new Error('Pick a host to attach.')
-  if (target === 'local') return machines(id)
-  if (target.startsWith('-')) throw new Error('That is not a host alias.')
-
-  const fleet = localData.readSshHosts()
-  const known = fleet.hosts.some(
-    (host) => host.alias === target || host.aliases.includes(target),
-  )
-  if (!known) {
-    throw new Error(`${target} is not in ${fleet.displayPath}.`)
-  }
-
-  const attached = attachedMachines(record.path)
-  if (!attached.includes(target)) attached.push(target)
-  return writeMachines(record, attached)
-}
-
-function detachMachine({ id, alias }) {
-  const record = open(id)
-  const target = String(alias || '').trim()
-  if (target === 'local') throw new Error('The local machine cannot be detached.')
-  return writeMachines(
-    record,
-    attachedMachines(record.path).filter((entry) => entry !== target),
-  )
+function cleanupLegacyMachines(record) {
+  const dir = path.join(record.path, 'machines')
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+  const legacy = path.join(record.path, 'machines.json')
+  if (fs.existsSync(legacy)) fs.rmSync(legacy, { force: true })
 }
 
 /* ── skills: symlink, do not copy ─────────────────────────────────── */
@@ -1216,7 +914,7 @@ function importWorkspace({ bundle } = {}) {
       schema: 1,
       id,
       label,
-      kind: bundle.workspace?.kind === 'self-hosted' ? 'self-hosted' : 'local',
+      kind: 'local',
       createdAt,
       mcpStrict: bundle.workspace?.mcpStrict !== false,
       ...(bound.owner ? { owner: bound.owner } : {}),
@@ -1257,17 +955,6 @@ function importWorkspace({ bundle } = {}) {
     if (!fs.existsSync(path.join(staging, 'mcp.json'))) {
       writeJson(path.join(staging, 'mcp.json'), { schema: 1, servers: {} })
     }
-
-    writeMachines(
-      {
-        id,
-        label,
-        path: staging,
-        createdAt,
-        mcpStrict: bundle.workspace?.mcpStrict !== false,
-      },
-      ['local'],
-    )
 
     const wantedSkills = Array.isArray(bundle.skills) ? bundle.skills : []
     for (const entry of wantedSkills) {
@@ -1319,7 +1006,6 @@ function seedEntities(staging, attachedSkills, selected) {
 
 function create({
   label,
-  machines: attached = ['local'],
   skills: wanted = [],
   seed = false,
   seedEntities: selectedSamples = null,
@@ -1341,8 +1027,6 @@ function create({
 
   try {
     const now = new Date().toISOString()
-    const chosenMachines = [...new Set(['local', ...attached.map(String)])]
-    const kind = chosenMachines.some((entry) => entry !== 'local') ? 'self-hosted' : 'local'
     const creator = normaliseOwner(owner)
     const bound = writeMembersFile(staging, id, creator, creator ? [creator] : [])
 
@@ -1356,7 +1040,7 @@ function create({
           schema: 1,
           id,
           label: String(label || id).trim(),
-          kind,
+          kind: 'local',
           createdAt: now,
           mcpStrict: true,
           ...(bound.owner ? { owner: bound.owner } : {}),
@@ -1366,12 +1050,6 @@ function create({
         2,
       )}\n`,
       'utf8',
-    )
-    /* The same writer attach/detach uses, so a new workspace gets
-       `machines/CONFIG` (and key copies) from the first moment. */
-    writeMachines(
-      { id, label: String(label || id).trim(), path: staging, createdAt: now, mcpStrict: true },
-      chosenMachines,
     )
     fs.writeFileSync(
       path.join(staging, 'mcp.json'),
@@ -1423,11 +1101,10 @@ module.exports = {
   claimOwner,
   samples,
   machines,
-  machinesDir,
-  machinesConfigPath,
-  renderMachineConfig,
-  attachMachine,
-  detachMachine,
+  machineFacts,
+  saveMachineFacts,
+  forgetMachineFacts,
+  factsFile,
   skills,
   skillsDir,
   attachSkill,

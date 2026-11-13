@@ -292,7 +292,7 @@ export const hub = reactive({
   workspacePath: '',
   /** entities of the active workspace */
   agents: [],
-  /** machines this workspace may use (local + attached ssh aliases) */
+  /** the local execution target; ssh hosts live in the fleet store */
   machines: [],
   /** skills attached to the active workspace */
   skills: [],

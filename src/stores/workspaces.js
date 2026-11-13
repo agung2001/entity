@@ -2,8 +2,8 @@
  * The workspace is the scope, the machine is the source.
  *
  * Opening a workspace is the only way any other store gets data: it reads the
- * directory, then pushes entities, machines, skills, MCP and run history into
- * `hub`. Nothing crosses workspaces — the same entity name in two of them is two
+ * directory, then pushes entities, skills, MCP and run history into `hub`.
+ * Nothing crosses workspaces — the same entity name in two of them is two
  * unrelated files.
  */
 import { computed, reactive } from 'vue'
@@ -21,7 +21,10 @@ export const workspaces = reactive({
   error: '',
   items: [],
   active: '',
+  /** the local execution target; ssh hosts stay in the fleet store */
   machines: [],
+  /** host alias → capability snapshot saved in this workspace */
+  facts: { schema: 1, hosts: {}, updatedAt: '' },
   skills: [],
   mcp: { schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true, path: '' },
   /** the machine-wide skill libraries, for the "attach" lists */
@@ -52,10 +55,11 @@ function persist(id) {
 
 /** Everything a workspace owns, in one read pass. */
 export async function loadScope(id) {
-  /* Six independent reads. Every one of them is a file walk in the main
+  /* Seven independent reads. Every one of them is a file walk in the main
      process, so they all start together instead of in two waves. */
-  const [machines, skills, mcp] = await Promise.all([
+  const [machines, facts, skills, mcp] = await Promise.all([
     call('workspace.machines', { id }).catch(() => []),
+    call('workspace.machineFacts', { id }).catch(() => ({ schema: 1, hosts: {}, updatedAt: '' })),
     call('workspace.skills', { id }).catch(() => []),
     call('workspace.mcp', { id }).catch(() => ({ schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true })),
     loadEntities(id),
@@ -64,6 +68,7 @@ export async function loadScope(id) {
   ])
 
   workspaces.machines = machines
+  workspaces.facts = facts
   workspaces.skills = skills
   workspaces.mcp = mcp
 
@@ -313,7 +318,6 @@ export async function loadHosts() {
 /** One atomic call in main: staging directory → rename (§3.6). */
 export async function createWorkspace({
   label,
-  machines = ['local'],
   skills = [],
   seed = false,
   seedEntities = null,
@@ -329,7 +333,6 @@ export async function createWorkspace({
       : null
     const record = await call('workspace.create', {
       label,
-      machines,
       skills,
       seed,
       seedEntities,
@@ -346,45 +349,35 @@ export async function createWorkspace({
   }
 }
 
-/**
- * Refresh after an attach/detach. Deliberately lighter than `applyScope`: the
- * console threads are not thrown away because a machine or a skill changed.
- */
-async function afterScopeWrite() {
-  await loadEntities(workspaces.active)
-  await loadRuns(workspaces.active)
-  hub.machines = workspaces.machines
-  hub.skills = workspaces.skills
-  hub.runs = Object.values(runs.latest)
-}
-
-export async function attachMachine(alias) {
-  workspaces.busy = `machine:${alias}`
+/** Test a host, read its harness/model inventory, and keep the snapshot here. */
+export async function scanMachine(alias) {
+  workspaces.busy = `scan:${alias}`
   try {
-    workspaces.machines = await call('workspace.attachMachine', {
+    const facts = await call('workspace.scanMachine', {
       id: workspaces.active,
       alias,
     })
-    await afterScopeWrite()
-    toast(`${alias} attached`)
+    workspaces.facts = await call('workspace.machineFacts', { id: workspaces.active })
+    return facts
   } finally {
     workspaces.busy = ''
   }
 }
 
-export async function detachMachine(alias) {
-  workspaces.busy = `machine:${alias}`
+export async function forgetMachineFacts(alias) {
+  workspaces.busy = `forget:${alias}`
   try {
-    workspaces.machines = await call('workspace.detachMachine', {
+    workspaces.facts = await call('workspace.forgetMachineFacts', {
       id: workspaces.active,
       alias,
     })
-    await afterScopeWrite()
-    toast(`${alias} detached`)
+    toast(`${alias} facts removed`)
   } finally {
     workspaces.busy = ''
   }
 }
+
+export const machineFactsFor = (alias) => workspaces.facts?.hosts?.[alias] || null
 
 export async function attachSkill({ name, harness }) {
   workspaces.busy = `skill:${name}`

@@ -21,6 +21,7 @@ const mcpServer = require('./mcp-server.cjs')
 const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
+const machineScan = require('./machine-scan.cjs')
 const platform = require('./platform-core.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const { createRunner } = require('./runner-local.cjs')
@@ -55,9 +56,10 @@ function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {})
     'workspace.export': (args) => workspaces.exportWorkspace(args),
     'workspace.import': (args) => workspaces.importWorkspace(args),
     'workspace.remove': (args) => workspaces.remove(args),
-    'workspace.machines': ({ id }) => workspaces.machines(id),
-    'workspace.attachMachine': (args) => workspaces.attachMachine(args),
-    'workspace.detachMachine': (args) => workspaces.detachMachine(args),
+    'workspace.machines': () => workspaces.machines(),
+    'workspace.machineFacts': ({ id }) => workspaces.machineFacts(id),
+    'workspace.scanMachine': (args) => machineScan.scanAndSave(args),
+    'workspace.forgetMachineFacts': (args) => workspaces.forgetMachineFacts(args),
     'workspace.skills': ({ id }) => workspaces.skills(id),
     'workspace.attachSkill': (args) => workspaces.attachSkill(args),
     'workspace.detachSkill': (args) => workspaces.detachSkill(args),
@@ -160,26 +162,7 @@ function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {})
 
     /* the machine as it exists, not as this workspace intends it */
     'ssh.hosts': () => localData.readSshHosts(),
-    'ssh.probe': ({ alias, workspace }) => {
-      /* An attached host is tested through the workspace's own machines/CONFIG
-         (and the key copy beside it) — that is the file that matters.
-         An unattached host is tested through ~/.ssh/config, because a probe is
-         how the user decides whether attaching is worth it, and a config that
-         does not mention the host yet would answer the wrong question. */
-      const target = String(alias || '')
-      let configFile = ''
-      if (workspace) {
-        try {
-          const attached = workspaces
-            .machines(workspace)
-            .some((machine) => machine.id === target && !machine.missing)
-          if (attached) configFile = workspaces.machinesConfigPath(workspaces.open(workspace))
-        } catch {
-          configFile = ''
-        }
-      }
-      return localData.probeSshHost(target, { configFile })
-    },
+    'ssh.probe': ({ alias }) => localData.probeSshHost(String(alias || '')),
     'skills.scan': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
 
     /* remote workspace sync: one connection per workspace, kept in
