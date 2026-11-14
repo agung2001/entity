@@ -451,6 +451,11 @@ function remove({ workspace, id }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) return { removed: false }
+  /* A live turn still holds the thread file; deleting it now would let the
+     final write recreate the row a moment later. Stop it first. */
+  if (sending.has(thread.id)) {
+    throw new Error('This thread is still answering. Stop the turn before deleting it.')
+  }
   const file = threadFile(record, id)
   const existed = fs.existsSync(file)
   if (existed) fs.rmSync(file, { force: true })
@@ -994,7 +999,9 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
       who: 'me',
       text: message,
       at: now(),
-      ...(applied.ref || mentioned.mentions.length || resolvedAttachments.length
+      /* A local skill returns `ref`; a remote skill returns `skill` after it
+         has been installed on the host. Both mean the prompt was rewritten. */
+      ...(applied.ref || applied.skill || mentioned.mentions.length || resolvedAttachments.length
         ? { sent: mentioned.text }
         : {}),
       ...(mentioned.mentions.length ? { mentions: mentioned.mentions } : {}),

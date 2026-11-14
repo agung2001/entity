@@ -6,7 +6,7 @@ import MessageBody from '@/components/MessageBody.vue'
 import ChatArtifacts from '@/components/ChatArtifacts.vue'
 import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
-import { credentials, hub, toast } from '@/stores/hub'
+import { credentials, hub, isSending, toast } from '@/stores/hub'
 import { gravatarUrl } from '@/lib/gravatar'
 
 /**
@@ -382,10 +382,10 @@ function traceSummary(message) {
             v-if="m.error"
             class="ask-retry"
             type="button"
-            :disabled="hub.chat.sending"
+            :disabled="isSending(threadId)"
             @click="emit('retry', m)"
           >
-            {{ hub.chat.sending ? 'Retrying…' : 'Retry' }}
+            {{ isSending(threadId) ? 'Retrying…' : 'Retry' }}
           </button>
         </div>
         <ChatArtifacts

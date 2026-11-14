@@ -373,6 +373,15 @@ function refresh() {
   }
 }
 
+/* A skill created in another surface (or by the agent during a turn) replaces
+   `hub.skills`; an open `/` menu should pick it up without a reload. */
+watch(
+  () => hub.skills,
+  () => {
+    if (draft.value.startsWith('/')) refresh()
+  },
+)
+
 /* the scan is async: when it lands, fill in the draft on screen */
 watch(
   () => [workspaces.skillNamesByMachine.local, workspaces.remoteSkills[props.machine], props.machine],

@@ -19,7 +19,7 @@ The two rules that come up most often:
    updates itself. No literal `⌘…` / `Ctrl…` in a component.
 
 `npm test` runs those two rules as a static contract
-(`electron/ui-contract.test.cjs`) in addition to the unit tests.
+(`tests/unit/ui-contract.test.cjs`) in addition to the unit tests.
 
 ## The app in one paragraph
 
@@ -37,7 +37,11 @@ server). Keep it that way when adding a feature.
 | --- | --- |
 | `npm run dev` | Renderer only, in a browser at http://localhost:5183 |
 | `npm run dev:desktop` | Vite + Electron with HMR |
-| `npm test` | Unit tests + the UI contract above |
+| `npm test` | Unit tests + the UI contract above (`tests/unit/`) |
+| `npm run test:smoke` | Playwright smoke pack, including real `opencode` and `pi` turns |
+| `npm run test:regression` | Playwright regression pack |
+| `npm run test:e2e` | Both Playwright packs |
+| `npm run test:gate` | Unit + smoke — the release gate |
 | `npm run build` | Renderer build into `dist/` |
 | `npm run package` | electron-builder distributable |
 

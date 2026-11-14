@@ -40,6 +40,7 @@ const USAGE = `entity — read and change the files that define the agents in a 
   entity mcp remove <name>
 
   entity skill list
+  entity skill create <name> [--description <text>] (--body <text> | --body-stdin)
   entity skill attach <name> [--harness h]
   entity skill detach <name>
 
@@ -135,7 +136,18 @@ function unwrap(result) {
 }
 
 function resolveWorkspace(flags) {
-  const explicit = flags.workspace || process.env.ENTITY_WORKSPACE
+  const ambient = String(process.env.ENTITY_WORKSPACE || '').trim()
+  const flagged = typeof flags.workspace === 'string' ? flags.workspace.trim() : ''
+  /* Inside a run the workspace is pinned. An explicit --workspace is how a
+     person reaches another workspace from a shell, not how an agent escapes
+     the one it was started in. */
+  if (ambient && flagged && flagged !== ambient) {
+    fail(
+      `--workspace ${flagged} is not reachable from this run (pinned to ${ambient}).`,
+      'denied',
+    )
+  }
+  const explicit = flagged || ambient
   if (explicit && explicit !== true) return String(explicit)
 
   let list = []
@@ -297,6 +309,24 @@ function runSkill(action, rest, flags, workspace, output) {
         )
       }
       return emitJson(data)
+    }
+
+    case 'create': {
+      if (!name) fail('skill create <name> (--body <text> | --body-stdin)')
+      let body
+      if ('body-stdin' in flags) body = readStdin()
+      else if (typeof flags.body === 'string') body = flags.body
+      else fail('Pass --body-stdin (preferred) or --body <text>.')
+      return emitJson(
+        unwrap(
+          core.call('skill.create', {
+            workspace,
+            name,
+            body,
+            description: typeof flags.description === 'string' ? flags.description : '',
+          }),
+        ),
+      )
     }
 
     case 'attach': {

@@ -247,9 +247,20 @@ npm run dev:desktop      # Vite + Electron, HMR included
 | `npm run dev:desktop` | Vite **and** Electron, pointed at the dev server |
 | `npm run build` | Builds the renderer into `dist/` |
 | `npm run start` | Runs Electron against the existing `dist/` build |
-| `npm run test` | Node's test runner over `electron/**/*.test.cjs` |
+| `npm run test` | Unit tests + the static UI contract (`tests/unit/`) |
+| `npm run test:smoke` | The release-blocking Playwright pack, including real `opencode` and `pi` turns |
+| `npm run test:regression` | The deterministic Playwright regression pack |
+| `npm run test:e2e` | Both Playwright packs |
+| `npm run test:gate` | Unit + smoke — the release gate |
 | `npm run package` | Builds a distributable with electron-builder → `release/` |
 | `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
+
+The default E2E packs start their own server on port **5199** and seed a
+throwaway profile under `.tmp/` — no real account, workspace, SSH host or MCP
+secret is used. The opt-in remote and MCP cases read an alias or the user's
+existing harness config from the environment at run time; no value is committed.
+Install the browser once with `npx playwright install chromium`. See
+[`tests/README.md`](tests/README.md) for the smoke/regression split.
 
 The dev server uses **5183** so it does not collide with the projects that grab
 Vite's default 5173. Override it with `VITE_DEV_PORT=6000`.
@@ -328,6 +339,9 @@ The transcript keeps the thinking, the answer, and a row per tool call with its
 output; the execution metadata (command, cwd, model, duration, usage, exit code)
 stays on the assistant message, so there is no second copy anywhere.
 
+- A slow turn does not lock the composer for other conversations: each thread has
+  its own live turn, Stop control and trace. A working thread cannot be deleted
+  until it is stopped.
 - Older messages without a transcript simply show no transcript.
 - A failed turn carries **Retry** — it re-runs the same question without adding a
   second copy of it, and keeps the files it already saved.
@@ -351,6 +365,10 @@ not a guess. The backend resolves the reference to an absolute path **on the
 machine the thread is pinned to** and sends `use this skill /abs/path` above the
 prompt. The reference itself is not sent, and a reference this app owns that does
 not resolve stops the message.
+
+An entity can also **write a new workspace skill when asked**. `entity skill
+create <name> --body-stdin` writes `<ws>/skills/<name>/SKILL.md`, audits the
+write, and the composer's `/` menu picks it up without reopening the workspace.
 
 ### Mentions are resolved before the agent sees them
 
@@ -433,6 +451,7 @@ workspace:
 "$ENTITY_CLI_PATH" entity list
 "$ENTITY_CLI_PATH" entity get release-captain --output json
 "$ENTITY_CLI_PATH" entity set-instructions release-captain --body-stdin
+"$ENTITY_CLI_PATH" skill create writing-skill --description "Plain, warm prose" --body-stdin
 "$ENTITY_CLI_PATH" mcp add github --command npx --args -y,server-github
 "$ENTITY_CLI_PATH" workspace set-context --context-stdin
 ```

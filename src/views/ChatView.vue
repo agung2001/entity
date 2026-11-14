@@ -26,6 +26,8 @@ import {
   ensureChats,
   harnessById,
   hub,
+  isSending,
+  isStopping,
   machineById,
   renameThread,
   selectThread,
@@ -52,7 +54,6 @@ const helpTab = ref('keys')
 const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const composer = ref(null)
-const live = ref(null)
 const dragDepth = ref(0)
 const focusMessage = ref(-1)
 const titleEditing = ref(false)
@@ -84,6 +85,10 @@ const contextOptions = {
 
 const thread = computed(() => activeThread())
 const ctx = computed(() => threadContext())
+/* A turn belongs to its thread: these two are false while another thread works. */
+const sending = computed(() => isSending(thread.value?.id))
+const stopping = computed(() => isStopping(thread.value?.id))
+const live = computed(() => hub.chat.live[hub.chat.active] || null)
 const agent = computed(() => agentById(ctx.value.entity) || hub.agents[0])
 const agentColor = computed(() => {
   if (!agent.value) return ''
@@ -119,7 +124,7 @@ const lastMessageWhen = computed(() => {
 const messages = computed(() => {
   const t = thread.value
   if (!t) return []
-  if (!hub.chat.sending || hub.chat.active !== t.id) return t.messages
+  if (!sending.value) return t.messages
   return [
     ...t.messages,
     { who: 'sys', text: `Waiting for ${agent.value?.name || 'the entity'}…`, pending: true },
@@ -377,48 +382,62 @@ async function send(text) {
 function onLiveEvent(event) {
   if (!event || event.kind !== 'chat.turn') return
   if (event.workspace !== hub.workspace) return
-  if (event.threadId !== hub.chat.active) return
+  const id = event.threadId
+  if (!id) return
+
+  const current = hub.chat.live[id]
+  const base =
+    current && current.messageId === event.messageId
+      ? current
+      : { messageId: event.messageId, execution: event.data?.execution || {}, steps: [] }
 
   if (event.phase === 'start') {
-    live.value = {
-      messageId: event.messageId,
-      execution: event.data?.execution || {},
-      steps: live.value?.messageId === event.messageId ? live.value.steps : [],
+    /* A turn started by another window still marks this thread as working. */
+    hub.chat.sending = { ...hub.chat.sending, [id]: true }
+    hub.chat.live = {
+      ...hub.chat.live,
+      [id]: { messageId: event.messageId, execution: event.data?.execution || {}, steps: [] },
     }
     return
-  }
-
-  if (!live.value || live.value.messageId !== event.messageId) {
-    live.value = {
-      messageId: event.messageId,
-      execution: event.data?.execution || {},
-      steps: [],
-    }
   }
 
   if (event.phase === 'step') {
     const step = event.data?.step
     if (!step) return
-    const steps = [...live.value.steps]
+    const steps = [...base.steps]
     const index = steps.findIndex((entry) => entry.seq === step.seq)
     if (index >= 0) steps[index] = step
     else steps.push(step)
-    live.value = { ...live.value, steps }
+    hub.chat.live = { ...hub.chat.live, [id]: { ...base, steps } }
     return
   }
 
   if (event.phase === 'done') {
     const message = event.data?.message
-    const current = hub.chat.threads[event.threadId]
-    if (message && current && !current.messages.some((entry) => entry.id === message.id)) {
+    const open = hub.chat.threads[id]
+    if (message && open && !open.messages.some((entry) => entry.id === message.id)) {
       hub.chat.threads = {
         ...hub.chat.threads,
-        [event.threadId]: { ...current, messages: [...current.messages, message] },
+        [id]: { ...open, messages: [...open.messages, message] },
       }
     }
-    live.value = null
+    if (hub.chat.summaries.some((entry) => entry.id === id)) {
+      hub.chat.summaries = hub.chat.summaries.map((entry) =>
+        entry.id === id
+          ? { ...entry, working: false, failed: Boolean(message?.error) }
+          : entry,
+      )
+    }
+    const nextLive = { ...hub.chat.live }
+    delete nextLive[id]
+    hub.chat.live = nextLive
+    if (hub.chat.sending[id]) {
+      const nextSending = { ...hub.chat.sending }
+      delete nextSending[id]
+      hub.chat.sending = nextSending
+    }
     playSfx(message?.error ? 'error' : 'receive')
-    playReaction(hub.workspace, event.entity || thread.value?.entity)
+    playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})
   }
@@ -453,7 +472,6 @@ onBeforeUnmount(() => {
 watch(
   () => hub.workspace,
   async () => {
-    live.value = null
     timelineOpen.value = false
     harnessOpen.value = false
     mcpOpen.value = false
@@ -500,7 +518,6 @@ watch(
 watch(
   () => hub.chat.active,
   () => {
-    live.value = null
     timelineOpen.value = false
     helpOpen.value = false
     harnessOpen.value = false
@@ -510,13 +527,6 @@ watch(
   },
 )
 
-/* a dropped SSE frame must not leave the live trace spinning forever */
-watch(
-  () => hub.chat.sending,
-  (sending) => {
-    if (!sending && live.value) live.value = null
-  },
-)
 </script>
 
 <template>
@@ -535,7 +545,7 @@ watch(
           <PixelBackdrop
             variant="chat"
             :color="agentColor"
-            :active="hub.chat.sending"
+            :active="sending"
             :count="10"
           />
           <header class="cp-head">
@@ -690,9 +700,9 @@ watch(
                   :machine="ctx.machine || 'local'"
                   :placeholder="`Message ${agent.name} — / skills · @ mentions`"
                   :focus-shortcut="focusShortcut"
-                  :disabled="hub.chat.sending"
-                  :sending="hub.chat.sending"
-                  :stopping="hub.chat.stopping"
+                  :disabled="sending"
+                  :sending="sending"
+                  :stopping="stopping"
                   v-model:attachments="attachments"
                   @send="send"
                   @stop="stopTurn"

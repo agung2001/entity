@@ -32,6 +32,7 @@ export const runs = reactive({
 let unsubscribe = null
 let streamed = false
 let entityTimer = null
+let skillTimer = null
 
 /**
  * A file changed under this workspace: an agent rewrote itself through the CLI,
@@ -46,6 +47,31 @@ function scheduleEntityReload() {
   entityTimer = setTimeout(() => {
     entityTimer = null
     loadEntities(hub.workspace)
+  }, 200)
+}
+
+/**
+ * A skill created from a chat turn (or by an agent in `$EDITOR`) lands under
+ * `<ws>/skills/`. The slash menu is built from `hub.skills`, so it must be
+ * refreshed without reopening the workspace. The debounce coalesces the several
+ * filesystem events one directory write produces.
+ */
+function scheduleSkillReload() {
+  if (skillTimer) clearTimeout(skillTimer)
+  skillTimer = setTimeout(async () => {
+    skillTimer = null
+    if (!hub.workspace) return
+    try {
+      const skills = await call('workspace.skills', { id: hub.workspace })
+      hub.skills = skills
+      /* The Skills page reads the workspace store. A DOM event keeps the two
+         stores in step without making the stores import each other. */
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('entity:skills-changed', { detail: skills }))
+      }
+    } catch {
+      /* a transient read failure is repaired on the next workspace open */
+    }
   }, 200)
 }
 
@@ -97,6 +123,9 @@ function onEvent(event) {
 
   if (event.kind === 'workspace-changed') {
     scheduleEntityReload()
+    if ((event.paths || []).some((file) => file.startsWith('skills/'))) {
+      scheduleSkillReload()
+    }
     return
   }
 

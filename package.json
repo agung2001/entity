@@ -19,13 +19,20 @@
     "preview": "vite preview",
     "clean:dev": "bash scripts/clean-dev.sh",
     "start": "electron .",
-    "test": "node --test \"electron/**/*.test.cjs\"",
+    "test": "npm run test:unit",
     "package": "npm run build && electron-builder",
     "serve": "node server/index.cjs",
     "start:server": "npm run build && node server/index.cjs",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f entity"
+    "docker:logs": "docker compose logs -f entity",
+    "test:unit": "node --test \"tests/unit/**/*.test.cjs\"",
+    "test:smoke": "playwright test tests/e2e/smoke",
+    "test:regression": "playwright test tests/e2e/full",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm run test:unit && npm run test:e2e",
+    "test:gate": "npm run test:unit && npm run test:smoke"
   },
   "dependencies": {
     "dompurify": "^3.4.17",
@@ -34,6 +41,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@vitejs/plugin-vue": "^6.0.10",
     "electron": "^45.3.0",
     "electron-builder": "^26.18.0",

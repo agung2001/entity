@@ -301,6 +301,64 @@ const verbs = {
     sources: localSkillNames(),
   }),
 
+  /**
+   * Create a brand-new workspace skill from an agent turn.
+   *
+   * `attach` links a skill that already exists in a harness library; `create`
+   * is the missing direction — a person asks an entity for a recipe and the
+   * entity writes it into `<ws>/skills/<name>/SKILL.md`. The name is grammar-
+   * checked, the directory is proved inside the workspace and an existing name
+   * is a conflict, never an overwrite.
+   */
+  'skill.create': (record, name, body, description) => {
+    const names = normaliseList(name, 'name')
+    if (names.length !== 1) {
+      throw new PlatformError('invalid', 'A skill needs exactly one name.')
+    }
+    const skill = names[0]
+    const instructions = String(body ?? '')
+    if (!instructions.trim()) {
+      throw new PlatformError('invalid', 'A skill needs instructions in its body.')
+    }
+
+    const skillsRoot = path.join(record.path, 'skills')
+    /* Create the container first, then prove it resolves inside the workspace.
+       A workspace under a symlinked root (macOS /var → /private/var) otherwise
+       makes `within` compare a resolved root with an unresolved new child. */
+    fs.mkdirSync(skillsRoot, { recursive: true })
+    within(record, path.join(skillsRoot, '.inside'))
+    const dir = path.join(skillsRoot, skill)
+    const file = path.join(dir, 'SKILL.md')
+    if (fs.existsSync(dir)) {
+      throw new PlatformError('conflict', `"${skill}" already exists in this workspace.`)
+    }
+    fs.mkdirSync(dir, { recursive: true })
+    within(record, file)
+
+    const oneLine = String(description || '')
+      .replace(/\s+/g, ' ')
+      .replace(/"/g, "'")
+      .trim()
+      .slice(0, 240)
+    const doc = [
+      '---',
+      `name: ${skill}`,
+      ...(oneLine ? [`description: ${oneLine}`] : []),
+      '---',
+      '',
+      String(instructions).replace(/^\n+/, '').replace(/\s+$/, ''),
+      '',
+    ].join('\n')
+
+    const tmp = `${file}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, doc, { encoding: 'utf8', mode: 0o644 })
+    fs.renameSync(tmp, file)
+
+    const bytes = Buffer.byteLength(doc)
+    audit.append(record, { verb: 'skill.create', target: skill, bytes })
+    return { name: skill, description: oneLine, path: tilde(file), bytes }
+  },
+
   'skill.attach': (record, name, harness) => {
     const attached = workspaces.attachSkill({ id: record.id, name: String(name || ''), harness: String(harness || '') })
     audit.append(record, { verb: 'skill.attach', target: attached.name, harness: attached.harness })
@@ -440,6 +498,7 @@ const POSITIONAL = {
   'entity.setFields': ['name', 'patch'],
   'mcp.add': ['name', 'spec'],
   'mcp.remove': ['name'],
+  'skill.create': ['name', 'body', 'description'],
   'skill.attach': ['name', 'harness'],
   'skill.detach': ['name'],
   'workspace.setContext': ['context'],

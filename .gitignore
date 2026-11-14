@@ -16,3 +16,8 @@ release
 
 # Working notes / questions raised against mock-ups
 reports/
+
+# E2E scratch profile, generated fixtures and Playwright output
+.tmp/
+test-results/
+playwright-report/

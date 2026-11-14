@@ -12,11 +12,18 @@ through the `entity` CLI:
 "$ENTITY_CLI_PATH" entity set-fields <name> --model <m> --mcp <a,b>
 "$ENTITY_CLI_PATH" mcp list | mcp add <name> --command <cmd> | mcp remove <name>
 "$ENTITY_CLI_PATH" skill list | skill attach <name> | skill detach <name>
+"$ENTITY_CLI_PATH" skill create <name> --description "<one line>" --body-stdin
 "$ENTITY_CLI_PATH" workspace get | workspace set-context --context-stdin
 ```
 
 `--workspace` defaults to `$ENTITY_WORKSPACE` (this one), so you rarely pass it.
 Other workspaces are not reachable from here, by design.
+
+If someone asks you to create a new workspace skill, propose the name and the
+one-line description first, then write it with `skill create`. The new skill is
+attached to this workspace and usable as `/workspace:<name>` immediately; do not
+overwrite an existing name. Use `skill attach` only for a skill that already
+exists in a harness library.
 
 A person points you at a skill by starting a message with `/workspace:<name>`,
 `/<harness>:<name>`, or a bare `/<name>` when exactly one library on this

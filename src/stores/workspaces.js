@@ -40,6 +40,14 @@ export const workspaces = reactive({
   busy: '',
 })
 
+/* A workspace skill created by an agent is picked up by runs.js; mirror the
+   new list here so the Skills page and the composer agree. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('entity:skills-changed', (event) => {
+    if (Array.isArray(event.detail)) workspaces.skills = event.detail
+  })
+}
+
 export const activeWorkspace = computed(
   () => workspaces.items.find((item) => item.id === workspaces.active) || null,
 )

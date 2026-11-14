@@ -14,6 +14,10 @@ const props = defineProps({
   items: { type: Array, default: () => [] },
 })
 
+/* The template has two roots (the card and the zoom teleport), so Vue cannot
+   forward `class`/`data-*` automatically. Keep them for the card itself. */
+defineOptions({ inheritAttrs: false })
+
 const state = reactive({})
 const root = ref(null)
 const zoom = ref(null)
@@ -128,7 +132,7 @@ watch(
 </script>
 
 <template>
-  <div v-if="items.length" ref="root" class="msg-artifacts" aria-label="Artifacts from this turn">
+  <div v-if="items.length" v-bind="$attrs" ref="root" class="msg-artifacts" aria-label="Artifacts from this turn">
     <figure v-for="item in items" :key="item.id" class="msg-attach" :data-kind="item.kind">
       <template v-if="item.kind === 'image'">
         <button

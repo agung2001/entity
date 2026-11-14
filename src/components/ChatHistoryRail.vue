@@ -8,6 +8,7 @@ import {
   ago,
   ensureChats,
   hub,
+  isSending,
   pinThread,
   removeThread,
   renameThread,
@@ -83,7 +84,7 @@ function pickStatus(id) {
 const threads = computed(() => hub.chat.summaries || [])
 
 function isWorking(thread) {
-  return Boolean(thread.working) || (hub.chat.sending && thread.id === hub.chat.active)
+  return Boolean(thread?.working) || isSending(thread?.id)
 }
 
 function statusOf(thread) {
@@ -259,6 +260,10 @@ async function togglePin(thread) {
 }
 
 async function deleteThread(thread) {
+  if (isWorking(thread)) {
+    toast('Stop the turn before deleting this thread.')
+    return
+  }
   if (confirming.value !== thread.id) {
     confirming.value = thread.id
     setTimeout(() => {
@@ -495,6 +500,8 @@ defineExpose({ newThread })
           type="button"
           role="menuitem"
           :class="{ confirming: confirming === menuItem.id }"
+          :disabled="isWorking(menuItem)"
+          :title="isWorking(menuItem) ? 'Stop the turn before deleting this thread' : ''"
           @click="menuDelete"
         >
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">

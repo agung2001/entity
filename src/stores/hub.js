@@ -323,8 +323,11 @@ export const hub = reactive({
     summaries: [],
     threads: {},
     active: '',
-    sending: false,
-    stopping: false,
+    /* per-thread turn state: a map so A and B can answer at the same time */
+    sending: {},
+    stopping: {},
+    /* threadId → the live trace while its turn runs */
+    live: {},
     filters: { entity: 'all', machine: 'all', harness: 'all' },
     last: { entity: '', machine: 'local', harness: 'claude', model: '' },
   },
@@ -354,8 +357,9 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
   hub.chat.summaries = []
   hub.chat.threads = {}
   hub.chat.active = ''
-  hub.chat.sending = false
-  hub.chat.stopping = false
+  hub.chat.sending = {}
+  hub.chat.stopping = {}
+  hub.chat.live = {}
   hub.chat.filters = { entity: 'all', machine: 'all', harness: 'all' }
   hub.chat.last = {
     entity: agents[0]?.id || '',
@@ -703,6 +707,10 @@ export const threadContext = () => {
 export const threadStarted = (thread = activeThread()) =>
   Boolean(thread?.messages?.some((message) => message.who === 'me'))
 
+/** Turn state is per thread: a second conversation must not be blocked by one. */
+export const isSending = (id = hub.chat.active) => Boolean(hub.chat.sending[id])
+export const isStopping = (id = hub.chat.active) => Boolean(hub.chat.stopping[id])
+
 export const summaryFor = (id) => hub.chat.summaries.find((thread) => thread.id === id) || null
 
 export async function openThread(id) {
@@ -869,7 +877,7 @@ export async function setThreadContext(kind, value) {
 
 export async function chatSend(text, { retry = false, attachments = [], attachmentsEnabled = false } = {}) {
   const thread = activeThread()
-  if (!thread || hub.chat.sending) return
+  if (!thread || isSending(thread.id)) return
   const message = String(text || '').trim()
   if (!retry && !message) return
 
@@ -888,8 +896,12 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
       : [...base, { who: 'me', text: message, at: new Date().toISOString() }],
   }
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: optimistic }
-  hub.chat.sending = true
-  hub.chat.stopping = false
+  hub.chat.sending = { ...hub.chat.sending, [thread.id]: true }
+  if (hub.chat.stopping[thread.id]) {
+    const stopping = { ...hub.chat.stopping }
+    delete stopping[thread.id]
+    hub.chat.stopping = stopping
+  }
   hub.chat.error = ''
 
   try {
@@ -914,24 +926,38 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
       /* the list keeps the last readable state */
     }
   } finally {
-    hub.chat.sending = false
-    hub.chat.stopping = false
+    const sending = { ...hub.chat.sending }
+    delete sending[thread.id]
+    hub.chat.sending = sending
+    const stopping = { ...hub.chat.stopping }
+    delete stopping[thread.id]
+    hub.chat.stopping = stopping
+    /* a dropped event must not leave a live fold spinning after the turn */
+    if (hub.chat.live[thread.id]) {
+      const live = { ...hub.chat.live }
+      delete live[thread.id]
+      hub.chat.live = live
+    }
   }
 }
 
-/** Stop the active turn. The backend marks the turn canceled, not failed. */
+/** Stop this thread's turn. Another thread may keep answering. */
 export async function cancelChat() {
   const thread = activeThread()
-  if (!thread || !hub.chat.sending || hub.chat.stopping) return
-  hub.chat.stopping = true
+  if (!thread || !isSending(thread.id) || isStopping(thread.id)) return
+  hub.chat.stopping = { ...hub.chat.stopping, [thread.id]: true }
   try {
     const result = await call('chat.cancel', { workspace: hub.workspace, id: thread.id })
     if (!result?.canceled) {
-      hub.chat.stopping = false
+      const stopping = { ...hub.chat.stopping }
+      delete stopping[thread.id]
+      hub.chat.stopping = stopping
       toast('That turn is already finishing.')
     }
   } catch (error) {
-    hub.chat.stopping = false
+    const stopping = { ...hub.chat.stopping }
+    delete stopping[thread.id]
+    hub.chat.stopping = stopping
     toast(error?.message || 'The turn could not be stopped.')
   }
 }

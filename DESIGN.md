@@ -18,7 +18,7 @@ same mistakes kept coming back:
 Read this before adding a surface or a key. When a new class of mistake is
 found, add it to **Common mistakes** below — that is how this file stays
 useful. The rules that can be checked mechanically are enforced by
-`electron/ui-contract.test.cjs` (`npm test`).
+`tests/unit/ui-contract.test.cjs` (`npm test`).
 
 ## Five non-negotiables
 
