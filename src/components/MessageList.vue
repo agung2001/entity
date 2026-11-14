@@ -388,6 +388,23 @@ function elapsed(message) {
   return formatDuration(message.execution?.ms)
 }
 
+/** Entity mentions are one-shot sub-runs; their answers belong above the outer reply. */
+function delegations(message) {
+  const rows = message?.execution?.mentions || message?.mentions || []
+  return rows.filter((mention) => mention?.kind === 'entity')
+}
+
+function mentionLabel(mention) {
+  return mention.token || `@${mention.name || 'entity'}`
+}
+
+function mentionMeta(mention) {
+  const execution = mention.execution || {}
+  return [execution.harness, execution.model, formatDuration(mention.ms || execution.ms)]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 function traceKey(message, index) {
   return message.id || `msg-${message.at || index}`
 }
@@ -467,6 +484,34 @@ function traceSummary(message) {
         :data-avatar="m.who === 'me' && userAvatar ? '1' : '0'"
         :style="m.who === 'me' && userAvatar ? { '--msg-avatar': 'url(' + userAvatar + ')' } : null"
       >
+        <div
+          v-if="m.who === 'agent' && delegations(m).length"
+          class="msg-delegations"
+          aria-label="Delegated work"
+        >
+          <div
+            v-for="(mention, j) in delegations(m)"
+            :key="mention.token || mention.name || j"
+            class="msg-delegation"
+            :data-error="mention.status === 'error' ? '1' : '0'"
+            :title="mention.job || mention.raw || ''"
+          >
+            <EntityMark
+              :entity="mention.name"
+              animate
+              class="msg-delegation-mark"
+            />
+            <div class="msg-delegation-body">
+              <div class="msg-delegation-head">
+                <span class="msg-delegation-kicker">Delegated to</span>
+                <span class="msg-delegation-name">{{ mentionLabel(mention) }}</span>
+                <span v-if="mentionMeta(mention)" class="msg-delegation-meta">{{ mentionMeta(mention) }}</span>
+              </div>
+              <p v-if="mention.job" class="msg-delegation-job">{{ mention.job }}</p>
+              <p class="msg-delegation-answer">{{ mention.answer || mention.note || 'No answer recorded.' }}</p>
+            </div>
+          </div>
+        </div>
         <MessageBody :text="m.text" />
         <EntityMark v-if="m.who === 'agent'" mini :entity="entityName" class="msg-avatar" />
       </div>

@@ -312,7 +312,18 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
       return
     }
 
-    const parser = createParser(entity.harness)
+    const startedMs = Date.now()
+    const startedAt = new Date(startedMs).toISOString()
+    const timing = { firstStepAt: '', firstTextAt: '' }
+    const parser = createParser(entity.harness, {
+      onStep: (event) => {
+        const at = new Date().toISOString()
+        if (!timing.firstStepAt) timing.firstStepAt = at
+        if (!timing.firstTextAt && event.step?.type === 'text' && (event.step.content || event.delta)) {
+          timing.firstTextAt = at
+        }
+      },
+    })
     let stderr = ''
     let settled = false
     const done = (error) => {
@@ -320,10 +331,36 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
       settled = true
       clearTimeout(timer)
       const parsed = parser.finish()
+      const endedAt = new Date().toISOString()
+      const failed = String(error || parsed.error || '')
+      const firstStepMs = timing.firstStepAt
+        ? Math.max(0, Date.parse(timing.firstStepAt) - startedMs)
+        : null
+      const firstTextMs = timing.firstTextAt
+        ? Math.max(0, Date.parse(timing.firstTextAt) - startedMs)
+        : null
       resolve({
-        ok: !error && !parsed.error,
+        ok: !failed,
         answer: parsed.answer || '',
-        error: String(error || parsed.error || ''),
+        error: failed,
+        steps: parsed.steps,
+        execution: {
+          harness: entity.harness,
+          model: parsed.model || entity.model || '',
+          cwd: dir,
+          startedAt,
+          ...(timing.firstStepAt
+            ? { firstStepAt: timing.firstStepAt, ttfbMs: firstStepMs }
+            : {}),
+          ...(timing.firstTextAt
+            ? { firstTextAt: timing.firstTextAt, firstTextMs }
+            : {}),
+          endedAt,
+          ms: Date.now() - startedMs,
+          status: failed ? 'error' : 'ok',
+          ...(parsed.usage ? { usage: parsed.usage } : {}),
+          ...(Number.isFinite(parsed.costUsd) ? { costUsd: parsed.costUsd } : {}),
+        },
       })
     }
     const timer = setTimeout(() => {
@@ -656,9 +693,13 @@ async function resolveOne(ctx, segment) {
         raw: segment.raw,
         token: tokenOf(segment),
         name: mentioned.name,
+        job: segment.job,
         items: [],
         answer: String(run.answer || '').slice(0, 1200),
         note: run.ok ? '' : `@${mentioned.name} failed: ${run.error}`,
+        status: run.ok ? 'ok' : 'error',
+        ...(run.execution ? { execution: run.execution } : {}),
+        ...(Array.isArray(run.steps) && run.steps.length ? { steps: run.steps } : {}),
       }
       if (!run.ok) ctx.notes.push(segment.mention.note)
       return

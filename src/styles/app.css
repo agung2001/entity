@@ -1751,6 +1751,89 @@ kbd {
   background: var(--ink);
   color: var(--bg);
 }
+.msg-delegations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 9px;
+  padding: 0 0 9px;
+  border-bottom: 1px solid var(--border);
+}
+.msg-delegation {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 9px 8px 8px;
+  border: 1px solid var(--border);
+  border-left: 2px solid color-mix(in oklab, var(--accent-ink) 55%, var(--border));
+  border-radius: 6px;
+  background: var(--bg);
+}
+.msg-delegation[data-error='1'] {
+  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
+  border-left-color: var(--danger);
+}
+.msg-delegation-mark {
+  width: 34px;
+  height: 34px;
+  align-self: start;
+}
+.msg-delegation-mark.mark {
+  width: 34px;
+  height: 34px;
+}
+.msg-delegation-mark .mood {
+  right: -6px;
+  bottom: -5px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 12px;
+}
+.msg-delegation-body {
+  min-width: 0;
+}
+.msg-delegation-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.msg-delegation-kicker {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.msg-delegation-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+.msg-delegation-meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+}
+.msg-delegation-job {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-delegation-answer {
+  margin: 5px 0 0;
+  font-size: 12.3px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -11726,6 +11809,34 @@ label.pick:has(input:focus-visible) {
   display: block;
   margin-top: 3px;
   color: var(--muted);
+}
+.trace-mention-body {
+  min-width: 0;
+}
+.trace-mention-answer {
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.trace-mention-entry[data-error='1'] .trace-mention-what {
+  color: var(--danger);
+}
+.trace-mention-meta {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.trace-delegation-run {
+  margin-top: 7px;
+}
+.trace-delegation-run > .trace-digest {
+  margin-top: 6px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
 }
 .trace-digest-note {
   margin: 8px 0 0;

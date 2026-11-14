@@ -226,6 +226,9 @@ loading state.
 - Keep first-step and first-text timings on the execution record
   (`ttfbMs`, `firstTextMs`) so a slow turn can be separated from a slow model.
 - A live turn owns the loading bubble; do not add a second `Waiting for…` row.
+- An `@entity` mention is a sub-run, not the outer thread. Show the delegated
+  entity, its answer and its trace separately from the outer entity's reply; the
+  outer entity must not appear to have run the child's tools.
 
 ## Loading budget
 

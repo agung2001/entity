@@ -192,6 +192,32 @@ test('an entity mention runs that entity and injects its answer', async () => {
   assert.equal(out.mentions[0].answer, 'the fixture was stale')
 })
 
+test('an entity mention keeps the sub-run trace and execution', async () => {
+  const record = workspace()
+  const execution = {
+    harness: 'claude',
+    model: 'claude-test',
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: '2026-01-01T00:00:01.000Z',
+    ms: 1000,
+    status: 'ok',
+  }
+  const steps = [
+    { seq: 1, type: 'tool_use', tool: 'bash', callId: 'c1', input: { command: 'echo hi' } },
+    { seq: 2, type: 'tool_result', tool: 'bash', callId: 'c1', output: 'hi' },
+  ]
+  const out = await mention.rewrite(record, '@py-agent run it', {
+    deps: deps({
+      runEntity: async () => ({ ok: true, answer: 'ran it', error: '', steps, execution }),
+    }),
+  })
+  assert.equal(out.mentions[0].status, 'ok')
+  assert.equal(out.mentions[0].job, 'run it')
+  assert.deepEqual(out.mentions[0].steps, steps)
+  assert.equal(out.mentions[0].execution.harness, 'claude')
+  assert.equal(out.mentions[0].execution.ms, 1000)
+})
+
 test('an unknown entity is a hard error', async () => {
   const record = workspace()
   await assert.rejects(

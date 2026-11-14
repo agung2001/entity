@@ -6,6 +6,8 @@ import { computed } from 'vue'
  * reasoning is one fold, each tool call is one row with its output behind a
  * second fold, and the summary says where the time went.
  */
+defineOptions({ name: 'TraceDigest' })
+
 const props = defineProps({
   steps: { type: Array, default: () => [] },
   execution: { type: Object, default: () => null },
@@ -35,6 +37,13 @@ const mcpServers = computed(() =>
 const mentions = computed(() =>
   Array.isArray(props.execution?.mentions) ? props.execution.mentions : [],
 )
+
+function mentionMeta(mention) {
+  const execution = mention.execution || {}
+  return [execution.harness, execution.model, formatMs(mention.ms || execution.ms)]
+    .filter(Boolean)
+    .join(' · ')
+}
 
 function mentionSummary(mention) {
   if (mention.kind === 'entity') {
@@ -186,12 +195,33 @@ function errorText(step) {
         </svg>
       </summary>
       <div class="trace-thought-list">
-        <div v-for="mention in mentions" :key="mention.token || mention.raw" class="trace-thought">
+        <div
+          v-for="mention in mentions"
+          :key="mention.token || mention.raw"
+          class="trace-thought trace-mention-entry"
+          :data-error="mention.status === 'error' ? '1' : '0'"
+          :title="mention.job || mention.raw || ''"
+        >
           <span class="trace-off">{{ mention.kind }}</span>
-          <p>
-            <code class="trace-mention-raw">{{ mention.token || mention.raw }}</code>
-            <span class="trace-mention-what">{{ mentionSummary(mention) }}</span>
-          </p>
+          <div class="trace-mention-body">
+            <p>
+              <code class="trace-mention-raw">{{ mention.token || mention.raw }}</code>
+              <span v-if="mention.kind === 'entity'" class="trace-mention-what trace-mention-answer">
+                {{ mention.answer || mention.note || 'No answer recorded.' }}
+              </span>
+              <span v-else class="trace-mention-what">{{ mentionSummary(mention) }}</span>
+            </p>
+            <span v-if="mention.kind === 'entity' && mentionMeta(mention)" class="trace-mention-meta">
+              {{ mentionMeta(mention) }}
+            </span>
+            <details
+              v-if="mention.kind === 'entity' && mention.steps?.length"
+              class="trace-tool-output trace-delegation-run"
+            >
+              <summary>Sub-run trace · {{ mention.steps.length }} steps</summary>
+              <TraceDigest :steps="mention.steps" :execution="mention.execution" />
+            </details>
+          </div>
         </div>
       </div>
     </details>

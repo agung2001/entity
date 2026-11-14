@@ -131,6 +131,31 @@ function normaliseStep(raw, index) {
   return step
 }
 
+function normaliseMention(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const kind = ['entity', 'orca', 'artifact', 'maka', 'youtrack'].includes(raw.kind)
+    ? raw.kind
+    : 'unknown'
+  return {
+    kind,
+    ...(typeof raw.raw === 'string' ? { raw: raw.raw } : {}),
+    ...(typeof raw.token === 'string' ? { token: raw.token } : {}),
+    ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
+    ...(typeof raw.job === 'string' ? { job: raw.job } : {}),
+    ...(Array.isArray(raw.items) ? { items: raw.items } : {}),
+    ...(typeof raw.answer === 'string' ? { answer: raw.answer } : {}),
+    ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
+    ...(Number.isFinite(raw.ms) ? { ms: raw.ms } : {}),
+    ...(typeof raw.status === 'string' ? { status: raw.status } : {}),
+    ...(raw.execution && typeof raw.execution === 'object'
+      ? { execution: { ...raw.execution } }
+      : {}),
+    ...(Array.isArray(raw.steps)
+      ? { steps: raw.steps.map(normaliseStep).filter(Boolean) }
+      : {}),
+  }
+}
+
 function normaliseExecution(raw) {
   if (!raw || typeof raw !== 'object') return null
   const execution = {}
@@ -157,7 +182,9 @@ function normaliseExecution(raw) {
      a reload so the answer's fold still explains itself tomorrow */
   if (Array.isArray(raw.mcp)) execution.mcp = raw.mcp.map(String)
   if (typeof raw.mcpNote === 'string' && raw.mcpNote) execution.mcpNote = raw.mcpNote
-  if (Array.isArray(raw.mentions)) execution.mentions = raw.mentions
+  if (Array.isArray(raw.mentions)) {
+    execution.mentions = raw.mentions.map(normaliseMention).filter(Boolean)
+  }
   return Object.keys(execution).length ? execution : null
 }
 
@@ -212,6 +239,9 @@ function normaliseMessage(message) {
     ...(message.error ? { error: true } : {}),
     ...(steps.length ? { steps } : {}),
     ...(execution ? { execution } : {}),
+    ...(Array.isArray(message.mentions)
+      ? { mentions: message.mentions.map(normaliseMention).filter(Boolean) }
+      : {}),
     /* files the harness put on the artifact shelf during this turn */
     ...(linkedArtifacts.length ? { artifacts: linkedArtifacts } : {}),
     ...(Array.isArray(message.attachments) && message.attachments.length
