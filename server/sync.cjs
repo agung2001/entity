@@ -651,6 +651,7 @@ const HOST_ONLY_CALLS = new Set([
   'mcp.globals',
   'mcp.tools',
   'harness.setPath',
+  'skills.remote',
   'ssh.hosts',
   'ssh.probe',
   'workspace.scanMachine',

@@ -4,7 +4,7 @@ import { call } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, slashMenu } from '@/stores/hub'
-import { loadSkillNames, workspaces } from '@/stores/workspaces'
+import { loadRemoteSkills, loadSkillNames, workspaces } from '@/stores/workspaces'
 
 /**
  * The composer, with one menu above it for two triggers.
@@ -234,7 +234,10 @@ const hasMore = computed(
     menu.value.length > visible.value ||
     (menuMode.value === 'mention-search' && searchState.value.more),
 )
-const machineInfo = computed(() => workspaces.skillNamesByMachine[props.machine] || null)
+/* A single slash follows the thread's machine; a double slash asks for the
+   local library explicitly. */
+const machineInfo = computed(() => workspaces.skillNamesByMachine.local || null)
+const remoteInfo = computed(() => workspaces.remoteSkills[props.machine] || null)
 
 /* The menu is the only feedback the composer has, so an empty list still needs
    one line: a machine whose libraries cannot be read, a failed scan, or a
@@ -248,6 +251,14 @@ const note = computed(() => {
     return searchState.value.error || 'No match yet — keep typing, or Esc and send it as written.'
   }
   if (!draft.value.startsWith('/')) return ''
+  const localPrefix = draft.value.startsWith('//')
+  if (props.machine !== 'local' && !localPrefix) {
+    const remote = remoteInfo.value
+    if (!remote) return scanning.value ? `Reading skills on ${props.machine}…` : ''
+    if (remote.error) return remote.error
+    if (!remote.items?.length) return `No skills installed on ${props.machine}.`
+    return ''
+  }
   const info = machineInfo.value
   if (!info) return ''
   if (info.note) return info.note
@@ -303,11 +314,11 @@ function harvestAttachments(final = false) {
 }
 
 async function scanNames() {
-  const cached = workspaces.skillNamesByMachine[props.machine]
+  const cached = workspaces.skillNamesByMachine.local
   if (cached && !cached.error) return
   scanning.value = true
   try {
-    await loadSkillNames({ machine: props.machine, force: Boolean(cached?.error) })
+    await loadSkillNames({ machine: 'local', force: Boolean(cached?.error) })
   } finally {
     scanning.value = false
   }
@@ -337,14 +348,26 @@ function refresh() {
 
   menuMode.value = 'slash'
   visible.value = PAGE
-  menu.value = slashMenu(draft.value, props.agent, props.machine)
+  const localPrefix = draft.value.startsWith('//')
+  const remote = props.machine !== 'local' && !localPrefix
+  menu.value = slashMenu(
+    draft.value,
+    props.agent,
+    props.machine,
+    workspaces.remoteSkills[props.machine]?.items || [],
+    localPrefix,
+  )
   if (active.value > menu.value.length - 1) active.value = 0
+  if (remote) {
+    if (!workspaces.remoteSkills[props.machine]) loadRemoteSkills(props.machine).catch(() => {})
+    return
+  }
   /* The names-only scan is the expensive half of the menu; it starts the first
      time a `/` is typed for a machine, never on mount, and never repeats per
      keystroke. The full library is only read when the Skills page asks for it. */
-  if (draft.value.startsWith('/') && !requested.has(props.machine)) {
-    requested.add(props.machine)
-    const cached = workspaces.skillNamesByMachine[props.machine]
+  if (draft.value.startsWith('/') && !requested.has('local')) {
+    requested.add('local')
+    const cached = workspaces.skillNamesByMachine.local
     if (cached && !cached.error) return
     scanNames()
   }
@@ -352,7 +375,7 @@ function refresh() {
 
 /* the scan is async: when it lands, fill in the draft on screen */
 watch(
-  () => [workspaces.skillNamesByMachine[props.machine], props.machine],
+  () => [workspaces.skillNamesByMachine.local, workspaces.remoteSkills[props.machine], props.machine],
   () => {
     if (draft.value.startsWith('/')) refresh()
   },

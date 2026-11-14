@@ -31,6 +31,8 @@ export const workspaces = reactive({
   library: null,
   /** machine id → the names-only index for that machine's libraries */
   skillNamesByMachine: {},
+  /** remote host → skills read from that host's harness libraries */
+  remoteSkills: {},
   hosts: [],
   /** the optional sample entities the wizard offers */
   samples: [],
@@ -273,6 +275,46 @@ export async function loadSkillNames({ machine = 'local', force = false } = {}) 
   } finally {
     skillNamesPending.delete(key)
   }
+}
+
+const remoteSkillPending = new Map()
+
+/** Read the skill directory names on a remote host, cached per session. */
+export async function loadRemoteSkills(machine, { force = false } = {}) {
+  const key = String(machine || '').trim()
+  if (!key || key === 'local') return null
+  if (!force && workspaces.remoteSkills[key]) return workspaces.remoteSkills[key]
+  if (!force && remoteSkillPending.has(key)) return remoteSkillPending.get(key)
+  const task = (async () => {
+    let payload
+    try {
+      payload = await call('skills.remote', { machine: key })
+    } catch (error) {
+      payload = {
+        machine: key,
+        items: [],
+        count: 0,
+        error: error?.message || 'The remote skill libraries could not be read.',
+      }
+    }
+    workspaces.remoteSkills = { ...workspaces.remoteSkills, [key]: payload }
+    return payload
+  })()
+  remoteSkillPending.set(key, task)
+  try {
+    return await task
+  } finally {
+    remoteSkillPending.delete(key)
+  }
+}
+
+/** A skill installed on a host changes its menu on the next refresh. */
+export function forgetRemoteSkills(machine) {
+  const key = String(machine || '')
+  if (!key) return
+  const next = { ...workspaces.remoteSkills }
+  delete next[key]
+  workspaces.remoteSkills = next
 }
 
 export async function loadLibrary({ force = false } = {}) {

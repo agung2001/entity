@@ -22,6 +22,7 @@ const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const machineScan = require('./machine-scan.cjs')
+const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const { createRunner } = require('./runner-local.cjs')
@@ -164,6 +165,7 @@ function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {})
     'ssh.hosts': () => localData.readSshHosts(),
     'ssh.probe': ({ alias }) => localData.probeSshHost(String(alias || '')),
     'skills.scan': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
+    'skills.remote': ({ machine } = {}) => remoteRunner.listSkills(machine),
 
     /* remote workspace sync: one connection per workspace, kept in
        <ws>/.remote.json and <ws>/.remote.token (0600) */

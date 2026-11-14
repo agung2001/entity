@@ -800,7 +800,9 @@ watch(
           <div v-else-if="helpTab === 'mentions'" class="help-mentions">
             <p class="help-lede">
               A mention owns the text after it, up to the next <code class="mono">@</code>. A name that
-              does not exist stops the message; a search that finds nothing only adds a note.
+              does not exist stops the message; a search that finds nothing only adds a note. On a remote
+              thread, <code class="mono">@@</code> resolves locally while a single <code class="mono">@</code>
+              belongs to the remote context.
             </p>
             <div v-for="row in [
               { token: '@py-agent fix the build', what: 'That entity runs the job first, and its answer is injected into this turn. At most two per message.' },
@@ -859,10 +861,12 @@ watch(
               <span>{{ row.what }}</span>
             </div>
             <p class="help-note">
-              Type <code class="mono">/</code> to see what is available. A name this app owns that does
-              not resolve is an error, so a typo never becomes an answer without the skill. On a remote
-              target, a single <code class="mono">/workspace:</code> expects the skill to already exist
-              there; <code class="mono">//workspace:</code> sends the local copy and backs up the previous one.
+              Type <code class="mono">/</code> to see what is available. A remote thread lists that host's
+              skills; type <code class="mono">//</code> to browse this machine's skills instead. A name this
+              app owns that does not resolve is an error, so a typo never becomes an answer without the
+              skill. On a remote target, a single <code class="mono">/workspace:</code> expects the skill to
+              already exist there; <code class="mono">//workspace:</code> sends the local copy and backs up
+              the previous one.
             </p>
           </div>
         </div>

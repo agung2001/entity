@@ -987,6 +987,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     const mentioned = await mentionRef.rewrite(record, applied.text, {
       entity,
       machine: thread.machine,
+      localOnly: thread.machine !== 'local',
     })
     turnMentions = mentioned.mentions
     thread.messages.push({

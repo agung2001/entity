@@ -131,11 +131,13 @@ The message box is for the prompt. Attachments belong in a tray below it.
 - Skills are not attachments in the `@` language. They keep the slash forms
   from Composer help: `/workspace:<name>`, `/<harness>:<name>`, `/<name>`.
 - A **single** slash resolves against the active execution context. On a remote
-  thread that means the skill must already exist on the target.
+  thread that means the skill must already exist on the target, and the `/` menu
+  lists that host's skills.
 - **Double** slash (`//workspace:<name>`, `//<harness>:<name>`, `//<name>`) sends
   the local copy; on remote it installs there and backs up the previous skill.
-- Double at (`@@<mention>`) marks a local mention. Use it when a remote thread
-  must resolve the value from this machine.
+  The `//` menu deliberately lists this machine's skills, not the remote host's.
+- Double at (`@@<mention>`) marks a local mention. A single `@` belongs to the
+  thread's execution context; a remote thread must not resolve it locally.
 - Every attachment token shown in the UI must appear in **Composer help** in the
   same change. Do not invent a token that the help does not document.
 - Remote `@file` uploads are temporary; remote `/workspace:` skills are

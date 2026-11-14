@@ -16,6 +16,7 @@ const path = require('node:path')
 const { execFile } = require('node:child_process')
 const { spawnTracked, killTree } = require('./child-registry.cjs')
 const workspaces = require('./workspace-store.cjs')
+const localData = require('./local-data.cjs')
 const skillRef = require('./skill-ref.cjs')
 const platform = require('./platform-brief.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
@@ -50,7 +51,26 @@ const SKILL_ROOTS = {
   antigravity: '.gemini/antigravity/skills',
 }
 
+const SKILL_LABELS = {
+  pi: 'pi',
+  claude: 'Claude Code',
+  opencode: 'opencode',
+  codex: 'Codex CLI',
+  gemini: 'Gemini CLI',
+  antigravity: 'Antigravity',
+}
+const SKILL_LIST_ROOTS = {
+  pi: ['.pi/agent/skills'],
+  claude: ['.claude/skills'],
+  opencode: ['.config/opencode/skills', '.opencode/skills'],
+  codex: ['.codex/skills'],
+  gemini: ['.gemini/skills'],
+  antigravity: ['.gemini/antigravity/skills', '.antigravity/skills'],
+}
+
 const homeCache = new Map()
+const skillCache = new Map()
+const SKILL_CACHE_MS = 30_000
 const clean = (value) => String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
 const quote = platform.shellQuote
 
@@ -249,6 +269,7 @@ async function installRemoteSkill({ alias, harness, skill }) {
         `mv ${quote(temp)} ${quote(target)}`,
       ].join(' && '),
     )
+    clearSkillCache(alias)
     return { target, backup, harness, name: skill.name }
   } finally {
     fs.rmSync(localParent, { recursive: true, force: true })
@@ -429,9 +450,60 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
   }
 }
 
+async function listSkills(alias) {
+  const target = String(alias || '').trim()
+  if (!target || target === 'local' || target.startsWith('-')) {
+    throw new Error('Pick a remote host to list skills.')
+  }
+  const fleet = localData.readSshHosts()
+  if (!fleet.hosts.some((host) => host.alias === target || host.aliases?.includes(target))) {
+    throw new Error(`${target} is not in ~/.ssh/config.`)
+  }
+  const cached = skillCache.get(target)
+  if (cached && Date.now() - cached.at < SKILL_CACHE_MS) return cached.value
+
+  const script = []
+  for (const [harness, roots] of Object.entries(SKILL_LIST_ROOTS)) {
+    for (const root of roots) {
+      script.push(
+        `for d in "$HOME/${root}"/*; do [ -d "$d" ] && printf '${harness}\t%s\t%s\n' "$(basename "$d")" "$d"; done`,
+      )
+    }
+  }
+  script.push('true')
+  const text = await sshText(target, script.join('\n'), { timeout: 20_000 })
+  const seen = new Set()
+  const items = []
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const [harness, name, skillPath] = line.split('\t')
+    if (!harness || !name) continue
+    const key = `${harness}:${name}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push({
+      name,
+      harness,
+      harnessLabel: SKILL_LABELS[harness] || harness,
+      path: skillPath || '',
+      machine: target,
+    })
+  }
+  items.sort((a, b) => a.harness.localeCompare(b.harness) || a.name.localeCompare(b.name))
+  const value = { machine: target, items, count: items.length, scannedAt: new Date().toISOString() }
+  skillCache.set(target, { at: Date.now(), value })
+  return value
+}
+
+function clearSkillCache(alias) {
+  if (!alias) skillCache.clear()
+  else skillCache.delete(String(alias))
+}
+
 module.exports = {
   run,
   rewriteSkill,
+  listSkills,
+  clearSkillCache,
   buildScript,
   stageFiles,
   SKILL_ROOTS,

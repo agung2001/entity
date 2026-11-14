@@ -737,7 +737,7 @@ function blockFor(segments, notes) {
  * `deps` is a test seam only: production callers pass nothing and get the real
  * Orca CLI, the real MCP client, and a real entity sub-run.
  */
-async function rewrite(record, text, { entity = null, machine = 'local', deps = {} } = {}) {
+async function rewrite(record, text, { entity = null, machine = 'local', localOnly = false, deps = {} } = {}) {
   const source = String(text || '')
   const { segments } = parse(source)
   if (!segments.length) return { text: source, mentions: [] }
@@ -754,12 +754,13 @@ async function rewrite(record, text, { entity = null, machine = 'local', deps = 
     ),
   }
 
-  const entitiesToRun = segments.filter((segment) => segment.kind === 'entity')
+  const candidates = localOnly ? segments.filter((segment) => segment.local) : segments
+  const entitiesToRun = candidates.filter((segment) => segment.kind === 'entity')
   const skipped = entitiesToRun.slice(MAX_ENTITY_RUNS)
   for (const segment of skipped) ctx.notes.push(`${segment.raw} skipped: at most ${MAX_ENTITY_RUNS} entity mentions per message`)
 
   await Promise.all(
-    segments
+    candidates
       .filter((segment) => segment.kind !== 'unknown' && !skipped.includes(segment))
       .map((segment) => resolveOne(ctx, segment)),
   )

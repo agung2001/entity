@@ -557,13 +557,27 @@ const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
  * `machine` is the thread's machine. Only this machine's libraries can be read,
  * so a thread pinned anywhere else gets an empty menu and the composer's own
  * one-line explanation instead of a list of local paths. */
-export function slashMenu(value, agent, machine = 'local') {
-  const parts = String(value || '').split(/\s/)
-  if (!value?.startsWith('/') || parts.length !== 1) return []
+export function slashMenu(value, agent, machine = 'local', remoteItems = [], localPrefix = false) {
+  const raw = String(value || '')
+  const parts = raw.split(/\s/)
+  if (!raw.startsWith('/') || parts.length !== 1) return []
 
-  const q = parts[0].slice(1).toLowerCase()
+  const prefix = localPrefix || raw.startsWith('//') ? '//' : '/'
+  const q = raw.slice(prefix.length).toLowerCase()
+  const remote = machine !== 'local' && prefix === '/'
+
+  if (remote) {
+    return (remoteItems || [])
+      .filter((skill) => `${skill.harness}:${skill.name}`.toLowerCase().includes(q))
+      .map((skill) => ({
+        name: `/${skill.harness}:${skill.name}`,
+        desc: `${skill.harnessLabel || skill.harness} skill on ${machine}`,
+        kind: 'harness',
+      }))
+      .slice(0, 500)
+  }
+
   const own = new Set((agent?.skills || []).map((name) => name.toLowerCase()))
-
   const attachedItems = hub.skills.filter(
     (skill) => !skill.missing && SKILL_REF_NAME.test(skill.name),
   )
@@ -581,7 +595,7 @@ export function slashMenu(value, agent, machine = 'local') {
   ]
   for (const name of workspaceNames) {
     items.push({
-      name: `/workspace:${name}`,
+      name: `${prefix}workspace:${name}`,
       desc: own.has(name.toLowerCase())
         ? 'Skill this entity carries'
         : 'Skill attached to this workspace',
@@ -589,10 +603,6 @@ export function slashMenu(value, agent, machine = 'local') {
     })
   }
 
-  /* Every harness library is offered, not only the entity's own harness: a
-     `/claude:<name>` reference is valid from a pi or codex thread too, because
-     the backend resolves the namespace to that harness's library. The current
-     harness's skills come first, then the rest. */
   const harnessOrder = [...new Set([agent?.harness, ...harnesses.items.map((h) => h.id)])]
   const rank = (id) => {
     const at = harnessOrder.indexOf(id)
@@ -610,17 +620,15 @@ export function slashMenu(value, agent, machine = 'local') {
 
   for (const skill of harnessSkills) {
     items.push({
-      name: `/${skill.harness}:${skill.name}`,
+      name: `${prefix}${skill.harness}:${skill.name}`,
       desc: `${skill.harnessLabel} skill on this machine`,
       kind: 'harness',
     })
   }
 
-  /* A bare `/` should reach the harness libraries, so the cap is high enough to
-     hold a whole machine library; the menu scrolls and offers to expand. */
-  /* the composer shows ten at a time and fetches the rest on demand, so keep a
-     generous ceiling rather than hiding a machine's library behind it */
-  return items.filter((item) => item.name.slice(1).toLowerCase().includes(q)).slice(0, 500)
+  return items
+    .filter((item) => item.name.slice(prefix.length).toLowerCase().includes(q))
+    .slice(0, 500)
 }
 
 /* ── chat ─────────────────────────────────────────────────────────── */

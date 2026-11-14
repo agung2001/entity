@@ -368,3 +368,10 @@ test('a double at marks a local mention and keeps the token', () => {
   assert.equal(parsed.segments[0].local, true)
   assert.equal(mention.tokenOf(parsed.segments[0]), '@@py-agent')
 })
+
+test('localOnly leaves a single-at mention for the remote context', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, '@py-agent fix the build', { localOnly: true, deps: deps() })
+  assert.equal(out.text, '@py-agent fix the build')
+  assert.deepEqual(out.mentions, [])
+})
