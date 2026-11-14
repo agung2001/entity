@@ -1,8 +1,9 @@
 name: Release
 
-# Pushing a version tag (v0.0.1, v1.2.0, …) builds the installers and publishes
-# them to a GitHub Release with the same tag. No long-lived certificate or
-# signing secret is required: the macOS and Windows builds are unsigned.
+# Pushing a version tag (v0.0.1, v1.2.0, …) builds the desktop installers,
+# publishes them to a GitHub Release, and pushes a matching container image to
+# GHCR. No long-lived certificate or signing secret is required: the macOS and
+# Windows builds are unsigned.
 on:
   push:
     tags:
@@ -10,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -81,6 +83,50 @@ jobs:
           name: entity-windows
           path: release/*.exe
           if-no-files-found: error
+
+  container:
+    name: Container image (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=Entity
+            org.opencontainers.image.description=Local-first hub for AI assistant entities
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
 
   publish:
     name: Publish release

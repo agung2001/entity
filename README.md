@@ -253,13 +253,14 @@ npm run dev:desktop      # Vite + Electron, HMR included
 | `npm run test:e2e` | Both Playwright packs |
 | `npm run test:gate` | Unit + smoke — the release gate |
 | `npm run package` | Builds a distributable with electron-builder → `release/` |
-| `git tag v0.0.1 && git push origin v0.0.1` | Builds macOS and Windows installers and publishes them to a GitHub Release |
+| `git tag v0.0.1 && git push origin v0.0.1` | Builds macOS and Windows installers, publishes a GitHub Release, and pushes the container image to GHCR |
 | `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
 
 Tag builds are unsigned: macOS may ask you to open the app from **System
 Settings → Privacy & Security**, and Windows SmartScreen may warn before running
 the installer. The workflow uses the tag as the app version, so `v0.0.1`
-produces installers named `0.0.1`.
+produces installers named `0.0.1` and the image tag `ghcr.io/agung2001/entity:0.0.1`
+(also `:v0.0.1`, `:0.0`, and `:latest`).
 
 The default E2E packs start their own server on port **5199** and seed a
 throwaway profile under `.tmp/` — no real account, workspace, SSH host or MCP
@@ -527,6 +528,19 @@ docker compose exec -e ENTITY_NEW_PASSWORD='a long password' entity \
 
 Then sign in, create a workspace, and add the teammate's email under Workspace
 settings → Members.
+
+Tagged builds also publish a container image to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/agung2001/entity:v0.0.1
+```
+
+Use it as the `image:` in a compose file (or `docker run`) instead of building
+locally. The image is `linux/amd64` and runs as uid 10001 with no writable root
+filesystem; mount `/data` for workspaces and keep the same `ENTITY_ADMIN_*` and
+`ENTITY_SECURE_COOKIE` settings as the compose example. If the GHCR package is
+private, either authenticate with `docker login ghcr.io` or make the package
+public in its GitHub package settings.
 
 `docker-compose.yml` publishes **port 1020** and nothing else. Point nginx at it
 (`proxy_pass http://127.0.0.1:1020;`), forward `Host`, set

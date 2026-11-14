@@ -6,6 +6,9 @@ release
 .gitignore
 .github
 reports
+.tmp
+test-results
+playwright-report
 *.log
 .DS_Store
 .vite
