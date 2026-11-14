@@ -45,6 +45,20 @@ test('the machine capability page brands harnesses and offers search', () => {
   assert.match(text, /type="search"/, 'the harness/model inventory needs a search input')
 })
 
+test('the thread metadata drawer is dismissible and belongs to the chat header', () => {
+  const panel = fs.readFileSync(
+    path.join(SRC, 'components', 'ThreadMetadataPanel.vue'),
+    'utf8',
+  )
+  assert.match(panel, /useDialogDismiss\s*\(/, 'the drawer must register an Escape entry')
+  assert.match(panel, /aria-label="Close thread metadata"/, 'the drawer needs a close button')
+  assert.match(panel, /type="search"/, 'a list of links and paths needs a visible filter')
+
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  assert.match(chat, /<ThreadMetadataPanel\b/, 'the chat owns the drawer')
+  assert.match(chat, /matchesShortcut\('metadata'/, 'the catalog entry needs a handler')
+})
+
 test('every modal registers an Escape handler', () => {
   const modals = FILES.filter((entry) => /class="[^"]*\bmodal\b/.test(entry.text))
   assert.ok(modals.length > 0, 'expected at least one modal in src/')
@@ -91,7 +105,7 @@ test('the shortcut catalog is well formed and unique', () => {
   }
   const ids = [...catalog.matchAll(/^\s{8}id: '([a-z-]+)',$/gm)].map((match) => match[1])
   assert.equal(new Set(ids).size, ids.length, 'duplicate shortcut ids')
-  for (const id of ['palette', 'rail', 'theme', 'new-thread', 'escape', 'guide', 'focus', 'send', 'timeline']) {
+  for (const id of ['palette', 'rail', 'theme', 'new-thread', 'escape', 'guide', 'focus', 'send', 'timeline', 'metadata']) {
     assert.ok(ids.includes(id), `missing shortcut ${id}`)
   }
 })

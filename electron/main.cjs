@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
+const { execFile } = require('node:child_process')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
@@ -21,7 +22,54 @@ function focusWindow() {
   mainWindow.focus()
 }
 
-/** Native notifications in the desktop app; the renderer still owns the copy. */
+/**
+ * Open one file in VS Code from the thread-metadata panel.
+ *
+ * `code` is the portable route. macOS falls back to the app bundle when the
+ * CLI was never installed; Windows resolves the install path instead of going
+ * through `cmd.exe`, because the target is a user path and no shell is used.
+ */
+function runEditor(bin, args) {
+  return new Promise((resolve, reject) => {
+    execFile(bin, args, { timeout: 8000, windowsHide: true }, (error) => {
+      if (error) return reject(error)
+      resolve()
+    })
+  })
+}
+
+async function openInEditor(target) {
+  const candidates = []
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA || ''
+    candidates.push(['code.cmd', ['--reuse-window', target]])
+    if (local) {
+      candidates.push([
+        path.join(local, 'Programs', 'Microsoft VS Code', 'Code.exe'),
+        ['--reuse-window', target],
+      ])
+    }
+  } else if (process.platform === 'darwin') {
+    candidates.push(['code', ['--reuse-window', target]])
+    candidates.push(['open', ['-a', 'Visual Studio Code', target]])
+  } else {
+    candidates.push(['code', ['--reuse-window', target]])
+    candidates.push(['code-insiders', ['--reuse-window', target]])
+  }
+
+  for (const [bin, args] of candidates) {
+    try {
+      await runEditor(bin, args)
+      return { editor: 'vscode', app: bin }
+    } catch {
+      /* try the next route */
+    }
+  }
+  throw new Error(
+    'VS Code was not found. Install it and make the `code` command available, then try again.',
+  )
+}
+
 function showNotification({ title, body, route, tag } = {}) {
   if (!Notification.isSupported()) return false
   const note = new Notification({
@@ -122,6 +170,13 @@ app.whenReady().then(() => {
   rpc = createRpc({
     emit: broadcast,
     reveal: (file) => shell.showItemInFolder(file),
+    /* `openPath` resolves to an error message, not a rejection. */
+    openPath: async (target) => {
+      const error = await shell.openPath(target)
+      if (error) throw new Error(error)
+    },
+    openExternal: (url) => shell.openExternal(url),
+    openInEditor,
   })
 
   /* An agent that rewrites its own instructions writes a file this process did

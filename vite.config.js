@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -31,25 +31,95 @@ function registry() {
  * them, and the renderer shows an honest empty state instead of inventing data.
  */
 /**
- * In a browser there is no Electron shell, so the dev server performs the same
- * "reveal in file manager" action the desktop app does. Without this the
- * Reveal button looked alive but had nowhere to go.
+ * The browser has no Electron shell, so the dev server performs the same
+ * actions: reveal a file, open a folder, open a web link, open VS Code. A
+ * missing binary rejects, which reaches the renderer as an honest toast
+ * instead of a button that looks alive and does nothing.
+ *
+ * `spawn` is used directly (never a shell) so a path with spaces or `&` is one
+ * argument to the program, not syntax.
  */
+function runDetached(cmd, args) {
+  return new Promise((resolve, reject) => {
+    let child
+    try {
+      child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
+    } catch (error) {
+      reject(error)
+      return
+    }
+    child.once('error', reject)
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
+  })
+}
+
 function revealFile(file) {
   const target = path.resolve(String(file || ''))
-  const open = (cmd, args) => {
+  if (process.platform === 'darwin') return runDetached('open', ['-R', target])
+  if (process.platform === 'win32') return runDetached('explorer.exe', ['/select,', target])
+  return runDetached('xdg-open', [path.dirname(target)])
+}
+
+function openFolder(dir) {
+  const target = path.resolve(String(dir || ''))
+  if (process.platform === 'win32') return runDetached('explorer.exe', [target])
+  if (process.platform === 'darwin') return runDetached('open', [target])
+  return runDetached('xdg-open', [target])
+}
+
+function openExternal(url) {
+  const target = String(url || '')
+  if (!/^https?:\/\//i.test(target)) throw new Error('Only web links can be opened here.')
+  if (process.platform === 'win32') {
+    return runDetached('rundll32.exe', ['url.dll,FileProtocolHandler', target])
+  }
+  if (process.platform === 'darwin') return runDetached('open', [target])
+  return runDetached('xdg-open', [target])
+}
+
+/** The editor reports success by exiting 0; a missing app must not look opened. */
+function runToExit(cmd, args) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: 8000, windowsHide: true }, (error) => {
+      if (error) return reject(error)
+      resolve()
+    })
+  })
+}
+
+async function openInEditor(target) {
+  const candidates = []
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA || ''
+    candidates.push(['code.cmd', ['--reuse-window', target]])
+    if (local) {
+      candidates.push([
+        path.join(local, 'Programs', 'Microsoft VS Code', 'Code.exe'),
+        ['--reuse-window', target],
+      ])
+    }
+  } else if (process.platform === 'darwin') {
+    candidates.push(['code', ['--reuse-window', target]])
+    candidates.push(['open', ['-a', 'Visual Studio Code', target]])
+  } else {
+    candidates.push(['code', ['--reuse-window', target]])
+    candidates.push(['code-insiders', ['--reuse-window', target]])
+  }
+
+  for (const [cmd, args] of candidates) {
     try {
-      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
-      /* a missing file-manager binary must not take the dev server down */
-      child.on('error', () => {})
-      child.unref()
+      await runToExit(cmd, args)
+      return { editor: 'vscode', app: cmd }
     } catch {
-      /* the toast still reports the path */
+      /* try the next route */
     }
   }
-  if (process.platform === 'darwin') return open('open', ['-R', target])
-  if (process.platform === 'win32') return open('explorer.exe', ['/select,', target])
-  return open('xdg-open', [path.dirname(target)])
+  throw new Error(
+    'VS Code was not found. Install it and make the `code` command available, then try again.',
+  )
 }
 
 function localDataPlugin() {
@@ -80,7 +150,13 @@ function localDataPlugin() {
   function getRpc() {
     if (rpc) return rpc
     const { createRpc } = require(RPC_PATH)
-    rpc = createRpc({ emit: push, reveal: revealFile })
+    rpc = createRpc({
+      emit: push,
+      reveal: revealFile,
+      openPath: openFolder,
+      openExternal,
+      openInEditor,
+    })
     return rpc
   }
 

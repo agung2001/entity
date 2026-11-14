@@ -358,6 +358,27 @@ stays on the assistant message, so there is no second copy anywhere.
   remove only see that account's threads, even in a shared workspace.
 - The right-edge outline draws one tick per message and opens a jump card.
 
+### The links and paths are a second view
+
+A thread's useful residue — the YouTrack issue, the PR it opened, the files it
+read, the folder it worked in — is scattered across answers and tool output. The
+panel button in the chat header opens a drawer with that residue, newest first:
+
+- **Links** — every URL in the transcript, including resolved `@youtrack:` and
+  `@orca:` mentions. Click one to open it in your browser; the copy button puts
+  it on the clipboard.
+- **Paths** — files and folders the conversation mentioned, relative to the
+  directory the turn actually ran in. Click a row for **Reveal in Finder /
+  File Explorer** (a folder opens directly) or **Open in VS Code** for a file;
+  every row also copies its absolute path.
+- Only paths that exist on this machine are listed. A remote thread lists its
+  paths but offers copy only, because opening them here would look at the wrong
+  machine.
+- Nothing is stored twice: the drawer is derived from the thread's own messages
+  and tool calls on demand, so it cannot disagree with the chat.
+
+[Where it lives →](electron/thread-metadata.cjs)
+
 ### Skills are called, not just declared
 
 | reference | resolves to |

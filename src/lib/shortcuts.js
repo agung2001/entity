@@ -106,6 +106,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'E'],
       },
       {
+        id: 'metadata',
+        label: 'Thread metadata',
+        desc: 'Show the links and paths this conversation mentions.',
+        desktop: ['mod', '/'],
+        browser: ['alt', '/'],
+      },
+      {
         id: 'prev-chat',
         label: 'Previous conversation',
         desc: 'Move to the previous conversation in the rail.',
@@ -173,7 +180,7 @@ function comboMatches(event, combo) {
   if (!event || !combo || !combo.length) return false
   const wants = (token) => combo.includes(token)
   const letter = combo.find((token) => /^[a-z0-9]$/i.test(token))
-  const symbol = combo.find((token) => ['[', ']'].includes(token))
+  const symbol = combo.find((token) => token.length === 1 && !/[a-z0-9]/i.test(token))
   const special = combo.find((token) => ['enter', 'esc', '?'].includes(token))
 
   /* `?` is Shift+/ on most layouts, so the shift flag is part of the key
@@ -190,9 +197,22 @@ function comboMatches(event, combo) {
   if (special === 'enter') return event.key === 'Enter'
   if (special === 'esc') return event.key === 'Escape'
   if (symbol) {
+    const codes = {
+      '[': 'BracketLeft',
+      ']': 'BracketRight',
+      '/': 'Slash',
+      ',': 'Comma',
+      '.': 'Period',
+      '-': 'Minus',
+      '=': 'Equal',
+      ';': 'Semicolon',
+      "'": 'Quote',
+      '`': 'Backquote',
+    }
     return (
       event.key === symbol ||
-      event.code === (symbol === '[' ? 'BracketLeft' : 'BracketRight')
+      event.code === codes[symbol] ||
+      (symbol === '/' && event.code === 'NumpadDivide')
     )
   }
   if (!letter) return false

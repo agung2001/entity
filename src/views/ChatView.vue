@@ -10,6 +10,7 @@ import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
+import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { colorById, markFor, playReaction } from '@/composables/entityMark'
@@ -53,6 +54,7 @@ const helpOpen = ref(false)
 const helpTab = ref('keys')
 const harnessOpen = ref(false)
 const mcpOpen = ref(false)
+const metadataOpen = ref(false)
 const composer = ref(null)
 const dragDepth = ref(0)
 const focusMessage = ref(-1)
@@ -65,6 +67,7 @@ let offEvent = null
 /* Every combo comes from the catalog in `src/lib/shortcuts.js`, which also
    renders the guide in the top bar. */
 const timelineShortcut = shortcutLabel('timeline')
+const metadataShortcut = shortcutLabel('metadata')
 const sendShortcut = shortcutLabel('send')
 const focusShortcut = shortcutLabel('focus')
 
@@ -225,6 +228,14 @@ const latestTrace = computed(() => {
 
 const canTimeline = computed(() => Boolean(live.value || latestTrace.value))
 
+/* What the metadata drawer watches: new messages, new tool steps, and the
+   growing text of the step that is streaming right now. */
+const metadataRevision = computed(() => {
+  const steps = live.value?.steps || []
+  const last = steps[steps.length - 1]
+  return `${thread.value?.messages.length || 0}:${steps.length}:${last?.content?.length || 0}`
+})
+
 function startThread() {
   if (!hub.agents.length) return
   newOpen.value = true
@@ -269,6 +280,13 @@ function onChatKey(event) {
     event.preventDefault()
     event.stopPropagation()
     timelineOpen.value = true
+    return
+  }
+
+  if (matchesShortcut('metadata', event) && thread.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    metadataOpen.value = !metadataOpen.value
   }
 }
 
@@ -483,6 +501,7 @@ watch(
     timelineOpen.value = false
     harnessOpen.value = false
     mcpOpen.value = false
+    metadataOpen.value = false
     await openInitialThread()
   },
 )
@@ -620,6 +639,23 @@ watch(
                 <span>Timeline</span>
                 <kbd class="trace-kbd">{{ timelineShortcut }}</kbd>
               </button>
+              <button
+                class="trace-open tmeta-toggle"
+                type="button"
+                :data-on="metadataOpen ? '1' : '0'"
+                aria-controls="thread-metadata"
+                :aria-expanded="metadataOpen ? 'true' : 'false'"
+                :title="`Thread metadata (${metadataShortcut})`"
+                :aria-label="`Thread metadata (${metadataShortcut})`"
+                @click="metadataOpen = !metadataOpen"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+                  <rect x="2" y="2.6" width="12" height="10.8" rx="1.6" />
+                  <path d="M10.2 2.6v10.8" />
+                </svg>
+                <span>Metadata</span>
+                <kbd class="trace-kbd">{{ metadataShortcut }}</kbd>
+              </button>
             </div>
           </header>
 
@@ -730,6 +766,16 @@ watch(
             >New thread</router-link>
           </div>
         </section>
+
+        <ThreadMetadataPanel
+          v-if="thread"
+          :open="metadataOpen"
+          :workspace="hub.workspace"
+          :thread-id="hub.chat.active"
+          :machine="thread.machine || 'local'"
+          :revision="metadataRevision"
+          @close="metadataOpen = false"
+        />
       </div>
     </div>
 

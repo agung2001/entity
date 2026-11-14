@@ -185,6 +185,11 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | The first inventory row has a double border | Use one separator system: no container top border plus row borders | Review |
 | “No models” is repeated in the summary and the body | Keep the summary to `0 models`; explain once in the body/tooltip | Review |
 | An inventory row is taller than a normal list row | Keep 8px vertical padding and details behind the disclosure | Review |
+| A metadata row lists a path that cannot be opened | Only list paths that `fs.statSync` found, and re-check before acting | `thread-metadata.cjs` |
+| The renderer names the path the main process opens | `thread.pathAction` re-derives the metadata and accepts only a member of it | `electron/rpc.cjs` |
+| A drawer is only closable by its X button | Register it with `useDialogDismiss`, like a modal | `npm test` (drawer contract) |
+| Metadata repeats a second store that can disagree with the chat | Derive it from the transcript; do not persist a copy | Review |
+| A remote thread offers "Reveal in Finder" for a path on another machine | Mark the thread remote, keep copy, and hide local open actions | `ThreadMetadataPanel.vue` |
 
 ## Surfaces and where they live
 
@@ -200,6 +205,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Remote connect / status | `RemoteConnectDialog.vue`, `RemoteSyncPanel.vue` | Esc, scrim, X (connect guarded while busy) |
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
+| Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
 
 ## The guide in the top bar
 
@@ -229,6 +235,30 @@ loading state.
 - An `@entity` mention is a sub-run, not the outer thread. Show the delegated
   entity, its answer and its trace separately from the outer entity's reply; the
   outer entity must not appear to have run the child's tools.
+
+## Thread metadata shows what the chat left behind
+
+A long thread's useful residue — the YouTrack issue, the PR, the files it read,
+the folder it worked in — is spread across answers, tool calls and tool output.
+The drawer in the chat header is a second view of that same transcript, not a
+second store.
+
+- It is **derived** by `electron/thread-metadata.cjs` from the thread's text, tool
+  `input`/`output`, resolved mentions and attachments. Do not persist a parallel
+  list that can drift from the messages.
+- **URLs** are rows you click to open in the browser; each has a copy button.
+  Markdown labels are kept, otherwise a YouTrack id or `repo#42` names the row.
+- **Paths** are only listed when they exist on this machine. A row opens a
+  reveal/open action set: a file reveals in Finder/Explorer and can open in VS
+  Code; a folder opens in Finder/Explorer. Every row also copies its absolute
+  path.
+- A **remote** thread cannot be stat'ed from here: keep the path candidates, mark
+  them `remote`, and offer copy only. Never show a local action that would look
+  at the wrong filesystem.
+- The list is newest-first, capped, and has a visible filter. Empty, loading,
+  filtered-empty and error states each say something; do not render a blank panel.
+- The drawer is closed by default. Its toggle is a header button and a catalog
+  shortcut; `Esc` folds an expanded path row first, then closes the drawer.
 
 ## Loading budget
 
@@ -278,6 +308,8 @@ build` prints the chunk list — the entry chunk should not grow without a reaso
    targets a rail, resolve the active rail instead of a fixed component.
 9. For inventory rows, test zero data, hundreds of items, one separator system,
    and a compact summary. Details belong in the expanded body.
-10. If the change taught you a new failure mode, add a row to **Common
+10. If the page lists links or paths, derive them from the transcript, stat every
+    local path, and validate membership again in the main process before acting.
+11. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.

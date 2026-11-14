@@ -25,9 +25,17 @@ const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
 const remoteSync = require('./remote-sync.cjs')
+const threadMetadata = require('./thread-metadata.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
-function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {}) {
+function createRpc({
+  emit = () => {},
+  reveal = null,
+  openPath = null,
+  openExternal = null,
+  openInEditor = null,
+  identity = null,
+} = {}) {
   const runner = createRunner({ emit })
   /* A six-hour poll plus a debounce after the watcher reports a local edit.
      `start` is idempotent, so a dev-server reload does not stack timers. */
@@ -123,9 +131,24 @@ function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {})
     'artifact.root': (args) => artifacts.rootPath(args),
     'artifact.reveal': (args) => {
       const found = artifacts.locate(args)
+      if (typeof reveal !== 'function') throw new Error('Revealing files is not available in this build.')
       reveal(found.file)
       return found
     },
+
+    /* thread metadata: links and paths mentioned in a conversation */
+    'thread.metadata': (args) => threadMetadata.inspect(args),
+    'thread.pathAction': async ({ workspace, id, path: target, action } = {}) => {
+      /* Re-derive first: the renderer may only act on a path this thread
+         actually mentions, not on one it made up. */
+      const metadata = threadMetadata.inspect({ workspace, id })
+      return threadMetadata.performPathAction(metadata, {
+        target,
+        action,
+        handlers: { reveal, openPath, openInEditor },
+      })
+    },
+    'link.open': ({ url } = {}) => threadMetadata.openLink(url, openExternal),
 
     /* entity files */
     'entity.list': ({ workspace }) => entities.list(workspace),
@@ -137,6 +160,7 @@ function createRpc({ emit = () => {}, reveal = () => {}, identity = null } = {})
     'entity.remove': (args) => entities.remove(args),
     'entity.reveal': ({ workspace, name }) => {
       const file = entities.locate({ workspace, name })
+      if (typeof reveal !== 'function') throw new Error('Revealing files is not available in this build.')
       reveal(file)
       return { file }
     },

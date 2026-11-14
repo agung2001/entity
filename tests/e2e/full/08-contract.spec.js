@@ -43,6 +43,34 @@ test.describe('UI contract', () => {
     }
   })
 
+  test('thread metadata lists the links and paths the conversation mentions', async ({ page }) => {
+    await openChat(page)
+    await newThread(page, { entity: 'chief-of-staff' })
+    await sendMessage(
+      page,
+      'E2E-METADATA see https://example.com/acme and entities/chief-of-staff.md',
+    )
+    await waitForAnswer(page, 'E2E-STUB-OK')
+
+    await page.getByRole('button', { name: /Thread metadata/ }).click()
+    const drawer = page.locator('#thread-metadata')
+    await expect(drawer).toHaveAttribute('data-open', '1')
+
+    const link = drawer.getByRole('link', { name: /example\.com\/acme/ })
+    await expect(link).toHaveAttribute('href', 'https://example.com/acme')
+
+    await drawer.getByText('chief-of-staff.md', { exact: true }).click()
+    await expect(drawer.getByRole('button', { name: /^Reveal in/ })).toBeVisible()
+    await expect(drawer.getByRole('button', { name: 'Open in VS Code' })).toBeVisible()
+
+    /* first Escape folds the path row, the second closes the drawer */
+    await page.keyboard.press('Escape')
+    await expect(drawer.getByRole('button', { name: 'Open in VS Code' })).toHaveCount(0)
+    await expect(drawer).toHaveAttribute('data-open', '1')
+    await page.keyboard.press('Escape')
+    await expect(drawer).toHaveAttribute('data-open', '0')
+  })
+
   test('typing ? in the composer does not open the app guide', async ({ page }) => {
     await openChat(page)
     await newThread(page, { entity: 'chief-of-staff' })
