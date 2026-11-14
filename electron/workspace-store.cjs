@@ -881,14 +881,14 @@ function exportWorkspace({ id } = {}) {
   }
 }
 
-function uniqueImportId(label) {
+function uniqueWorkspaceId(label) {
   const base = slugify(label) || 'workspace'
   if (!fs.existsSync(path.join(WORKSPACES_DIR, base))) return base
   for (let n = 2; n < 1000; n += 1) {
     const candidate = `${base}-${n}`
     if (!fs.existsSync(path.join(WORKSPACES_DIR, candidate))) return candidate
   }
-  throw new Error('Could not find a free workspace id for the import.')
+  throw new Error('Could not find a free workspace id for the import or restore.')
 }
 
 function importWorkspace({ bundle } = {}) {
@@ -897,7 +897,7 @@ function importWorkspace({ bundle } = {}) {
     throw new Error('That file is not an entity workspace bundle.')
   }
   const label = String(bundle.workspace?.label || 'Imported workspace').trim().slice(0, 80) || 'Imported workspace'
-  const id = uniqueImportId(label)
+  const id = uniqueWorkspaceId(label)
   const final = path.join(WORKSPACES_DIR, id)
   fs.mkdirSync(WORKSPACES_DIR, { recursive: true })
   const staging = path.join(WORKSPACES_DIR, `.tmp-import-${id}-${process.pid}`)
@@ -1115,6 +1115,7 @@ module.exports = {
   setMcpEnabled,
   exportWorkspace,
   importWorkspace,
+  uniqueWorkspaceId,
   remove,
   writeFileAtomic,
   writeJson,

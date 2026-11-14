@@ -190,6 +190,12 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | A drawer is only closable by its X button | Register it with `useDialogDismiss`, like a modal | `npm test` (drawer contract) |
 | Metadata repeats a second store that can disagree with the chat | Derive it from the transcript; do not persist a copy | Review |
 | A remote thread offers "Reveal in Finder" for a path on another machine | Mark the thread remote, keep copy, and hide local open actions | `ThreadMetadataPanel.vue` |
+| A backup reuses the export bundle and loses the workspace context | Snapshot the workspace into a ZIP; keep `workspace.json` intact | `backup-store.cjs` |
+| A backup folder can be set inside the workspace | Reject any target whose workspace subfolder is inside the workspace | `backup-store.cjs` |
+| Changing the folder strands the old ZIPs | Move them to the new folder, roll back on a failed move | `backup-store.cjs` |
+| A restore overwrites the workspace in use | Restore into a new workspace id and label | `backup-store.cjs` |
+| A snapshot carries `.remote.token` or harness logs | Exclude secrets and `runs/`; document it on the page | `backup-store.cjs` |
+| The backup timer only runs when the settings page is open | Start one unref'd timer with the call table | `electron/rpc.cjs` |
 
 ## Surfaces and where they live
 
@@ -259,6 +265,33 @@ second store.
   filtered-empty and error states each say something; do not render a blank panel.
 - The drawer is closed by default. Its toggle is a header button and a catalog
   shortcut; `Esc` folds an expanded path row first, then closes the drawer.
+
+## Backups are copies, not exports
+
+The backups page (Account → Backups) owns a schedule and a shelf; it is not a
+one-off export button. One main-process timer, one retention policy, one snapshot
+format — do not add a second backup path that writes somewhere else.
+
+- A snapshot is **one ZIP** under `<target>/<workspace-id>/<timestamp>.zip`, with a
+  `backup.json` manifest. The workspace is at the archive root. Do not reuse the
+  export bundle: it is a portable hand-off, not a backup, and it omits the
+  workspace context and run state.
+- The **target folder** is per workspace, defaults to `~/.entity/backups`, and must
+  be outside the workspace (otherwise the archive tries to contain itself). It is
+  stored in `backups/settings.json`, not in the target, so moving the folder keeps
+  the schedule. Changing it moves the existing ZIPs and rolls back if a move fails.
+- The desktop uses `dialog.showOpenDialog`; a browser build types the path. Both
+  reach the same `backup.setDirectory` validation.
+- Leave secrets and transient state out: `.remote.token`, `.remote.json`,
+  `.remote-trash/`, `.bin/` and `runs/`. A backup that carries a token is a leak
+  with a schedule.
+- **Restore creates a new workspace** from the snapshot; it never overwrites the
+  live one. Drop skill links whose target is gone and say so.
+- Retention is one union of calendar buckets (daily / this month's weeks / this
+  year's months); prune after every run, not on a separate timer.
+- **Smart is the default**, and an unset config must mean smart, not off.
+- The scheduler is an unref'd timer in the main process, started and stopped with
+  the call table. Opening the settings page must not be what makes a backup happen.
 
 ## Loading budget
 

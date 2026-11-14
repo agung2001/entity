@@ -41,6 +41,7 @@ const ACCOUNT_ROWS = [
   { to: '/account/sound', label: 'Sound', hint: 'Area 51 feedback' },
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
+  { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
 ]
 
 const railHosts = computed(() => {
@@ -81,7 +82,13 @@ const section = computed(() => {
       back: true,
     }
   }
-  if (name === 'account' || name === 'account-sound' || name === 'account-notifications' || name === 'account-mcp') {
+  if (
+    name === 'account' ||
+    name === 'account-sound' ||
+    name === 'account-notifications' ||
+    name === 'account-mcp' ||
+    name === 'account-backups'
+  ) {
     return { id: 'account', title: 'Account', count: null }
   }
   if (name === 'mcp') {

@@ -45,6 +45,31 @@ test('the machine capability page brands harnesses and offers search', () => {
   assert.match(text, /type="search"/, 'the harness/model inventory needs a search input')
 })
 
+test('the account has a reachable backups page with smart as the default', () => {
+  const router = fs.readFileSync(path.join(SRC, 'router.js'), 'utf8')
+  assert.match(router, /name: 'account-backups'/, 'the backups page needs a route')
+
+  const rail = fs.readFileSync(path.join(SRC, 'components', 'RailContext.vue'), 'utf8')
+  assert.match(rail, /'\/account\/backups'/, 'the account rail needs a backups row')
+
+  const view = fs.readFileSync(
+    path.join(SRC, 'views', 'account', 'AccountBackupView.vue'),
+    'utf8',
+  )
+  assert.match(view, /backup\.status/, 'the page reads the schedule and the shelf')
+  assert.match(view, /backup\.run/, 'the page can run a backup now')
+  assert.match(view, /backup\.restore/, 'a snapshot can be restored as a copy')
+  assert.match(view, /backup\.setDirectory/, 'the target folder is a setting')
+  assert.match(view, /backup\.chooseFolder/, 'desktop builds can open a folder picker')
+  assert.match(view, /Backup folder/, 'the target folder has a visible control')
+
+  const store = fs.readFileSync(path.join(ROOT, 'electron', 'backup-store.cjs'), 'utf8')
+  assert.match(store, /const DEFAULT_MODE = 'smart'/, 'smart is the default')
+  assert.match(store, /\.remote\.token/, 'secrets stay out of snapshots')
+  assert.match(store, /new yazl\.ZipFile/, 'a snapshot is a ZIP file')
+  assert.match(store, /backup\.setDirectory|function setDirectory/, 'the target is persisted')
+})
+
 test('the thread metadata drawer is dismissible and belongs to the chat header', () => {
   const panel = fs.readFileSync(
     path.join(SRC, 'components', 'ThreadMetadataPanel.vue'),

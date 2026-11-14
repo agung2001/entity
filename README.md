@@ -470,6 +470,37 @@ when the answer never names it.
 The rail's artifact panel browses, uploads, searches and removes; a row opens the
 artifact's own page with an inline preview, metadata, download and reveal.
 
+## Backups
+
+Account → **Backups** keeps a rolling set of ZIP files outside the workspace. Each
+run writes one `.zip` under `<folder>/<workspace>/`, with the workspace at the
+archive root: entities, chats, artifacts, attached skill links, `workspace.json`
+(including the workspace context), `members.json` and the MCP pool. It is a real
+snapshot, not a re-export that can lose fields.
+
+The **backup folder** defaults to `~/.entity/backups` and can be changed per
+workspace on the page (the desktop app opens a native folder picker; a typed path
+works in a browser build too). Existing ZIPs move with the setting.
+
+- **Smart is the default:** daily for the last 7 days, one snapshot a week this
+  month, one a month this year. Older snapshots are pruned after every run, so the
+  shelf stays around two dozen entries.
+- **Other schedules:** daily (14 days), weekly (12 weeks), monthly (12 months) and
+  manual only (last 20 snapshots). **Back up now** works in every mode.
+- The timer lives in the main process and runs while entity is open. The page is
+  where you choose the policy and see the shelf; it is not the scheduler.
+- **Restore** extracts a ZIP into a new workspace, never over the one you are
+  using. Skills whose library target is gone are dropped with a warning.
+- Secrets and transient state are deliberately left out: `.remote.token`,
+  `.remote.json`, `.remote-trash/`, `.bin/` (absolute paths of this build) and
+  `runs/` (harness logs and attachment temp dirs).
+
+ZIPs are complete snapshots, so a large artifact shelf costs disk in each
+retained file; compression helps text, not already-compressed images. The page
+shows the total ZIP size and the retention policy that keeps it bounded.
+
+[Where it lives →](electron/backup-store.cjs)
+
 ## The agent-facing side
 
 Every run gets `ENTITY_CLI_PATH` and a short brief, so an entity can work on its own

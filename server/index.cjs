@@ -272,6 +272,19 @@ async function handleCall(req, res) {
     if (result.ok && fn === 'workspace.needsSetup') {
       result = { ...result, data: !filterWorkspaceList(workspaces.list(), user).length }
     }
+    /* `backup.status` has no workspace id (it lists every workspace), so the
+       call-table authorization cannot scope it. Scope it here with the same
+       membership filter the workspace picker uses. */
+    if (result.ok && fn === 'backup.status' && result.data?.workspaces) {
+      const allowed = new Set(filterWorkspaceList(workspaces.list(), user).map((row) => row.id))
+      result = {
+        ...result,
+        data: {
+          ...result.data,
+          workspaces: result.data.workspaces.filter((row) => allowed.has(row.id)),
+        },
+      }
+    }
     if (
       result.ok &&
       ['workspace.mcp', 'workspace.writeMcp', 'workspace.setMcpEnabled'].includes(fn)

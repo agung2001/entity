@@ -24,6 +24,7 @@ const AccountProfileView = () => import('@/views/account/AccountProfileView.vue'
 const AccountSoundView = () => import('@/views/account/AccountSoundView.vue')
 const AccountNotificationsView = () => import('@/views/account/AccountNotificationsView.vue')
 const AccountMcpView = () => import('@/views/account/AccountMcpView.vue')
+const AccountBackupView = () => import('@/views/account/AccountBackupView.vue')
 const WorkspaceView = () => import('@/views/WorkspaceView.vue')
 const ManageWorkspacesView = () => import('@/views/ManageWorkspacesView.vue')
 
@@ -250,6 +251,12 @@ const router = createRouter({
               name: 'account-mcp',
               component: AccountMcpView,
               meta: { crumb: 'account', title: 'MCP server · entity' },
+            },
+            {
+              path: 'backups',
+              name: 'account-backups',
+              component: AccountBackupView,
+              meta: { crumb: 'account', title: 'Backups · entity' },
             },
           ],
         },

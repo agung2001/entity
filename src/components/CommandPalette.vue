@@ -105,6 +105,12 @@ const navigationItems = computed(() => [
     act: () => router.push('/account/mcp'),
   },
   {
+    id: 'nav:account-backups',
+    label: 'Workspace backups',
+    meta: 'Smart snapshots, retention and restore',
+    act: () => router.push('/account/backups'),
+  },
+  {
     id: 'nav:entities',
     label: 'Entities',
     meta: 'Entity directory',

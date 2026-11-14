@@ -641,6 +641,13 @@ const WORKSPACE_CALLS = new Set([
   'workspace.claimOwner',
   'workspace.export',
   'workspace.import',
+  'backup.setMode',
+  'backup.setDirectory',
+  'backup.chooseFolder',
+  'backup.run',
+  'backup.restore',
+  'backup.remove',
+  'backup.reveal',
 ])
 
 const HOST_ONLY_CALLS = new Set([
@@ -669,6 +676,15 @@ const ADMIN_CALLS = new Set([
   /* The export walks `chats/`, which is per-account. A member must not receive
      a teammate's transcripts through a bundle. */
   'workspace.export',
+  /* A snapshot contains every member's chats and the workspace secrets file.
+     Reading the list is fine; changing it, restoring it or deleting it is not. */
+  'backup.setMode',
+  'backup.setDirectory',
+  'backup.chooseFolder',
+  'backup.run',
+  'backup.restore',
+  'backup.remove',
+  'backup.reveal',
 ])
 
 /**

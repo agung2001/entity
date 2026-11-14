@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Notification, shell } = require('electron')
 const { execFile } = require('node:child_process')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
@@ -68,6 +68,21 @@ async function openInEditor(target) {
   throw new Error(
     'VS Code was not found. Install it and make the `code` command available, then try again.',
   )
+}
+
+/** The native folder picker for Account → Backups. '' means cancelled. */
+async function chooseDirectory() {
+  const owner = BrowserWindow.getFocusedWindow() || mainWindow
+  const options = {
+    title: 'Choose a backup folder',
+    buttonLabel: 'Use this folder',
+    properties: ['openDirectory', 'createDirectory'],
+  }
+  const result = owner
+    ? await dialog.showOpenDialog(owner, options)
+    : await dialog.showOpenDialog(options)
+  if (result.canceled || !result.filePaths?.length) return ''
+  return result.filePaths[0]
 }
 
 function showNotification({ title, body, route, tag } = {}) {
@@ -177,6 +192,7 @@ app.whenReady().then(() => {
     },
     openExternal: (url) => shell.openExternal(url),
     openInEditor,
+    chooseDirectory,
   })
 
   /* An agent that rewrites its own instructions writes a file this process did

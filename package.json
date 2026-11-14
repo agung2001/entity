@@ -37,8 +37,10 @@
   "dependencies": {
     "dompurify": "^3.4.17",
     "marked": "^18.2.0",
+    "unzipper": "^0.12.5",
     "vue": "^3.5.45",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

@@ -26,6 +26,7 @@ const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
+const backups = require('./backup-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({
@@ -34,12 +35,16 @@ function createRpc({
   openPath = null,
   openExternal = null,
   openInEditor = null,
+  chooseDirectory = null,
   identity = null,
 } = {}) {
   const runner = createRunner({ emit })
   /* A six-hour poll plus a debounce after the watcher reports a local edit.
      `start` is idempotent, so a dev-server reload does not stack timers. */
   remoteSync.start({ emit })
+  /* Smart backups are a timer, not a request. It is unref'd, so it never keeps
+     the process alive, and `closeAll` clears it before a reload. */
+  backups.start({ log: (line) => console.log(`[entity] ${line}`) })
   /* The desktop app has one account in `~/.entity/auth.json`. The server build
      passes the signed-in server user instead, so the same call table writes the
      right owner without a second implementation. */
@@ -135,6 +140,25 @@ function createRpc({
       reveal(found.file)
       return found
     },
+
+    /* workspace backups: snapshots, retention and restore-as-a-copy */
+    'backup.status': () => backups.status(),
+    'backup.setMode': ({ id, mode } = {}) => backups.setMode({ id, mode }),
+    'backup.setDirectory': ({ id, directory } = {}) => backups.setDirectory({ id, directory }),
+    'backup.chooseFolder': async ({ id } = {}) => {
+      if (typeof chooseDirectory !== 'function') {
+        throw new Error(
+          'The folder picker is only available in the desktop app. Type the path instead.',
+        )
+      }
+      const directory = await chooseDirectory()
+      if (!directory) return { canceled: true }
+      return { canceled: false, entry: await backups.setDirectory({ id, directory }) }
+    },
+    'backup.run': ({ id } = {}) => backups.runNow(id),
+    'backup.restore': ({ id, name } = {}) => backups.restore({ id, name }),
+    'backup.remove': ({ id, name } = {}) => backups.removeSnapshot({ id, name }),
+    'backup.reveal': ({ id, name } = {}) => backups.openFolder({ id, name, openPath }),
 
     /* thread metadata: links and paths mentioned in a conversation */
     'thread.metadata': (args) => threadMetadata.inspect(args),
@@ -244,6 +268,7 @@ function createRpc({
       }
       runner.closeAll()
       remoteSync.stop()
+      backups.stop()
       await mcpServer.stop()
     },
     activeCount: () => runner.activeCount() + chats.activeCount(),
