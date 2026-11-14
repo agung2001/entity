@@ -31,8 +31,8 @@ const FILES = walk(SRC).map((file) => ({
 test('the composer keeps attachments below the prompt and documents them', () => {
   const composer = fs.readFileSync(path.join(SRC, 'components', 'SlashComposer.vue'), 'utf8')
   const help = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
-  assert.match(composer, /Local attachment/, 'the off-by-default toggle belongs to the composer')
-  assert.match(composer, /attach-tray/, 'attachments belong in a tray below the prompt')
+  assert.match(composer, /attach-btn/, 'the composer needs an attachment button before send')
+  assert.match(composer, /attach-file-input/, 'the attachment button opens file and folder pickers')
   assert.match(help, /@file:/, 'Composer help documents file attachments')
   assert.match(help, /@mcp:/, 'Composer help documents MCP attachments')
   assert.doesNotMatch(help, /@skill:/, 'skills stay on the slash syntax')

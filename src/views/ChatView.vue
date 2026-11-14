@@ -53,12 +53,12 @@ const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const composer = ref(null)
 const live = ref(null)
+const dragDepth = ref(0)
 const focusMessage = ref(-1)
 const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
 const attachments = ref([])
-const attachmentsEnabled = ref(false)
 let offEvent = null
 
 /* Every combo comes from the catalog in `src/lib/shortcuts.js`, which also
@@ -72,8 +72,6 @@ const focusShortcut = shortcutLabel('focus')
 useDialogDismiss({ active: () => helpOpen.value, close: () => (helpOpen.value = false) })
 
 const chips = ['Where do you run?', 'What do you carry?', 'Show ENTITY.md']
-
-const attachmentsAllowed = computed(() => ctx.value.machine !== 'local')
 
 const contextOptions = {
   machine: () =>
@@ -334,13 +332,39 @@ async function stopTurn() {
   await cancelChat()
 }
 
+const hasFiles = (event) => [...(event.dataTransfer?.types || [])].includes('Files')
+
+function onDockDragEnter(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value += 1
+}
+
+function onDockDragOver(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+function onDockDragLeave(event) {
+  if (!hasFiles(event)) return
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+async function onDockDrop(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value = 0
+  await composer.value?.addDrop(event.dataTransfer)
+}
+
 async function send(text) {
   playSfx('send')
   playReaction(hub.workspace, thread.value?.entity)
   try {
     const updated = await chatSend(text, {
-      attachments: attachmentsAllowed.value ? attachments.value : [],
-      attachmentsEnabled: attachmentsAllowed.value && attachmentsEnabled.value,
+      attachments: attachments.value,
+      attachmentsEnabled: true,
     })
     if (updated) attachments.value = []
   } catch (error) {
@@ -444,7 +468,6 @@ watch(
   () => hub.chat.active,
   (id, previous) => {
     attachments.value = []
-    attachmentsEnabled.value = false
     if (!id) return
     const current = typeof route.query.thread === 'string' ? route.query.thread : ''
     if (current === id) return
@@ -596,7 +619,17 @@ watch(
           />
 
           <div class="cp-dockwrap">
-            <div class="cp-dock">
+            <div
+              class="cp-dock"
+              :data-drag="dragDepth > 0 ? '1' : '0'"
+              @dragenter.prevent="onDockDragEnter"
+              @dragover.prevent="onDockDragOver"
+              @dragleave.prevent="onDockDragLeave"
+              @drop.prevent="onDockDrop"
+            >
+              <div v-if="dragDepth > 0" class="cp-dropzone">
+                <span>Drop files or folders to attach</span>
+              </div>
               <div class="cp-picks" role="group" aria-label="Thread context">
                 <PickMenu
                   head="Machine"
@@ -661,8 +694,6 @@ watch(
                   :sending="hub.chat.sending"
                   :stopping="hub.chat.stopping"
                   v-model:attachments="attachments"
-                  :attachments-enabled="attachmentsEnabled && attachmentsAllowed"
-                  @toggle-attachments="attachmentsEnabled = $event"
                   @send="send"
                   @stop="stopTurn"
                 />
@@ -777,6 +808,7 @@ watch(
               { token: '@artifact:login shot', what: 'A file on this workspace’s artifact shelf, matched by name.' },
               { token: '@maka:one:plan', what: 'A note found through the Maka MCP server — vault, then what to search for.' },
               { token: '@youtrack:AC:login bug', what: 'Issues found through the YouTrack MCP server, scoped to the project key you name. The rows show the project and the issue title.' },
+              { token: '@@<mention>', what: 'Resolve this mention on the local machine instead of the remote context.' },
             ]" :key="row.token" class="help-mention">
               <code class="mono">{{ row.token }}</code>
               <span>{{ row.what }}</span>
@@ -794,9 +826,8 @@ watch(
 
           <div v-else-if="helpTab === 'attachments'" class="help-mentions">
             <p class="help-lede">
-              Attachments sit below the prompt and are only available on a remote thread, when
-              <b>Local attachment</b> is enabled. The toggle is off by default and hidden for a local
-              thread. Removing a chip removes that attachment.
+              Attach files with the paperclip button before send, or by dropping them on the composer.
+              The same button works for local and remote runs. Removing a chip removes that attachment.
             </p>
             <div v-for="row in [
               { token: '@file:<path>', what: 'A local file for this turn. On a remote machine it is uploaded to a temporary directory and deleted after the answer.' },
@@ -807,10 +838,9 @@ watch(
               <span>{{ row.what }}</span>
             </div>
             <p class="help-note">
-              With the toggle off, <code class="mono">@file</code> and <code class="mono">@mcp</code>
-              are not resolved. Skills are not @ attachments — use the slash syntax in the Skills tab.
-              Remote files are temporary; remote skills installed with
-              <code class="mono">/workspace:</code> are persistent on that host.
+              Skills are not @ attachments — use the slash syntax in the Skills tab. Remote files are
+              temporary; remote skills installed with <code class="mono">/workspace:</code> are persistent
+              on that host.
             </p>
           </div>
 
@@ -823,6 +853,7 @@ watch(
               { token: '/workspace:<name>', what: 'A skill attached to this workspace.' },
               { token: '/<harness>:<name>', what: 'A skill in that harness’s own library — e.g. /claude:pdf-ocr.' },
               { token: '/<name>', what: 'Any library on this machine, when exactly one has that name.' },
+              { token: '//workspace:<name>', what: 'Use a local copy of the skill. On a remote run it is installed there; a single slash expects the skill to already be on that host.' },
             ]" :key="row.token" class="help-mention">
               <code class="mono">{{ row.token }}</code>
               <span>{{ row.what }}</span>
@@ -830,8 +861,8 @@ watch(
             <p class="help-note">
               Type <code class="mono">/</code> to see what is available. A name this app owns that does
               not resolve is an error, so a typo never becomes an answer without the skill. On a remote
-              target, a <code class="mono">/workspace:</code> skill is installed into the target harness
-              library and the previous copy is backed up.
+              target, a single <code class="mono">/workspace:</code> expects the skill to already exist
+              there; <code class="mono">//workspace:</code> sends the local copy and backs up the previous one.
             </p>
           </div>
         </div>

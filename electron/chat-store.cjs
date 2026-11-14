@@ -862,6 +862,24 @@ function resolveAttachments(record, list) {
   const out = []
   const seen = new Set()
   const pool = workspaces.mcp(record.id)
+  let tempDir = ''
+  let tempIndex = 0
+  const materialise = (name, data) => {
+    const buffer = Buffer.from(String(data || ''), 'base64')
+    if (!buffer.length) throw new Error('An attached file is empty.')
+    if (buffer.length > 25 * 1024 * 1024) throw new Error('An attached file is over 25 MB.')
+    if (!tempDir) {
+      tempDir = fs.mkdtempSync(path.join(record.path, 'runs', '.attach-'))
+      fs.chmodSync(tempDir, 0o700)
+    }
+    const safe = String(name || 'file')
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || `file-${tempIndex}`
+    const target = path.join(tempDir, `${tempIndex++}-${safe}`)
+    fs.writeFileSync(target, buffer, { mode: 0o600 })
+    return target
+  }
   for (const entry of Array.isArray(list) ? list : []) {
     if (!entry || !entry.kind) continue
     if (entry.kind === 'mcp') {
@@ -877,28 +895,33 @@ function resolveAttachments(record, list) {
       continue
     }
     if (entry.kind !== 'file') continue
-    const raw = String(entry.value || entry.path || '').trim()
-    if (!raw) continue
-    const absolute = expandHome(raw)
-    const candidates = path.isAbsolute(absolute)
-      ? [absolute]
-      : [path.resolve(record.path, absolute), path.resolve(process.cwd(), absolute)]
-    const file = candidates.find((candidate) => {
-      try {
-        return fs.statSync(candidate).isFile()
-      } catch {
-        return false
-      }
-    })
-    if (!file) throw new Error(`Attached file does not exist: ${raw}`)
-    const stat = fs.statSync(file)
-    if (stat.size > 25 * 1024 * 1024) throw new Error(`Attached file is over 25 MB: ${raw}`)
+    let file = ''
+    if (entry.data) {
+      file = materialise(entry.name, entry.data)
+    } else {
+      const raw = String(entry.value || entry.path || '').trim()
+      if (!raw) continue
+      const absolute = expandHome(raw)
+      const candidates = path.isAbsolute(absolute)
+        ? [absolute]
+        : [path.resolve(record.path, absolute), path.resolve(process.cwd(), absolute)]
+      file = candidates.find((candidate) => {
+        try {
+          return fs.statSync(candidate).isFile()
+        } catch {
+          return false
+        }
+      })
+      if (!file) throw new Error(`Attached file does not exist: ${raw}`)
+      const stat = fs.statSync(file)
+      if (stat.size > 25 * 1024 * 1024) throw new Error(`Attached file is over 25 MB: ${raw}`)
+    }
     const key = `file:${file}`
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ kind: 'file', path: file, name: path.basename(file) })
+    out.push({ kind: 'file', path: file, name: entry.name || path.basename(file) })
   }
-  return out
+  return { attachments: out, tempDir }
 }
 
 function attachmentsBlock(attachments) {
@@ -925,9 +948,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
   const enabled =
     typeof attachmentsEnabled === 'boolean' ? attachmentsEnabled : Boolean(thread.attachmentsEnabled)
   const typed = enabled ? attachmentRef.extract(message) : { text: message, attachments: [] }
-  const resolvedAttachments = enabled
+  const resolved = enabled
     ? resolveAttachments(record, [...typed.attachments, ...(Array.isArray(attachments) ? attachments : [])])
-    : []
+    : { attachments: [], tempDir: '' }
+  const resolvedAttachments = resolved.attachments
   const turnText = typed.text || (resolvedAttachments.length ? 'Use the attached resources.' : '')
   if (thread.machine !== 'local' && resolvedAttachments.some((entry) => entry.kind === 'mcp')) {
     throw new Error('MCP attachments are not available on a remote host yet.')
@@ -1103,6 +1127,13 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     thread.messages.push(turnMessage)
   } finally {
     flushStep()
+    if (resolved.tempDir) {
+      try {
+        fs.rmSync(resolved.tempDir, { recursive: true, force: true })
+      } catch {
+        /* the OS temp cleaner is the backstop */
+      }
+    }
     sending.delete(thread.id)
     thread.updatedAt = now()
     writeThread(record, thread)

@@ -1,6 +1,7 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { call } from '@/composables/localBridge'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, slashMenu } from '@/stores/hub'
 import { loadSkillNames, workspaces } from '@/stores/workspaces'
@@ -25,15 +26,17 @@ const props = defineProps({
   sending: { type: Boolean, default: false },
   stopping: { type: Boolean, default: false },
   focusShortcut: { type: String, default: '' },
-  attachmentsEnabled: { type: Boolean, default: false },
   attachments: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['send', 'stop', 'update:attachments', 'toggle-attachments'])
+const emit = defineEmits(['send', 'stop', 'update:attachments'])
 
 const draft = ref('')
 const menu = ref([])
 const active = ref(0)
 const input = ref(null)
+const fileInput = ref(null)
+const folderInput = ref(null)
+const attachMenu = ref(false)
 const scanning = ref(false)
 const sendShortcut = shortcutLabel('send')
 /* one library read per machine per composer mount, even if the scan fails */
@@ -46,16 +49,10 @@ let mentionAsked = false
 
 /* The four typed mentions. A bare `@name` is an entity, so entities are listed
    from the workspace rather than from this table. */
-const localAttachment = computed(() => props.attachmentsEnabled && props.machine !== 'local')
-
 const MENTION_KINDS = computed(() => [
-  ...(localAttachment.value
-    ? [
-        { name: '@file:', desc: 'A local file for this turn only', kind: 'attachment-file' },
-        ...(props.machine === 'local'
-          ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
-          : []),
-      ]
+  { name: '@file:', desc: 'A local file for this turn only', kind: 'attachment-file' },
+  ...(props.machine === 'local'
+    ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
     : []),
   { name: '@orca:', desc: 'A path from an Orca project — project:file' },
   { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
@@ -272,20 +269,14 @@ function removeAttachment(index) {
   emit('update:attachments', props.attachments.filter((_, at) => at !== index))
 }
 
-function toggleAttachments() {
-  const next = !props.attachmentsEnabled
-  emit('toggle-attachments', next)
-  if (!next) emit('update:attachments', [])
-}
-
 function attachmentLabel(entry) {
   if (entry.kind === 'mcp') return `MCP · ${entry.name || entry.value}`
-  return `File · ${String(entry.value || entry.path || '').split(/[\\/]/).pop()}`
+  const value = String(entry.value || entry.path || entry.name || '')
+  return `File · ${value.split(/[\\/]/).pop() || 'file'}`
 }
 
 /** Move complete `@file:` / `@mcp:` tokens below the prompt. */
 function harvestAttachments(final = false) {
-  if (!localAttachment.value) return false
   const pattern = final
     ? /(^|[\s([])@(file|mcp):(?:"([^"]+)"|([^\s]+))(?=\s|$)/g
     : /(^|[\s([])@(file|mcp):(?:"([^"]+)"|([^\s]+))(?=\s)/g
@@ -461,6 +452,110 @@ function onBlur() {
   setTimeout(closeMenu, 120)
 }
 
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunk = 0x8000
+  for (let at = 0; at < bytes.length; at += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + chunk))
+  }
+  return btoa(binary)
+}
+
+async function addFiles(fileList) {
+  const files = [...(fileList || [])]
+  if (!files.length) return
+  for (const file of files) {
+    if (file.size > 25 * 1024 * 1024) continue
+    let data = ''
+    try {
+      data = toBase64(await file.arrayBuffer())
+    } catch {
+      continue
+    }
+    const name = file.webkitRelativePath || file.name || 'file'
+    addAttachment({ kind: 'file', name, data })
+  }
+}
+
+function entryFile(entry, prefix) {
+  return new Promise((resolve) => {
+    entry.file(
+      (file) => {
+        resolve({
+          name: prefix ? `${prefix}/${file.name}` : file.name,
+          size: file.size,
+          arrayBuffer: () => file.arrayBuffer(),
+        })
+      },
+      () => resolve(null),
+    )
+  })
+}
+
+async function readDirectory(entry, prefix, out) {
+  const reader = entry.createReader()
+  while (out.length < 1000) {
+    const batch = await new Promise((resolve) => reader.readEntries(resolve, () => resolve([])))
+    if (!batch.length) break
+    for (const child of batch) {
+      if (out.length >= 1000) break
+      if (child.isFile) {
+        const file = await entryFile(child, prefix)
+        if (file) out.push(file)
+      } else if (child.isDirectory) {
+        await readDirectory(child, prefix ? `${prefix}/${child.name}` : child.name, out)
+      }
+    }
+  }
+}
+
+async function addDrop(dataTransfer) {
+  const items = [...(dataTransfer?.items || [])]
+  const files = []
+  for (const item of items) {
+    if (files.length >= 1000) break
+    const entry = item.webkitGetAsEntry?.()
+    if (entry?.isFile) {
+      const file = await entryFile(entry, '')
+      if (file) files.push(file)
+    } else if (entry?.isDirectory) {
+      await readDirectory(entry, entry.name, files)
+    }
+  }
+  if (files.length) await addFiles(files)
+  else await addFiles(dataTransfer?.files)
+}
+
+function onFileInput(event) {
+  const files = event.target?.files
+  addFiles(files)
+  if (event.target) event.target.value = ''
+}
+
+function openFiles() {
+  attachMenu.value = false
+  fileInput.value?.click()
+}
+
+function openFolder() {
+  attachMenu.value = false
+  folderInput.value?.click()
+}
+
+function onDocumentClick(event) {
+  if (!attachMenu.value) return
+  if (!event.target?.closest?.('.attach-picker')) attachMenu.value = false
+}
+
+useDialogDismiss({
+  active: () => attachMenu.value,
+  close: () => (attachMenu.value = false),
+})
+
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+
 function insertToken(token) {
   const space = draft.value && !/\s$/.test(draft.value) ? ' ' : ''
   draft.value = `${draft.value}${space}${token}`
@@ -475,7 +570,7 @@ function focus() {
   nextTick(() => input.value?.focus())
 }
 
-defineExpose({ focus })
+defineExpose({ focus, addFiles, addDrop })
 </script>
 
 <template>
@@ -540,6 +635,27 @@ defineExpose({ focus })
           <template v-if="sending">Working…</template>
           <template v-else><kbd>{{ sendShortcut }}</kbd> to send</template>
         </span>
+        <span class="slash-send">
+          <span class="attach-picker">
+          <button
+            class="attach-btn"
+            type="button"
+            title="Attach file or folder"
+            aria-label="Attach file or folder"
+            aria-haspopup="menu"
+            :aria-expanded="attachMenu ? 'true' : 'false'"
+            :disabled="disabled"
+            @click.stop="attachMenu = !attachMenu"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6.2 8.8l4.6-4.6a2.1 2.1 0 013 3l-5.6 5.6a3.4 3.4 0 01-4.8-4.8l5.2-5.2" />
+            </svg>
+          </button>
+          <span v-if="attachMenu" class="attach-menu" role="menu">
+            <button type="button" role="menuitem" @click="openFiles">Attach files…</button>
+            <button type="button" role="menuitem" @click="openFolder">Attach folder…</button>
+          </span>
+        </span>
         <button
           v-if="sending"
           class="go go-stop"
@@ -568,99 +684,111 @@ defineExpose({ focus })
             <path d="M8 13V3M4 7l4-4 4 4" />
           </svg>
         </button>
+        </span>
       </div>
     </form>
 
-    <div v-if="machine !== 'local'" class="attach-toggle">
-      <label>
-        <input
-          type="checkbox"
-          :checked="attachmentsEnabled"
-          :disabled="disabled"
-          @change="toggleAttachments"
-        />
-        Local attachment
-      </label>
-      <span>off by default · files and MCP stay out of the prompt</span>
+    <div v-if="attachments.length" class="attach-chips attach-chips--dock">
+      <span
+        v-for="(entry, index) in attachments"
+        :key="`${entry.kind}:${entry.value || entry.name}`"
+        class="attach-chip"
+      >
+        {{ attachmentLabel(entry) }}
+        <button type="button" :aria-label="`Remove ${attachmentLabel(entry)}`" @click="removeAttachment(index)">×</button>
+      </span>
     </div>
 
-    <div v-if="localAttachment" class="attach-tray">
-      <div class="attach-actions">
-        <button class="attach-add" type="button" :disabled="disabled" @click="insertToken('@file:')">
-          + File
-        </button>
-        <button
-          v-if="machine === 'local'"
-          class="attach-add"
-          type="button"
-          :disabled="disabled"
-          @click="insertToken('@mcp:')"
-        >
-          + MCP
-        </button>
-        <span v-if="!attachments.length" class="attach-empty">
-          Type @file:path<template v-if="machine === 'local'"> or @mcp:name</template>, then press space.
-        </span>
-        <span v-if="machine !== 'local'" class="attach-empty">MCP attachments are local-only for now.</span>
-      </div>
-      <div v-if="attachments.length" class="attach-chips">
-        <span v-for="(entry, index) in attachments" :key="`${entry.kind}:${entry.value || entry.name}`" class="attach-chip">
-          {{ attachmentLabel(entry) }}
-          <button type="button" :aria-label="`Remove ${attachmentLabel(entry)}`" @click="removeAttachment(index)">×</button>
-        </span>
-      </div>
-    </div>
+    <input
+      ref="fileInput"
+      class="attach-file-input"
+      type="file"
+      multiple
+      @change="onFileInput"
+    />
+    <input
+      ref="folderInput"
+      class="attach-file-input"
+      type="file"
+      webkitdirectory
+      directory
+      multiple
+      @change="onFileInput"
+    />
   </div>
 </template>
 
 <style scoped>
-.attach-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 2px 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--muted);
-}
-.attach-toggle label {
+.slash-send {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  cursor: pointer;
+  gap: 8px;
+  margin-left: auto;
 }
-.attach-toggle input {
-  accent-color: var(--accent);
+.attach-file-input {
+  display: none;
 }
-.attach-tray {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 2px 0;
-}
-.attach-actions {
-  display: flex;
+.attach-picker {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
 }
-.attach-add {
-  border: 1px solid var(--border);
-  border-radius: 4px;
+.attach-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  min-width: 154px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  box-shadow: 0 10px 24px -10px rgba(10, 10, 10, 0.28);
+}
+.attach-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 3px;
   background: transparent;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  padding: 3px 6px;
+  color: var(--ink-2);
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-align: left;
   cursor: pointer;
 }
-.attach-add:hover {
+.attach-menu button:hover {
+  background: var(--surface);
   color: var(--fg);
-  border-color: var(--border-strong);
 }
-.attach-empty {
-  font-size: 9.5px;
-  color: var(--muted);
+.attach-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.attach-btn:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.attach-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.attach-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.attach-chips--dock {
+  padding: 6px 2px 0;
 }
 .attach-chips {
   display: flex;

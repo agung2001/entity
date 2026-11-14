@@ -48,7 +48,7 @@ const ARTIFACT_SCAN_CAP = 2000
 /* ── parsing ──────────────────────────────────────────────────────── */
 
 /* A mention starts at `@` after start/space/(/[ so `me@example.com` stays text. */
-const MENTION_AT = /(^|[\s(\[])@(?=[A-Za-z0-9._-])/g
+const MENTION_AT = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/g
 
 function parse(text) {
   const source = String(text || '')
@@ -68,18 +68,19 @@ function parse(text) {
 }
 
 function parseMention(raw) {
-  const body = raw.slice(1)
+  const local = raw.startsWith('@@')
+  const body = raw.slice(local ? 2 : 1)
   const colon = body.indexOf(':')
   if (colon < 0) {
     const [name, ...rest] = body.trim().split(/\s+/)
-    return { kind: 'entity', name, job: rest.join(' ').trim(), query: rest.join(' ').trim() }
+    return { kind: 'entity', name, job: rest.join(' ').trim(), query: rest.join(' ').trim(), local }
   }
 
   const head = body.slice(0, colon).trim().toLowerCase()
   const rest = body.slice(colon + 1)
-  if (!KINDS.has(head)) return { kind: 'unknown', name: head }
+  if (!KINDS.has(head)) return { kind: 'unknown', name: head, local }
 
-  if (head === 'artifact') return { kind: 'artifact', query: rest.trim() }
+  if (head === 'artifact') return { kind: 'artifact', query: rest.trim(), local }
 
   const parts = rest.split(':')
   const first = (parts[0] || '').trim()
@@ -90,40 +91,41 @@ function parseMention(raw) {
   const afterWord = first.slice(word.length).trim()
 
   if (head === 'orca') {
-    return { kind: 'orca', project: parts.length > 1 ? first : word, file: tail }
+    return { kind: 'orca', project: parts.length > 1 ? first : word, file: tail, local }
   }
 
   if (head === 'maka') {
     /* `@maka:plan` is a query; `@maka:one:plan` is a vault and a query */
     return parts.length > 1
-      ? { kind: 'maka', vault: first, query: tail }
-      : { kind: 'maka', vault: '', query: rest.trim() }
+      ? { kind: 'maka', vault: first, query: tail, local }
+      : { kind: 'maka', vault: '', query: rest.trim(), local }
   }
 
   /* youtrack: a project key is short and upper-case; the rest is the query */
-  if (parts.length > 1) return { kind: 'youtrack', project: first, query: tail }
+  if (parts.length > 1) return { kind: 'youtrack', project: first, query: tail, local }
   if (/^[A-Z][A-Z0-9]{1,9}$/.test(word)) {
-    return { kind: 'youtrack', project: word, query: afterWord }
+    return { kind: 'youtrack', project: word, query: afterWord, local }
   }
-  return { kind: 'youtrack', project: '', query: rest.trim() }
+  return { kind: 'youtrack', project: '', query: rest.trim(), local }
 }
 
 /** The mention as it would be written on its own — no trailing instruction. */
 function tokenOf(segment) {
-  if (segment.kind === 'entity') return `@${segment.name}`
+  const at = segment.local ? '@@' : '@'
+  if (segment.kind === 'entity') return `${at}${segment.name}`
   if (segment.kind === 'orca') {
-    return `@orca:${segment.project}${segment.file ? `:${segment.file}` : ''}`
+    return `${at}orca:${segment.project}${segment.file ? `:${segment.file}` : ''}`
   }
-  if (segment.kind === 'artifact') return `@artifact:${segment.query}`
+  if (segment.kind === 'artifact') return `${at}artifact:${segment.query}`
   if (segment.kind === 'maka') {
     return segment.vault
-      ? `@maka:${segment.vault}${segment.query ? `:${segment.query}` : ''}`
-      : `@maka:${segment.query}`
+      ? `${at}maka:${segment.vault}${segment.query ? `:${segment.query}` : ''}`
+      : `${at}maka:${segment.query}`
   }
   if (segment.kind === 'youtrack') {
     return segment.project
-      ? `@youtrack:${segment.project}${segment.query ? `:${segment.query}` : ''}`
-      : `@youtrack:${segment.query}`
+      ? `${at}youtrack:${segment.project}${segment.query ? `:${segment.query}` : ''}`
+      : `${at}youtrack:${segment.query}`
   }
   return segment.raw
 }

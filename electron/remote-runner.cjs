@@ -278,6 +278,25 @@ async function rewriteSkill(record, text, { machine, harness } = {}) {
     return { text: source, skill: null }
   }
 
+  if (!ref.local) {
+    /* A single slash means "the skill is already on the target". Sending the
+       local copy is opt-in with `//`, so a remote turn cannot silently overwrite
+       the host's library. */
+    const home = await remoteHome(machine)
+    const target = remotePath(home, SKILL_ROOTS[harness], skill.name)
+    const exists = String(
+      await sshText(machine, `test -e ${quote(target)} && printf yes || true`),
+    ).trim()
+    if (!exists) {
+      const hint = ref.bare ? `//${ref.name}` : `//${ref.namespace}:${ref.name}`
+      throw new Error(`${skill.name} is not installed on ${machine}. Use ${hint} to send the local copy.`)
+    }
+    return {
+      text: ref.rest ? `use this skill ${target}\n\n${ref.rest}` : `use this skill ${target}`,
+      skill: { target, harness, name: skill.name, source: 'remote' },
+    }
+  }
+
   const installed = await installRemoteSkill({ alias: machine, harness, skill })
   return {
     text: ref.rest ? `use this skill ${installed.target}\n\n${ref.rest}` : `use this skill ${installed.target}`,

@@ -184,3 +184,13 @@ test('parse separates the qualified and bare forms', () => {
   assert.equal(skillRef.parse('/workspace:x:y'), null)
   assert.equal(skillRef.parse('no reference here'), null)
 })
+
+test('double slash marks the local copy but resolves to the same skill', () => {
+  const ws = tmpWorkspace()
+  const dir = writeSkill(ws.skills, 'local-only')
+  const ref = skillRef.parse('//workspace:local-only go')
+  assert.equal(ref.local, true)
+  const out = skillRef.rewrite(ws.record, '//workspace:local-only go', { machine: 'local' })
+  assert.equal(out.ref.path, dir)
+  assert.equal(out.text, `use this skill ${dir}\n\ngo`)
+})

@@ -360,3 +360,11 @@ test('a message with no mention is returned untouched', async () => {
   assert.equal(out.text, 'just a normal question')
   assert.deepEqual(out.mentions, [])
 })
+
+test('a double at marks a local mention and keeps the token', () => {
+  const parsed = mention.parse('@@py-agent fix the build')
+  assert.equal(parsed.segments[0].kind, 'entity')
+  assert.equal(parsed.segments[0].name, 'py-agent')
+  assert.equal(parsed.segments[0].local, true)
+  assert.equal(mention.tokenOf(parsed.segments[0]), '@@py-agent')
+})

@@ -10,8 +10,8 @@ same mistakes kept coming back:
    drifts from the handler and never appears in the guide;
 3. a harness/model inventory rendered as bare text with no search, so a long
    list is unusable and the brand mark is missing;
-4. attachments typed into the prompt instead of sitting in the tray below it,
-   with no off-by-default gate and no Composer-help entry;
+4. attachments hidden behind a mode switch instead of a direct button and a
+   drop target, with no Composer-help entry;
 5. keyboard movement that changes the selection without keeping the visible
    list in sync.
 
@@ -119,16 +119,23 @@ A capability row is a compact control, not a card heading.
 
 The message box is for the prompt. Attachments belong in a tray below it.
 
-- A visible **Local attachment** toggle sits below the prompt **only on a remote
-  thread**. It is off by default and is per thread. A local thread has no tray.
-- Files and MCP servers are attachment chips in that tray, not text inside the
-  prompt.
+- The composer dock accepts dropped files and has a paperclip/folder button
+  immediately before send. The same attachment path works for local and remote
+  runs; there is no attachment-mode tab or toggle.
+- Files, MCP servers and mention attachments are chips below the prompt, not
+  text inside it.
 - Selecting `@file` or `@mcp` adds/removes a chip; removing the chip removes the
   attachment without rewriting the sentence.
-- With the toggle off, attachment kinds are absent from the `@` menu and are
-  not resolved.
+- A dropped file is read into the attachment list; it is not pasted into the
+  prompt.
 - Skills are not attachments in the `@` language. They keep the slash forms
   from Composer help: `/workspace:<name>`, `/<harness>:<name>`, `/<name>`.
+- A **single** slash resolves against the active execution context. On a remote
+  thread that means the skill must already exist on the target.
+- **Double** slash (`//workspace:<name>`, `//<harness>:<name>`, `//<name>`) sends
+  the local copy; on remote it installs there and backs up the previous skill.
+- Double at (`@@<mention>`) marks a local mention. Use it when a remote thread
+  must resolve the value from this machine.
 - Every attachment token shown in the UI must appear in **Composer help** in the
   same change. Do not invent a token that the help does not document.
 - Remote `@file` uploads are temporary; remote `/workspace:` skills are
@@ -162,9 +169,10 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
 | A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
-| An attachment is typed into the prompt instead of the tray | Prompts stay prompts; file/MCP attachments live in the tray below | Review |
-| Attachment controls are always visible | Gate them behind the Local attachment toggle, off by default | Review |
+| An attachment is typed into the prompt instead of the chip row | Prompts stay prompts; file/MCP attachments live in chips below | Review |
+| Attachments require a mode switch or hidden toggle | Use the direct clip/folder button and drop target | Review |
 | `@skill:` is introduced beside `/workspace:` | Skills have one syntax: the slash reference; no `@skill` | Review |
+| A single slash silently overwrites a remote skill | Single slash expects the target to have it; `//` opts into sending the local copy | Review |
 | A new attachment token is not in Composer help | Parser, UI and Composer help change together | Review |
 | Arrow keys move the highlight but the list does not scroll | Scroll the active row into view with `block: 'nearest'` | Review |
 | A rail shortcut assumes one panel | Target the search field of the currently visible rail | Review |
@@ -244,8 +252,8 @@ build` prints the chunk list — the entry chunk should not grow without a reaso
 5. If the page renders harnesses, use `HarnessIcon` beside every label.
 6. If the page renders an inventory (harnesses, models, MCP tools, files), add
    a search input unless it is guaranteed to stay shorter than one screen.
-7. If the page has a composer, put attachments below the prompt, gate them with
-   an off-by-default toggle on remote threads, and document every token in Composer help.
+7. If the page has a composer, put a direct attachment button before send, accept
+   drops on the dock, and document every token in Composer help.
 8. If arrow keys move a selection, scroll the active row into view. If a shortcut
    targets a rail, resolve the active rail instead of a fixed component.
 9. For inventory rows, test zero data, hundreds of items, one separator system,

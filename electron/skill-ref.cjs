@@ -39,14 +39,26 @@ const LOCAL_MACHINE = 'local'
 /* `[A-Za-z0-9._-]+` on purpose: a reference is typed, so a skill whose name has
    a space stays reachable by its directory name but not by `/workspace:…`. */
 const REF = /^\/([a-z0-9][a-z0-9-]*):([A-Za-z0-9._-]+)(?:\s+|$)/
+const LOCAL_REF = /^\/\/([a-z0-9][a-z0-9-]*):([A-Za-z0-9._-]+)(?:\s+|$)/
 /* no colon: a bare name, or a command that belongs to the harness */
 const BARE = /^\/([A-Za-z0-9._-]+)(?:\s+|$)/
+const LOCAL_BARE = /^\/\/([A-Za-z0-9._-]+)(?:\s+|$)/
 
 const harnessById = new Map(localData.HARNESSES.map((harness) => [harness.id, harness]))
 
 /** `'/workspace:code review this'` → `{ namespace, name, rest, bare }`, or null. */
 function parse(text) {
   const source = String(text || '')
+  const localQualified = source.match(LOCAL_REF)
+  if (localQualified) {
+    return {
+      namespace: localQualified[1].toLowerCase(),
+      name: localQualified[2],
+      rest: source.slice(localQualified[0].length).trim(),
+      bare: false,
+      local: true,
+    }
+  }
   const qualified = source.match(REF)
   if (qualified) {
     return {
@@ -54,6 +66,16 @@ function parse(text) {
       name: qualified[2],
       rest: source.slice(qualified[0].length).trim(),
       bare: false,
+    }
+  }
+  const localBare = source.match(LOCAL_BARE)
+  if (localBare) {
+    return {
+      namespace: '',
+      name: localBare[1],
+      rest: source.slice(localBare[0].length).trim(),
+      bare: true,
+      local: true,
     }
   }
   const bare = source.match(BARE)
