@@ -134,10 +134,21 @@ function normaliseStep(raw, index) {
 function normaliseExecution(raw) {
   if (!raw || typeof raw !== 'object') return null
   const execution = {}
-  for (const key of ['id', 'harness', 'model', 'command', 'cwd', 'startedAt', 'endedAt', 'status']) {
+  for (const key of [
+    'id',
+    'harness',
+    'model',
+    'command',
+    'cwd',
+    'startedAt',
+    'firstStepAt',
+    'firstTextAt',
+    'endedAt',
+    'status',
+  ]) {
     if (raw[key] !== undefined && raw[key] !== null) execution[key] = String(raw[key])
   }
-  for (const key of ['ms', 'exitCode']) {
+  for (const key of ['ms', 'exitCode', 'ttfbMs', 'firstTextMs']) {
     if (Number.isFinite(raw[key])) execution[key] = raw[key]
   }
   if (raw.usage && typeof raw.usage === 'object') execution.usage = raw.usage
@@ -767,7 +778,15 @@ function runHarness(
       return
     }
 
-    const parser = createParser(thread.harness, { onStep })
+    const timing = { firstStepAt: '', firstTextAt: '' }
+    const parser = createParser(thread.harness, {
+      onStep: (event) => {
+        const at = now()
+        if (!timing.firstStepAt) timing.firstStepAt = at
+        if (!timing.firstTextAt && event.step?.type === 'text' && (event.step.content || event.delta)) timing.firstTextAt = at
+        onStep(event)
+      },
+    })
     let out = ''
     let err = ''
     let settled = false
@@ -800,6 +819,12 @@ function runHarness(
         !canceled && !failed && typeof code === 'number' && code !== 0
           ? friendlyError(err || parsed.answer || out, spec.cmd)
           : ''
+      const firstStepMs = timing.firstStepAt
+        ? Math.max(0, Date.parse(timing.firstStepAt) - startedMs)
+        : null
+      const firstTextMs = timing.firstTextAt
+        ? Math.max(0, Date.parse(timing.firstTextAt) - startedMs)
+        : null
       resolve({
         ok: !canceled && !failed && !exitFailure,
         canceled,
@@ -811,6 +836,12 @@ function runHarness(
           model: parsed.model || execution.model,
           ...(parsed.usage ? { usage: parsed.usage } : {}),
           ...(Number.isFinite(parsed.costUsd) ? { costUsd: parsed.costUsd } : {}),
+          ...(timing.firstStepAt
+            ? { firstStepAt: timing.firstStepAt, ttfbMs: firstStepMs }
+            : {}),
+          ...(timing.firstTextAt
+            ? { firstTextAt: timing.firstTextAt, firstTextMs }
+            : {}),
           endedAt,
           ms: Date.now() - startedMs,
           exitCode: typeof code === 'number' ? code : null,
@@ -1037,37 +1068,55 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     status: 'running',
   }
   /* Token-level streams can emit thousands of updates. Store every step, but
-     paint the live trace at human speed. */
+     paint the live trace at human speed. Text and thinking updates travel as
+     deltas; the renderer merges them, so an answer does not resend its whole
+     accumulated body on every tick. */
   let stepEmittedAt = 0
   let pendingStep = null
   let stepTimer = null
+  const publicStep = (event) => {
+    if (!event.delta) return event
+    const { content: _content, ...step } = event.step || {}
+    return { action: event.action, step, delta: event.delta }
+  }
+  const emitStep = (event) => {
+    emitTurn('step', publicStep(event))
+    stepEmittedAt = Date.now()
+  }
   const flushStep = () => {
     if (stepTimer) {
       clearTimeout(stepTimer)
       stepTimer = null
     }
     if (pendingStep) {
-      emitTurn('step', pendingStep)
+      emitStep(pendingStep)
       pendingStep = null
-      stepEmittedAt = Date.now()
     }
   }
   const onStep = (event) => {
-    const now = Date.now()
-    if (event.action === 'add' || now - stepEmittedAt >= 80) {
+    const at = Date.now()
+    if (event.action === 'add' || at - stepEmittedAt >= 80) {
       flushStep()
-      emitTurn('step', event)
-      stepEmittedAt = now
+      emitStep(event)
       return
     }
-    pendingStep = event
+    if (
+      pendingStep &&
+      event.delta &&
+      pendingStep.delta &&
+      pendingStep.step?.seq === event.step?.seq
+    ) {
+      pendingStep = { ...pendingStep, delta: pendingStep.delta + event.delta }
+    } else {
+      flushStep()
+      pendingStep = event
+    }
     if (!stepTimer) {
       stepTimer = setTimeout(() => {
         stepTimer = null
         if (pendingStep) {
-          emitTurn('step', pendingStep)
+          emitStep(pendingStep)
           pendingStep = null
-          stepEmittedAt = Date.now()
         }
       }, 80)
     }

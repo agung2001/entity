@@ -76,6 +76,15 @@ case "$PROMPT" in
     printf 'E2E-BOOM: transient upstream failure\n' >&2
     exit 2
     ;;
+  *E2E-STREAM*)
+    printf '{"type":"system","subtype":"init","model":"e2e-stub"}\n'
+    printf '{"type":"assistant","message":{"model":"e2e-stub","content":[{"type":"text","text":"E2E-STREAM-ONE "}]}}\n'
+    sleep 1
+    printf '{"type":"assistant","message":{"model":"e2e-stub","content":[{"type":"text","text":"E2E-STREAM-TWO"}]}}\n'
+    sleep 1
+    printf '{"type":"result","subtype":"success","result":"E2E-STREAM-ONE E2E-STREAM-TWO"}\n'
+    exit 0
+    ;;
   *E2E-SLOW*)
     printf '{"type":"system","subtype":"init","model":"e2e-stub"}\n'
     printf '{"type":"assistant","message":{"model":"e2e-stub","content":[{"type":"thinking","thinking":"e2e slow step"}]}}\n'

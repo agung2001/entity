@@ -125,6 +125,8 @@ const messages = computed(() => {
   const t = thread.value
   if (!t) return []
   if (!sending.value) return t.messages
+  /* While a live turn exists, MessageList owns the loading/streaming bubble. */
+  if (hub.chat.live[t.id]) return t.messages
   return [
     ...t.messages,
     { who: 'sys', text: `Waiting for ${agent.value?.name || 'the entity'}…`, pending: true },
@@ -406,8 +408,14 @@ function onLiveEvent(event) {
     if (!step) return
     const steps = [...base.steps]
     const index = steps.findIndex((entry) => entry.seq === step.seq)
-    if (index >= 0) steps[index] = step
-    else steps.push(step)
+    const delta = typeof event.data?.delta === 'string' ? event.data.delta : ''
+    if (index >= 0) {
+      steps[index] = delta
+        ? { ...steps[index], ...step, content: `${steps[index].content || ''}${delta}` }
+        : step
+    } else {
+      steps.push(delta ? { ...step, content: delta } : step)
+    }
     hub.chat.live = { ...hub.chat.live, [id]: { ...base, steps } }
     return
   }

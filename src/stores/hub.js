@@ -645,6 +645,49 @@ async function refreshChatList() {
   return hub.chat.summaries
 }
 
+/**
+ * A finished turn changes one row. Re-read every thread file only when the
+ * operation actually changes the set (create, rename, pin, delete) — a send
+ * should not parse the whole history just to update its own timestamp.
+ */
+function patchChatSummary(thread) {
+  if (!thread?.id || !Array.isArray(hub.chat.summaries)) return false
+  const old = hub.chat.summaries.find((row) => row.id === thread.id)
+  if (!old) return false
+  const messages = thread.messages || []
+  const queries = messages.filter((message) => message.who === 'me').length
+  const replies = messages.filter((message) => message.who === 'agent').length
+  const lastMessage = messages[messages.length - 1]
+  const spoken = [...messages].reverse().find((message) => message.who !== 'sys')
+  const firstAsk = messages.find((message) => message.who === 'me')
+  const preview = spoken
+    ? String(spoken.text || '').replace(/\s+/g, ' ').trim().slice(0, 180)
+    : ''
+  const next = {
+    ...old,
+    title:
+      thread.title ||
+      old.title ||
+      (firstAsk ? String(firstAsk.text || '').replace(/\s+/g, ' ').trim().slice(0, 120) : ''),
+    updatedAt: thread.updatedAt,
+    queries,
+    replies,
+    messageCount: queries + replies,
+    working: false,
+    failed: Boolean(lastMessage?.who === 'sys' && lastMessage.error),
+    preview,
+    last: spoken ? { who: spoken.who, text: spoken.text, at: spoken.at } : null,
+  }
+  hub.chat.summaries = hub.chat.summaries
+    .map((row) => (row.id === thread.id ? next : row))
+    .sort(
+      (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
+        String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
+    )
+  return true
+}
+
 export async function loadChats(workspaceId = hub.workspace) {
   if (!workspaceId) {
     hub.chat.summaries = []
@@ -914,7 +957,7 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
       attachmentsEnabled,
     })
     remember(updated)
-    await refreshChatList()
+    if (!patchChatSummary(updated)) await refreshChatList()
     return updated
   } catch (error) {
     hub.chat.error = error?.message || 'The message could not be sent.'

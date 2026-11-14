@@ -97,9 +97,9 @@ function createParser(harness, { onStep = () => {} } = {}) {
   const calls = new Map()
   const items = new Map()
 
-  const emit = (action, step) => {
+  const emit = (action, step, extra = {}) => {
     try {
-      onStep({ action, step })
+      onStep({ action, step, ...extra })
     } catch {
       /* a renderer that has gone away must not break the run */
     }
@@ -134,11 +134,11 @@ function createParser(harness, { onStep = () => {} } = {}) {
     return step
   }
 
-  const update = (step, fields = {}) => {
+  const update = (step, fields = {}, extra = {}) => {
     Object.assign(step, fields)
     const duration = stepDuration(step)
     if (duration !== undefined) step.durationMs = duration
-    emit('update', step)
+    emit('update', step, extra)
     return step
   }
 
@@ -149,7 +149,12 @@ function createParser(harness, { onStep = () => {} } = {}) {
     if (!text) return null
     const last = steps[steps.length - 1]
     if (last && last.type === type) {
-      return update(last, { content: clip(`${last.content || ''}${text}`) })
+      const previous = last.content || ''
+      const next = clip(`${previous}${text}`)
+      /* The event carries only the new bytes. The renderer can merge them, so
+         a 60k-character answer does not resend its whole self every 80ms. */
+      const delta = next.startsWith(previous) ? next.slice(previous.length) : ''
+      return update(last, { content: next }, delta ? { delta } : {})
     }
     return add(type, { content: clip(text) }, at)
   }
@@ -365,7 +370,9 @@ function createParser(harness, { onStep = () => {} } = {}) {
       const previous = step.content || ''
       /* Codex has emitted both cumulative text and deltas across versions:
          replace when the new value extends the old, append otherwise. */
-      update(step, { content: clip(text.startsWith(previous) ? text : `${previous}${text}`) })
+      const next = clip(text.startsWith(previous) ? text : `${previous}${text}`)
+      const delta = next.startsWith(previous) ? next.slice(previous.length) : ''
+      update(step, { content: next }, delta ? { delta } : {})
       if (kind === 'agent_message' && status === 'completed') finalText = text
       return
     }

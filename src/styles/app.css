@@ -5561,6 +5561,43 @@ label.pick:has(input:focus-visible) {
 .msg-trace--live {
   border-style: dashed;
 }
+.msg--live {
+  border-style: dashed;
+}
+.msg-live-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-live-caret {
+  display: inline-block;
+  width: 5px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: var(--accent-ink);
+  vertical-align: -2px;
+  animation: rchat-blink 1s ease-in-out infinite;
+}
+.msg-live-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.msg-live-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-ink);
+  animation: rchat-blink 1.4s ease-in-out infinite;
+}
+.msg-foot--live {
+  opacity: 0.8;
+}
 .msg-trace-head {
   display: flex;
   align-items: center;
@@ -16075,4 +16112,11 @@ button.empty-link {
 .helpbtn kbd {
   padding: 0 3px;
   font-size: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-live-caret,
+  .msg-live-dot {
+    animation: none;
+  }
 }

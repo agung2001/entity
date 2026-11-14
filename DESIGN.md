@@ -212,6 +212,21 @@ to hand-edit when a combo changes.
 documents everything the composer itself understands — `/` skills, `@` mentions,
 arrow keys, `Tab`, Enter/Shift+Enter and sending — not app-wide navigation.
 
+## Chat turns show progress while they run
+
+A harness turn, a tool loop and a remote run can take minutes. Silence is not a
+loading state.
+
+- Paint partial assistant text in the live bubble as it streams. The final
+  message replaces it and gets the Markdown renderer; the live bubble stays
+  plain text so parsing does not run on every token.
+- Show elapsed time and the current tool, not only `Working…`.
+- Stream text and thinking updates as deltas. Do not resend an accumulated
+  answer on every tick, and do not drop a pending delta when throttling.
+- Keep first-step and first-text timings on the execution record
+  (`ttfbMs`, `firstTextMs`) so a slow turn can be separated from a slow model.
+- A live turn owns the loading bubble; do not add a second `Waiting for…` row.
+
 ## Loading budget
 
 The renderer starts as a shell and fetches a screen only when it is opened. The

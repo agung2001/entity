@@ -111,6 +111,7 @@ tests/
       07-remote.spec.js     opt-in: E2E_REMOTE_HOST=<alias>
       09-mentions-sources.spec.js  Orca (+ YouTrack/Maka behind E2E_MCP_GLOBAL=1)
       08-contract.spec.js
+      10-live-stream.spec.js  partial answer text before the turn ends
   support/
     e2e-server.mjs          reset + seed + start Vite for Playwright
     seed-profile.mjs        account, workspaces, entities, skill, fixtures

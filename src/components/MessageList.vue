@@ -32,6 +32,71 @@ const appliedFocus = ref('')
    were being rendered for every message even while their folds were shut. */
 const openTraces = ref(new Set())
 
+/* The live bubble reads the same steps the trace does. It is deliberately
+   plain text: parsing Markdown on every token would make the answer more
+   expensive than the model that produced it. The final message renders prose. */
+const clock = ref(Date.now())
+let clockTimer = null
+watch(
+  () => props.live?.messageId,
+  (id) => {
+    if (clockTimer) clearInterval(clockTimer)
+    clockTimer = null
+    if (!id) return
+    clock.value = Date.now()
+    clockTimer = setInterval(() => {
+      clock.value = Date.now()
+    }, 1000)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer)
+  clockTimer = null
+})
+
+const liveSteps = computed(() => props.live?.steps || [])
+
+const liveText = computed(() => {
+  const steps = liveSteps.value
+  let afterTool = -1
+  steps.forEach((step, index) => {
+    if (step.type === 'tool_use' || step.type === 'tool_result') afterTool = index
+  })
+  const tail = afterTool >= 0 ? steps.slice(afterTool + 1) : steps
+  return tail
+    .filter((step) => step.type === 'text' && step.content)
+    .map((step) => step.content)
+    .join('\n\n')
+    .trim()
+})
+
+const liveTool = computed(() => {
+  const tools = liveSteps.value.filter((step) => step.type === 'tool_use')
+  const last = tools[tools.length - 1]
+  return last && !last.endedAt ? last.tool || 'tool' : ''
+})
+
+const liveThinking = computed(() =>
+  liveSteps.value.some((step) => step.type === 'thinking' && step.content),
+)
+
+const liveElapsed = computed(() => {
+  const start = Date.parse(props.live?.execution?.startedAt || '')
+  return Number.isFinite(start) ? formatDuration(Math.max(0, clock.value - start)) : ''
+})
+
+const liveAction = computed(() => {
+  if (liveText.value) return 'Writing'
+  if (liveTool.value) return `Running ${liveTool.value}`
+  if (liveThinking.value) return 'Thinking'
+  return 'Starting'
+})
+
+const liveStatus = computed(() =>
+  [liveAction.value, liveElapsed.value].filter(Boolean).join(' · '),
+)
+
 /* The bubble belongs to the signed-in account; the entity owns the reply. */
 const accountEmail = computed(() => hub.session?.email || credentials().email || '')
 const userAvatar = computed(() => gravatarUrl(accountEmail.value, 96))
@@ -199,6 +264,7 @@ onBeforeUnmount(() => {
   }
 })
 watch(() => props.live?.steps?.length || 0, toBottom)
+watch(() => liveText.value.length, toBottom)
 
 async function scrollToFocus() {
   if (props.focusIndex < 0) return false
@@ -309,14 +375,17 @@ async function saveMessage(message) {
   }
 }
 
-function elapsed(message) {
-  const ms = message.execution?.ms
+function formatDuration(ms) {
   if (!Number.isFinite(ms)) return ''
   if (ms < 1000) return `${Math.max(1, Math.round(ms))}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
   const minutes = Math.floor(ms / 60_000)
   const seconds = Math.round((ms % 60_000) / 1000)
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+}
+
+function elapsed(message) {
+  return formatDuration(message.execution?.ms)
 }
 
 function traceKey(message, index) {
@@ -347,12 +416,7 @@ function traceSummary(message) {
   const steps = message.steps || []
   const tools = steps.filter((step) => step.type === 'tool_use').length
   const thoughts = steps.filter((step) => step.type === 'thinking').length
-  const ms = message.execution?.ms
-  const duration = Number.isFinite(ms)
-    ? ms < 1000
-      ? `${Math.max(1, Math.round(ms))}ms`
-      : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
-    : ''
+  const duration = formatDuration(message.execution?.ms)
   return [duration, `${thoughts} reasoning`, `${tools} tool${tools === 1 ? '' : 's'}`]
     .filter(Boolean)
     .join(' · ')
@@ -473,6 +537,21 @@ function traceSummary(message) {
       </div>
       </template>
     </template>
+
+    <div v-if="live" class="msg msg--live" data-who="agent">
+      <div class="msg-body">
+        <div v-if="liveText" class="msg-live-text">
+          {{ liveText }}<span class="msg-live-caret" aria-hidden="true"></span>
+        </div>
+        <div v-else class="msg-live-status">
+          <span class="msg-live-dot" aria-hidden="true"></span>{{ liveAction }}…
+        </div>
+      </div>
+      <EntityMark mini :entity="entityName" class="msg-avatar" />
+    </div>
+    <div v-if="live" class="msg-foot msg-foot--live" data-who="agent">
+      <span class="msg-replied">{{ liveStatus }}</span>
+    </div>
 
     <details v-if="hasTrace(live)" class="msg-trace msg-trace--live" open>
       <summary class="msg-trace-head">

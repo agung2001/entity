@@ -21,6 +21,9 @@ const totalMs = computed(() => {
   const last = Date.parse(steps.at(-1)?.endedAt || steps.at(-1)?.at || '')
   return Number.isFinite(first) && Number.isFinite(last) ? Math.max(0, last - first) : 0
 })
+const firstStepMs = computed(() =>
+  Number.isFinite(props.execution?.ttfbMs) ? props.execution.ttfbMs : null,
+)
 const thoughtChars = computed(() =>
   thoughts.value.reduce((total, step) => total + String(step.content || '').length, 0),
 )
@@ -147,6 +150,9 @@ function errorText(step) {
     <div class="trace-digest-stats">
       <span v-if="totalMs" class="trace-stat">
         <b>{{ formatMs(totalMs) }}</b>
+      </span>
+      <span v-if="firstStepMs !== null" class="trace-stat" title="Time from spawn to the first streamed event">
+        first step {{ formatMs(firstStepMs) }}
       </span>
       <span v-if="thoughts.length" class="trace-stat">
         <i class="trace-stat-dot" data-kind="thinking"></i>

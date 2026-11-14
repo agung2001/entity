@@ -368,6 +368,7 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
       { timeout: 60_000 },
     )
 
+    const startedMs = Date.now()
     const execution = {
       harness,
       model: String(model || ''),
@@ -375,7 +376,7 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
       remote: true,
       command: `ssh ${alias} sh run.sh`,
       cwd: remotePath(remoteRun, 'workspace'),
-      startedAt: new Date().toISOString(),
+      startedAt: new Date(startedMs).toISOString(),
       status: 'running',
       ...(files.files.length ? { files: files.files.map((file) => file.original) } : {}),
     }
@@ -393,7 +394,15 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
         },
       )
       onChild?.(child)
-      const parser = createParser(harness, { onStep })
+      const timing = { firstStepAt: '', firstTextAt: '' }
+      const parser = createParser(harness, {
+        onStep: (event) => {
+          const at = new Date().toISOString()
+          if (!timing.firstStepAt) timing.firstStepAt = at
+          if (!timing.firstTextAt && event.step?.type === 'text' && (event.step.content || event.delta)) timing.firstTextAt = at
+          onStep?.(event)
+        },
+      })
       let out = ''
       let err = ''
       let settled = false
@@ -407,12 +416,31 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
         const exitFailure = !detail && typeof code === 'number' && code !== 0
           ? String(err || '').trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || `exited with code ${code}`
           : ''
+        const endedAt = new Date().toISOString()
+        const firstStepMs = timing.firstStepAt
+          ? Math.max(0, Date.parse(timing.firstStepAt) - startedMs)
+          : null
+        const firstTextMs = timing.firstTextAt
+          ? Math.max(0, Date.parse(timing.firstTextAt) - startedMs)
+          : null
         resolve({
           ok: !detail && !exitFailure,
           answer: parsed.answer || '',
           error: detail || exitFailure,
           steps: parsed.steps,
-          execution: { ...execution, status: detail || exitFailure ? 'error' : 'ok' },
+          execution: {
+            ...execution,
+            ...(timing.firstStepAt
+              ? { firstStepAt: timing.firstStepAt, ttfbMs: firstStepMs }
+              : {}),
+            ...(timing.firstTextAt
+              ? { firstTextAt: timing.firstTextAt, firstTextMs }
+              : {}),
+            endedAt,
+            ms: Date.now() - startedMs,
+            exitCode: typeof code === 'number' ? code : null,
+            status: detail || exitFailure ? 'error' : 'ok',
+          },
         })
       }
       const armIdle = () => {
