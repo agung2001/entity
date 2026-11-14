@@ -199,22 +199,37 @@ function write(entity) {
   return read(entity.workspace, name)
 }
 
-function scaffold({ workspace, name, harness = 'claude', model = '', description = '', shape = '', color = '', mood = '' }) {
+function scaffold({
+  workspace,
+  name,
+  harness = 'claude',
+  model = '',
+  description = '',
+  shape = '',
+  color = '',
+  mood = '',
+  dir = '~',
+  skills = [],
+  mcp = [],
+  body = '',
+}) {
   const safe = safeName(name)
   const file = entityPath(workspace, safe)
   if (fs.existsSync(file)) throw new Error(`${safe}.md already exists in this workspace.`)
   const brief = String(description || '').trim()
   const oneLine = brief.replace(/\s+/g, ' ').trim()
-  const body = `# ${safe}\n\n${brief || 'What this entity is for.'}\n\n## Rules\n- One rule per line.\n`
+  const instructions = String(body || '').trim()
+    ? String(body).replace(/^\n+/, '').replace(/\s+$/, '') + '\n'
+    : `# ${safe}\n\n${brief || 'What this entity is for.'}\n\n## Rules\n- One rule per line.\n`
   return write({
     workspace,
     name: safe,
     harness: HARNESSES.includes(harness) ? harness : 'claude',
     model: String(model || '').trim(),
-    dir: '~',
-    skills: [],
-    mcp: [],
-    instructions: body,
+    dir: String(dir || '~').trim() || '~',
+    skills: Array.isArray(skills) ? skills : [],
+    mcp: Array.isArray(mcp) ? mcp : [],
+    instructions,
     frontmatter: {
       ...(oneLine ? { description: oneLine } : {}),
       ...(shape ? { shape: String(shape).trim() } : {}),

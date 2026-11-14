@@ -27,6 +27,10 @@ const audit = require('./platform-audit.cjs')
 const USAGE = `entity — read and change the files that define the agents in a workspace
 
   entity entity list
+  entity entity create <name> [--harness h] [--model m] [--dir d]
+                                  [--description <text>] [--skills a,b] [--mcp x,y]
+                                  [--shape s] [--color c] [--mood m]
+                                  [--body <text> | --body-stdin | --body-file <f>]
   entity entity get <name>
   entity entity set-instructions <name> (--body <text> | --body-stdin | --body-file <f>)
                                   [--if-unchanged '<stamp json from get>']
@@ -182,6 +186,19 @@ function runEntity(action, rest, flags, workspace, output) {
         )
       }
       return emitJson(data)
+    }
+
+    case 'create': {
+      if (!name) fail('entity create <name>')
+      const spec = {}
+      for (const key of ['harness', 'model', 'dir', 'description', 'skills', 'mcp', 'shape', 'color', 'mood']) {
+        if (key in flags) spec[key] = String(flags[key])
+      }
+      if ('body-stdin' in flags) spec.body = readStdin()
+      else if (typeof flags['body-file'] === 'string') {
+        spec.body = fs.readFileSync(path.resolve(flags['body-file']), 'utf8')
+      } else if (typeof flags.body === 'string') spec.body = flags.body
+      return emitJson(unwrap(core.call('entity.create', { workspace, name, spec })))
     }
 
     case 'get': {

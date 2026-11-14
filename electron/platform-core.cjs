@@ -100,6 +100,32 @@ function text(value, field) {
   return value
 }
 
+/** The one shape `entity get` and `entity create` return. */
+function describeEntity(record, name) {
+  const file = entityFile(record, name)
+  const entity = entities.read(record.id, name)
+  if (!entity) throw new PlatformError('not_found', `No entity called "${name}" in this workspace.`)
+  return {
+    name: entity.name,
+    harness: entity.harness,
+    model: entity.model,
+    dir: entity.dir,
+    skills: entity.skills,
+    mcp: entity.mcp,
+    description: String(entity.frontmatter?.description || entity.summary || '').trim(),
+    mark: entity.mark,
+    instructions: entity.instructions,
+    rules: entity.rules,
+    summary: entity.summary,
+    title: entity.title,
+    frontmatter: entity.frontmatter,
+    problems: entity.problems,
+    ok: entity.ok,
+    path: tilde(file),
+    stamp: stamp(file),
+  }
+}
+
 /* ── verbs ────────────────────────────────────────────────────────── */
 
 const verbs = {
@@ -133,23 +159,84 @@ const verbs = {
       problems: entity.problems,
     })),
 
-  'entity.get': (record, name) => {
-    const file = entityFile(record, name)
-    const entity = entities.read(record.id, name)
-    if (!entity) throw new PlatformError('not_found', `No entity called "${name}" in this workspace.`)
-    return {
-      name: entity.name,
-      harness: entity.harness,
-      model: entity.model,
-      dir: entity.dir,
-      skills: entity.skills,
-      mcp: entity.mcp,
-      instructions: entity.instructions,
-      rules: entity.rules,
-      problems: entity.problems,
-      path: tilde(file),
-      stamp: stamp(file),
+  'entity.get': (record, name) => describeEntity(record, name),
+
+  /**
+   * Create a sibling entity from an agent turn.
+   *
+   * The agent-facing CLI used to stop at read/update, so an agent asked to
+   * create an entity had to reverse-engineer `entity-store` and write the
+   * markdown itself. This is the same scaffold the window uses, with the
+   * workspace checks a name from an untrusted caller needs.
+   */
+  'entity.create': (record, name, spec) => {
+    const input = spec === undefined ? {} : spec
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new PlatformError('invalid', 'The entity definition must be an object.')
     }
+    const safe = entityName(name)
+    const file = entities.locate({ workspace: record.id, name: safe })
+    within(record, file)
+    if (fs.existsSync(file)) {
+      throw new PlatformError('conflict', `${safe}.md already exists in this workspace.`)
+    }
+
+    const current = process.env.ENTITY_ENTITY
+      ? entities.read(record.id, process.env.ENTITY_ENTITY)
+      : null
+    const harness = String(input.harness || current?.harness || 'pi').trim()
+    if (!entities.HARNESSES.includes(harness)) {
+      throw new PlatformError('invalid', `harness must be one of ${entities.HARNESSES.join(', ')}.`)
+    }
+
+    const dir = String(input.dir || '~').trim() || '~'
+    try {
+      entities.resolveDir({ dir })
+    } catch (error) {
+      throw new PlatformError('invalid', String(error?.message || error))
+    }
+
+    const skills = normaliseList(input.skills, 'skills')
+    if (skills.length) {
+      const available = workspaces.skills(record.id).map((skill) => skill.name)
+      const missing = skills.filter((skill) => !available.includes(skill))
+      if (missing.length) {
+        throw new PlatformError(
+          'invalid',
+          `Not attached to this workspace: ${missing.join(', ')}. Available: ${available.join(', ') || '(none)'}.`,
+        )
+      }
+    }
+
+    const mcp = normaliseList(input.mcp, 'mcp')
+    if (mcp.length) {
+      const pool = workspaces.mcp(record.id)
+      const missing = mcp.filter((server) => !pool.names.includes(server))
+      if (missing.length) {
+        throw new PlatformError(
+          'invalid',
+          `Not in this workspace's MCP pool: ${missing.join(', ')}. Available: ${pool.names.join(', ') || '(none)'}.`,
+        )
+      }
+    }
+
+    const created = entities.scaffold({
+      workspace: record.id,
+      name: safe,
+      harness,
+      model: text(input.model ?? '', 'model'),
+      description: text(input.description ?? '', 'description'),
+      shape: text(input.shape ?? '', 'shape'),
+      color: text(input.color ?? '', 'color'),
+      mood: text(input.mood ?? '', 'mood'),
+      dir,
+      skills,
+      mcp,
+      body: text(input.body ?? '', 'body'),
+    })
+    const bytes = Buffer.byteLength(created.instructions)
+    audit.append(record, { verb: 'entity.create', target: created.name, harness, bytes })
+    return describeEntity(record, created.name)
   },
 
   /**
@@ -493,6 +580,7 @@ function call(fn, args = {}) {
 
 /** Named arguments in the order each verb expects them after `record`. */
 const POSITIONAL = {
+  'entity.create': ['name', 'spec'],
   'entity.get': ['name'],
   'entity.setInstructions': ['name', 'body', 'expect'],
   'entity.setFields': ['name', 'patch'],

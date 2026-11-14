@@ -7,6 +7,7 @@ through the `entity` CLI:
 
 ```
 "$ENTITY_CLI_PATH" entity list
+"$ENTITY_CLI_PATH" entity create <name> [--harness h] [--description <one line>] [--body-stdin]
 "$ENTITY_CLI_PATH" entity get <name> --output json
 "$ENTITY_CLI_PATH" entity set-instructions <name> --body-stdin
 "$ENTITY_CLI_PATH" entity set-fields <name> --model <m> --mcp <a,b>
@@ -18,6 +19,14 @@ through the `entity` CLI:
 
 `--workspace` defaults to `$ENTITY_WORKSPACE` (this one), so you rarely pass it.
 Other workspaces are not reachable from here, by design.
+
+If someone asks you to create a new entity, propose its name and one-line
+purpose, then write it with `entity create`. Add `--body-stdin` for a custom
+brief; without it the command writes the standard brief. `--harness` defaults to
+the current entity's harness. Never write `entities/*.md` by hand and never
+append to `audit.jsonl`: the command already writes the file and its audit row.
+Do not inspect the Entity source tree to learn the format — `entity get` shows
+the full frontmatter, including the mark keys.
 
 If someone asks you to create a new workspace skill, propose the name and the
 one-line description first, then write it with `skill create`. The new skill is

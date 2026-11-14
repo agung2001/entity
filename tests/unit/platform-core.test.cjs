@@ -189,6 +189,73 @@ test('a described entity can be duplicated and deleted', () => {
   assert.deepEqual(entities.list(workspace).map((item) => item.name), ['reviewer-copy'])
 })
 
+test('an agent can create an entity without touching the filesystem', () => {
+  const workspace = freshWorkspace('create')
+  entities.scaffold({ workspace, name: 'lead', harness: 'claude' })
+  const previous = process.env.ENTITY_ENTITY
+  process.env.ENTITY_ENTITY = 'lead'
+
+  try {
+    const created = core.call('entity.create', {
+      workspace,
+      name: 'researcher',
+      spec: {
+        description: 'Researches questions on the web\nand returns sources.',
+        body: '# researcher\n\nResearches questions on the web.\n\n## Rules\n- Open the page before citing it.\n',
+        shape: 'hex',
+        color: 'mint',
+        mood: 'focus',
+      },
+    })
+    assert.equal(created.ok, true, created.error)
+    assert.equal(created.data.name, 'researcher')
+    assert.equal(created.data.harness, 'claude', 'defaults to the creating entity harness')
+    assert.equal(created.data.description, 'Researches questions on the web and returns sources.')
+    assert.deepEqual(created.data.mark, { shape: 'hex', color: 'mint', mood: 'focus' })
+    assert.equal(created.data.frontmatter.shape, 'hex')
+    assert.equal(created.data.ok, true)
+    const got = core.call('entity.get', { workspace, name: 'researcher' })
+    assert.deepEqual(got.data.mark, { shape: 'hex', color: 'mint', mood: 'focus' })
+    assert.equal(got.data.frontmatter.description, 'Researches questions on the web and returns sources.')
+
+    const file = entities.locate({ workspace, name: 'researcher' })
+    const text = fs.readFileSync(file, 'utf8')
+    assert.match(text, /harness: claude/)
+    assert.match(text, /shape: hex/)
+    assert.match(text, /Open the page before citing it/)
+
+    const audited = fs.readFileSync(
+      path.join(PROFILE, 'workspaces', workspace, 'audit.jsonl'),
+      'utf8',
+    )
+    assert.match(audited, /entity\.create/)
+    assert.match(audited, /researcher/)
+
+    const duplicate = core.call('entity.create', { workspace, name: 'researcher', spec: {} })
+    assert.equal(duplicate.ok, false)
+    assert.equal(duplicate.code, 'conflict')
+
+    const badHarness = core.call('entity.create', {
+      workspace,
+      name: 'bad',
+      spec: { harness: 'not-a-harness' },
+    })
+    assert.equal(badHarness.ok, false)
+    assert.equal(badHarness.code, 'invalid')
+
+    const missingSkill = core.call('entity.create', {
+      workspace,
+      name: 'missing-skill',
+      spec: { skills: ['not-there'] },
+    })
+    assert.equal(missingSkill.ok, false)
+    assert.equal(missingSkill.code, 'invalid')
+  } finally {
+    if (previous === undefined) delete process.env.ENTITY_ENTITY
+    else process.env.ENTITY_ENTITY = previous
+  }
+})
+
 test('a new workspace skill is contained, audited and never overwrites', () => {
   const workspace = freshWorkspace('skill-create')
 
