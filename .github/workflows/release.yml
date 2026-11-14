@@ -1,0 +1,106 @@
+name: Release
+
+# Pushing a version tag (v0.0.1, v1.2.0, …) builds the installers and publishes
+# them to a GitHub Release with the same tag. No long-lived certificate or
+# signing secret is required: the macOS and Windows builds are unsigned.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    name: macOS (universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Align package version with the tag
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Package macOS DMG
+        run: npx electron-builder --mac --universal --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: entity-macos
+          path: release/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Align package version with the tag
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Package Windows installer
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: entity-windows
+          path: release/*.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs:
+      - macos
+      - windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Entity ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/*.dmg
+            release-assets/*.exe

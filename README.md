@@ -253,7 +253,13 @@ npm run dev:desktop      # Vite + Electron, HMR included
 | `npm run test:e2e` | Both Playwright packs |
 | `npm run test:gate` | Unit + smoke — the release gate |
 | `npm run package` | Builds a distributable with electron-builder → `release/` |
+| `git tag v0.0.1 && git push origin v0.0.1` | Builds macOS and Windows installers and publishes them to a GitHub Release |
 | `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
+
+Tag builds are unsigned: macOS may ask you to open the app from **System
+Settings → Privacy & Security**, and Windows SmartScreen may warn before running
+the installer. The workflow uses the tag as the app version, so `v0.0.1`
+produces installers named `0.0.1`.
 
 The default E2E packs start their own server on port **5199** and seed a
 throwaway profile under `.tmp/` — no real account, workspace, SSH host or MCP
