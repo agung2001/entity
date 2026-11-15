@@ -49,6 +49,7 @@ const USAGE = `entity — read and change the files that define the agents in a 
   entity skill detach <name>
 
   entity workspace get
+  entity workspace list
   entity workspace set-context (--context <text> | --context-stdin)
 
 Global flags
@@ -63,6 +64,10 @@ Notes
   - Read, then write: a get returns a stamp, and passing it back as
     --if-unchanged makes the write fail with code "conflict" instead of silently
     discarding an edit somebody made in between.
+  - A run is pinned to the workspace it was started in. It may READ another
+    workspace with --workspace (logged in its own audit.jsonl) and may not write
+    to one. From a shell outside the app — including the in-app terminal — nothing
+    is pinned, so --workspace <id> works for reads and writes alike.
 `
 
 /* ── argument parsing ─────────────────────────────────────────────── */
@@ -139,20 +144,21 @@ function unwrap(result) {
   return result.data
 }
 
-function resolveWorkspace(flags) {
+function resolveTarget(flags) {
   const ambient = String(process.env.ENTITY_WORKSPACE || '').trim()
   const flagged = typeof flags.workspace === 'string' ? flags.workspace.trim() : ''
-  /* Inside a run the workspace is pinned. An explicit --workspace is how a
-     person reaches another workspace from a shell, not how an agent escapes
-     the one it was started in. */
+  /* Inside a run the workspace is pinned. An explicit --workspace may REACH
+     another workspace to read it — the run's own shell can read those files
+     anyway, so refusing would be theatre — but a pinned run may never write
+     there. That is the C07 boundary: a prompt-injected agent must not be able to
+     rewrite the agents of a workspace the person is not looking at. */
   if (ambient && flagged && flagged !== ambient) {
-    fail(
-      `--workspace ${flagged} is not reachable from this run (pinned to ${ambient}).`,
-      'denied',
-    )
+    return { workspace: String(flagged), pinned: ambient, cross: true }
   }
   const explicit = flagged || ambient
-  if (explicit && explicit !== true) return String(explicit)
+  if (explicit && explicit !== true) {
+    return { workspace: String(explicit), pinned: ambient || '', cross: false }
+  }
 
   let list = []
   try {
@@ -160,20 +166,49 @@ function resolveWorkspace(flags) {
   } catch (error) {
     fail(`Could not read ~/.entity/workspaces: ${error?.message || error}`, 'error')
   }
-  if (list.length === 1) return list[0].id
+  if (list.length === 1) return { workspace: list[0].id, pinned: '', cross: false }
   if (!list.length) fail('There is no workspace yet.', 'not_found')
   fail(
     `Which workspace? --workspace <id>. Available: ${list.map((ws) => ws.id).join(', ')}.`,
   )
 }
 
+/**
+ * A cross-workspace write is refused, and the refusal names the way out, so the
+ * caller does not retry the same command with a different spelling.
+ */
+function guardWrite(target, verb) {
+  if (!target.cross) return
+  fail(
+    `${verb} cannot write to ${target.workspace}: this run is pinned to ${target.pinned}. ` +
+      'Reads are allowed; ask the person to open that workspace, or use the in-app terminal, where nothing is pinned.',
+    'denied',
+  )
+}
+
+/** A cross-workspace read is a real event: record it where the run can be seen. */
+function noteCrossRead(target, verb, name) {
+  if (!target.cross) return
+  try {
+    const store = require('./workspace-store.cjs')
+    audit.append(store.open(target.pinned), {
+      verb: `cross.read ${verb}`,
+      target: `${target.workspace}${name ? `/${name}` : ''}`,
+    })
+  } catch {
+    /* an audit that cannot be written must not fail the read */
+  }
+}
+
 /* ── verbs ────────────────────────────────────────────────────────── */
 
-function runEntity(action, rest, flags, workspace, output) {
+function runEntity(action, rest, flags, target, output) {
+  const workspace = target.workspace
   const name = rest[0]
   switch (action) {
     case 'list': {
       const data = unwrap(core.call('entity.list', { workspace }))
+      noteCrossRead(target, 'entity.list', '')
       if (output === 'table') {
         return write(
           table(data, [
@@ -190,6 +225,7 @@ function runEntity(action, rest, flags, workspace, output) {
 
     case 'create': {
       if (!name) fail('entity create <name>')
+      guardWrite(target, 'entity.create')
       const spec = {}
       for (const key of ['harness', 'model', 'dir', 'description', 'skills', 'mcp', 'shape', 'color', 'mood']) {
         if (key in flags) spec[key] = String(flags[key])
@@ -203,11 +239,14 @@ function runEntity(action, rest, flags, workspace, output) {
 
     case 'get': {
       if (!name) fail('entity get <name>')
-      return emitJson(unwrap(core.call('entity.get', { workspace, name })))
+      const data = unwrap(core.call('entity.get', { workspace, name }))
+      noteCrossRead(target, 'entity.get', name)
+      return emitJson(data)
     }
 
     case 'set-instructions': {
       if (!name) fail('entity set-instructions <name> --body-stdin')
+      guardWrite(target, 'entity.set-instructions')
       let body
       if ('body-stdin' in flags) body = readStdin()
       else if ('body-file' in flags) body = fs.readFileSync(path.resolve(String(flags['body-file'])), 'utf8')
@@ -233,6 +272,7 @@ function runEntity(action, rest, flags, workspace, output) {
 
     case 'set-fields': {
       if (!name) fail('entity set-fields <name> --model <m>')
+      guardWrite(target, 'entity.set-fields')
       const patch = {}
       for (const key of ['harness', 'model', 'dir', 'skills', 'mcp']) {
         if (key in flags) patch[key] = flags[key] === true ? '' : String(flags[key])
@@ -247,6 +287,7 @@ function runEntity(action, rest, flags, workspace, output) {
       const limit = Number(flags.limit || 20)
       const record = require('./workspace-store.cjs').open(workspace)
       const rows = audit.read(record, { limit: Number.isFinite(limit) ? limit : 20 })
+      noteCrossRead(target, 'entity.audit', '')
       if (output === 'table') {
         return write(
           table(rows, [
@@ -264,11 +305,13 @@ function runEntity(action, rest, flags, workspace, output) {
   }
 }
 
-function runMcp(action, rest, flags, workspace, output) {
+function runMcp(action, rest, flags, target, output) {
+  const workspace = target.workspace
   const name = rest[0]
   switch (action) {
     case 'list': {
       const data = unwrap(core.call('mcp.list', { workspace }))
+      noteCrossRead(target, 'mcp.list', '')
       if (output === 'table') {
         return write(
           table(data.names, [
@@ -284,6 +327,7 @@ function runMcp(action, rest, flags, workspace, output) {
 
     case 'add': {
       if (!name) fail('mcp add <name> --command <cmd>')
+      guardWrite(target, 'mcp.add')
       let spec
       if ('spec-stdin' in flags) {
         const raw = readStdin().trim()
@@ -305,6 +349,7 @@ function runMcp(action, rest, flags, workspace, output) {
 
     case 'remove': {
       if (!name) fail('mcp remove <name>')
+      guardWrite(target, 'mcp.remove')
       return emitJson(unwrap(core.call('mcp.remove', { workspace, name })))
     }
 
@@ -313,11 +358,13 @@ function runMcp(action, rest, flags, workspace, output) {
   }
 }
 
-function runSkill(action, rest, flags, workspace, output) {
+function runSkill(action, rest, flags, target, output) {
+  const workspace = target.workspace
   const name = rest[0]
   switch (action) {
     case 'list': {
       const data = unwrap(core.call('skill.list', { workspace }))
+      noteCrossRead(target, 'skill.list', '')
       if (output === 'table') {
         return write(
           `  attached: ${data.attached.join(', ') || '(none)'}\n  available: ${
@@ -330,6 +377,7 @@ function runSkill(action, rest, flags, workspace, output) {
 
     case 'create': {
       if (!name) fail('skill create <name> (--body <text> | --body-stdin)')
+      guardWrite(target, 'skill.create')
       let body
       if ('body-stdin' in flags) body = readStdin()
       else if (typeof flags.body === 'string') body = flags.body
@@ -348,6 +396,7 @@ function runSkill(action, rest, flags, workspace, output) {
 
     case 'attach': {
       if (!name) fail('skill attach <name>')
+      guardWrite(target, 'skill.attach')
       return emitJson(
         unwrap(
           core.call('skill.attach', {
@@ -361,6 +410,7 @@ function runSkill(action, rest, flags, workspace, output) {
 
     case 'detach': {
       if (!name) fail('skill detach <name>')
+      guardWrite(target, 'skill.detach')
       return emitJson(unwrap(core.call('skill.detach', { workspace, name })))
     }
 
@@ -369,12 +419,51 @@ function runSkill(action, rest, flags, workspace, output) {
   }
 }
 
-function runWorkspace(action, flags, workspace, output) {
+function runWorkspace(action, flags, target, output) {
+  const workspace = target.workspace
   switch (action) {
-    case 'get':
-      return emitJson(unwrap(core.call('workspace.get', { workspace })))
+    case 'get': {
+      const data = unwrap(core.call('workspace.get', { workspace }))
+      noteCrossRead(target, 'workspace.get', '')
+      return emitJson(data)
+    }
+
+    /* Every workspace on this machine, so a caller can name one instead of
+       reading ~/.entity/workspaces with `ls`. Read-only either way. */
+    case 'list': {
+      let rows = []
+      try {
+        rows = require('./workspace-store.cjs').list()
+      } catch (error) {
+        return fail(`Could not read ~/.entity/workspaces: ${error?.message || error}`, 'error')
+      }
+      const data = rows.map((row) => ({
+        id: row.id,
+        label: row.label,
+        kind: row.kind || 'local',
+        entities: row.counts?.entities ?? 0,
+        skills: row.counts?.skills ?? 0,
+        machines: row.counts?.machines ?? 0,
+        path: row.path,
+        current: row.id === workspace,
+      }))
+      if (output === 'table') {
+        return write(
+          table(data, [
+            { label: '', get: (row) => (row.current ? '*' : '') },
+            { label: 'ID', get: (row) => row.id },
+            { label: 'LABEL', get: (row) => row.label },
+            { label: 'KIND', get: (row) => row.kind },
+            { label: 'ENTITIES', get: (row) => row.entities },
+            { label: 'SKILLS', get: (row) => row.skills },
+          ]),
+        )
+      }
+      return emitJson(data)
+    }
 
     case 'set-context': {
+      guardWrite(target, 'workspace.set-context')
       let context
       if ('context-stdin' in flags) context = readStdin()
       else if (typeof flags.context === 'string') context = flags.context
@@ -405,17 +494,17 @@ function main(argv) {
     return fail(`Unknown command "${group}". Try \`entity --help\`.`)
   }
 
-  const workspace = resolveWorkspace(flags)
+  const target = resolveTarget(flags)
 
   switch (group) {
     case 'entity':
-      return runEntity(action, rest, flags, workspace, output)
+      return runEntity(action, rest, flags, target, output)
     case 'mcp':
-      return runMcp(action, rest, flags, workspace, output)
+      return runMcp(action, rest, flags, target, output)
     case 'skill':
-      return runSkill(action, rest, flags, workspace, output)
+      return runSkill(action, rest, flags, target, output)
     case 'workspace':
-      return runWorkspace(action, flags, workspace, output)
+      return runWorkspace(action, flags, target, output)
     default:
       return fail(`Unknown command "${group}".`)
   }

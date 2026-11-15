@@ -703,10 +703,11 @@ workspace:
 "$ENTITY_CLI_PATH" entity set-instructions release-captain --body-stdin
 "$ENTITY_CLI_PATH" skill create writing-skill --description "Plain, warm prose" --body-stdin
 "$ENTITY_CLI_PATH" mcp add github --command npx --args -y,server-github
+"$ENTITY_CLI_PATH" workspace list
 "$ENTITY_CLI_PATH" workspace set-context --context-stdin
 ```
 
-Four things make that safe to hand out:
+Five things make that safe to hand out:
 
 - **One writer.** `electron/platform-core.cjs` owns every verb; `cli.cjs` is a
   transport over it and touches no paths.
@@ -716,6 +717,12 @@ Four things make that safe to hand out:
   write that would clobber a person editing the same file in `$EDITOR`.
 - **An audit line.** Every mutation appends to `<ws>/audit.jsonl`; `entity audit`
   reads it back.
+- **One pinned workspace, reads elsewhere.** A run is pinned to the workspace it was
+  started in and may not write to another one, but `--workspace <id>` on a *read* is
+  allowed and recorded in its own audit log as `cross.read`. `workspace list` names
+  every workspace on the machine, so a caller can name one instead of reading
+  `~/.entity/workspaces` with `ls`. From a shell outside the app — including the
+  in-app terminal, where nothing is pinned — `--workspace` works for writes too.
 
 The same verbs are reachable from the window through `platform.verbs` /
 `platform.call`, so a UI for them does not need a second implementation. Account →

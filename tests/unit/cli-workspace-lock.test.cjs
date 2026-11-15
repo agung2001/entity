@@ -1,7 +1,8 @@
 /**
  * The agent-facing CLI is pinned to `$ENTITY_WORKSPACE` when the app starts a
- * run. An explicit `--workspace` is a human shell convenience, not an agent
- * escape hatch. This is the C07 boundary at the transport layer.
+ * run. A pinned run may READ another workspace — its own shell can read those
+ * files anyway, so refusing would be theatre — but never write to one. This is
+ * the C07 boundary at the transport layer.
  */
 const fs = require('node:fs')
 const os = require('node:os')
@@ -43,7 +44,7 @@ function run(args, { workspace = '', entity = '', input = '' } = {}) {
   }
 }
 
-test('an agent run cannot reach another workspace, even with --workspace', () => {
+test('a pinned run cannot WRITE to another workspace, even with --workspace', () => {
   const first = workspaces.create({ label: 'first' })
   const second = workspaces.create({ label: 'second' })
   entities.scaffold({ workspace: first.id, name: 'private-agent', harness: 'pi' })
@@ -52,8 +53,11 @@ test('an agent run cannot reach another workspace, even with --workspace', () =>
   const before = fs.readFileSync(target, 'utf8')
 
   for (const args of [
-    ['entity', 'get', 'private-agent', '--output', 'json'],
     ['entity', 'set-instructions', 'private-agent', '--body-stdin'],
+    ['entity', 'set-fields', 'private-agent', '--model', 'x'],
+    ['entity', 'create', 'intruder'],
+    ['mcp', 'add', 'intruder', '--command', 'true'],
+    ['workspace', 'set-context', '--context', 'hijacked'],
   ]) {
     const result = run(
       [...args, '--workspace', second.id],
@@ -64,12 +68,47 @@ test('an agent run cannot reach another workspace, even with --workspace', () =>
     assert.equal(result.json?.code, 'denied')
   }
   assert.equal(fs.readFileSync(target, 'utf8'), before)
+  assert.equal(fs.readdirSync(path.join(PROFILE, 'workspaces', second.id, 'entities')).length, 1)
 
   /* A person at a shell (no ENTITY_WORKSPACE) can still choose a workspace. */
   const human = run(['entity', 'get', 'private-agent', '--output', 'json', '--workspace', second.id])
   assert.equal(human.status, 0)
   assert.equal(human.json?.ok, true)
   assert.equal(human.json?.data?.name, 'private-agent')
+})
+
+test('a pinned run can READ another workspace, and says so in its own audit log', () => {
+  const first = workspaces.create({ label: 'reader' })
+  const second = workspaces.create({ label: 'target' })
+  entities.scaffold({ workspace: second.id, name: 'sibling-agent', harness: 'pi' })
+
+  const read = run(['entity', 'get', 'sibling-agent', '--output', 'json', '--workspace', second.id], {
+    workspace: first.id,
+    entity: 'reader',
+  })
+  assert.equal(read.status, 0, read.stderr || read.stdout)
+  assert.equal(read.json?.ok, true)
+  assert.equal(read.json?.data?.name, 'sibling-agent')
+
+  /* the read is recorded where the run that made it can be seen */
+  const audit = fs.readFileSync(path.join(PROFILE, 'workspaces', first.id, 'audit.jsonl'), 'utf8')
+  assert.match(audit, /cross\.read entity\.get/)
+  assert.match(audit, new RegExp(second.id))
+  /* and nothing was written where it was read from */
+  const otherFile = path.join(PROFILE, 'workspaces', second.id, 'audit.jsonl')
+  const other = fs.existsSync(otherFile) ? fs.readFileSync(otherFile, 'utf8') : ''
+  assert.doesNotMatch(other, /cross\.read/)
+})
+
+test('workspace list names every room without a pinned run', () => {
+  const first = workspaces.create({ label: 'listed-one' })
+  const second = workspaces.create({ label: 'listed-two' })
+  const result = run(['workspace', 'list', '--output', 'json', '--workspace', first.id])
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+  const ids = (result.json?.data || []).map((row) => row.id)
+  assert.ok(ids.includes(first.id) && ids.includes(second.id), ids.join(', '))
+  const current = (result.json?.data || []).find((row) => row.id === first.id)
+  assert.equal(current?.current, true)
 })
 
 
