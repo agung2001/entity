@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
-import { shareHref } from '@/lib/share-url'
+import { referenceBlock, shareHref } from '@/lib/share-url'
 import { playSfx } from '@/lib/sfx'
 import {
   ago,
@@ -221,16 +221,19 @@ async function menuCopyLink() {
     query: { thread: thread.id },
   }).href
   const url = shareHref(href, hub.workspace)
-  if (!url) {
-    toast('This workspace has no shareable link yet - it exists only on this machine.')
-    return
-  }
+  const block = referenceBlock({
+    text: titleOf(thread),
+    entity: thread.entity,
+    workspace: hub.workspace,
+    when: thread.updatedAt,
+    url,
+  })
   try {
-    await navigator.clipboard.writeText(url)
-    toast('Thread link copied')
+    await navigator.clipboard.writeText(block)
+    toast('Thread reference copied')
     playSfx('confirm')
   } catch {
-    toast(url)
+    toast('The reference could not be copied.')
   }
 }
 
@@ -569,7 +572,7 @@ defineExpose({ newThread })
             <path d="M6.4 9.6l3.2-3.2M5.2 10.8l-1 .9a2.2 2.2 0 01-3.1-3.1l2-2a2.2 2.2 0 013.1 0" />
             <path d="M10.8 5.2l1-.9a2.2 2.2 0 013.1 3.1l-2 2a2.2 2.2 0 01-3.1 0" />
           </svg>
-          Copy URL
+          Copy reference
         </button>
         <button
           class="rchat-menu-item rchat-menu-danger"

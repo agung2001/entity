@@ -152,23 +152,39 @@ const messages = computed(() => {
   ]
 })
 
-const shareUrlFor = (index) =>
+const shareUrlFor = (index, message) =>
   shareHref(
     router.resolve({
       name: 'chat',
       params: { workspace: route.params.workspace },
-      query: { ...route.query, thread: hub.chat.active, msg: String(index) },
+      query: {
+        ...route.query,
+        thread: hub.chat.active,
+        msg: message?.id ? String(message.id) : String(index),
+      },
     }).href,
     route.params.workspace,
   )
 
 function readMessageFocus() {
-  const raw = typeof route.query.msg === 'string' ? Number(route.query.msg) : NaN
-  focusMessage.value = Number.isInteger(raw) && raw >= 0 ? raw : -1
+  const raw = typeof route.query.msg === 'string' ? route.query.msg.trim() : ''
+  if (!raw) {
+    focusMessage.value = -1
+    return
+  }
+  if (/^\d+$/.test(raw)) {
+    const index = Number(raw)
+    focusMessage.value = Number.isInteger(index) && index >= 0 ? index : -1
+    return
+  }
+  const at = (thread.value?.messages || []).findIndex((message) => message.id === raw)
+  focusMessage.value = at
 }
 
+/* The thread may load after the URL does, so the message list is part of the
+   dependency: an id resolves once its row is available. */
 watch(
-  () => route.query.msg,
+  () => [route.query.msg, thread.value?.messages],
   () => readMessageFocus(),
   { immediate: true },
 )

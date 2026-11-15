@@ -1141,8 +1141,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
       localOnly: thread.machine !== 'local',
     })
     turnMentions = mentioned.mentions
+    const userMessageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     thread.messages.push({
       who: 'me',
+      id: userMessageId,
       text: message,
       at: now(),
       /* A local skill returns `ref`; a remote skill returns `skill` after it

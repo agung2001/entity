@@ -8,6 +8,7 @@ import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
 import { credentials, hub, isSending, toast } from '@/stores/hub'
 import { gravatarUrl } from '@/lib/gravatar'
+import { referenceBlock } from '@/lib/share-url'
 import { createSpeaker } from '@/lib/voice'
 
 /**
@@ -345,7 +346,7 @@ async function copyMessage(message) {
 
 async function shareMessage(message, index) {
   let url = ''
-  const raw = props.shareUrl ? props.shareUrl(index) : ''
+  const raw = props.shareUrl ? props.shareUrl(index, message) : ''
   if (raw) {
     try {
       url = new URL(raw, window.location.href).href
@@ -365,16 +366,17 @@ async function shareMessage(message, index) {
       if (error?.name === 'AbortError') return
     }
   }
-  /* A share without a link is only a copy. The deep link is the useful part:
-     it opens this thread and scrolls to this exact message. */
-  const copied = await copyText(url || message.text)
-  toast(
-    copied
-      ? url
-        ? 'Link to this message copied'
-        : 'Message copied - this workspace has no shareable link yet.'
-      : 'The response could not be shared.',
-  )
+  /* The share sheet takes the link. The copy fallback is a reference a person
+     can paste anywhere, with the link last when there is one. */
+  const block = referenceBlock({
+    text: message.text,
+    entity: props.entityName,
+    workspace: hub.workspace,
+    when: message.at,
+    url,
+  })
+  const copied = await copyText(block)
+  toast(copied ? 'Reference copied' : 'The reference could not be copied.')
 }
 
 async function saveMessage(message) {
