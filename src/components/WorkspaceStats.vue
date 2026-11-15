@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted } from 'vue'
-import { ago, hub, problemCount } from '@/stores/hub'
+import { ago, hub, liveSummaries, problemCount } from '@/stores/hub'
 import { fleet, loadFleet } from '@/stores/fleet'
 
 /**
@@ -8,7 +8,7 @@ import { fleet, loadFleet } from '@/stores/fleet'
  * four tiles are the reference dashboard's attention-first order: what exists,
  * where it runs, what has been said, and what needs a look.
  */
-const summaries = computed(() => hub.chat.summaries || [])
+const summaries = computed(() => liveSummaries())
 
 const running = computed(() => hub.agents.filter((agent) => agent.status === 'running').length)
 const problems = computed(() => problemCount())

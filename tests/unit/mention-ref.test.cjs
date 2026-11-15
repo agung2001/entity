@@ -401,3 +401,25 @@ test('localOnly leaves a single-at mention for the remote context', async () => 
   assert.equal(out.text, '@py-agent fix the build')
   assert.deepEqual(out.mentions, [])
 })
+
+test('a name with no job is a reference, and punctuation is not part of the name', async () => {
+  const record = workspace()
+  let ran = false
+  const out = await mention.rewrite(record, 'I want to delete the @py-agent.', {
+    deps: deps({
+      runEntity: async () => {
+        ran = true
+        return { ok: true, answer: '', error: '' }
+      },
+    }),
+  })
+  const [seg] = mention.parse('I want to delete the @py-agent.').segments
+  assert.equal(seg.name, 'py-agent')
+  assert.equal(seg.job, '')
+  assert.equal(ran, false, 'a bare mention must not start an entity run')
+  assert.equal(out.mentions.length, 1)
+  assert.equal(out.mentions[0].reference, true)
+  assert.equal(out.mentions[0].status, 'ok')
+  assert.match(out.text, /named only; no job was given/)
+  assert.doesNotMatch(out.text, /no answer/)
+})

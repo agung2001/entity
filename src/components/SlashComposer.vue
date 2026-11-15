@@ -602,7 +602,17 @@ function focus() {
   nextTick(() => input.value?.focus())
 }
 
-defineExpose({ focus, addFiles, addDrop })
+function restore(text) {
+  draft.value = String(text || '')
+  nextTick(() => {
+    grow()
+    input.value?.focus()
+    const end = draft.value.length
+    input.value?.setSelectionRange(end, end)
+  })
+}
+
+defineExpose({ focus, addFiles, addDrop, restore })
 </script>
 
 <template>

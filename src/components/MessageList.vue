@@ -22,8 +22,18 @@ const props = defineProps({
   threadId: { type: String, default: '' },
   focusIndex: { type: Number, default: -1 },
   shareUrl: { type: Function, default: null },
+  followups: { type: Array, default: () => [] },
+  followupsBusy: { type: Boolean, default: false },
 })
-const emit = defineEmits(['chip', 'retry'])
+const emit = defineEmits(['chip', 'retry', 'followup', 'suggest'])
+
+/* Follow-ups belong to the newest completed reply, not to an empty thread and
+   not while a turn is streaming. */
+const showFollowups = computed(() => {
+  if (props.live) return false
+  const last = props.messages[props.messages.length - 1]
+  return Boolean(last && last.who === 'agent' && !last.error)
+})
 
 const box = ref(null)
 const saving = ref('')
@@ -597,6 +607,52 @@ function traceSummary(message) {
     <div v-if="live" class="msg-foot msg-foot--live" data-who="agent">
       <span class="msg-replied">{{ liveStatus }}</span>
     </div>
+
+    <section v-if="showFollowups" class="quick-actions" aria-label="Suggested follow-ups">
+      <header>
+        <span>Follow-ups</span>
+        <button
+          v-if="followups.length"
+          class="qa-refresh"
+          type="button"
+          :disabled="followupsBusy"
+          title="Regenerate suggestions"
+          aria-label="Regenerate suggestions"
+          @click="emit('suggest', true)"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M13.2 7A5.2 5.2 0 1 0 12 11" />
+            <path d="M13.4 3.2v4h-4" />
+          </svg>
+        </button>
+      </header>
+      <div v-if="followups.length" class="qa-row">
+        <button
+          v-for="action in followups"
+          :key="action.label"
+          class="qa-btn"
+          type="button"
+          :data-primary="action.primary ? '1' : '0'"
+          :title="action.prompt"
+          @click="emit('followup', action)"
+        >
+          {{ action.label }}
+          <svg v-if="action.primary" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M4.4 11.6L11.6 4.4M6 4.4h5.6V10" />
+          </svg>
+        </button>
+      </div>
+      <div v-else-if="followupsBusy" class="qa-note">
+        <span class="qa-dot" aria-hidden="true"></span>
+        Reading the conversation for a next step…
+      </div>
+      <button v-else class="qa-btn qa-btn--ghost" type="button" @click="emit('suggest', false)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M8 1.8l1.5 3.9 3.9 1.5-3.9 1.5L8 12.6 6.5 8.7 2.6 7.2l3.9-1.5z" />
+        </svg>
+        Suggest follow-ups
+      </button>
+    </section>
 
     <details v-if="hasTrace(live)" class="msg-trace msg-trace--live" open>
       <summary class="msg-trace-head">

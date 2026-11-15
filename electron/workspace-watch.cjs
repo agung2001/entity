@@ -25,6 +25,10 @@ const RELEVANT = [
      without waiting for the six-hour poll. The renderer reload is debounced and
      cheap; the sync pass hashes only changed files. */
   /^artifacts\//,
+  /* Thread create/rename/delete from another window. Writes during a turn are
+     frequent, so the renderer debounces the list reload and skips it while a
+     turn of its own is running. */
+  /^chats\//,
 ]
 
 /** `<id>/entities/foo.md` → `{ id, rest }` */

@@ -18,7 +18,12 @@ export const SFX_THEMES = [
   },
 ]
 
-const defaults = { enabled: true, volume: 0.65, theme: 'area51', version: 2 }
+const defaults = { enabled: true, volume: 1, theme: 'area51', version: 3 }
+
+/* Cue levels were written against a quieter master. With the master at 100% and
+   a compressor on the bus, this is the headroom that makes a tap audible on a
+   laptop without a cue ever clipping. */
+const BOOST = 2.6
 
 function stored() {
   try {
@@ -27,14 +32,14 @@ function stored() {
     let volume = Number.isFinite(value.volume)
       ? Math.min(1, Math.max(0, value.volume))
       : defaults.volume
-    /* The old default was 34%; move a profile that never chose a volume to the
-       new 65% default once, without touching anyone's custom level. */
-    if (value.version !== 2 && volume === 0.34) volume = defaults.volume
+    /* The old defaults were 34% and 65%; move a profile that never chose a
+       volume to the new full level once, without touching a custom level. */
+    if (value.version !== 3 && (volume === 0.34 || volume === 0.65)) volume = defaults.volume
     return {
       enabled: value.enabled !== false,
       volume,
       theme: SFX_THEMES.some((item) => item.id === value.theme) ? value.theme : defaults.theme,
-      version: 2,
+      version: 3,
     }
   } catch {
     return { ...defaults }
@@ -63,7 +68,16 @@ function ensureAudio() {
     audio = new Ctx()
     master = audio.createGain()
     master.gain.value = sfxSettings.volume
-    master.connect(audio.destination)
+    /* A compressor on the bus, not a limiter with latency: cues are short and
+       can sit close together (a reply plus a navigation tap). */
+    const comp = audio.createDynamicsCompressor()
+    comp.threshold.value = -18
+    comp.knee.value = 20
+    comp.ratio.value = 4
+    comp.attack.value = 0.003
+    comp.release.value = 0.2
+    master.connect(comp)
+    comp.connect(audio.destination)
   }
   if (audio.state === 'suspended') audio.resume().catch(() => {})
   return audio
@@ -79,7 +93,7 @@ function tone(freq, { at = 0, dur = 0.07, type = 'square', gain = 0.06, to = nul
   if (to) osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), when + dur)
   if (detune) osc.detune.setValueAtTime(detune, when)
   env.gain.setValueAtTime(0.0001, when)
-  env.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), when + 0.006)
+  env.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain * BOOST), when + 0.006)
   env.gain.exponentialRampToValueAtTime(0.0001, when + dur)
   osc.connect(env)
   env.connect(master)
@@ -100,7 +114,7 @@ function staticBurst({ at = 0, dur = 0.06, gain = 0.025, high = 900 } = {}) {
   filter.type = 'highpass'
   filter.frequency.value = high
   const env = audio.createGain()
-  env.gain.setValueAtTime(Math.max(0.0001, gain), when)
+  env.gain.setValueAtTime(Math.max(0.0001, gain * BOOST), when)
   env.gain.exponentialRampToValueAtTime(0.0001, when + dur)
   source.connect(filter)
   filter.connect(env)

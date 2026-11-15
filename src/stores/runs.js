@@ -122,8 +122,20 @@ function onEvent(event) {
   if (!event || event.workspace !== hub.workspace) return
 
   if (event.kind === 'workspace-changed') {
-    scheduleEntityReload()
-    if ((event.paths || []).some((file) => file.startsWith('skills/'))) {
+    const paths = event.paths || []
+    /* Chat writes are frequent; reloading every entity for each one would be
+       pure waste. Only entity/config files change the entity list. */
+    if (
+      paths.some(
+        (file) =>
+          file.startsWith('entities/') ||
+          file === 'workspace.json' ||
+          file === 'mcp.json',
+      )
+    ) {
+      scheduleEntityReload()
+    }
+    if (paths.some((file) => file.startsWith('skills/'))) {
       scheduleSkillReload()
     }
     return

@@ -6,6 +6,8 @@ import HarnessPaths from '@/components/HarnessPaths.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import EntityCloneDialog from '@/components/EntityCloneDialog.vue'
+import EntityActivity from '@/components/EntityActivity.vue'
+import EntityLearnDialog from '@/components/EntityLearnDialog.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
@@ -21,7 +23,7 @@ import {
   machineById,
   toast,
 } from '@/stores/hub'
-import { findEntity, revealEntity, saveEntity } from '@/stores/entities'
+import { findEntity, loadEntities, revealEntity, saveEntity } from '@/stores/entities'
 import { colorById, markFor } from '@/composables/entityMark'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 
@@ -174,6 +176,13 @@ function onDocumentClick(event) {
   configOpen.value = false
 }
 
+const learnOpen = ref(false)
+
+async function onLearned() {
+  await loadEntities(hub.workspace)
+  toast(`${agent.value?.name || 'Entity'} instructions updated`)
+}
+
 onMounted(() => {
   ensureChats()
   loadHarnesses().catch(() => {})
@@ -289,6 +298,8 @@ async function copyPath() {
         </div>
       </section>
 
+      <EntityActivity v-if="agent" :entity="agent.name" />
+
       <div class="entp-grid">
         <div class="entp-main">
           <div v-if="agent.problems.length" class="entp-problems">
@@ -302,6 +313,13 @@ async function copyPath() {
             <div class="entp-sec-head">
               <h2>Conversations</h2>
               <span class="n">{{ threads.length }} {{ threads.length === 1 ? 'thread' : 'threads' }}</span>
+              <button class="r r-learn" type="button" @click="learnOpen = true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M8 1.8l1.5 3.9 3.9 1.5-3.9 1.5L8 12.6 6.5 8.7 2.6 7.2l3.9-1.5z" />
+                  <path d="M12.6 11.4l.6 1.5 1.5.6-1.5.6-.6 1.5-.6-1.5-1.5-.6 1.5-.6z" />
+                </svg>
+                Learning
+              </button>
               <button class="r" type="button" @click="chat">Open chat →</button>
             </div>
             <router-link v-for="t in recentThreads" :key="t.id" class="entp-thr" :to="threadLink(t)">
@@ -474,6 +492,13 @@ async function copyPath() {
           </div>
         </aside>
       </div>
+
+      <EntityLearnDialog
+        :open="learnOpen"
+        :entity="agent ? agent.name : ''"
+        @close="learnOpen = false"
+        @applied="onLearned"
+      />
 
       <EntityCloneDialog
         v-if="cloneOpen && agent"

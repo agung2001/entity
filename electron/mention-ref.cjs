@@ -72,7 +72,9 @@ function parseMention(raw) {
   const body = raw.slice(local ? 2 : 1)
   const colon = body.indexOf(':')
   if (colon < 0) {
-    const [name, ...rest] = body.trim().split(/\s+/)
+    const [word, ...rest] = body.trim().split(/\s+/)
+    /* "ask @secretary." names the entity, not an entity called "secretary.". */
+    const name = word.replace(/[.,;!?)\]]+$/, '')
     return { kind: 'entity', name, job: rest.join(' ').trim(), query: rest.join(' ').trim(), local }
   }
 
@@ -687,6 +689,25 @@ async function resolveOne(ctx, segment) {
       if (!mentioned) {
         throw new Error(`@${segment.name} is not an entity in this workspace.`)
       }
+      /* A name with no job after it is a reference, not a delegation. The
+         sentence around it may be a request about the entity ("delete @x"),
+         and failing the whole message because there is nothing to run was the
+         wrong answer. */
+      if (!segment.job) {
+        segment.mention = {
+          kind: 'entity',
+          raw: segment.raw,
+          token: tokenOf(segment),
+          name: mentioned.name,
+          job: '',
+          items: [],
+          answer: '',
+          note: '',
+          status: 'ok',
+          reference: true,
+        }
+        return
+      }
       const run = await ctx.deps.runEntity(ctx.record, mentioned, segment.job)
       segment.mention = {
         kind: 'entity',
@@ -746,6 +767,12 @@ function blockFor(segments, notes) {
     const mention = segment.mention
     if (!mention) continue
     if (mention.kind === 'entity') {
+      if (mention.reference) {
+        rows.push(
+          `- ${mention.token || mention.raw} (entity ${mention.name}) → named only; no job was given`,
+        )
+        continue
+      }
       const answer = mention.answer
         ? mention.answer.replace(/\s+/g, ' ').slice(0, 400)
         : mention.note || 'no answer'

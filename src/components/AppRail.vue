@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '@/components/BrandMark.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import RailContext from '@/components/RailContext.vue'
-import { ensureChats, hub, initials, roleById, signOut } from '@/stores/hub'
+import { ensureChats, hub, initials, liveSummaries, roleById, signOut } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { gravatarUrl } from '@/lib/gravatar'
@@ -229,7 +229,7 @@ const NAV = [
     icon: 'artifact',
     count: () => artifacts.items.length,
   },
-  { name: 'chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => hub.chat.summaries.length },
+  { name: 'chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => liveSummaries().length },
   {
     name: 'workspace',
     view: 'configurations',
@@ -239,6 +239,22 @@ const NAV = [
 ]
 
 const CONFIG_ROUTES = new Set(['workspace', 'skills', 'skill', 'mcp', 'machines', 'machine', 'activity'])
+
+/** The chat icon is "the conversation", so it carries the one to open. Without
+    the id the address landed on /chat and only sometimes gained ?thread. */
+function newestThreadId() {
+  const rows = [...(hub.chat.summaries || [])].sort((a, b) =>
+    String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
+  )
+  return rows[0]?.id || ''
+}
+
+function linkFor(item) {
+  const base = { name: item.name, params: { workspace: hub.workspace } }
+  if (item.name !== 'chat') return base
+  const thread = hub.chat.active || newestThreadId()
+  return thread ? { ...base, query: { thread } } : base
+}
 const onWorkspaces = computed(() => route.name === 'workspaces')
 const onOverview = computed(() => route.name === 'overview')
 const showContext = computed(
@@ -307,7 +323,7 @@ function leave() {
           <router-link
             v-if="item.name"
             class="rail-ico"
-            :to="{ name: item.name, params: { workspace: hub.workspace } }"
+            :to="linkFor(item)"
             :aria-current="isActive(item) ? 'page' : undefined"
             :aria-label="item.label"
             :data-tip="item.label"

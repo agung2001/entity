@@ -704,6 +704,7 @@ export async function loadChats(workspaceId = hub.workspace) {
     hub.chat.workspace = workspaceId
     hub.chat.summaries = list
     hub.chat.loaded = true
+    chatsEntitiesKey = entityNamesKey()
     if (hub.chat.active && !list.some((thread) => thread.id === hub.chat.active)) {
       hub.chat.active = ''
     }
@@ -718,9 +719,35 @@ export async function loadChats(workspaceId = hub.workspace) {
   }
 }
 
+let chatsEntitiesKey = ''
+
+function entityNamesKey() {
+  return (hub.agents || [])
+    .map((agent) => agent.name)
+    .sort()
+    .join('|')
+}
+
+/**
+ * The history is cached per workspace, but an entity can be deleted from
+ * another window: its threads then belong to nothing and the list must drop
+ * them. The entity names are a cheap signature of that change.
+ */
 export async function ensureChats() {
-  if (hub.chat.loaded && hub.chat.workspace === hub.workspace) return hub.chat.summaries
+  if (
+    hub.chat.loaded &&
+    hub.chat.workspace === hub.workspace &&
+    chatsEntitiesKey === entityNamesKey()
+  ) {
+    return hub.chat.summaries
+  }
   return loadChats()
+}
+
+/** Threads whose entity still exists. A deleted entity's history is hidden. */
+export const liveSummaries = () => {
+  const names = new Set((hub.agents || []).map((agent) => agent.name))
+  return (hub.chat.summaries || []).filter((thread) => names.has(thread.entity))
 }
 
 export const visibleThreads = () => {

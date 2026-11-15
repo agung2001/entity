@@ -210,6 +210,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | MCP add / pool JSON | `src/views/McpView.vue` | Esc, scrim, Cancel (guarded while saving) |
 | Remote connect / status | `RemoteConnectDialog.vue`, `RemoteSyncPanel.vue` | Esc, scrim, X (connect guarded while busy) |
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
+| Entity learning review | `src/components/EntityLearnDialog.vue` | Esc, scrim, Cancel (guarded while applying); `entity.learn` writes nothing |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
 
@@ -312,6 +313,10 @@ inventory, and Markdown parsing must not happen until a reply needs it.
 - **Prefetch on intent.** The sign-in form warms the hub shell when a field is
   focused or the submit button is hovered; nothing is fetched for a visitor who
   never reaches for it. Never prefetch on the critical path.
+- **Charts are a chunk of their own.** `EChart.vue` imports
+  `src/lib/echarts-core.js` with `import()`. Views import formatting from
+  `src/lib/chart-math.js`, never the renderer, or the library lands in a route
+  chunk.
 - **Read locally, in parallel.** Independent reads go out together
   (`loadScope`), and nothing is awaited that the first paint does not need.
 - **Long lists mount from the end.** A thread paints its newest rows first and

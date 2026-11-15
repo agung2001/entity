@@ -169,6 +169,15 @@ test('the entry module does not pull a screen or the parser', () => {
   assert.doesNotMatch(main, /@\/components\//)
 })
 
+test('the chart renderer is imported only behind the lazy chart component', () => {
+  const importers = MODULES.filter((entry) => /from 'echarts\//.test(entry.text)).map(
+    (entry) => entry.rel,
+  )
+  assert.deepEqual(importers, ['src/lib/echarts-core.js'])
+  const chart = FILES.find((entry) => entry.rel.endsWith('src/components/EChart.vue'))
+  assert.match(chart.text, /import\('@\/lib\/echarts-core'\)/)
+})
+
 test('marked and dompurify live behind the lazy prose engine', () => {
   const importers = MODULES.filter((entry) => /from '(marked|dompurify)'/.test(entry.text)).map(
     (entry) => entry.rel,

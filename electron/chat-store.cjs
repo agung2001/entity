@@ -352,6 +352,16 @@ function list({ workspace }) {
     return []
   }
 
+  /* A thread whose entity was deleted has nowhere to run. Keep the file on
+     disk, but leave it out of the history list instead of offering a row that
+     cannot answer. */
+  let known = null
+  try {
+    known = new Set(entities.list(record.id).map((item) => item.name))
+  } catch {
+    /* an unreadable entity dir must not hide the whole history */
+  }
+
   const newest = files
     .map((file) => {
       try {
@@ -369,7 +379,9 @@ function list({ workspace }) {
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(chatsDir(record), file), 'utf8'))
         const thread = normaliseThread(raw, record)
-        return thread && canAccess(thread) ? summarise(thread) : null
+        if (!thread || !canAccess(thread)) return null
+        if (known && !known.has(thread.entity)) return null
+        return summarise(thread)
       } catch {
         return null
       }

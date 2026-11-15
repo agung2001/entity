@@ -26,6 +26,9 @@ const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
+const usage = require('./usage.cjs')
+const learning = require('./learn.cjs')
+const suggestions = require('./suggest.cjs')
 const backups = require('./backup-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
@@ -182,6 +185,8 @@ function createRpc({
     'entity.duplicate': (args) => entities.duplicate(args),
     'entity.clone': (args) => entities.cloneTo(args),
     'entity.remove': (args) => entities.remove(args),
+    'entity.learn': (args) => learning.review(args),
+    'entity.learnApply': (args) => learning.apply(args),
     'entity.reveal': ({ workspace, name }) => {
       const file = entities.locate({ workspace, name })
       if (typeof reveal !== 'function') throw new Error('Revealing files is not available in this build.')
@@ -199,6 +204,10 @@ function createRpc({
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
     'chat.cancel': (args) => chats.cancel(args),
+    'chat.suggest': (args) => suggestions.suggest(args),
+
+    /* spend and activity, folded from the thread files */
+    'usage.summary': (args) => usage.summary(args),
 
     /* harness sessions, read from each CLI's own store */
     'sessions.list': (args) => sessions.list(args),

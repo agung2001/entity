@@ -11,12 +11,15 @@ import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
+import EntityDeleteDialog from '@/components/EntityDeleteDialog.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { colorById, markFor, playReaction } from '@/composables/entityMark'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { playSfx } from '@/lib/sfx'
+import { clearFollowups, ensureFollowups, followupsFor } from '@/lib/followups'
+import { deletionTarget } from '@/lib/delete-intent'
 import { loadArtifacts } from '@/stores/artifacts'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
 import {
@@ -101,6 +104,7 @@ const agentColor = computed(() => {
 const counts = computed(() => threadCounts(thread.value))
 const contextLocked = computed(() => threadStarted(thread.value))
 const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
+const followups = computed(() => followupsFor(hub.chat.active))
 
 const lastMessageAt = computed(() => {
   const list = thread.value?.messages || []
@@ -383,7 +387,40 @@ async function onDockDrop(event) {
   await composer.value?.addDrop(event.dataTransfer)
 }
 
+const deleteOpen = ref(false)
+const deleteNames = ref([])
+const deleteText = ref('')
+
+/** "Delete @secretary" is a file action with a confirmation, not a turn. */
+function interceptDeletion(text) {
+  const intent = deletionTarget(text, hub.agents)
+  if (!intent) return false
+  deleteNames.value = intent.names
+  deleteText.value = text
+  deleteOpen.value = true
+  return true
+}
+
+function cancelDelete() {
+  const text = deleteText.value
+  deleteOpen.value = false
+  deleteText.value = ''
+  if (text) composer.value?.restore(text)
+}
+
+function onEntitiesDeleted(names) {
+  deleteOpen.value = false
+  deleteText.value = ''
+  const thread = activeThread()
+  if (thread && names.includes(thread.entity)) {
+    /* The open conversation cannot run without its entity; leave it. */
+    hub.chat.active = ''
+    router.replace({ name: 'chat', params: { workspace: route.params.workspace } })
+  }
+}
+
 async function send(text) {
+  if (interceptDeletion(text)) return
   playSfx('send')
   playReaction(hub.workspace, thread.value?.entity)
   try {
@@ -397,6 +434,16 @@ async function send(text) {
     playReaction(hub.workspace, thread.value?.entity)
     throw error
   }
+}
+
+function sendFollowup(action) {
+  if (!action?.prompt || hub.chat.sending) return
+  send(action.prompt).catch(() => {})
+}
+
+/** The newest completed turn gets three suggestions; older threads can ask. */
+function suggestFollowups(force = false) {
+  ensureFollowups(hub.chat.active, { force }).catch(() => {})
 }
 
 function onLiveEvent(event) {
@@ -462,6 +509,12 @@ function onLiveEvent(event) {
       delete nextSending[id]
       hub.chat.sending = nextSending
     }
+    if (message && !message.error) {
+      /* Stale chips under a brand-new reply would be worse than none; clear
+         them, then let the turn be written before reading the thread. */
+      clearFollowups(id)
+      setTimeout(() => ensureFollowups(id, { force: true }).catch(() => {}), 700)
+    }
     playSfx(message?.error ? 'error' : 'receive')
     playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
@@ -486,6 +539,9 @@ onMounted(async () => {
   if (!fleet.loaded) loadFleet()
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   await openInitialThread(wanted)
+  /* A remembered thread that was already active never fired the watcher, so
+     /chat could stay in the address bar without ?thread. */
+  syncThreadUrl()
   consumeNewQuery()
 })
 
@@ -509,18 +565,20 @@ watch(
 /* /chat is a place, so the address bar names the thread. A shared link opens
    that thread; opening the bare page adopts the newest one and replaces the
    URL so it is shareable without a second click. */
-watch(
-  () => hub.chat.active,
-  (id, previous) => {
-    attachments.value = []
-    if (!id) return
-    const current = typeof route.query.thread === 'string' ? route.query.thread : ''
-    if (current === id) return
-    const query = { ...route.query, thread: id }
-    if (previous && previous !== id) delete query.msg
-    router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query })
-  },
-)
+function syncThreadUrl(previous = '') {
+  const id = hub.chat.active
+  if (!id) return
+  const current = typeof route.query.thread === 'string' ? route.query.thread : ''
+  if (current === id) return
+  const query = { ...route.query, thread: id }
+  if (previous && previous !== id) delete query.msg
+  router.replace({ name: 'chat', params: { workspace: route.params.workspace }, query })
+}
+
+watch(() => hub.chat.active, (id, previous) => {
+  attachments.value = []
+  syncThreadUrl(previous || '')
+})
 
 watch(
   () => route.query.new,
@@ -668,8 +726,12 @@ watch(
             :focus-index="focusMessage"
             :share-url="shareUrlFor"
             list-class="c-thread"
+            :followups="followups.actions"
+            :followups-busy="followups.busy"
             @chip="send"
             @retry="retryFailed"
+            @followup="sendFollowup"
+            @suggest="suggestFollowups"
           />
 
           <div class="cp-dockwrap">
@@ -939,6 +1001,13 @@ watch(
         </div>
       </div>
     </Teleport>
+
+    <EntityDeleteDialog
+      :open="deleteOpen"
+      :names="deleteNames"
+      @close="cancelDelete"
+      @deleted="onEntitiesDeleted"
+    />
 
     <ChatHarnessDialog
       :open="harnessOpen"

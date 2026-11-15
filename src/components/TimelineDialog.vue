@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import ExecutionTimeline from '@/components/ExecutionTimeline.vue'
+import EChart from '@/components/EChart.vue'
+import { chartTheme, formatTokens, formatUsd } from '@/lib/chart-math'
+import { themeMode } from '@/lib/theme'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { toast } from '@/stores/hub'
 
@@ -91,6 +94,104 @@ const usageText = computed(() => {
   if (Number.isFinite(output)) parts.push(`${output} out`)
   if (!parts.length && Number.isFinite(total)) parts.push(`${total} total`)
   return parts.join(' · ')
+})
+
+function costOf(execution) {
+  if (!execution) return 0
+  if (Number.isFinite(execution.costUsd)) return execution.costUsd
+  const cost = execution.usage?.cost
+  return cost && Number.isFinite(cost.total) ? cost.total : 0
+}
+
+function tokensOf(execution) {
+  const usage = execution?.usage
+  if (!usage || typeof usage !== 'object') return { input: 0, output: 0 }
+  const pick = (...values) => {
+    for (const value of values) if (Number.isFinite(Number(value))) return Number(value)
+    return 0
+  }
+  return {
+    input: pick(usage.input, usage.input_tokens, usage.prompt_tokens),
+    output: pick(usage.output, usage.output_tokens, usage.completion_tokens),
+  }
+}
+
+const usageTotals = computed(() => {
+  const total = { input: 0, output: 0, cost: 0, ms: 0 }
+  for (const entry of entries.value) {
+    const { input, output } = tokensOf(entry.execution)
+    total.input += input
+    total.output += output
+    total.cost += costOf(entry.execution)
+    if (Number.isFinite(entry.execution.ms)) total.ms += entry.execution.ms
+  }
+  return total
+})
+
+const selectedCost = computed(() => costOf(selected.value?.execution))
+
+const usageOption = computed(() => {
+  void themeMode.value
+  const t = chartTheme()
+  const rows = entries.value.map((entry, index) => ({
+    label: `Turn ${index + 1}`,
+    ...tokensOf(entry.execution),
+  }))
+  return {
+    backgroundColor: 'transparent',
+    animationDuration: 220,
+    grid: { left: 40, right: 10, top: 18, bottom: 24 },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: t.surface,
+      borderColor: t.border,
+      textStyle: { color: t.ink, fontSize: 11 },
+      formatter: (params) => {
+        const row = rows[params[0]?.dataIndex]
+        if (!row) return ''
+        return `<b>${row.label}</b><br>${formatTokens(row.input)} in · ${formatTokens(row.output)} out`
+      },
+    },
+    legend: {
+      show: rows.length > 1,
+      right: 0,
+      top: 0,
+      itemWidth: 8,
+      itemHeight: 8,
+      textStyle: { color: t.muted, fontSize: 10 },
+      data: ['Input', 'Output'],
+    },
+    xAxis: {
+      type: 'category',
+      data: rows.map((row) => row.label),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: t.border } },
+      axisLabel: { color: t.muted, fontSize: 9, interval: 0, hideOverlap: true },
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: t.border, type: 'dashed' } },
+      axisLabel: { color: t.muted, fontSize: 9, formatter: (value) => formatTokens(value) },
+    },
+    series: [
+      {
+        name: 'Input',
+        type: 'bar',
+        stack: 'tokens',
+        data: rows.map((row) => row.input),
+        barMaxWidth: 18,
+        itemStyle: { color: t.border, borderRadius: [0, 0, 0, 0] },
+      },
+      {
+        name: 'Output',
+        type: 'bar',
+        stack: 'tokens',
+        data: rows.map((row) => row.output),
+        barMaxWidth: 18,
+        itemStyle: { color: t.accent, borderRadius: [2, 2, 0, 0] },
+      },
+    ],
+  }
 })
 
 function formatMs(ms) {
@@ -326,6 +427,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <div><dt>Status</dt><dd><span class="state" :data-s="status === 'error' || status === 'canceled' ? 'fail' : 'live'"><i></i>{{ status }}</span></dd></div>
             <div><dt>When</dt><dd>{{ when(selected) || '—' }}</dd></div>
             <div><dt>Tokens</dt><dd>{{ usageText || '—' }}</dd></div>
+            <div><dt>Cost</dt><dd>{{ selectedCost > 0 ? formatUsd(selectedCost) : '—' }}</dd></div>
             <div><dt>Model</dt><dd class="mono">{{ selected.execution.model || 'harness default' }}</dd></div>
             <div><dt>Exit</dt><dd class="mono">{{ Number.isFinite(selected.execution.exitCode) ? selected.execution.exitCode : '—' }}</dd></div>
           </dl>
@@ -343,6 +445,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           :execution="selected.execution"
           :selected-seq="selectedSeq"
           @select="selectStep"
+        />
+      </section>
+
+      <section class="td-usage" aria-label="Usage across this thread">
+        <header>
+          <div>
+            <p class="eyebrow">Usage</p>
+            <h3>What this thread cost</h3>
+          </div>
+          <dl>
+            <div><dt>Tokens in</dt><dd>{{ formatTokens(usageTotals.input) }}</dd></div>
+            <div><dt>Tokens out</dt><dd>{{ formatTokens(usageTotals.output) }}</dd></div>
+            <div><dt>Spend</dt><dd>{{ usageTotals.cost > 0 ? formatUsd(usageTotals.cost) : '—' }}</dd></div>
+            <div><dt>Time</dt><dd>{{ formatMs(usageTotals.ms) }}</dd></div>
+          </dl>
+        </header>
+        <EChart
+          v-if="entries.length"
+          :option="usageOption"
+          :height="132"
+          :label="`Tokens per turn: ${formatTokens(usageTotals.input)} in, ${formatTokens(usageTotals.output)} out`"
         />
       </section>
 

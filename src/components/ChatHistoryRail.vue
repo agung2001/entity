@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import { onRunEvent } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
 import { playSfx } from '@/lib/sfx'
 import {
@@ -9,6 +10,8 @@ import {
   ensureChats,
   hub,
   isSending,
+  liveSummaries,
+  loadChats,
   pinThread,
   removeThread,
   renameThread,
@@ -81,7 +84,7 @@ function pickStatus(id) {
   }
 }
 
-const threads = computed(() => hub.chat.summaries || [])
+const threads = computed(() => liveSummaries())
 
 function isWorking(thread) {
   return Boolean(thread?.working) || isSending(thread?.id)
@@ -287,9 +290,41 @@ function onDocumentClick(event) {
   menuItem.value = null
 }
 
+let reloadTimer = 0
+let historyStale = false
+let unsubscribe = null
+
+function refreshHistory() {
+  /* A turn of our own writes the thread file repeatedly; the list settles on
+     its own when the turn finishes. */
+  if (Object.keys(hub.chat.sending || {}).length) {
+    historyStale = true
+    return
+  }
+  historyStale = false
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => {
+    loadChats(hub.workspace).catch(() => {})
+  }, 450)
+}
+
+function onWorkspaceEvent(event) {
+  if (event?.kind !== 'workspace-changed' || event.workspace !== hub.workspace) return
+  const paths = event.paths || []
+  if (
+    paths.some(
+      (file) => file.startsWith('chats/') || file.startsWith('entities/'),
+    )
+  ) {
+    refreshHistory()
+  }
+}
+
 onMounted(() => {
   ensureChats()
   document.addEventListener('click', onDocumentClick)
+  unsubscribe = onRunEvent(onWorkspaceEvent)
+  window.addEventListener('focus', refreshHistory)
 })
 
 watch(
@@ -297,8 +332,18 @@ watch(
   () => ensureChats(),
 )
 
+watch(
+  () => Object.keys(hub.chat.sending || {}).length,
+  (count) => {
+    if (!count && historyStale) refreshHistory()
+  },
+)
+
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('focus', refreshHistory)
+  clearTimeout(reloadTimer)
+  unsubscribe?.()
 })
 
 defineExpose({ newThread })
