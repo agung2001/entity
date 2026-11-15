@@ -8,6 +8,7 @@ import { call } from '@/composables/localBridge'
 import { agentById, createThread, hub } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
+import { scanMachine } from '@/stores/workspaces'
 
 /**
  * A thread is pinned to four choices, so they are asked once, up front: which
@@ -28,6 +29,10 @@ const resetting = ref(false)
 /* The folder is a power feature: hidden behind a toggle so the common case is
    still four fields and a button. */
 const dirOpen = ref(false)
+/* A remote host's harness list comes from its last scan. Selecting an unscanned
+   host starts that scan once, so the harness field cannot keep showing a local
+   binary that is not installed there. */
+const scans = reactive({})
 
 /* Escape is ignored while a provider call is in flight; the footer's Cancel is
    disabled for the same reason. */
@@ -48,6 +53,8 @@ const remoteFacts = computed(() => (remote.value ? machine.value?.facts || null 
 const remoteHarness = computed(
   () => remoteFacts.value?.harnesses?.find((entry) => entry.id === form.harness) || null,
 )
+const scan = computed(() => scans[form.machine] || null)
+const scanning = computed(() => scan.value?.state === 'busy')
 const modelData = computed(() =>
   remoteHarness.value
     ? { models: remoteHarness.value.models || [], default: remoteHarness.value.default || '' }
@@ -115,6 +122,10 @@ function useEntityHarness() {
 }
 
 function useEntityModel() {
+  if (remote.value) {
+    form.model = remoteHarness.value?.default || ''
+    return
+  }
   if (!agent.value) return
   form.model = form.harness === agent.value.harness ? agent.value.model || '' : ''
 }
@@ -149,9 +160,10 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
-    if (!fleet.loaded) loadFleet()
-    reset()
-  }
+      for (const id of Object.keys(scans)) delete scans[id]
+      if (!fleet.loaded) loadFleet()
+      reset()
+    }
   },
 )
 
@@ -176,6 +188,21 @@ watch(remote, (isRemote) => {
   }
 })
 
+async function scanHost(id) {
+  if (!id || id === 'local') return
+  if (scans[id]?.state === 'busy') return
+  scans[id] = { state: 'busy', error: '' }
+  try {
+    await scanMachine(id)
+    scans[id] = { state: 'ok', error: '' }
+  } catch (problem) {
+    scans[id] = {
+      state: 'error',
+      error: problem?.message || `Could not read the harnesses on ${id}.`,
+    }
+  }
+}
+
 async function pickDirectory() {
   if (busy.value || remote.value) return
   try {
@@ -191,12 +218,21 @@ async function pickDirectory() {
 function settleMachine() {
   if (remote.value) {
     const available = remoteFacts.value?.harnesses || []
-    if (!available.length) return
-    if (!available.some((entry) => entry.id === form.harness)) {
-      form.harness = available[0].id
+    if (!available.length) {
+      /* No snapshot yet: clear the local harness rather than claiming it runs
+         there, then read the host once. */
+      form.harness = ''
+      form.model = ''
+      if (!scans[form.machine]) scanHost(form.machine)
+      return
     }
-    const chosen = available.find((entry) => entry.id === form.harness)
-    form.model = chosen?.default || ''
+    const preferred = form.harness || entityDefaultHarness.value
+    const chosen =
+      available.find((entry) => entry.id === preferred) ||
+      available.find((entry) => entry.id === entityDefaultHarness.value) ||
+      available[0]
+    form.harness = chosen.id
+    form.model = chosen.default || ''
     return
   }
   const installed = harnesses.items.filter((entry) => entry.installed)
@@ -216,6 +252,12 @@ watch(
   () => form.harness,
   () => {
     if (resetting.value) return
+    /* An entity model belongs to a harness on this machine; a remote harness
+       uses its own default. */
+    if (remote.value) {
+      form.model = remoteHarness.value?.default || ''
+      return
+    }
     const chosen = agent.value
     form.model = chosen && chosen.harness === form.harness ? chosen.model || '' : ''
     loadModels(form.harness).catch(() => {})
@@ -298,7 +340,6 @@ async function submit() {
         />
         <p v-if="remote" class="mnote">
           Runs over ssh on {{ form.machine }}. The workspace is staged there for the turn.
-          <template v-if="!remoteFacts">Scan this host on the Fleet page first.</template>
         </p>
       </div>
 
@@ -310,11 +351,26 @@ async function submit() {
           icons="harness"
           :options="harnessOptions"
           :model-value="form.harness"
-          :disabled="busy"
+          :disabled="busy || (remote && !harnessOptions.length)"
           @update:model-value="form.harness = $event"
         />
-        <p class="mnote thread-inherit" :data-override="harnessOverridden ? '1' : '0'">
-          <template v-if="harnessOverridden">
+        <p v-if="remote && scanning" class="mnote">Reading this machine's harnesses… first scan can take a few seconds.</p>
+        <p v-else-if="remote && scan?.state === 'error'" class="mnote">
+          {{ scan.error }}
+          <button type="button" :disabled="busy" @click="scanHost(form.machine)">Try again</button>
+        </p>
+        <p v-else-if="remote && !harnessOptions.length" class="mnote">
+          No harness answered on this machine.
+        </p>
+        <p
+          v-if="form.harness"
+          class="mnote thread-inherit"
+          :data-override="harnessOverridden ? '1' : '0'"
+        >
+          <template v-if="remote">
+            Available on {{ form.machine }}. Change it only for this thread.
+          </template>
+          <template v-else-if="harnessOverridden">
             Thread override. {{ agent?.name }} uses <b>{{ agent?.harnessLabel }}</b>.
             <button type="button" :disabled="busy" @click="useEntityHarness">Use default</button>
           </template>
@@ -337,17 +393,28 @@ async function submit() {
         />
         <p class="mnote thread-inherit" :data-override="modelOverridden ? '1' : '0'">
           <template v-if="modelOverridden">
-            Thread override. {{ agent?.name }} uses
-            <b>{{ modelDefault || 'the harness default' }}</b>.
+            Thread override.
+            <template v-if="remote">
+              This machine defaults to <b>{{ modelDefault || 'the harness default' }}</b>.
+            </template>
+            <template v-else>
+              {{ agent?.name }} uses <b>{{ modelDefault || 'the harness default' }}</b>.
+            </template>
             <button type="button" :disabled="busy" @click="useEntityModel">Use default</button>
           </template>
           <template v-else-if="modelDefault">
-            From {{ agent?.name }}: <code class="mono">{{ modelDefault }}</code>.
+            <template v-if="remote">From this machine: <code class="mono">{{ modelDefault }}</code>.</template>
+            <template v-else>From {{ agent?.name }}: <code class="mono">{{ modelDefault }}</code>.</template>
           </template>
           <template v-else-if="modelData?.detected">
-            No entity model; {{ form.harness }} will choose<template v-if="modelData.default">&nbsp;·&nbsp;<code class="mono">{{ modelData.default }}</code></template>.
+            <template v-if="remote">No model reported by this host;</template>
+            <template v-else>No entity model;</template>
+            {{ form.harness }} will choose<template v-if="modelData.default">&nbsp;·&nbsp;<code class="mono">{{ modelData.default }}</code></template>.
           </template>
-          <template v-else>No entity model; blank uses the harness default.</template>
+          <template v-else>
+            <template v-if="remote">No model reported by this host; blank uses the harness default.</template>
+            <template v-else>No entity model; blank uses the harness default.</template>
+          </template>
         </p>
       </div>
 
@@ -421,7 +488,7 @@ async function submit() {
 
       <div class="mo-foot newthread-foot">
         <button class="btn" type="button" :disabled="busy" @click="emit('close')">Cancel</button>
-        <button class="btn btn-ink" type="submit" :disabled="busy || !hub.agents.length">
+        <button class="btn btn-ink" type="submit" :disabled="busy || !hub.agents.length || !form.harness">
           {{ busy ? 'Starting…' : 'Start thread' }}
         </button>
       </div>
