@@ -42,7 +42,6 @@ import {
   setThreadContext,
   snippet,
   threadContext,
-  threadCounts,
   threadStarted,
   toast,
   waitForTurn,
@@ -72,6 +71,9 @@ const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
 const attachments = ref([])
+const headRef = ref(null)
+const headSpace = ref(76)
+let headObserver = null
 const dockWrap = ref(null)
 /* How much of the transcript the floating dock covers. It is measured rather
    than assumed, because a long draft grows the box. */
@@ -124,7 +126,6 @@ const agentColor = computed(() => {
   const mark = markFor(hub.workspace, agent.value.name, agent.value.mark || null)
   return colorById(mark.color, mark.custom).hex
 })
-const counts = computed(() => threadCounts(thread.value))
 const contextLocked = computed(() => threadStarted(thread.value))
 const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
 const baseDirName = computed(() => {
@@ -264,11 +265,6 @@ function onTitleTitleKey(event) {
   startTitleEdit()
 }
 
-const statLabel = computed(
-  () =>
-    `This thread: ${counts.value.q} ${counts.value.q === 1 ? 'query' : 'queries'} sent, ` +
-    `${counts.value.r} ${counts.value.r === 1 ? 'response' : 'responses'} received`,
-)
 
 const latestTrace = computed(() => {
   const messages = thread.value?.messages || []
@@ -706,6 +702,8 @@ onBeforeUnmount(() => {
   offEvent = null
   dockObserver?.disconnect()
   dockObserver = null
+  headObserver?.disconnect()
+  headObserver = null
   window.removeEventListener('keydown', onChatKey, true)
 })
 
@@ -714,6 +712,20 @@ onBeforeUnmount(() => {
  * A collapsed dock is ~90px; a draft at the new ceiling is three times that, and
  * a fixed 190px would put the last message behind the box.
  */
+/**
+ * The title may wrap to more than one line, so the floating bar's real height
+ * is not a constant. Measure it and reserve exactly that much in the transcript,
+ * otherwise a wrapped title sits over the first message.
+ */
+function watchHead() {
+  if (!headRef.value || typeof ResizeObserver !== 'function') return
+  headObserver?.disconnect()
+  headObserver = new ResizeObserver((entries) => {
+    headSpace.value = Math.round(entries[0]?.contentRect?.height || 0)
+  })
+  headObserver.observe(headRef.value)
+}
+
 function watchDock() {
   if (!dockWrap.value) return
   if (typeof ResizeObserver !== 'function') return
@@ -733,6 +745,7 @@ watch(
   async (has) => {
     if (!has) return
     await nextTick()
+    watchHead()
     watchDock()
   },
 )
@@ -816,7 +829,11 @@ watch(
         <section
           v-else-if="thread"
           class="cpanel"
-          :style="{ '--dock-space': `${dockSpace}px`, '--term-space': termSpace }"
+          :style="{
+            '--dock-space': `${dockSpace}px`,
+            '--term-space': termSpace,
+            '--cp-head-h': `${headSpace}px`,
+          }"
         >
           <PixelBackdrop
             variant="chat"
@@ -824,7 +841,7 @@ watch(
             :active="sending"
             :count="10"
           />
-          <header class="cp-head">
+          <header ref="headRef" class="cp-head">
             <div class="cp-left">
               <router-link
                 class="cp-mark-link"
@@ -868,11 +885,6 @@ watch(
                 </p>
               </div>
             </div>
-            <span class="ask-stat" :aria-label="statLabel">
-              <span class="u"><b>{{ counts.q }}</b> {{ counts.q === 1 ? 'query' : 'queries' }}</span>
-              <span class="vs" aria-hidden="true"></span>
-              <span class="u"><b>{{ counts.r }}</b> {{ counts.r === 1 ? 'response' : 'responses' }}</span>
-            </span>
             <div class="cp-right">
               <button
                 class="trace-open"

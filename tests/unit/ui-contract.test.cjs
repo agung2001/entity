@@ -198,11 +198,12 @@ test('the composer ceiling lives in CSS, not in the component', () => {
 })
 
 /* ── the chat header ─────────────────────────────────────────────────────
-   The bar floats over the thread as glass and carries three zones. Both are
-   contracts, not taste: a header back in the flow has nothing to blur, and one
-   that does not pay for its own height hides the first line of the thread. */
+   The bar floats over the thread as glass with the identity on the left and the
+   actions on the right; the counters live on the composer. A header back in the
+   flow has nothing to blur, and one that does not pay for its own measured
+   height hides the first line of the thread. */
 
-test('the chat header floats over the thread as three zones of glass', () => {
+test('the chat header floats over the thread with two zones of glass', () => {
   const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
   const view = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
 
@@ -220,7 +221,10 @@ test('the chat header floats over the thread as three zones of glass', () => {
   assert.ok(columns, 'the header is not a grid')
   /* one entry per track: collapse minmax(...) first, its contents hold spaces */
   const tracks = columns[1].trim().replace(/\([^()]*\)/g, 'track').split(/\s+/)
-  assert.equal(tracks.length, 3, `the header needs three zones: ${columns[1]}`)
+  assert.equal(tracks.length, 2, `the header needs two zones: ${columns[1]}`)
+  /* a long title wraps; the measured height keeps the transcript clear */
+  assert.match(rule[0], /height:\s*auto/, 'the header cannot grow with the title')
+  assert.match(view, /headObserver/, 'the header height is not measured')
 
   /* the list owes the floating bar its height, from the same variable */
   const list = css.match(/\n\.c-thread \{[^}]*\}/)
@@ -231,15 +235,11 @@ test('the chat header floats over the thread as three zones of glass', () => {
     'the transcript does not reserve the floating header',
   )
 
-  /* the counters are a zone, not luggage on the action cluster */
-  const header = view.match(/<header class="cp-head">[\s\S]*?<\/header>/)
+  /* counters are not chrome: the timeline already names the turns */
+  const header = view.match(/<header[^>]*class="cp-head"[^>]*>[\s\S]*?<\/header>/)
   assert.ok(header, 'no chat header in the view')
   assert.match(header[0], /class="cp-left"/, 'the identity is not a zone of its own')
-  assert.equal((header[0].match(/class="ask-stat"/g) || []).length, 1)
-  assert.ok(
-    header[0].indexOf('ask-stat') < header[0].indexOf('cp-right'),
-    'the counters are back inside the actions cluster',
-  )
+  assert.equal((view.match(/class="ask-stat"/g) || []).length, 0, 'the counters came back')
 })
 
 test('the terminal sheet is a closed card, not a flap', () => {

@@ -1483,31 +1483,6 @@ kbd {
 .ask-head .eyebrow {
   margin: 0;
 }
-.ask-stat {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  flex: none;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.ask-stat b {
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--ink);
-  letter-spacing: 0;
-}
-.ask-stat .vs {
-  width: 1px;
-  height: 9px;
-  background: var(--border-strong);
-  align-self: center;
-  flex: none;
-}
 .ask-thread {
   margin-top: 12px;
   padding: 12px;
@@ -3337,9 +3312,12 @@ kbd {
 
 /* the thread — same console anatomy as the overview ask box, at scale */
 .cpanel {
-  --pad: max(20px, calc((100% - 880px) / 2));
-  /* one number for the floating header, read by the bar and by the transcript */
-  --cp-head-h: 58px;
+  /* The transcript and composer use the window. The old 880px cap made a large
+     screen feel like a column and truncated the thread title for no gain. */
+  --pad: clamp(20px, 2.4vw, 40px);
+  /* one number for the floating header, read by the bar and by the transcript.
+     Two lines of a long title plus the metadata need the extra room. */
+  --cp-head-h: 76px;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -3365,11 +3343,14 @@ kbd {
   right: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  height: var(--cp-head-h, 58px);
-  padding: 0 var(--pad);
+  /* A two-line title must not be clipped; the measured height feeds
+     --cp-head-h so the transcript starts below whatever the bar became. */
+  height: auto;
+  min-height: 58px;
+  padding: 8px var(--pad);
   border-bottom: 1px solid var(--border);
   /* a size container, so the pieces below answer to the column they are in and
      not to the window: the rail eats 300px and is not part of this bar */
@@ -3396,10 +3377,13 @@ kbd {
   font-size: 14.5px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  line-height: 1.25;
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* The full title wraps; the bar grows and the transcript follows it. */
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .cp-head p {
   display: flex;
@@ -3419,21 +3403,12 @@ kbd {
   flex: none;
   opacity: 0.65;
 }
-.cp-head .ask-stat {
-  justify-self: center;
-  margin-left: 0;
-}
 /* The bar is 880px at its widest and the two action buttons alone are most of
    that. Rather than let them overflow the right edge, the bar gives up detail
    in the order it can spare it: shortcut chips first, then the counters, then
    the button labels — the tooltips and the shortcuts dialog still name both. */
 @container cphead (max-width: 840px) {
   .cp-head .trace-kbd {
-    display: none;
-  }
-}
-@container cphead (max-width: 720px) {
-  .cp-head .ask-stat {
     display: none;
   }
 }
@@ -3525,13 +3500,13 @@ kbd {
   z-index: 35;
   display: flex;
   justify-content: center;
-  padding: 0 16px;
+  padding: 0 var(--pad);
   pointer-events: none;
 }
 .cp-dock {
   position: relative;
   pointer-events: auto;
-  width: min(760px, 100%);
+  width: 100%;
   padding: 10px 10px 8px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
@@ -4784,13 +4759,6 @@ select:focus-visible {
   .ask-thread {
     height: 206px;
   }
-  .ask-stat {
-    gap: 5px;
-    font-size: 9.5px;
-  }
-  .ask-stat b {
-    font-size: 11.5px;
-  }
   .page-head h1 {
     font-size: 25px;
   }
@@ -4856,7 +4824,7 @@ select:focus-visible {
   }
   .cpanel {
     --pad: 14px;
-    --cp-head-h: 52px;
+    --cp-head-h: 56px;
   }
   .c-thread {
     padding: calc(var(--cp-head-h, 52px) + 10px) var(--pad)
