@@ -9,6 +9,8 @@
  * state instead of inventing machines, skills or entities.
  */
 
+import { toPlain } from '@/lib/plain'
+
 const LOCAL = '/__entity'
 
 function bridge() {
@@ -40,7 +42,8 @@ async function request(path, init) {
  */
 export async function call(fn, args = {}) {
   if (hasDesktopBridge()) {
-    const result = await bridge().call(fn, args)
+    /* Vue state reaches plenty of call sites; IPC can only clone plain data. */
+    const result = await bridge().call(fn, toPlain(args))
     if (!result?.ok) throw new Error(result?.error || `${fn} failed.`)
     return result.data
   }
