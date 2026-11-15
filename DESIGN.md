@@ -274,6 +274,29 @@ second store.
 - The drawer is closed by default. Its toggle is a header button and a catalog
   shortcut; `Esc` folds an expanded path row first, then closes the drawer.
 
+## The chat header is glass over the thread, in three zones
+
+The bar above a thread is a pane of frosted glass, and the thread scrolls
+*beneath* it. That is not decoration: a 16px blur over an empty strip is
+indistinguishable from white paper, so the bar only reads as glass because body
+text passes under it.
+
+- **Out of the flow, on purpose.** `.cp-head` is `position: absolute`, and the
+  list pays for it with `padding-top: calc(var(--cp-head-h) + …)`. One variable
+  (`--cp-head-h`, declared on `.cpanel`) feeds both, so the bar's height can
+  never disagree with the reserve — a first line born under the glass is a line
+  nobody can read.
+- **Three zones: identity · counters · actions.** The counters are a header
+  child of their own, not part of the button cluster, and the middle track is
+  the only one that flexes, so the bar reads as three groups instead of two
+  clumps pressed against the edges with a hole down the centre.
+- **The bar is a size container.** Below 840px of column the shortcut chips go,
+  below 720px the counters, below 600px the button labels. Container queries,
+  not media queries: the rail takes 300px, so the column and not the window is
+  what runs out of room.
+- The tint is roughly two-thirds of `--bg` over `blur(16px) saturate(1.8)`. Keep
+  it light enough that a line of text under the bar stays readable as a smudge.
+
 ## Backups are copies, not exports
 
 The backups page (Account → Backups) owns a schedule and a shelf; it is not a
@@ -324,6 +347,10 @@ inventory, and Markdown parsing must not happen until a reply needs it.
   `src/lib/echarts-core.js` with `import()`. Views import formatting from
   `src/lib/chart-math.js`, never the renderer, or the library lands in a route
   chunk.
+- **The terminal is a chunk until it is opened.** `@xterm/xterm` (287 kB) and its
+  fit addon are imported by `src/lib/terminal.js` on first open, behind a cached
+  promise that retries after a failure. A conversation that never opens a shell
+  never downloads an emulator.
 - **Read locally, in parallel.** Independent reads go out together
   (`loadScope`), and nothing is awaited that the first paint does not need.
 - **Long lists mount from the end.** A thread paints its newest rows first and

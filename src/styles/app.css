@@ -1558,7 +1558,11 @@ kbd {
   display: block;
   width: 100%;
   min-height: 42px;
-  max-height: 108px;
+  /* A long problem deserves to be readable in full: the box grows to nearly half
+     the window (~19 lines on a 900px screen) and only then scrolls, because the
+     transcript below it reserves the height it actually took. The component reads
+     this value, so there is one ceiling, not two. */
+  max-height: min(46vh, 400px);
   padding: 4px 3px 2px;
   border: 0;
   outline: 0;
@@ -3334,6 +3338,8 @@ kbd {
 /* the thread — same console anatomy as the overview ask box, at scale */
 .cpanel {
   --pad: max(20px, calc((100% - 880px) / 2));
+  /* one number for the floating header, read by the bar and by the transcript */
+  --cp-head-h: 58px;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -3342,14 +3348,39 @@ kbd {
   flex-direction: column;
   background: var(--bg);
 }
+/* The bar floats over the thread. It is out of the flow on purpose: a 16px blur
+   over an empty strip is indistinguishable from white paper, so the only way
+   this reads as glass is to let the conversation scroll beneath it.
+
+   Three zones, each anchored in its own region — identity on the left, the
+   counters in the middle, the two actions on the right — instead of one row
+   with two clumps pressed against the edges and a hole down the centre. The
+   middle track is the only one that flexes, so the counters stay near the
+   middle however long the title gets, and the actions keep the width their
+   labels need rather than overflowing a third. */
 .cp-head {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: var(--cp-head-h, 58px);
+  padding: 0 var(--pad);
+  border-bottom: 1px solid var(--border);
+  /* a size container, so the pieces below answer to the column they are in and
+     not to the window: the rail eats 300px and is not part of this bar */
+  container-type: inline-size;
+  container-name: cphead;
+}
+.cp-left {
   display: flex;
   align-items: center;
   gap: 11px;
-  flex: none;
-  height: 58px;
-  padding: 0 var(--pad);
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 .cp-head .mark {
   width: 30px;
@@ -3358,6 +3389,7 @@ kbd {
 }
 .cp-id {
   min-width: 0;
+  flex: 1;
 }
 .cp-head h2 {
   font-family: var(--font);
@@ -3388,12 +3420,40 @@ kbd {
   opacity: 0.65;
 }
 .cp-head .ask-stat {
-  margin-left: auto;
+  justify-self: center;
+  margin-left: 0;
+}
+/* The bar is 880px at its widest and the two action buttons alone are most of
+   that. Rather than let them overflow the right edge, the bar gives up detail
+   in the order it can spare it: shortcut chips first, then the counters, then
+   the button labels — the tooltips and the shortcuts dialog still name both. */
+@container cphead (max-width: 840px) {
+  .cp-head .trace-kbd {
+    display: none;
+  }
+}
+@container cphead (max-width: 720px) {
+  .cp-head .ask-stat {
+    display: none;
+  }
+}
+@container cphead (max-width: 600px) {
+  .cp-head .trace-open span {
+    display: none;
+  }
 }
 .c-thread {
   flex: 1;
   overflow: auto;
-  padding: 16px var(--pad) 190px;
+  /* The dock floats over the transcript, so the list reserves the room it takes
+     — which is no longer a fixed number now that a long draft grows the box, and
+     which now includes the terminal sheet when it is open (0px while closed). */
+  /* the header floats, so the list owes its height to the top: a first line
+     that starts under the glass is a line nobody can read. `scroll-padding`
+     makes the same true for anything the app scrolls into view. */
+  padding: calc(var(--cp-head-h, 58px) + 14px) var(--pad)
+    calc(var(--dock-space, 190px) + var(--term-space, 0px));
+  scroll-padding-top: calc(var(--cp-head-h, 58px) + 14px);
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -3497,6 +3557,115 @@ kbd {
   font-size: 10px;
   letter-spacing: 0.04em;
   pointer-events: none;
+}
+/* The terminal is a sheet, not a dialog: it floats above the dock, takes its
+   height from the transcript and gives it back when it closes. `--term-space`
+   is 0 while closed, which is what makes the same element collapse.
+
+   It is a closed card, not a flap: it stops 12px short of the dock (the dock
+   sits inside a wrapper that measures 28px taller than itself), so all four
+   borders are visible. Drawing it open at the bottom left the box looking
+   unfinished — the sheet is wider than the composer it floats over, so the
+   two never actually join. */
+.term-panel {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: var(--dock-space, 190px);
+  z-index: 34;
+  height: var(--term-space, 0px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 -10px 34px rgba(10, 10, 10, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: height 0.16s ease, opacity 0.16s ease;
+}
+.term-panel[data-open='1'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.term-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.term-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+}
+.term-title svg {
+  width: 12px;
+  height: 12px;
+}
+.term-host {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+.term-live {
+  color: var(--accent-ink, var(--ink));
+}
+.term-gap {
+  flex: 1;
+}
+.term-hint {
+  color: var(--muted);
+}
+.term-x {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.term-x:hover {
+  background: var(--hover, rgba(0, 0, 0, 0.05));
+  color: var(--ink);
+}
+.term-body {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 4px 6px 10px;
+  overflow: hidden;
+}
+/* xterm sizes itself against the element it was opened into */
+.term-body .xterm {
+  height: 100%;
+}
+.term-body .xterm-viewport {
+  background: transparent !important;
+}
+.term-note {
+  flex: none;
+  margin: 0;
+  padding: 5px 10px 7px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 .cp-dock:focus-within {
   border-color: var(--ink);
@@ -4687,12 +4856,11 @@ select:focus-visible {
   }
   .cpanel {
     --pad: 14px;
-  }
-  .cp-head {
-    height: 52px;
+    --cp-head-h: 52px;
   }
   .c-thread {
-    padding: 12px var(--pad) 180px;
+    padding: calc(var(--cp-head-h, 52px) + 10px) var(--pad)
+      calc(var(--dock-space, 180px) + var(--term-space, 0px));
   }
   .cp-dockwrap {
     bottom: 10px;
@@ -5269,14 +5437,11 @@ label.pick:has(input:focus-visible) {
 
 /* ── execution timeline ───────────────────────────────────────── */
 .cp-right {
-  margin-left: auto;
+  justify-self: end;
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.cp-head .cp-right .ask-stat {
-  margin-left: 0;
 }
 .trace-open {
   height: 28px;
@@ -5758,14 +5923,10 @@ label.pick:has(input:focus-visible) {
 }
 
 @media (max-width: 760px) {
-  .trace-open span {
-    display: none;
-  }
+  /* the shortcut chips, the counters and the button labels are already gone
+     here — the header's own container queries page them out by column width */
   .trace-open {
     padding: 0 7px;
-  }
-  .cp-head .ask-stat {
-    display: none;
   }
   .modal-timeline {
     width: 96vw;
@@ -11746,6 +11907,16 @@ label.pick:has(input:focus-visible) {
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* Renaming happens inside the header's left column, so the field is bounded by
+   that column: the 52vw it may claim on the entity page would run into the
+   counters sitting in the middle of the bar. */
+.cp-left .cp-title-form {
+  flex: 1;
+  min-width: 0;
+}
+.cp-left .cp-title-input {
+  width: 100%;
+}
 
 /* ── compact trace digest under a chat reply ──────────────────────────── */
 .msg-trace .trace-digest {
@@ -15960,13 +16131,9 @@ button.empty-link {
 .cpanel {
   isolation: isolate;
 }
-.cpanel > .cp-head,
 .cpanel > .thread-shell {
   position: relative;
   z-index: 1;
-}
-.cpanel > .cp-head {
-  background: color-mix(in oklab, var(--bg) 86%, transparent);
 }
 .cpanel > .thread-shell .c-thread {
   background: transparent;
@@ -16023,17 +16190,18 @@ button.empty-link {
   border-width: 1px;
 }
 
-/* ── chat header: a small pane of frosted glass over the pixel field ────── */
+/* ── chat header: a pane of frosted glass over the thread ────────────────
+   The recipe is the one Maka's media viewer uses for its top bar: about
+   two-thirds tint, a 16px blur and a strong saturation lift, so colour
+   survives the blur instead of washing to grey. The tint stays light enough
+   that a line of body text passing under the bar reads as a smudge rather
+   than being erased. */
 .cpanel > .cp-head {
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--bg) 58%, transparent),
-    color-mix(in oklab, var(--bg) 48%, transparent)
-  );
-  border-bottom-color: color-mix(in oklab, var(--border) 58%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.18);
-  backdrop-filter: blur(18px) saturate(1.18);
-  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 26%, transparent);
+  background: color-mix(in oklab, var(--bg) 68%, transparent);
+  border-bottom-color: color-mix(in oklab, var(--border) 55%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  backdrop-filter: blur(16px) saturate(1.8);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 30%, transparent);
 }
 
 /* ── entity hero: light mode is a bright arcade cabinet ─────────────────── */

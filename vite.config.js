@@ -156,6 +156,9 @@ function localDataPlugin() {
       openPath: openFolder,
       openExternal,
       openInEditor,
+      /* `npm run dev` runs on this machine, for this user; the shared server
+         build is the one that must never hand out a shell. */
+      terminal: true,
     })
     return rpc
   }

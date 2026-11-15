@@ -35,6 +35,8 @@
     "test:gate": "npm run test:unit && npm run test:smoke"
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "dompurify": "^3.4.17",
     "echarts": "^5.6.0",
     "marked": "^18.2.0",

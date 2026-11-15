@@ -177,9 +177,78 @@ test('the shortcut catalog is well formed and unique', () => {
   }
   const ids = [...catalog.matchAll(/^\s{8}id: '([a-z-]+)',$/gm)].map((match) => match[1])
   assert.equal(new Set(ids).size, ids.length, 'duplicate shortcut ids')
-  for (const id of ['palette', 'rail', 'theme', 'new-thread', 'escape', 'guide', 'focus', 'send', 'timeline', 'metadata', 'voice']) {
+  for (const id of ['palette', 'rail', 'theme', 'new-thread', 'escape', 'guide', 'focus', 'send', 'timeline', 'metadata', 'voice', 'terminal']) {
     assert.ok(ids.includes(id), `missing shortcut ${id}`)
   }
+})
+
+test('the composer ceiling lives in CSS, not in the component', () => {
+  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const composer = fs.readFileSync(path.join(SRC, 'components/SlashComposer.vue'), 'utf8')
+  const rule = css.match(/\.slash-input\s*\{[^}]*max-height:\s*([^;]+);/)
+  assert.ok(rule, '.slash-input has no max-height')
+  const ceiling = rule[1].trim()
+  /* viewport-relative, so a short window still leaves the transcript a screen */
+  assert.match(ceiling, /vh/, `the ceiling does not follow the window: ${ceiling}`)
+  const px = Number.parseFloat(ceiling.replace(/^min\(/, '').split(',').pop())
+  assert.ok(px >= 320, `a long draft stops growing too early: ${ceiling}`)
+  /* one ceiling: the component reads it instead of repeating the number */
+  assert.match(composer, /getComputedStyle\(el\)\.maxHeight/, 'the component reads the ceiling')
+  assert.doesNotMatch(composer, /Math\.min\(el\.scrollHeight,\s*\d+\)/, 'the ceiling is hard-coded')
+})
+
+/* ── the chat header ─────────────────────────────────────────────────────
+   The bar floats over the thread as glass and carries three zones. Both are
+   contracts, not taste: a header back in the flow has nothing to blur, and one
+   that does not pay for its own height hides the first line of the thread. */
+
+test('the chat header floats over the thread as three zones of glass', () => {
+  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const view = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+
+  const rule = css.match(/\n\.cp-head \{[^}]*\}/)
+  assert.ok(rule, '.cp-head has no base rule')
+  assert.match(rule[0], /position:\s*absolute/, 'the header is still in the flow')
+  assert.match(rule[0], /container-type:\s*inline-size/, 'the header does not answer to its own column')
+  /* the tint and the blur live in one place, over the pixel field */
+  const glass = css.match(/\n\.cpanel > \.cp-head \{[^}]*\}/)
+  assert.ok(glass, 'the header has no glass rule')
+  assert.match(glass[0], /backdrop-filter:\s*blur\(/, 'the header is not glass')
+  assert.match(glass[0], /background:[^;]*transparent/, 'the header is painted opaque')
+
+  const columns = rule[0].match(/grid-template-columns:\s*([^;]+);/)
+  assert.ok(columns, 'the header is not a grid')
+  /* one entry per track: collapse minmax(...) first, its contents hold spaces */
+  const tracks = columns[1].trim().replace(/\([^()]*\)/g, 'track').split(/\s+/)
+  assert.equal(tracks.length, 3, `the header needs three zones: ${columns[1]}`)
+
+  /* the list owes the floating bar its height, from the same variable */
+  const list = css.match(/\n\.c-thread \{[^}]*\}/)
+  assert.ok(list, '.c-thread has no base rule')
+  assert.match(
+    list[0],
+    /padding:\s*calc\(var\(--cp-head-h/,
+    'the transcript does not reserve the floating header',
+  )
+
+  /* the counters are a zone, not luggage on the action cluster */
+  const header = view.match(/<header class="cp-head">[\s\S]*?<\/header>/)
+  assert.ok(header, 'no chat header in the view')
+  assert.match(header[0], /class="cp-left"/, 'the identity is not a zone of its own')
+  assert.equal((header[0].match(/class="ask-stat"/g) || []).length, 1)
+  assert.ok(
+    header[0].indexOf('ask-stat') < header[0].indexOf('cp-right'),
+    'the counters are back inside the actions cluster',
+  )
+})
+
+test('the terminal sheet is a closed card, not a flap', () => {
+  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const rule = css.match(/\n\.term-panel \{[^}]*\}/)
+  assert.ok(rule, '.term-panel has no base rule')
+  assert.doesNotMatch(rule[0], /border-bottom:\s*0/, 'the sheet is drawn open at the bottom')
+  assert.match(rule[0], /border:\s*1px solid/, 'the sheet has no border of its own')
+  assert.match(rule[0], /border-radius:\s*12px/, 'the sheet is not rounded on all four corners')
 })
 
 /* ── loading budget ────────────────────────────────────────────────────────

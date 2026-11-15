@@ -31,6 +31,7 @@ const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
 const backups = require('./backup-store.cjs')
 const voice = require('./voice.cjs')
+const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({
@@ -41,6 +42,10 @@ function createRpc({
   openInEditor = null,
   chooseDirectory = null,
   identity = null,
+  /* A terminal is a shell on the host that runs this process. That is the point
+     in the desktop app and on the dev server, and it is a remote-code-execution
+     hole in the shared server, so it is opt-in and off unless asked for. */
+  terminal = false,
 } = {}) {
   const runner = createRunner({ emit })
   /* A six-hour poll plus a debounce after the watcher reports a local edit.
@@ -53,6 +58,14 @@ function createRpc({
      passes the signed-in server user instead, so the same call table writes the
      right owner without a second implementation. */
   const currentUser = () => (typeof identity === 'function' ? identity() : auth.get())
+  /* One shell per panel, owned by this process. Absent in the server build. */
+  const terminals = terminal ? createTerminal({ emit }) : null
+  const shellOnly = () => {
+    if (!terminals) {
+      throw new Error('The terminal runs in the desktop app, not in a shared server.')
+    }
+    return terminals
+  }
   /* Threads are private to their account; the server's per-request identity has
      to reach the chat store, not just the call table. */
   chats.setIdentityResolver(() => currentUser())
@@ -226,6 +239,22 @@ function createRpc({
     'voice.status': () => voice.status(),
     'voice.transcribe': (args) => voice.transcribe(args || {}),
 
+    /* the chat terminal: one shell, on this machine or a fleet host */
+    'terminal.available': () =>
+      terminals
+        ? terminals.available()
+        : {
+            ok: false,
+            local: false,
+            reason: 'The terminal runs in the desktop app, not in a shared server.',
+          },
+    'terminal.open': (args) => shellOnly().open(args),
+    'terminal.write': (args) => shellOnly().write(args),
+    'terminal.resize': (args) => shellOnly().resize(args),
+    'terminal.read': (args) => shellOnly().read(args),
+    'terminal.list': (args) => shellOnly().list(args),
+    'terminal.close': ({ id } = {}) => shellOnly().close(id),
+
     /* harness sessions, read from each CLI's own store */
     'sessions.list': (args) => sessions.list(args),
 
@@ -293,6 +322,11 @@ function createRpc({
         /* the runner still has children to stop */
       }
       runner.closeAll()
+      try {
+        terminals?.closeAll()
+      } catch {
+        /* a shell that already exited is not a failed shutdown */
+      }
       remoteSync.stop()
       backups.stop()
       await mcpServer.stop()

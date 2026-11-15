@@ -10,6 +10,7 @@ import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
+import TerminalPanel from '@/components/TerminalPanel.vue'
 import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
 import EntityDeleteDialog from '@/components/EntityDeleteDialog.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
@@ -63,6 +64,7 @@ const voiceOpen = ref(false)
 const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const metadataOpen = ref(false)
+const terminalOpen = ref(false)
 const composer = ref(null)
 const dragDepth = ref(0)
 const focusMessage = ref(-1)
@@ -70,6 +72,11 @@ const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
 const attachments = ref([])
+const dockWrap = ref(null)
+/* How much of the transcript the floating dock covers. It is measured rather
+   than assumed, because a long draft grows the box. */
+const dockSpace = ref(190)
+let dockObserver = null
 let offEvent = null
 
 /* Every combo comes from the catalog in `src/lib/shortcuts.js`, which also
@@ -79,6 +86,7 @@ const metadataShortcut = shortcutLabel('metadata')
 const sendShortcut = shortcutLabel('send')
 const focusShortcut = shortcutLabel('focus')
 const voiceShortcut = shortcutLabel('voice')
+const terminalShortcut = shortcutLabel('terminal')
 
 /* The composer help belongs to this page; the harness, MCP, new-thread and
    timeline dialogs register their own Escape entry. */
@@ -96,6 +104,15 @@ const contextOptions = {
 }
 
 const thread = computed(() => activeThread())
+/* The sheet's height lives in one place: the panel takes it, the transcript
+   reserves it. A CSS length, so the two cannot disagree — and it yields to the
+   dock, because a 400px draft plus a 360px shell would leave the conversation no
+   room at all. The floor keeps a shell usable when both are at their largest. */
+const termSpace = computed(() =>
+  terminalOpen.value
+    ? 'max(140px, min(42vh, 360px, calc(100vh - var(--dock-space, 190px) - 200px)))'
+    : '0px',
+)
 const ctx = computed(() => threadContext())
 /* A turn belongs to its thread: these two are false while another thread works. */
 const sending = computed(() => isSending(thread.value?.id))
@@ -292,7 +309,34 @@ function isField(target) {
   )
 }
 
+/** Is this key going into the embedded shell? Then it belongs to the shell. */
+function isTerminal(target) {
+  return Boolean(target?.closest?.('.term-panel'))
+}
+
 function onChatKey(event) {
+  /* The one combo that always works, and the only one a focused terminal lets
+     through: the terminal shortcut toggles the sheet. Everything else — the
+     interrupt key, Esc, reverse search — is readline's, and intercepting it here
+     would break the shell. */
+  if (matchesShortcut('terminal', event) && thread.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    terminalOpen.value = !terminalOpen.value
+    if (terminalOpen.value) {
+      helpOpen.value = false
+      voiceOpen.value = false
+      timelineOpen.value = false
+      metadataOpen.value = false
+      harnessOpen.value = false
+      mcpOpen.value = false
+    } else {
+      composer.value?.focus()
+    }
+    return
+  }
+  if (isTerminal(event.target)) return
+
   /* The voice dialog's shortcut still closes it; every other shortcut stays
      behind the dialog, because a key pressed there belongs to that surface.
      In a browser tab the desktop combo (Ctrl/Cmd+Shift+V) is paste-as-plain, so
@@ -646,6 +690,7 @@ function consumeNewQuery() {
 onMounted(async () => {
   offEvent = onRunEvent(onLiveEvent)
   window.addEventListener('keydown', onChatKey, true)
+  watchDock()
   if (!fleet.loaded) loadFleet()
   loadRemote().catch(() => {})
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
@@ -659,8 +704,38 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   offEvent?.()
   offEvent = null
+  dockObserver?.disconnect()
+  dockObserver = null
   window.removeEventListener('keydown', onChatKey, true)
 })
+
+/**
+ * Measure the dock and reserve exactly that much room under the transcript.
+ * A collapsed dock is ~90px; a draft at the new ceiling is three times that, and
+ * a fixed 190px would put the last message behind the box.
+ */
+function watchDock() {
+  if (!dockWrap.value) return
+  if (typeof ResizeObserver !== 'function') return
+  dockObserver?.disconnect()
+  dockObserver = new ResizeObserver((entries) => {
+    const height = entries[0]?.contentRect?.height || 0
+    /* the wrapper is the full-width strip; the dock inside is the visible box */
+    dockSpace.value = Math.round(height) + 28
+  })
+  dockObserver.observe(dockWrap.value)
+}
+
+/* The dock only exists once a thread is open, so the observer is (re)attached
+   when one appears. */
+watch(
+  () => Boolean(thread.value),
+  async (has) => {
+    if (!has) return
+    await nextTick()
+    watchDock()
+  },
+)
 
 watch(
   () => hub.workspace,
@@ -738,7 +813,11 @@ watch(
           </div>
         </section>
 
-        <section v-else-if="thread" class="cpanel">
+        <section
+          v-else-if="thread"
+          class="cpanel"
+          :style="{ '--dock-space': `${dockSpace}px`, '--term-space': termSpace }"
+        >
           <PixelBackdrop
             variant="chat"
             :color="agentColor"
@@ -746,53 +825,55 @@ watch(
             :count="10"
           />
           <header class="cp-head">
-            <router-link
-              class="cp-mark-link"
-              :to="{ name: 'entity', params: { workspace: hub.workspace, name: agent.name } }"
-              :aria-label="`Open ${agent.name}`"
-              :title="`Open ${agent.name}`"
-            >
-              <EntityMark :entity="agent.name" />
-            </router-link>
-            <div class="cp-id">
-              <form v-if="titleEditing" class="cp-title-form" @submit.prevent="saveTitle">
-                <input
-                  ref="titleInput"
-                  v-model="titleDraft"
-                  class="cp-title-input"
-                  type="text"
-                  maxlength="120"
-                  aria-label="Thread title"
-                  @keydown="onTitleKey"
-                  @blur="saveTitle"
-                />
-              </form>
-              <h2
-                v-else
-                class="cp-title"
-                role="button"
-                tabindex="0"
-                title="Rename thread"
-                @click="startTitleEdit"
-                @keydown="onTitleTitleKey"
+            <div class="cp-left">
+              <router-link
+                class="cp-mark-link"
+                :to="{ name: 'entity', params: { workspace: hub.workspace, name: agent.name } }"
+                :aria-label="`Open ${agent.name}`"
+                :title="`Open ${agent.name}`"
               >
-                {{ threadTitle }}
-                <svg class="cp-title-pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                  <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7zM9.4 3.2l2.4 2.4" />
-                </svg>
-              </h2>
-              <p class="cp-id-meta">
-                <span>Last message</span>
-                <time v-if="lastMessageAt" :datetime="lastMessageAt">{{ lastMessageWhen }}</time>
-                <span v-else>{{ lastMessageWhen }}</span>
-              </p>
+                <EntityMark :entity="agent.name" />
+              </router-link>
+              <div class="cp-id">
+                <form v-if="titleEditing" class="cp-title-form" @submit.prevent="saveTitle">
+                  <input
+                    ref="titleInput"
+                    v-model="titleDraft"
+                    class="cp-title-input"
+                    type="text"
+                    maxlength="120"
+                    aria-label="Thread title"
+                    @keydown="onTitleKey"
+                    @blur="saveTitle"
+                  />
+                </form>
+                <h2
+                  v-else
+                  class="cp-title"
+                  role="button"
+                  tabindex="0"
+                  title="Rename thread"
+                  @click="startTitleEdit"
+                  @keydown="onTitleTitleKey"
+                >
+                  {{ threadTitle }}
+                  <svg class="cp-title-pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                    <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7zM9.4 3.2l2.4 2.4" />
+                  </svg>
+                </h2>
+                <p class="cp-id-meta">
+                  <span>Last message</span>
+                  <time v-if="lastMessageAt" :datetime="lastMessageAt">{{ lastMessageWhen }}</time>
+                  <span v-else>{{ lastMessageWhen }}</span>
+                </p>
+              </div>
             </div>
+            <span class="ask-stat" :aria-label="statLabel">
+              <span class="u"><b>{{ counts.q }}</b> {{ counts.q === 1 ? 'query' : 'queries' }}</span>
+              <span class="vs" aria-hidden="true"></span>
+              <span class="u"><b>{{ counts.r }}</b> {{ counts.r === 1 ? 'response' : 'responses' }}</span>
+            </span>
             <div class="cp-right">
-              <span class="ask-stat" :aria-label="statLabel">
-                <span class="u"><b>{{ counts.q }}</b> {{ counts.q === 1 ? 'query' : 'queries' }}</span>
-                <span class="vs" aria-hidden="true"></span>
-                <span class="u"><b>{{ counts.r }}</b> {{ counts.r === 1 ? 'response' : 'responses' }}</span>
-              </span>
               <button
                 class="trace-open"
                 type="button"
@@ -846,7 +927,15 @@ watch(
             @suggest="suggestFollowups"
           />
 
-          <div class="cp-dockwrap">
+          <TerminalPanel
+            :open="terminalOpen"
+            :machine="ctx.machine || 'local'"
+            :dir="ctx.dir || ''"
+            :workspace="hub.workspace"
+            @close="terminalOpen = false"
+          />
+
+          <div class="cp-dockwrap" ref="dockWrap">
             <div
               class="cp-dock"
               :data-drag="dragDepth > 0 ? '1' : '0'"
@@ -1041,6 +1130,10 @@ watch(
             <div>
               <dt><kbd>{{ voiceShortcut }}</kbd></dt>
               <dd><b>Voice mode</b><span>The entity listens, answers out loud, and takes an interruption while it works.</span></dd>
+            </div>
+            <div>
+              <dt><kbd>{{ terminalShortcut }}</kbd></dt>
+              <dd><b>Terminal</b><span>A shell beside the conversation — on this machine, or on the thread’s host. Press it again to hide it, and note that Esc inside the shell belongs to the shell.</span></dd>
             </div>
             <div>
               <dt><kbd>{{ sendShortcut }}</kbd></dt>

@@ -604,6 +604,41 @@ save, so a single reply can be heard without opening voice mode.
 
 ---
 
+## Terminal
+
+``Ctrl+` `` (Control, on every platform — the same key a terminal uses elsewhere)
+opens a shell beside the conversation. The same combo hides it again and the shell
+keeps running while it is hidden: the panel is a sheet, not a dialog, so a build you
+started is still going when you look again.
+
+It floats above the composer as a closed card — a border on all four sides, rounded
+on every corner — because the sheet is wider than the box below it: a bottom edge
+without a border reads as an unfinished box rather than a panel resting on the dock.
+
+- **Which machine.** A thread pinned to a fleet host opens the shell *there*, over
+  `ssh -tt` with the alias from `~/.ssh/config` and nothing else — no password
+  prompt, no stored key. A local thread opens it in the thread's base directory. The
+  picker is the one that routes the turn, so the shell and the answer run on the
+  same host.
+- **Which relay.** Nothing native to build and nothing to rebuild: util-linux
+  `script` on Linux, and `python3` on macOS. macOS `script` calls `tcgetattr` on its
+  own stdin and exits when that is not a terminal — Electron always hands a child a
+  socketpair — so it would paint a prompt and then ignore the keyboard. `python3`
+  allocates the pty itself and asks nothing of its stdin.
+- **Which keys.** Inside the shell every key belongs to the shell, including `Esc`,
+  the interrupt and reverse search; intercepting them would break vim and readline.
+  The terminal shortcut is the one exception, because it has to be able to close the
+  panel from inside it. The close button always works.
+- **Not in the server build.** A shell is code execution on the host that serves the
+  page. The window and `npm run dev` pass `terminal: true`; the shared server does
+  not, and reports why instead of half-offering a box that cannot run anything.
+
+Scrollback lives in the main process, so hiding and reopening the panel comes back to
+the same prompt. Closing the window ends the shell — see
+[Ceilings](#ceilings-stated-not-hidden).
+
+[Where it lives →](electron/terminal-store.cjs)
+
 ## Shared MCP servers
 
 The workspace has one pool (`<ws>/mcp.json`) and every entity gets it. Add a server
@@ -878,6 +913,14 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
 - **A base directory is local-only.** A thread pinned to a fleet host cannot read
   this machine's disk, so the field is hidden there and `/project:` is refused
   rather than resolved to a path the far side cannot see.
+- **The terminal is a shell, not a sandbox, and it cannot be resized.** It runs as
+  you, on the host that owns the thread, with no approval step — it is your own
+  window, not an entity's. The pty belongs to the relay (or to ssh's far side), so
+  the shell is told its size once at open: widening the panel reflows the text the
+  emulator already has, but a full-screen program keeps the columns it started with
+  until a new shell is opened. On Windows a local shell needs a POSIX pty this build
+  does not have, so only fleet hosts work there; on a Mac without `python3` the
+  panel says so instead of pretending to start.
 - **Spend is only what the harness reports.** A turn without a price still counts
   as a turn and as tokens, but contributes nothing to the dollar total; the charts
   never estimate a price.

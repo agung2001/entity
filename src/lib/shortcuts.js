@@ -21,8 +21,11 @@ export const isDesktopApp = () => hasDesktopBridge()
 const MOD = isMacPlatform ? '⌘' : 'Ctrl'
 const SHIFT = isMacPlatform ? '⇧' : 'Shift'
 const ALT = isMacPlatform ? '⌥' : 'Alt'
+/* Deliberately the physical Control key on every platform, because this combo is
+   Control+` on a Mac too — the same key a terminal uses everywhere else. */
+const CTRL = isMacPlatform ? '⌃' : 'Ctrl'
 
-const DISPLAY = { mod: MOD, shift: SHIFT, alt: ALT, enter: '↵', esc: 'Esc', '?': '?' }
+const DISPLAY = { mod: MOD, ctrl: CTRL, shift: SHIFT, alt: ALT, enter: '↵', esc: 'Esc', '?': '?' }
 
 export const SHORTCUT_GROUPS = [
   {
@@ -111,6 +114,13 @@ export const SHORTCUT_GROUPS = [
         desc: 'Enter adds a line; this sends the turn.',
         desktop: ['mod', 'enter'],
         browser: ['mod', 'enter'],
+      },
+      {
+        id: 'terminal',
+        label: 'Terminal',
+        desc: 'Open a shell beside the conversation — on this machine, or on the thread’s host.',
+        desktop: ['ctrl', '`'],
+        browser: ['ctrl', '`'],
       },
       {
         id: 'timeline',
@@ -207,7 +217,11 @@ function comboMatches(event, combo) {
     return event.key === '?' || (event.code === 'Slash' && event.shiftKey)
   }
 
-  if (Boolean(event.metaKey || event.ctrlKey) !== wants('mod')) return false
+  /* `ctrl` and `mod` are different keys on a Mac: a combo that names `ctrl`
+     wants Control and not Command, one that names `mod` accepts either. */
+  if (wants('ctrl')) {
+    if (!event.ctrlKey || event.metaKey) return false
+  } else if (Boolean(event.metaKey || event.ctrlKey) !== wants('mod')) return false
   if (event.shiftKey !== wants('shift')) return false
   if (event.altKey !== wants('alt')) return false
 

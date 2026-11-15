@@ -461,18 +461,31 @@ function settle() {
 }
 
 /* A textarea that grows with the draft, then scrolls at a sane ceiling. The
-   border belongs to the dock, not to this field, so there is only one box. */
+   border belongs to the dock, not to this field, so there is only one box.
+   The ceiling is read from CSS (`.slash-input { max-height }`) instead of being
+   repeated here: a number written twice drifts, and a draft that stops growing
+   at five lines is the bug that produced this comment. */
 function grow() {
   const el = input.value
   if (!el) return
   el.style.height = 'auto'
-  const next = Math.min(el.scrollHeight, 108)
+  const ceiling = Number.parseFloat(getComputedStyle(el).maxHeight) || 108
+  const next = Math.min(el.scrollHeight, ceiling)
   el.style.height = `${next}px`
-  el.style.overflowY = el.scrollHeight > 108 ? 'auto' : 'hidden'
+  el.style.overflowY = el.scrollHeight > ceiling ? 'auto' : 'hidden'
 }
 
 watch(draft, () => nextTick(grow))
-onMounted(() => nextTick(grow))
+/* The ceiling is viewport-relative, so a resized window changes how much room a
+   long draft gets. Without this the box keeps the height it had at mount. */
+function regrow() {
+  nextTick(grow)
+}
+onMounted(() => {
+  nextTick(grow)
+  window.addEventListener('resize', regrow)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', regrow))
 
 function submit() {
   if (props.disabled) return

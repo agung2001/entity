@@ -440,6 +440,7 @@ app.whenReady().then(() => {
     openExternal: (url) => shell.openExternal(url),
     openInEditor,
     chooseDirectory,
+    terminal: true,
   })
 
   /* An agent that rewrites its own instructions writes a file this process did
