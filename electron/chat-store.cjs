@@ -324,6 +324,9 @@ function summarise(thread) {
     machine: thread.machine,
     harness: thread.harness,
     model: thread.model || '',
+    /* The row needs the base directory: reopening a thread restores its project
+       skills and `@file:` scope from this summary. */
+    dir: thread.dir || '',
     title: thread.title || titleOf(thread),
     pinned: Boolean(thread.pinned),
     createdAt: thread.createdAt,
@@ -1280,7 +1283,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     if (turnMessage) emitTurn('done', { message: turnMessage })
   }
 
-  return thread
+  /* A turn that saved a screenshot or a document should show it without the
+     person reloading the thread. `read` attaches by turn window; doing it here
+     means the returned snapshot already carries the files this turn wrote. */
+  return attachArtifactsByTurn(thread)
 }
 
 function cancel({ workspace, id } = {}) {

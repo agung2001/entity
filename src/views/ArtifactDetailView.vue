@@ -25,6 +25,88 @@ const busy = ref('')
 const confirming = ref('')
 let token = 0
 
+/* A media artifact gets a stage, not a thumbnail in a box: the bytes are often
+   a screenshot or a screen recording, and reading them is the whole point.
+   Documents keep the plain preview below. */
+const stage = ref(null)
+const zoom = ref(1)
+const pan = ref({ x: 0, y: 0 })
+const dragging = ref(false)
+let dragFrom = null
+
+const mediaKind = computed(() => {
+  const kind = previewData.value?.kind
+  return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : ''
+})
+
+function clampZoom(value) {
+  return Math.min(8, Math.max(0.25, value))
+}
+
+function resetView() {
+  zoom.value = 1
+  pan.value = { x: 0, y: 0 }
+  dragging.value = false
+}
+
+function zoomBy(factor, clientX = null, clientY = null) {
+  if (mediaKind.value !== 'image') return
+  const next = clampZoom(zoom.value * factor)
+  if (next === zoom.value) return
+  const rect = stage.value?.getBoundingClientRect()
+  if (rect && clientX != null) {
+    const cx = clientX - rect.left
+    const cy = clientY - rect.top
+    pan.value = {
+      x: cx - (cx - pan.value.x) * (next / zoom.value),
+      y: cy - (cy - pan.value.y) * (next / zoom.value),
+    }
+  }
+  if (next <= 1) pan.value = { x: 0, y: 0 }
+  zoom.value = next
+}
+
+function onWheel(event) {
+  if (mediaKind.value !== 'image') return
+  event.preventDefault()
+  zoomBy(event.deltaY < 0 ? 1.15 : 0.87, event.clientX, event.clientY)
+}
+
+function startDrag(event) {
+  if (mediaKind.value !== 'image' || zoom.value <= 1 || event.button !== 0) return
+  dragging.value = true
+  dragFrom = { x: event.clientX - pan.value.x, y: event.clientY - pan.value.y }
+  stage.value?.setPointerCapture?.(event.pointerId)
+}
+
+function drag(event) {
+  if (!dragging.value || !dragFrom) return
+  pan.value = { x: event.clientX - dragFrom.x, y: event.clientY - dragFrom.y }
+}
+
+function endDrag(event) {
+  if (!dragging.value) return
+  dragging.value = false
+  dragFrom = null
+  stage.value?.releasePointerCapture?.(event.pointerId)
+}
+
+function onMediaKey(event) {
+  if (!mediaKind.value || event.metaKey || event.ctrlKey || event.altKey) return
+  const tag = String(event.target?.tagName || '').toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+  if (event.key === '+' || event.key === '=') {
+    event.preventDefault()
+    zoomBy(1.2)
+  } else if (event.key === '-' || event.key === '_') {
+    event.preventDefault()
+    zoomBy(0.8)
+  } else if (event.key === '0') {
+    event.preventDefault()
+    resetView()
+  }
+}
+
 const id = computed(() => String(route.params.id || ''))
 const item = computed(() => artifacts.items.find((entry) => entry.id === id.value) || null)
 
@@ -56,6 +138,7 @@ async function loadPreview() {
   loading.value = true
   preview.value = current
   previewData.value = null
+  resetView()
   const ask = ++token
   try {
     const data = await readArtifact(current.id)
@@ -137,9 +220,13 @@ async function remove() {
 
 watch(id, boot)
 
-onMounted(boot)
+onMounted(() => {
+  boot()
+  window.addEventListener('keydown', onMediaKey)
+})
 onBeforeUnmount(() => {
   token += 1
+  window.removeEventListener('keydown', onMediaKey)
 })
 </script>
 
@@ -185,14 +272,59 @@ onBeforeUnmount(() => {
         <span><em>Modified</em>{{ when(item.modifiedAt) }}</span>
       </div>
 
-      <section class="artifact-detail-preview">
+      <section
+        v-if="mediaKind === 'image' && previewData?.dataUrl"
+        ref="stage"
+        class="media-stage"
+        :data-drag="dragging ? '1' : '0'"
+        :data-zoomed="zoom > 1 ? '1' : '0'"
+        @wheel="onWheel"
+        @pointerdown="startDrag"
+        @pointermove="drag"
+        @pointerup="endDrag"
+        @pointercancel="endDrag"
+        @dblclick="zoom > 1 ? resetView() : zoomBy(2, $event.clientX, $event.clientY)"
+      >
+        <div class="media-tools" @pointerdown.stop @dblclick.stop>
+          <button type="button" aria-label="Zoom out" title="Zoom out (−)" @click="zoomBy(0.85)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9" /></svg>
+          </button>
+          <button type="button" class="media-zoom" title="Fit to the window" @click="resetView">
+            {{ Math.round(zoom * 100) }}%
+          </button>
+          <button type="button" aria-label="Zoom in" title="Zoom in (+)" @click="zoomBy(1.15)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9M8 3.5v9" /></svg>
+          </button>
+          <span class="media-sep" aria-hidden="true"></span>
+          <button type="button" class="media-fit" @click="resetView">Fit</button>
+        </div>
         <img
-          v-if="previewData?.kind === 'image' && previewData?.dataUrl"
-          class="artifact-image"
+          class="media-img"
           :src="previewData.dataUrl"
           :alt="previewData.name"
+          draggable="false"
+          :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
         />
-        <template v-else-if="previewData?.kind === 'text'">
+      </section>
+
+      <section v-else-if="mediaKind === 'video' && previewData?.dataUrl" class="media-stage media-stage--video">
+        <video :src="previewData.dataUrl" controls playsinline preload="metadata"></video>
+      </section>
+
+      <section v-else-if="mediaKind === 'audio' && previewData?.dataUrl" class="media-stage media-stage--audio">
+        <div class="media-sound">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" />
+          </svg>
+          <div>
+            <b>{{ previewData.name }}</b>
+            <audio :src="previewData.dataUrl" controls preload="metadata"></audio>
+          </div>
+        </div>
+      </section>
+
+      <section v-else class="artifact-detail-preview">
+        <template v-if="previewData?.kind === 'text'">
           <pre class="artifact-text">{{ previewData.text }}</pre>
           <p v-if="previewData.truncated" class="mnote">
             Preview is truncated. Download for the full file.

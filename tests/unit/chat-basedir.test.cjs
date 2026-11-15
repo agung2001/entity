@@ -63,6 +63,10 @@ test('a base directory is validated, persisted and refuses another machine', () 
   })
   assert.equal(thread.dir, path.resolve(dir))
   assert.equal(chats.read({ workspace: record.id, id: thread.id }).dir, path.resolve(dir))
+  /* The history row carries it too: reopening a thread restores the scope
+     without a second read. */
+  const row = chats.list({ workspace: record.id }).find((entry) => entry.id === thread.id)
+  assert.equal(row.dir, path.resolve(dir))
 
   assert.throws(
     () =>
@@ -155,4 +159,38 @@ test('@file: resolves from the base directory when the turn is sent', async (t) 
   const asked = updated.messages.find((message) => message.who === 'me')
   assert.equal(asked.attachments.length, 1)
   assert.equal(asked.attachments[0].path, path.join(dir, 'README.md'))
+})
+
+test('a file written during a turn is attached in the returned thread', async (t) => {
+  const harnesses = require('../../electron/harness-store.cjs')
+  const record = workspace()
+  const fake = path.join(PROFILE, 'fake-pi-artifact')
+  fs.writeFileSync(
+    fake,
+    [
+      '#!/bin/sh',
+      'cat >/dev/null 2>&1',
+      `mkdir -p ${JSON.stringify(path.join(record.path, 'artifacts'))}`,
+      `printf "png bytes" > ${JSON.stringify(path.join(record.path, 'artifacts', 'shot.png'))}`,
+      'exit 0',
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  )
+  harnesses.setPath({ id: 'pi', path: fake })
+
+  const thread = chats.create({
+    workspace: record.id,
+    entity: 'chief-of-staff',
+    harness: 'pi',
+  })
+  t.after(() => chats.closeAll())
+  const updated = await chats.send({
+    workspace: record.id,
+    id: thread.id,
+    text: 'Take a screenshot and show me.',
+  })
+  const reply = updated.messages.find((message) => message.who === 'agent')
+  assert.ok(Array.isArray(reply.artifacts), 'the reply carries the files the turn wrote')
+  assert.equal(reply.artifacts[0].id, 'shot.png')
 })

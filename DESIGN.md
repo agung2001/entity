@@ -182,6 +182,8 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Arrow keys move the highlight but the list does not scroll | Scroll the active row into view with `block: 'nearest'` | Review |
 | A rail shortcut assumes one panel | Target the search field of the currently visible rail | Review |
 | Conversation shortcuts exist only in a view | Add them to `SHORTCUT_GROUPS` so the guide and handler agree | Review |
+| A chart canvas paints over a card's popup, so its controls cannot be clicked | A card with a popup needs its own stacking order above the charts that follow it (`isolation: isolate` alone is not enough) | `EntityDetailView` — `.entp-hero` |
+| A media artifact is a small image in a bordered box | Images, audio and video get the stage: contained fit, wheel/button zoom, drag to pan, Fit to reset; documents keep the plain preview | `ArtifactDetailView` |
 | Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
 | A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
 | A summary row inherits the card heading size | Set label/meta sizes explicitly: 12px label, 10px count | Review |

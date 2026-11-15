@@ -600,6 +600,17 @@ export function slashMenu(
   )
 
   const items = []
+  /* Skills that ship with the thread's base directory come first: they are the
+     closest thing to "this project's instructions". */
+  for (const skill of projectItems || []) {
+    if (!SKILL_REF_NAME.test(skill.name)) continue
+    items.push({
+      name: `${prefix}project:${skill.name}`,
+      desc: skill.harnessLabel || 'This directory',
+      kind: 'project',
+    })
+  }
+
   const workspaceNames = [
     ...attached.filter((name) => own.has(name.toLowerCase())),
     ...attached.filter((name) => !own.has(name.toLowerCase())),
@@ -628,17 +639,6 @@ export function slashMenu(
         a.name.localeCompare(b.name) ||
         a.harness.localeCompare(b.harness),
     )
-
-  /* Skills that ship with the thread's base directory come first: they are the
-     closest thing to "this project's instructions". */
-  for (const skill of projectItems || []) {
-    if (!SKILL_REF_NAME.test(skill.name)) continue
-    items.push({
-      name: `${prefix}project:${skill.name}`,
-      desc: skill.harnessLabel || 'This directory',
-      kind: 'project',
-    })
-  }
 
   for (const skill of harnessSkills) {
     items.push({

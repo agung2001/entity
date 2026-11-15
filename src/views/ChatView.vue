@@ -767,9 +767,9 @@ watch(
             </div>
             <div class="cp-right">
               <span class="ask-stat" :aria-label="statLabel">
-                <span class="u"><b>{{ counts.q }}</b> queries</span>
+                <span class="u"><b>{{ counts.q }}</b> {{ counts.q === 1 ? 'query' : 'queries' }}</span>
                 <span class="vs" aria-hidden="true"></span>
-                <span class="u"><b>{{ counts.r }}</b> responses</span>
+                <span class="u"><b>{{ counts.r }}</b> {{ counts.r === 1 ? 'response' : 'responses' }}</span>
               </span>
               <button
                 class="trace-open"

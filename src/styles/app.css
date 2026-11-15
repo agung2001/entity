@@ -15807,6 +15807,10 @@ button.empty-link {
 /* ── entity hero ───────────────────────────────────────────────────────── */
 .entp-hero {
   position: relative;
+  /* The mark picker lives inside this card, and its popup has to paint above
+     the activity chart that follows it. Without a z-index the isolated hero
+     loses to the chart's canvas, which is later in the document. */
+  z-index: 2;
   isolation: isolate;
   margin-top: 14px;
   padding: 22px 24px;
@@ -18158,4 +18162,190 @@ button.empty-link {
 .pickmenu[data-drop='down'] {
   top: calc(100% + 6px);
   bottom: auto;
+}
+
+/* ── new-thread folder: opt-in ──────────────────────────────────────── */
+.dir-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  margin-top: 2px;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.dir-toggle:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--muted);
+  background: var(--surface);
+}
+.dir-toggle svg {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+  flex: none;
+}
+.dir-toggle .opt {
+  margin-left: auto;
+}
+.dir-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 18px;
+}
+.dir-hide {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.dir-hide:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+/* ── artifact media stage ───────────────────────────────────────────── */
+.artifact-detail .media-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: min(72vh, 760px);
+  min-height: 380px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--border) 65%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--border) 65%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  touch-action: none;
+  user-select: none;
+}
+.artifact-detail .media-stage[data-zoomed='1'] {
+  cursor: grab;
+}
+.artifact-detail .media-stage[data-drag='1'] {
+  cursor: grabbing;
+}
+.artifact-detail .media-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  box-shadow: 0 18px 48px -18px rgba(10, 10, 10, 0.32), 0 2px 8px -2px rgba(10, 10, 10, 0.12);
+  transform-origin: center center;
+  will-change: transform;
+}
+.artifact-detail .media-stage[data-drag='1'] .media-img {
+  transition: none;
+}
+.artifact-detail .media-tools {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 3px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  background: color-mix(in oklab, var(--bg) 92%, transparent);
+  box-shadow: 0 10px 28px -12px rgba(10, 10, 10, 0.35);
+  backdrop-filter: blur(10px);
+}
+.artifact-detail .media-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  cursor: pointer;
+}
+.artifact-detail .media-tools button:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+.artifact-detail .media-tools svg {
+  width: 12px;
+  height: 12px;
+}
+.artifact-detail .media-zoom {
+  min-width: 44px !important;
+  color: var(--ink) !important;
+}
+.artifact-detail .media-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--border);
+}
+.artifact-detail .media-fit {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 8.5px !important;
+}
+.artifact-detail .media-stage--video video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  background: #000;
+}
+.artifact-detail .media-stage--audio {
+  height: auto;
+  min-height: 240px;
+}
+.artifact-detail .media-sound {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: min(560px, 88%);
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  box-shadow: 0 18px 48px -24px rgba(10, 10, 10, 0.28);
+}
+.artifact-detail .media-sound > svg {
+  width: 36px;
+  height: 36px;
+  color: var(--muted);
+  flex: none;
+}
+.artifact-detail .media-sound b {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.artifact-detail .media-sound audio {
+  width: 100%;
 }

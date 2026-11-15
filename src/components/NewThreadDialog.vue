@@ -25,6 +25,9 @@ const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: 
 const error = ref('')
 const busy = ref(false)
 const resetting = ref(false)
+/* The folder is a power feature: hidden behind a toggle so the common case is
+   still four fields and a button. */
+const dirOpen = ref(false)
 
 /* Escape is ignored while a provider call is in flight; the footer's Cancel is
    disabled for the same reason. */
@@ -132,6 +135,7 @@ function reset() {
   form.harness = chosen?.harness || harnesses.items[0]?.id || ''
   form.model = chosen?.model || ''
   form.dir = ''
+  dirOpen.value = false
   error.value = ''
   loadHarnesses().catch(() => {})
   settleMachine()
@@ -166,7 +170,10 @@ watch(
 
 /* The base directory belongs to this machine: a far host cannot read it. */
 watch(remote, (isRemote) => {
-  if (isRemote) form.dir = ''
+  if (isRemote) {
+    form.dir = ''
+    dirOpen.value = false
+  }
 })
 
 async function pickDirectory() {
@@ -344,8 +351,29 @@ async function submit() {
         </p>
       </div>
 
-      <div class="fld">
-        <span class="lbl">Base directory <em class="opt">optional</em></span>
+      <button
+        v-if="!remote && !dirOpen"
+        type="button"
+        class="dir-toggle"
+        :disabled="busy"
+        @click="dirOpen = true"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+          <path d="M1.8 5.8v-2h4" />
+          <path d="M8 8.4v3.2M6.4 10h3.2" />
+        </svg>
+        Start from a folder
+        <em class="opt">optional</em>
+      </button>
+
+      <div v-if="dirOpen && !remote" class="fld">
+        <div class="dir-head">
+          <span class="lbl">Base directory</span>
+          <button type="button" class="dir-hide" :disabled="busy" @click="dirOpen = false; form.dir = ''">
+            Hide
+          </button>
+        </div>
         <div class="dirpick">
           <input
             v-model="form.dir"
