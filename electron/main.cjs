@@ -55,7 +55,10 @@ function registerProtocol() {
   }
 }
 
-const primaryInstance = app.requestSingleInstanceLock()
+/* Dev and the packaged app share a userData directory, so a lock would make
+   `dev:desktop` silently quit whenever the installed app is open. Keep the lock
+   for the shipped app; dev runs beside it. */
+const primaryInstance = isDev || app.requestSingleInstanceLock()
 if (!primaryInstance) {
   app.quit()
 } else {

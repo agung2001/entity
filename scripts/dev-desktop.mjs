@@ -14,7 +14,7 @@ import electronPath from 'electron'
 const require = createRequire(import.meta.url)
 /* The dev server is also a parent of Electron, which is a parent of harnesses.
    One registry decides who outlives whom. */
-const registry = require('./electron/child-registry.cjs')
+const registry = require('../electron/child-registry.cjs')
 
 const server = await createServer()
 await server.listen()
