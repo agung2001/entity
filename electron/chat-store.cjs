@@ -604,6 +604,24 @@ function timeOf(value) {
  * write); an error or an unanswered request keeps the whole window, because the
  * harness may have saved the file before it failed or while the person retried.
  */
+/**
+ * A remote turn stages the whole workspace on the host and copies `artifacts/`
+ * back afterwards, so every shelf file gets a fresh mtime during every remote
+ * turn. Time is not evidence there. Attach only what the answer actually names;
+ * an explicit `artifact://` still renders inline regardless.
+ */
+function namesArtifact(turn, item) {
+  const text = [
+    turn?.text || '',
+    ...(turn?.steps || []).map((step) => `${step.content || ''}\n${step.output || ''}`),
+  ].join('\n')
+  return (
+    text.includes(`artifact://${item.id}`) ||
+    text.includes(`artifact://${item.name}`) ||
+    text.includes(item.name)
+  )
+}
+
 function attachArtifactsByTurn(thread) {
   const requests = thread.messages
     .map((message, index) => ({ message, index }))
@@ -617,6 +635,15 @@ function attachArtifactsByTurn(thread) {
     return thread
   }
   if (!shelf.length) return thread
+
+  const remote = Boolean(thread.machine && thread.machine !== 'local')
+  if (remote) {
+    /* Drop rows a previous, time-based read attached to agent messages; they
+       were guesses. The loop below re-adds only the named ones. */
+    for (const message of thread.messages) {
+      if (message.who !== 'me') delete message.artifacts
+    }
+  }
 
   const claimed = new Set()
   for (const message of thread.messages) {
@@ -647,7 +674,9 @@ function attachArtifactsByTurn(thread) {
       if (ended >= start) end = Math.min(end, ended + 5000)
     }
 
-    const found = available.filter((item) => item.ms >= start && item.ms < end)
+    const found = remote
+      ? available.filter((item) => namesArtifact(turn, item))
+      : available.filter((item) => item.ms >= start && item.ms < end)
     if (!found.length) continue
 
     const target = turn || request
