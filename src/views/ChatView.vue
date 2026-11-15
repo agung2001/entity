@@ -557,6 +557,10 @@ function suggestFollowups(force = false) {
   ensureFollowups(hub.chat.active, { force }).catch(() => {})
 }
 
+async function saveThreadModel(value) {
+  if (await setThreadContext('model', value)) harnessOpen.value = false
+}
+
 /* Voice mode shares the composer's path for a normal turn, so attachments,
    receipts and the rail all update the same way it does for typed text. The
    composer already toasts a failed send; swallowing it here keeps an emitted
@@ -1257,6 +1261,7 @@ watch(
       :open="harnessOpen"
       :harness="ctx.harness"
       :model="ctx.model"
+      @save="saveThreadModel"
       @close="harnessOpen = false"
     />
     <ChatMcpDialog :open="mcpOpen" @close="mcpOpen = false" />

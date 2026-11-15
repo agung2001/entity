@@ -481,13 +481,27 @@ function create({ workspace, entity, machine = 'local', harness, model = '', dir
   return thread
 }
 
-/** Context can only move before the first question — after that it is history. */
+/**
+ * Context can only move before the first question — after that it is history.
+ * The model is the exception: the harness and its session stay the same, and
+ * the next turn simply runs with a different model.
+ */
 function update({ workspace, id, entity, machine, harness, model, dir, attachmentsEnabled }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
-  if (thread.messages.some((message) => message.who === 'me')) {
-    throw new Error('This thread has already started. Its context is locked.')
+  const started = thread.messages.some((message) => message.who === 'me')
+  if (started) {
+    const moved =
+      (entity && entity !== thread.entity) ||
+      (machine && machine !== thread.machine) ||
+      (harness && harness !== thread.harness) ||
+      (dir !== undefined && dir !== (thread.dir || ''))
+    if (moved) {
+      throw new Error(
+        'This thread has already started. Only the model can change; start a new thread for another entity, machine or harness.',
+      )
+    }
   }
   const previousHarness = thread.harness
   if (entity && entity !== thread.entity) {
@@ -507,7 +521,9 @@ function update({ workspace, id, entity, machine, harness, model, dir, attachmen
   /* a model belongs to its harness: changing the harness without naming a new
      model drops the old one instead of passing an incompatible name through */
   else if (thread.harness !== previousHarness) thread.model = ''
-  thread.updatedAt = now()
+  /* A model change is not a new message; it must not move the thread to the
+     top of the history. */
+  if (!started) thread.updatedAt = now()
   writeThread(record, thread)
   return thread
 }

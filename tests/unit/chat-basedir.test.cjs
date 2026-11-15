@@ -194,3 +194,27 @@ test('a file written during a turn is attached in the returned thread', async (t
   assert.ok(Array.isArray(reply.artifacts), 'the reply carries the files the turn wrote')
   assert.equal(reply.artifacts[0].id, 'shot.png')
 })
+
+test('the model can change after a thread has started; the harness cannot', async (t) => {
+  const harnesses = require('../../electron/harness-store.cjs')
+  const record = workspace()
+  const fake = path.join(PROFILE, 'fake-pi-model')
+  fs.writeFileSync(fake, '#!/bin/sh\ncat >/dev/null 2>&1\nexit 0\n', { mode: 0o755 })
+  harnesses.setPath({ id: 'pi', path: fake })
+
+  const thread = chats.create({
+    workspace: record.id,
+    entity: 'chief-of-staff',
+    harness: 'pi',
+  })
+  t.after(() => chats.closeAll())
+  await chats.send({ workspace: record.id, id: thread.id, text: 'hello' })
+
+  const updated = chats.update({ workspace: record.id, id: thread.id, model: 'vendor/model-2' })
+  assert.equal(updated.model, 'vendor/model-2')
+
+  assert.throws(
+    () => chats.update({ workspace: record.id, id: thread.id, harness: 'codex' }),
+    /Only the model can change/,
+  )
+})

@@ -960,25 +960,31 @@ export async function removeThread(id) {
 /** Context moves only before the first question. The server enforces the same rule. */
 export async function setThreadContext(kind, value) {
   const thread = activeThread()
-  if (!thread || threadStarted(thread)) return
-  const next = {
+  if (!thread) return false
+  if (isSending(thread.id)) {
+    toast('Wait for the current turn to finish before changing the model.')
+    return false
+  }
+  /* The model is not part of the pinned context: the next turn can run with a
+     different one while the harness session stays the same. */
+  if (threadStarted(thread) && kind !== 'model') return false
+  const patch = {
+    workspace: hub.workspace,
+    id: thread.id,
     entity: thread.entity,
     machine: thread.machine,
     harness: thread.harness,
-    [kind]: value,
   }
+  if (kind === 'model') patch.model = String(value || '')
+  else patch[kind] = value
   try {
-    const updated = await call('chat.update', {
-      workspace: hub.workspace,
-      id: thread.id,
-      entity: next.entity,
-      machine: next.machine,
-      harness: next.harness,
-    })
+    const updated = await call('chat.update', patch)
     remember(updated)
     await refreshChatList()
+    return true
   } catch (error) {
     toast(error?.message || 'The thread context could not be changed.')
+    return false
   }
 }
 
