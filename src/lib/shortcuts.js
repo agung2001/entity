@@ -92,6 +92,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'M'],
       },
       {
+        id: 'voice',
+        label: 'Voice mode',
+        desc: 'Talk to the entity instead of typing; it listens, answers out loud and takes an interruption.',
+        desktop: ['mod', 'shift', 'V'],
+        browser: ['alt', 'shift', 'V'],
+      },
+      {
         id: 'send',
         label: 'Send the message',
         desc: 'Enter adds a line; this sends the turn.',
@@ -168,7 +175,10 @@ export function shortcutGroups({ desktop = isDesktopApp() } = {}) {
 
 /**
  * Does this key event match the shortcut? Either variant counts, so a browser
- * that can also use the native combo keeps working.
+ * that can also use the native combo keeps working. When the native combo is
+ * something the browser already owns (Ctrl/Cmd+Shift+V is paste-as-plain), the
+ * handler also requires `isDesktopApp() || event.altKey` — see `voice` in
+ * ChatView.
  */
 export function matchesShortcut(id, event) {
   const item = BY_ID.get(id)

@@ -71,6 +71,9 @@ const hint = shortcutLabel('rail')                  // tooltip / <kbd>
   `⌘⇧E` and friends must not appear outside `shortcuts.js`.
 - A browser tab cannot use several Cmd/Ctrl combos its chrome owns; the catalog
   carries a `browser` variant (`Alt/Option+Shift`) and matching accepts either.
+- When the desktop combo is something the browser already does — Ctrl/Cmd+Shift+V
+  is paste-as-plain — the tab must *require* the browser variant:
+  `matchesShortcut(id, event) && (isDesktopApp() || event.altKey)`. See `voice`.
 - Adding a shortcut is two edits: an item in `SHORTCUT_GROUPS` and a
   `matchesShortcut('<id>', event)` branch in the handler. The guide updates
   itself; no second list to keep in sync.
@@ -212,6 +215,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
+| Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
 
 ## The guide in the top bar
 
@@ -322,6 +326,69 @@ inventory, and Markdown parsing must not happen until a reply needs it.
 `npm test` fails if a view is imported statically, if the entry reaches for a
 screen, or if `marked`/`dompurify` appear outside the prose engine. `npm run
 build` prints the chunk list — the entry chunk should not grow without a reason.
+
+## Voice mode opens a microphone
+
+The microphone is the one control in the composer that reaches a device. It sits
+in the context row immediately **before Composer help**, and it opens a full
+dialog: the animated entity mark, its mood emoji at full size, the live
+transcript, and a typed field for when speech is not there.
+
+- **The engine is chosen, not assumed.** `src/lib/voice.js` runs an engine ladder:
+  the browser's `SpeechRecognition` when it can start, a local whisper CLI through
+  `voice.transcribe` when it cannot, and typing when neither exists. Electron
+  exposes the constructor but has no recognition service behind it — it answers
+  `network` — so the desktop app uses whisper, and the dialog names whichever
+  engine is in use. A listening button that cannot listen is not a state.
+- **One microphone, owned by the dialog.** The stream opens with the dialog and is
+  released by `teardown()`: recognizer stopped, tracks stopped, audio context
+  closed. A closed dialog with a hot microphone, or a recorder that survives a
+  thread switch, is a bug.
+- **Talking wins.** A finished utterance while a turn runs interrupts it: cancel
+  the turn, wait for `waitForTurn` to report the thread idle, then send the new
+  words as the next message. Never start a parallel turn, which `chatSend`
+  refuses anyway, and never drop the new context.
+- **An interrupt is a turn handover, and it races.** The cancelled call settles
+  *after* the next turn started: its snapshot predates the new question and its
+  `finally` must not clear the flag the new turn owns. `hub.chat` gives each send
+  a per-thread turn token — only the current owner applies a snapshot or clears
+  `sending` / `live`, and a stale `chat.turn` event may append its own row but
+  never paints steps or takes down the live bubble. Without this the new
+  question appears and then vanishes.
+- **The voice must not cut itself off.** While the entity speaks, the local
+  segmenter is *held*: the microphone stays open for barge-in but records
+  nothing, so the entity's own voice is never transcribed and never trips
+  barge-in. Taking the floor needs a sustained signal above both `bargeThreshold`
+  (2.4× the room's speech floor) and 1.7× the level the entity's own output
+  measures at the microphone, for 300 ms; the first 600 ms are ignored. The
+  gate adapts to the speaker volume, so a loud laptop cannot cut itself off.
+  On the browser engine, which has no microphone handle, barge-in needs a
+  partial of two or more words that is *not* an echo (`echoOverlap`). A reply is
+  only ever stopped by a person, never by its own speaker.
+- **`stop` is an instruction, not a message.** `isStopPhrase` matches short
+  commands only, and is checked **before** the echo test — a spoken "stop" is
+  short enough to look like an echo. Those cancel a turn locally and are never
+  sent to a model.
+- **The entity must not hear itself.** Echo cancellation is on, and two tests
+  keep the loop closed: `echoLikely` (a *prefix* of the sentence being read,
+  used for finals) and `echoOverlap` (word overlap with the last two sentences,
+  used for streaming partials). Prefix, not containment: "run the tests" is
+  contained in "I'll run the tests now" but is a real thing a person says.
+- **A take is a temp file with one owner.** The renderer records 16 kHz mono WAV
+  and sends bytes, never a path or a command. `electron/voice.cjs` writes it to a
+  `mkdtemp` directory, runs the probed binary and model, and removes the directory
+  in a `finally` — a recording must not outlive the call that made it.
+- **The model is discovered, not downloaded.** `ENTITY_WHISPER_MODEL`,
+  `~/.entity/models`, `~/.cache/whisper.cpp`, the Python cache, and the Homebrew
+  share directory. The smallest model wins; latency is the feature.
+- **A blocked engine says why.** Unsigned/permission-denied/service-less all get
+  a sentence and a Retry, and the typed field stays usable. Silence is not an
+  error message.
+- **The spoken words are also written.** The dialog shows the reply text and
+  highlights the sentence being read (`onChunk`). Speech synthesis has odd
+  accents and no subtitle track; a person must be able to read what they hear.
+  The same text is available afterwards: every agent message has a read-aloud
+  action beside copy, share and save.
 
 ## When you add a surface or a key
 

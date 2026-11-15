@@ -12,10 +12,11 @@ import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
+import VoiceChatDialog from '@/components/VoiceChatDialog.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { colorById, markFor, playReaction } from '@/composables/entityMark'
 import { useDialogDismiss } from '@/composables/useDialog'
-import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { isDesktopApp, matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { playSfx } from '@/lib/sfx'
 import { loadArtifacts } from '@/stores/artifacts'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
@@ -38,6 +39,7 @@ import {
   threadCounts,
   threadStarted,
   toast,
+  waitForTurn,
 } from '@/stores/hub'
 import { workspaces } from '@/stores/workspaces'
 
@@ -52,6 +54,7 @@ const newOpen = ref(false)
 const timelineOpen = ref(false)
 const helpOpen = ref(false)
 const helpTab = ref('keys')
+const voiceOpen = ref(false)
 const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const metadataOpen = ref(false)
@@ -70,6 +73,7 @@ const timelineShortcut = shortcutLabel('timeline')
 const metadataShortcut = shortcutLabel('metadata')
 const sendShortcut = shortcutLabel('send')
 const focusShortcut = shortcutLabel('focus')
+const voiceShortcut = shortcutLabel('voice')
 
 /* The composer help belongs to this page; the harness, MCP, new-thread and
    timeline dialogs register their own Escape entry. */
@@ -250,8 +254,39 @@ async function stepThread(delta) {
   if (target && target.id !== hub.chat.active) await pickThread(target.id)
 }
 
+/** Is the key going into a field where the browser's own paste/undo should win? */
+function isField(target) {
+  return Boolean(
+    target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]'),
+  )
+}
+
 function onChatKey(event) {
-  if (newOpen.value || timelineOpen.value || helpOpen.value || harnessOpen.value || mcpOpen.value) {
+  /* The voice dialog's shortcut still closes it; every other shortcut stays
+     behind the dialog, because a key pressed there belongs to that surface.
+     In a browser tab the desktop combo (Ctrl/Cmd+Shift+V) is paste-as-plain, so
+     it only opens voice when the keystroke is not going into a field; the
+     catalog's browser variant (Option/Alt) always works. */
+  if (
+    matchesShortcut('voice', event) &&
+    (isDesktopApp() || event.altKey || !isField(event.target)) &&
+    thread.value
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    voiceOpen.value = !voiceOpen.value
+    /* one dialog at a time: voice takes the surface from composer help */
+    if (voiceOpen.value) helpOpen.value = false
+    return
+  }
+  if (
+    newOpen.value ||
+    timelineOpen.value ||
+    helpOpen.value ||
+    voiceOpen.value ||
+    harnessOpen.value ||
+    mcpOpen.value
+  ) {
     return
   }
   if (matchesShortcut('prev-chat', event)) {
@@ -267,7 +302,14 @@ function onChatKey(event) {
     return
   }
   if (matchesShortcut('focus', event)) {
-    if (newOpen.value || timelineOpen.value || helpOpen.value || harnessOpen.value || mcpOpen.value) {
+    if (
+      newOpen.value ||
+      timelineOpen.value ||
+      helpOpen.value ||
+      voiceOpen.value ||
+      harnessOpen.value ||
+      mcpOpen.value
+    ) {
       return
     }
     event.preventDefault()
@@ -292,12 +334,14 @@ function onChatKey(event) {
 
 function openHarness() {
   helpOpen.value = false
+  voiceOpen.value = false
   mcpOpen.value = false
   harnessOpen.value = true
 }
 
 function openMcp() {
   helpOpen.value = false
+  voiceOpen.value = false
   harnessOpen.value = false
   mcpOpen.value = true
 }
@@ -399,6 +443,38 @@ async function send(text) {
   }
 }
 
+/* Voice mode shares the composer's path for a normal turn, so attachments,
+   receipts and the rail all update the same way it does for typed text. The
+   composer already toasts a failed send; swallowing it here keeps an emitted
+   handler from becoming an unhandled rejection. */
+async function voiceSend(text) {
+  try {
+    await send(text)
+  } catch {
+    /* the toast and the thread row carry the failure */
+  }
+}
+
+/**
+ * Interrupting is a cancel followed by a send, not a second parallel turn: the
+ * harness answers one prompt at a time and the store refuses a send while one
+ * is in flight. Wait for the cancel to settle, then give the entity the new
+ * words — the thread's history is the context, so nothing typed earlier is
+ * lost.
+ */
+async function voiceInterrupt(text) {
+  const id = thread.value?.id
+  if (!id) return
+  if (isSending(id)) {
+    await cancelChat()
+    if (!(await waitForTurn(id))) {
+      toast('The turn did not stop. Try again in a moment.')
+      return
+    }
+  }
+  await voiceSend(text)
+}
+
 function onLiveEvent(event) {
   if (!event || event.kind !== 'chat.turn') return
   if (event.workspace !== hub.workspace) return
@@ -406,6 +482,10 @@ function onLiveEvent(event) {
   if (!id) return
 
   const current = hub.chat.live[id]
+  /* A cancelled turn keeps emitting for a moment after the interrupt started the
+     next one. Only the live turn may paint steps, clear the working flag or take
+     down the live bubble; an older turn still appends its own transcript row. */
+  const stale = Boolean(current && event.messageId && current.messageId !== event.messageId)
   const base =
     current && current.messageId === event.messageId
       ? current
@@ -422,6 +502,7 @@ function onLiveEvent(event) {
   }
 
   if (event.phase === 'step') {
+    if (stale) return
     const step = event.data?.step
     if (!step) return
     const steps = [...base.steps]
@@ -454,15 +535,17 @@ function onLiveEvent(event) {
           : entry,
       )
     }
-    const nextLive = { ...hub.chat.live }
-    delete nextLive[id]
-    hub.chat.live = nextLive
-    if (hub.chat.sending[id]) {
-      const nextSending = { ...hub.chat.sending }
-      delete nextSending[id]
-      hub.chat.sending = nextSending
+    if (!stale) {
+      const nextLive = { ...hub.chat.live }
+      delete nextLive[id]
+      hub.chat.live = nextLive
+      if (hub.chat.sending[id]) {
+        const nextSending = { ...hub.chat.sending }
+        delete nextSending[id]
+        hub.chat.sending = nextSending
+      }
+      playSfx(message?.error ? 'error' : 'receive')
     }
-    playSfx(message?.error ? 'error' : 'receive')
     playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})
@@ -547,6 +630,7 @@ watch(
   () => {
     timelineOpen.value = false
     helpOpen.value = false
+    voiceOpen.value = false
     harnessOpen.value = false
     mcpOpen.value = false
     titleEditing.value = false
@@ -722,6 +806,21 @@ watch(
                   </svg>
                 </button>
                 <button
+                  class="compose-voice"
+                  type="button"
+                  :data-on="voiceOpen ? '1' : '0'"
+                  :title="`Voice mode (${voiceShortcut})`"
+                  :aria-label="`Voice mode (${voiceShortcut})`"
+                  aria-haspopup="dialog"
+                  :aria-expanded="voiceOpen ? 'true' : 'false'"
+                  @click="voiceOpen = true"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+                    <rect x="6" y="2.4" width="4" height="7.2" rx="2" />
+                    <path d="M3.6 8a4.4 4.4 0 008.8 0M8 12.4V14" />
+                  </svg>
+                </button>
+                <button
                   class="compose-help"
                   type="button"
                   title="Composer help"
@@ -842,6 +941,10 @@ watch(
               <dd><b>Focus message</b><span>Jump back into the composer from anywhere in chat.</span></dd>
             </div>
             <div>
+              <dt><kbd>{{ voiceShortcut }}</kbd></dt>
+              <dd><b>Voice mode</b><span>The entity listens, answers out loud, and takes an interruption while it works.</span></dd>
+            </div>
+            <div>
               <dt><kbd>{{ sendShortcut }}</kbd></dt>
               <dd><b>Send</b><span>Send the message to the entity.</span></dd>
             </div>
@@ -947,6 +1050,19 @@ watch(
       @close="harnessOpen = false"
     />
     <ChatMcpDialog :open="mcpOpen" @close="mcpOpen = false" />
+    <VoiceChatDialog
+      :open="voiceOpen"
+      :entity="agent.name"
+      :workspace="hub.workspace"
+      :thread="thread"
+      :sending="sending"
+      :stopping="stopping"
+      :live="live"
+      @close="voiceOpen = false"
+      @send="voiceSend"
+      @interrupt="voiceInterrupt"
+      @stop="stopTurn"
+    />
     <NewThreadDialog :open="newOpen" :defaults="ctx" @close="newOpen = false" @created="onCreated" />
     <TimelineDialog
       :open="timelineOpen"

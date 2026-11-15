@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Notification, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Notification, shell, session } = require('electron')
 const { execFile } = require('node:child_process')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
@@ -103,6 +103,22 @@ function showNotification({ title, body, route, tag } = {}) {
   })
   note.show()
   return true
+}
+
+/**
+ * The microphone is the only device the renderer may reach, and only for voice
+ * mode. Chromium asks the session, not the call table, so this is where the
+ * allow-list belongs: `media` (getUserMedia audio) and speaker selection, and
+ * nothing else. A denial here is what the dialog reports as blocked.
+ */
+function installPermissions() {
+  const allowed = new Set(['media', 'speaker-selection'])
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(allowed.has(permission))
+  })
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) =>
+    allowed.has(permission),
+  )
 }
 
 function createWindow() {
@@ -216,6 +232,9 @@ app.whenReady().then(() => {
      shell — it asks for a parsed result, and the call table decides what that
      costs. */
   ipcMain.handle('entity:call', (_event, payload) => rpc.call(payload?.fn, payload?.args))
+
+  /* Voice mode needs the microphone; everything else stays denied. */
+  installPermissions()
 
   createWindow()
 
