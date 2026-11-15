@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme-hero.webp" alt="A studio workspace with assistants for writing, research, travel, budgets and code, and the conversations they ran" width="1000" />
+  <img src="docs/assets/readme-hero.webp" alt="A studio workspace overview: eight assistants, the year's spend chart and a calendar of the days they worked" width="1000" />
 </p>
 
 ## Features
@@ -30,13 +30,32 @@
 
 Ask in plain language. Long turns fold into steps you can open: what the assistant
 thought, what it ran, what came back. Every answer can be retried, copied, shared
-with a link, or saved to the workspace as a file.
+with a link, or saved to the workspace as a file — and a file the turn wrote shows
+up on the answer without a reload. A finished reply suggests three follow-ups; one
+click sends one.
 
 [Where it lives →](electron/chat-store.cjs)
 
 </td>
 <td width="50%">
-  <img src="docs/assets/readme-features/chat.webp" alt="A ten-day Japan itinerary answer with an attached file, a collapsed process fold and the composer" width="100%" />
+  <img src="docs/assets/readme-features/chat.webp" alt="A launch note answer with an attached brief, a collapsed process fold and three suggested follow-ups" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Start in the folder the work lives in
+
+A thread can name a project folder: the harness starts there, `/` lists that
+folder's `.claude/`, `.agents/` and `.pi/` skills as `/project:…`, and `@file:`
+browses the project instead of asking you to know the path. Optional, per
+thread, and only on this machine.
+
+[Base directories →](#a-folder-per-thread)
+
+</td>
+<td width="50%">
+  <img src="docs/assets/readme-features/folder.webp" alt="The composer for a thread started in a project folder, with the / menu listing the project's own review skill first" width="100%" />
 </td>
 </tr>
 <tr>
@@ -45,14 +64,32 @@ with a link, or saved to the workspace as a file.
 ### An assistant is a file you can read
 
 A little configuration at the top, its instructions below. Edit it in place, give
-it a face, and watch conversations turn into levels. It stays a plain `.md` file
-you can open in any editor — or put in a folder and keep forever.
+it a face, and watch conversations turn into levels and a calendar of the days it
+worked. It stays a plain `.md` file you can open in any editor — or put in a
+folder and keep forever.
 
 [Entity file →](#one-file-is-the-entity)
 
 </td>
 <td width="50%">
-  <img src="docs/assets/readme-features/entity.webp" alt="An entity page with its description, level bar, conversations, instructions editor and facts panel" width="100%" />
+  <img src="docs/assets/readme-features/entity.webp" alt="An entity page with its header, activity calendar, conversations, instructions editor and facts panel" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### The entity learns from its own conversations
+
+Learning reads the last ten threads and proposes a sharper brief: what people
+keep asking for, what it keeps missing. You get a side-by-side diff and an
+editor; reviewing never touches the file, and Apply is a separate, deliberate
+click.
+
+[Learning →](#learning-from-conversations)
+
+</td>
+<td width="50%">
+  <img src="docs/assets/readme-features/learning.webp" alt="A Learning review with a summary, the current and proposed instructions side by side and the changed lines highlighted" width="100%" />
 </td>
 </tr>
 <tr>
@@ -60,15 +97,31 @@ you can open in any editor — or put in a folder and keep forever.
 
 ### See how an answer was made
 
-Every turn keeps what it ran, where, with which model, and how long each step
-took. Click a step to read the thought or the tool output behind it — no guessing
-and no black box.
+Every turn keeps what it ran, where, with which model, how long each step took
+and what the tokens cost. Click a step to read the thought or the tool output
+behind it — no guessing and no black box.
 
 [Where it lives →](src/components/TimelineDialog.vue)
 
 </td>
 <td width="50%">
-  <img src="docs/assets/readme-features/timeline.webp" alt="Execution timeline showing where the time went and one expanded step" width="100%" />
+  <img src="docs/assets/readme-features/timeline.webp" alt="Execution timeline showing where the time went, the turn's token usage and spend, and one expanded step" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### The year, in two charts
+
+Spend and activity are folded from the turns themselves — cost and tokens per
+day, and one square per day that stays grey when nothing ran. The workspace gets
+the year; each entity gets its own calendar and bill on its page.
+
+[Usage →](#usage-and-activity)
+
+</td>
+<td width="50%">
+  <img src="docs/assets/readme-features/usage.webp" alt="The overview's spend chart and a calendar heatmap of active days" width="100%" />
 </td>
 </tr>
 <tr>
@@ -338,6 +391,24 @@ Nothing is seeded behind your back: a new workspace is empty, and the sample rol
 are a checkbox in the create form — each one listed so you choose which files to
 write. A fresh entity can also start from one of those roles, or from a blank brief.
 
+### Learning from conversations
+
+**Learning** on an entity page reads the ten most recent threads and asks the
+entity's own harness for a complete replacement brief. The review is a proposal,
+not a write:
+
+- the dialog shows the current file and the proposal **side by side**, line by
+  line, with only the changed lines marked;
+- **Edit proposed** turns the proposal into a textarea, so a good suggestion can
+  be made exact before it lands;
+- **Apply to instructions** writes the body through the same writer the editor
+  uses, keeping the frontmatter; **Cancel** leaves the file untouched;
+- the source threads are listed, so it is clear which conversations produced the
+  rules.
+
+Reviewing costs one run of the entity's harness. If the harness cannot answer,
+the dialog says so and nothing changes.
+
 ## Chat transcripts
 
 Each turn is a real harness process in JSONL stream mode
@@ -354,6 +425,14 @@ stays on the assistant message, so there is no second copy anywhere.
   second copy of it, and keeps the files it already saved.
 - Every message has copy and share; share is a deep link (`?thread=…&msg=…`) that
   opens the thread and scrolls to the row.
+- The newest reply offers three **follow-ups** — short actions with a full prompt
+  behind them. One click sends it down the same path as typed text; a refresh
+  asks for another set.
+- A screenshot or document a turn saved is attached to that turn as soon as it
+  finishes, so it appears without reloading the thread.
+- Asking to delete an entity in a thread opens a confirmation first: what will be
+  removed, how many conversations it owns, and what closing them means. The
+  harness never sees the request.
 - A thread records the account that created it. List, read, rename, send, cancel and
   remove only see that account's threads, even in a shared workspace.
 - The right-edge outline draws one tick per message and opens a jump card.
@@ -379,17 +458,37 @@ panel button in the chat header opens a drawer with that residue, newest first:
 
 [Where it lives →](electron/thread-metadata.cjs)
 
+### Usage and activity
+
+Every turn stores its execution: model, duration, token counts and, when the
+harness reports it, a price. The overview folds those records into the current
+year; an entity page folds the same set for one entity.
+
+- **Spend** — one bar per day with a priced turn, plus the year's total spend and
+  tokens. A day with no price is not invented into one.
+- **Activity** — one square per day, darker for more turns; a day with nothing
+  stays grey rather than taking the faintest warm step.
+- The source is the conversation itself, not a second ledger: deleting a thread
+  removes its cost, and a harness that reports no price contributes turns and
+  tokens but no dollars.
+- A single turn's timeline asks the same records and shows tokens in/out, time
+  and spend beside its steps.
+
+[Where it lives →](electron/usage.cjs)
+
 ### Skills are called, not just declared
 
 | reference | resolves to |
 | --- | --- |
+| `/project:<name>` | a skill in the thread's base directory — `.claude/skills`, `.agents/skills`, … |
 | `/workspace:<name>` | `<ws>/skills/<name>` — attached to this workspace |
 | `/<harness>:<name>` | that harness's own library, e.g. `~/.claude/skills/<name>` |
-| `/<name>` | any library on this machine, when exactly one has that name |
+| `/<name>` | any library this thread can reach, when exactly one has that name |
 
 The `/` menu inserts the qualified form. A bare `/name` is accepted only when one
 library has it; two libraries with the same name is an error listing both forms,
-not a guess. The backend resolves the reference to an absolute path **on the
+not a guess. In a thread with a base directory, project skills come first, then
+the workspace's, then the machine's. The backend resolves the reference to an absolute path **on the
 machine the thread is pinned to** and sends `use this skill /abs/path` above the
 prompt. The reference itself is not sent, and a reference this app owns that does
 not resolve stops the message.
@@ -412,6 +511,24 @@ A mention owns the text after it up to the next `@`, which is how a query can
 contain spaces without quotes. While one word is being typed the composer lists
 matches ten at a time, with **Show 10 more** to page the source. A **name** that
 does not exist stops the message; a **search** with no hits only adds a note.
+
+### A folder per thread
+
+**New thread → Start from a folder** pins an optional project directory to the
+conversation. It hides behind a toggle because most threads do not need one.
+
+- The harness starts in that folder instead of the entity's `dir`.
+- `/` lists the folder's own skills first — `.claude/`, `.agents/`, `.pi/`,
+  `.opencode/`, `.codex/`, `.gemini/`, `.antigravity/` and a plain `skills/` — as
+  `/project:<name>`. A bare name resolves project first.
+- `@file:` lists files under the folder (bounded walk, VCS and build folders
+  skipped) and resolves relative paths from it when the turn is sent.
+- The composer shows the folder beside the harness, and the thread keeps it after
+  a reload.
+- Absolute, existing directories only, and only on this machine — a remote thread
+  cannot read this disk, so the field is hidden there.
+
+[Where it lives →](electron/chat-store.cjs)
 
 ## Voice
 
@@ -736,6 +853,12 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
   capability facts and run logs are deliberately left out.
 - `machine-facts.json` is local to this copy of the workspace: host aliases and
   installed CLIs describe this user's fleet, not a shared project file.
+- **A base directory is local-only.** A thread pinned to a fleet host cannot read
+  this machine's disk, so the field is hidden there and `/project:` is refused
+  rather than resolved to a path the far side cannot see.
+- **Spend is only what the harness reports.** A turn without a price still counts
+  as a turn and as tokens, but contributes nothing to the dollar total; the charts
+  never estimate a price.
 - **Voice input in the desktop app needs a local transcriber.** The shell has no
   speech-recognition service, so voice records with the microphone and runs a
   whisper CLI you installed plus a model you provided. Without one the dialog
