@@ -15,6 +15,14 @@ contextBridge.exposeInMainWorld('desktop', {
     return () => ipcRenderer.removeListener('app:notification-click', listener)
   },
 
+  /* The application menu's Settings item. Same shape as the notification
+     channel: a payload-less event, and an unsubscribe function back. */
+  onOpenAccount: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('app:open-account', listener)
+    return () => ipcRenderer.removeListener('app:open-account', listener)
+  },
+
   /* All local data goes through one call table (electron/rpc.cjs). The renderer
      passes a name and an argument object; it never passes a path or a command. */
   call: (fn, args) => ipcRenderer.invoke('entity:call', { fn, args }),

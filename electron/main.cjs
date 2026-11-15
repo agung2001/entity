@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, shell, session } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, Notification, shell, session } = require('electron')
 const { execFile } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -165,6 +165,52 @@ function installPermissions() {
   )
 }
 
+/* The application menu carries the copy/paste roles a window without one would
+   lose, and the Settings… accelerator that has no way into Account otherwise. */
+function installMenu() {
+  const openAccountSettings = () => {
+    focusWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:open-account')
+    }
+  }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      /* macOS puts Settings under the app name, where people look for it. */
+      ...(isMac
+        ? [
+            {
+              label: app.getName() || 'Entity',
+              submenu: [
+                { role: 'about' },
+                { type: 'separator' },
+                { label: 'Settings…', accelerator: 'Cmd+,', click: openAccountSettings },
+                { type: 'separator' },
+                { role: 'services' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' },
+              ],
+            },
+          ]
+        : [
+            {
+              label: 'File',
+              submenu: [
+                { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: openAccountSettings },
+              ],
+            },
+          ]),
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+    ]),
+  )
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -302,6 +348,7 @@ app.whenReady().then(() => {
   /* Voice mode needs the microphone; everything else stays denied. */
   installPermissions()
 
+  installMenu()
   createWindow()
 
   app.on('activate', () => {

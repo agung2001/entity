@@ -72,6 +72,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'L'],
       },
       {
+        id: 'account-settings',
+        label: 'Account settings',
+        desc: 'Open the account settings page.',
+        desktop: ['mod', ','],
+        browser: ['alt', ','],
+      },
+      {
         id: 'escape',
         label: 'Close the top surface',
         desc: 'A menu, a dialog, a zoomed file or this guide.',

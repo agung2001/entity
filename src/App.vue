@@ -14,6 +14,7 @@ import { notify, onNotificationActivate, prepareNotifications } from '@/lib/noti
 const router = useRouter()
 let offRun = null
 let offNotice = null
+let offAccount = null
 
 function notificationFor(event) {
   if (!event || event.kind !== 'chat.turn' || event.phase !== 'done') return
@@ -43,12 +44,18 @@ onMounted(async () => {
   offNotice = onNotificationActivate((route) => {
     if (route && router.currentRoute.value.fullPath !== route) router.push(route)
   })
+  offAccount = globalThis.desktop?.onOpenAccount?.(() => {
+    if (!router.currentRoute.value.path.startsWith('/account')) {
+      router.push({ name: 'account' })
+    }
+  })
   prepareNotifications()
 })
 
 onBeforeUnmount(() => {
   offRun?.()
   offNotice?.()
+  offAccount?.()
 })
 </script>
 

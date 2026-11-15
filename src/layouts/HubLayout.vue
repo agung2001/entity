@@ -114,6 +114,15 @@ function isEditable(target) {
 }
 
 function onKey(e) {
+  /* The platform's own Settings accelerator; the shift form is accepted
+     because some layouts only produce a comma with a modifier held. */
+  const settingsWithShift =
+    e.code === 'Comma' && e.shiftKey && (e.metaKey || e.ctrlKey || e.altKey)
+  if (matchesShortcut('account-settings', e) || settingsWithShift) {
+    e.preventDefault()
+    router.push({ name: 'account' })
+    return
+  }
   if (matchesShortcut('guide', e)) {
     /* `?` is a character a person can type; only take it outside a field. */
     if (isEditable(e.target)) return
