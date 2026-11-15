@@ -70,6 +70,43 @@ test('the account has a reachable backups page with smart as the default', () =>
   assert.match(store, /backup\.setDirectory|function setDirectory/, 'the target is persisted')
 })
 
+test('voice mode is a dismissible full dialog wired into the composer', () => {
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  const dialog = fs.readFileSync(
+    path.join(SRC, 'components', 'VoiceChatDialog.vue'),
+    'utf8',
+  )
+  const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
+
+  assert.match(chat, /<VoiceChatDialog\b/, 'the chat page owns the voice dialog')
+  assert.match(chat, /import VoiceChatDialog from/, 'the dialog is mounted by ChatView')
+  /* the button sits at the right edge of the composer context row, before help */
+  const voiceAt = chat.indexOf('class="compose-voice"')
+  const helpAt = chat.indexOf('class="compose-help"')
+  assert.ok(voiceAt > 0 && helpAt > voiceAt, 'the voice button must precede Composer help')
+
+  assert.match(dialog, /useDialogDismiss\s*\(/, 'Esc must close the voice dialog')
+  assert.match(dialog, /aria-label="Close"/, 'the dialog needs a visible close button')
+  assert.match(dialog, /class="scrim"/, 'the dialog needs a backdrop that closes it')
+  assert.match(dialog, /<EntityMark\b/, 'the entity animation is the centrepiece')
+  assert.match(dialog, /voice-emoji/, 'the entity mood emoji is shown large')
+  assert.match(dialog, /startMicrophone/, 'the local listener is wired up')
+  assert.match(dialog, /voice\.transcribe/, 'the local listener transcribes through the call table')
+  /* the spoken answer is also shown, because the voice may be hard to follow */
+  assert.match(dialog, /class="voice-reply"/, 'the dialog shows the reply text while speaking')
+  assert.match(dialog, /replyChunks/, 'the spoken text is split and highlighted')
+
+  /* every finished answer can be read aloud from the thread itself */
+  const list = fs.readFileSync(path.join(SRC, 'components', 'MessageList.vue'), 'utf8')
+  assert.match(list, /from '@\/lib\/voice'/, 'the thread reuses the voice module')
+  assert.match(list, /Read response aloud/, 'answers get a read-aloud action')
+  assert.match(list, /msg-act/, 'it sits with copy, share and save')
+
+  assert.match(catalog, /id: 'voice'/, 'the shortcut belongs in the catalog')
+  assert.match(chat, /matchesShortcut\('voice'/, 'the catalog entry needs a handler')
+  assert.match(chat, /voiceShortcut = shortcutLabel\('voice'\)/, 'the hint comes from the catalog')
+})
+
 test('the thread metadata drawer is dismissible and belongs to the chat header', () => {
   const panel = fs.readFileSync(
     path.join(SRC, 'components', 'ThreadMetadataPanel.vue'),
@@ -130,7 +167,7 @@ test('the shortcut catalog is well formed and unique', () => {
   }
   const ids = [...catalog.matchAll(/^\s{8}id: '([a-z-]+)',$/gm)].map((match) => match[1])
   assert.equal(new Set(ids).size, ids.length, 'duplicate shortcut ids')
-  for (const id of ['palette', 'rail', 'theme', 'new-thread', 'escape', 'guide', 'focus', 'send', 'timeline', 'metadata']) {
+  for (const id of ['palette', 'rail', 'theme', 'new-thread', 'escape', 'guide', 'focus', 'send', 'timeline', 'metadata', 'voice']) {
     assert.ok(ids.includes(id), `missing shortcut ${id}`)
   }
 })

@@ -27,6 +27,7 @@ const platform = require('./platform-core.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
 const backups = require('./backup-store.cjs')
+const voice = require('./voice.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({
@@ -199,6 +200,11 @@ function createRpc({
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
     'chat.cancel': (args) => chats.cancel(args),
+
+    /* voice mode: which local transcriber this machine has, and one take. The
+       renderer sends audio only — never a path or a command. */
+    'voice.status': () => voice.status(),
+    'voice.transcribe': (args) => voice.transcribe(args || {}),
 
     /* harness sessions, read from each CLI's own store */
     'sessions.list': (args) => sessions.list(args),

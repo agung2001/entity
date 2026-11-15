@@ -754,6 +754,23 @@ export const threadStarted = (thread = activeThread()) =>
 export const isSending = (id = hub.chat.active) => Boolean(hub.chat.sending[id])
 export const isStopping = (id = hub.chat.active) => Boolean(hub.chat.stopping[id])
 
+/**
+ * Wait for a thread's turn to finish.
+ *
+ * A cancel is not synchronous with the send it cancels: `chat.cancel` returns
+ * as soon as the harness was signalled, while `chat.send` settles a moment
+ * later and clears the flag. Voice mode interrupts by cancelling and then
+ * sending again, so it has to wait for the flag rather than race it. Returns
+ * false if the turn is still running at the deadline.
+ */
+export async function waitForTurn(id = hub.chat.active, { timeout = 15_000, step = 100 } = {}) {
+  const deadline = Date.now() + timeout
+  while (isSending(id) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, step))
+  }
+  return !isSending(id)
+}
+
 export const summaryFor = (id) => hub.chat.summaries.find((thread) => thread.id === id) || null
 
 export async function openThread(id) {

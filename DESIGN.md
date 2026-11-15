@@ -71,6 +71,9 @@ const hint = shortcutLabel('rail')                  // tooltip / <kbd>
   `⌘⇧E` and friends must not appear outside `shortcuts.js`.
 - A browser tab cannot use several Cmd/Ctrl combos its chrome owns; the catalog
   carries a `browser` variant (`Alt/Option+Shift`) and matching accepts either.
+- When the desktop combo is something the browser already does — Ctrl/Cmd+Shift+V
+  is paste-as-plain — the tab must *require* the browser variant:
+  `matchesShortcut(id, event) && (isDesktopApp() || event.altKey)`. See `voice`.
 - Adding a shortcut is two edits: an item in `SHORTCUT_GROUPS` and a
   `matchesShortcut('<id>', event)` branch in the handler. The guide updates
   itself; no second list to keep in sync.
@@ -212,6 +215,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
+| Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
 
 ## The guide in the top bar
 
@@ -322,6 +326,49 @@ inventory, and Markdown parsing must not happen until a reply needs it.
 `npm test` fails if a view is imported statically, if the entry reaches for a
 screen, or if `marked`/`dompurify` appear outside the prose engine. `npm run
 build` prints the chunk list — the entry chunk should not grow without a reason.
+
+## Voice mode opens a microphone
+
+The microphone is the one control in the composer that reaches a device. It sits
+in the context row immediately **before Composer help**, and it opens a full
+dialog: the animated entity mark, its mood emoji at full size, the live
+transcript, and a typed field for when speech is not there.
+
+- **The engine is chosen, not assumed.** `src/lib/voice.js` runs an engine ladder:
+  the browser's `SpeechRecognition` when it can start, a local whisper CLI through
+  `voice.transcribe` when it cannot, and typing when neither exists. Electron
+  exposes the constructor but has no recognition service behind it — it answers
+  `network` — so the desktop app uses whisper, and the dialog names whichever
+  engine is in use. A listening button that cannot listen is not a state.
+- **One microphone, owned by the dialog.** The stream opens with the dialog and is
+  released by `teardown()`: recognizer stopped, tracks stopped, audio context
+  closed. A closed dialog with a hot microphone, or a recorder that survives a
+  thread switch, is a bug.
+- **Talking wins.** A speech onset while the entity is speaking stops synthesis at
+  once (barge-in). A finished utterance while a turn runs interrupts it: cancel
+  the turn, wait for `waitForTurn` to report the thread idle, then send the new
+  words as the next message. Never start a parallel turn, which `chatSend`
+  refuses anyway, and never drop the new context.
+- **`stop` is an instruction, not a message.** `isStopPhrase` matches short
+  commands only; those cancel a turn locally and are never sent to a model.
+- **The entity must not hear itself.** Echo cancellation is on, and `echoLikely`
+  drops a transcript that is mostly the sentence being spoken; otherwise the
+  entity answers its own voice forever.
+- **A take is a temp file with one owner.** The renderer records 16 kHz mono WAV
+  and sends bytes, never a path or a command. `electron/voice.cjs` writes it to a
+  `mkdtemp` directory, runs the probed binary and model, and removes the directory
+  in a `finally` — a recording must not outlive the call that made it.
+- **The model is discovered, not downloaded.** `ENTITY_WHISPER_MODEL`,
+  `~/.entity/models`, `~/.cache/whisper.cpp`, the Python cache, and the Homebrew
+  share directory. The smallest model wins; latency is the feature.
+- **A blocked engine says why.** Unsigned/permission-denied/service-less all get
+  a sentence and a Retry, and the typed field stays usable. Silence is not an
+  error message.
+- **The spoken words are also written.** The dialog shows the reply text and
+  highlights the sentence being read (`onChunk`). Speech synthesis has odd
+  accents and no subtitle track; a person must be able to read what they hear.
+  The same text is available afterwards: every agent message has a read-aloud
+  action beside copy, share and save.
 
 ## When you add a surface or a key
 
