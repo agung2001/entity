@@ -5,8 +5,14 @@ const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
 const registry = require('./child-registry.cjs')
+const { ensureGuiPath } = require('./shell-path.cjs')
 const workspaces = require('./workspace-store.cjs')
 const remoteSync = require('./remote-sync.cjs')
+
+/* Finder and the Dock start Electron with a bare PATH; a harness installed by
+   Homebrew or npm would look "not installed". Restore the usual locations
+   before anything reads it. */
+ensureGuiPath()
 
 // Set by `npm run dev:desktop`; empty when running a built app.
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL
