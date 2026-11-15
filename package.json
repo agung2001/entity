@@ -53,6 +53,7 @@
   "build": {
     "appId": "com.entity.app",
     "productName": "Entity",
+    "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "release"
     },
