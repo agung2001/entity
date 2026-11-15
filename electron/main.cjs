@@ -38,6 +38,34 @@ function focusWindow() {
   mainWindow.focus()
 }
 
+/* `entity://open` is how the browser build reaches the installed app. The
+ * protocol points at this executable and a second launch only focuses the
+ * window that already exists. */
+const PROTOCOL = 'entity'
+
+function registerProtocol() {
+  try {
+    if (process.defaultApp && process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])])
+    } else {
+      app.setAsDefaultProtocolClient(PROTOCOL)
+    }
+  } catch {
+    /* a machine that refuses the registration still runs the app */
+  }
+}
+
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) {
+  app.quit()
+} else {
+  app.on('second-instance', () => focusWindow())
+  app.on('open-url', (event) => {
+    event.preventDefault()
+    focusWindow()
+  })
+}
+
 /**
  * Open one file in VS Code from the thread-metadata panel.
  *
@@ -214,6 +242,8 @@ app.setName('Entity')
 if (process.platform === 'win32') app.setAppUserModelId('com.entity.app')
 
 app.whenReady().then(() => {
+  if (!primaryInstance) return
+  registerProtocol()
   /* In development the process is Electron.app, so the dock keeps the default
      atom until we hand it the product icon. A packaged build reads the icns
      from the bundle instead. */

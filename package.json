@@ -84,6 +84,14 @@
         "from": "build/icon.png",
         "to": "icon.png"
       }
+    ],
+    "protocols": [
+      {
+        "name": "Entity",
+        "schemes": [
+          "entity"
+        ]
+      }
     ]
   }
 }

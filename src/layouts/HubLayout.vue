@@ -10,6 +10,7 @@ import { closeWizard, hub, toast } from '@/stores/hub'
 import { loadHarnesses } from '@/stores/harnesses'
 import { toggleTheme } from '@/lib/theme'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { hasDesktopBridge } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 
 /* The palette is twenty kilobytes of search that nobody needs to paint the
@@ -19,6 +20,27 @@ const CommandPalette = defineAsyncComponent(() => import('@/components/CommandPa
 
 const route = useRoute()
 const router = useRouter()
+
+/* The app button belongs to the browser: inside Electron it would open the
+   window you are already in. */
+const showAppLink = !hasDesktopBridge()
+const RELEASES_URL = 'https://github.com/agung2001/entity/releases/latest'
+
+/* A browser cannot ask whether an app is installed. Try the protocol, and if
+   the page keeps focus (no handler launched anything), fall back to the
+   download page. */
+function openDesktopApp() {
+  let left = false
+  const onBlur = () => {
+    left = true
+  }
+  window.addEventListener('blur', onBlur, { once: true })
+  window.setTimeout(() => {
+    window.removeEventListener('blur', onBlur)
+    if (!left) window.location.href = RELEASES_URL
+  }, 1600)
+  window.location.href = 'entity://open'
+}
 
 const isChat = computed(() => route.name === 'chat')
 const isSkill = computed(() => route.name === 'skill')
@@ -171,6 +193,20 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
             <path d="M4.4 6.4h.1M6.9 6.4h.1M9.4 6.4h.1M11.9 6.4h.1M4.4 9.4h.1M6.9 9.4h2.2M11.9 9.4h.1" stroke-linecap="round" />
           </svg>
           <kbd>?</kbd>
+        </button>
+        <button
+          v-if="showAppLink"
+          class="helpbtn appbtn"
+          type="button"
+          title="Open the desktop app — or download it"
+          aria-label="Open the desktop app"
+          @click="openDesktopApp"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <rect x="2" y="3.4" width="12" height="9.2" rx="1.4" />
+            <path d="M2 6.2h12M4.2 4.8h.1M6 4.8h.1" stroke-linecap="round" />
+            <path d="M6.6 8.4h2.8M8 8.4v3M6.9 10.5L8 11.6l1.1-1.1" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </button>
       </AppTopbar>
 
