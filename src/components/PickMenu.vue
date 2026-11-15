@@ -26,10 +26,14 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const open = ref(false)
-const drop = ref('up')
 const root = ref(null)
+const menu = ref(null)
 const query = ref('')
 const searchEl = ref(null)
+/* The menu is teleported to <body>: a picker inside a scrolling dialog was cut
+   off by the form's overflow. Fixed coordinates also let it flip when the
+   trigger sits near the bottom of the window. */
+const menuStyle = ref({})
 
 const items = computed(() =>
   props.includeAll ? [{ id: 'all', label: props.allLabel }, ...props.options] : props.options,
@@ -58,22 +62,56 @@ const countLabel = computed(() =>
   props.count != null && props.modelValue !== 'all' ? `(${props.count} skills)` : '',
 )
 
+function placeMenu() {
+  const trigger = root.value?.querySelector('.pickbtn')
+  const el = menu.value
+  if (!trigger || !el) return
+  const rect = trigger.getBoundingClientRect()
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const width = Math.min(Math.max(200, rect.width), vw - 16)
+  const left = Math.min(Math.max(8, rect.left), vw - width - 8)
+
+  /* Measure at a safe height first, then choose the side with room. */
+  menuStyle.value = {
+    left: `${left}px`,
+    top: '0px',
+    width: `${width}px`,
+    maxWidth: `${width}px`,
+    maxHeight: '320px',
+  }
+  const height = el.offsetHeight
+  const below = vh - rect.bottom - 10
+  const above = rect.top - 10
+  const down = below >= Math.min(height, 260) || below >= above
+  const maxHeight = Math.max(160, Math.min(320, down ? below : above))
+  const shown = Math.min(height, maxHeight)
+  menuStyle.value = {
+    left: `${left}px`,
+    top: `${down ? Math.min(rect.bottom + 6, vh - shown - 8) : Math.max(8, rect.top - shown - 6)}px`,
+    width: `${width}px`,
+    maxWidth: `${width}px`,
+    maxHeight: `${maxHeight}px`,
+  }
+}
+
+function afterOpen() {
+  nextTick(() => {
+    placeMenu()
+    searchEl.value?.focus()
+  })
+}
+
+function onViewportChange() {
+  if (open.value) placeMenu()
+}
+
 function toggle() {
   if (props.disabled) return
   open.value = !open.value
   if (!open.value) return
   query.value = ''
-  /* The menu opens upward by default. Inside a scrolling dialog that would put
-     the first field's list under the modal edge, so drop when there is more
-     room below the trigger than above it. */
-  const trigger = root.value?.querySelector('.pickbtn')
-  if (trigger) {
-    const rect = trigger.getBoundingClientRect()
-    const above = rect.top
-    const below = window.innerHeight - rect.bottom
-    drop.value = above < Math.min(below, 300) ? 'down' : 'up'
-  }
-  nextTick(() => searchEl.value?.focus())
+  afterOpen()
 }
 
 function pick(id) {
@@ -90,11 +128,11 @@ function onTriggerKey(e) {
   e.preventDefault()
   open.value = true
   query.value = ''
-  nextTick(() => searchEl.value?.focus())
+  afterOpen()
 }
 
 function onMenuKey(e) {
-  const opts = [...(root.value?.querySelectorAll('.pickopt') || [])]
+  const opts = [...(menu.value?.querySelectorAll('.pickopt') || [])]
   const i = opts.indexOf(document.activeElement)
   if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -112,7 +150,7 @@ function onMenuKey(e) {
 }
 
 function onDocumentClick(e) {
-  if (!open.value || root.value?.contains(e.target)) return
+  if (!open.value || root.value?.contains(e.target) || menu.value?.contains(e.target)) return
   open.value = false
 }
 useDialogDismiss({
@@ -123,8 +161,16 @@ useDialogDismiss({
   },
 })
 
-onMounted(() => document.addEventListener('click', onDocumentClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  window.addEventListener('resize', onViewportChange)
+  window.addEventListener('scroll', onViewportChange, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('resize', onViewportChange)
+  window.removeEventListener('scroll', onViewportChange, true)
+})
 </script>
 
 <template>
@@ -167,7 +213,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
       </svg>
     </button>
-    <div class="pickmenu" :data-drop="drop" role="listbox" :aria-label="head" @keydown="onMenuKey">
+    <Teleport to="body">
+    <div
+      v-if="open"
+      ref="menu"
+      class="pickmenu"
+      :style="menuStyle"
+      role="listbox"
+      :aria-label="head"
+      @keydown="onMenuKey"
+    >
       <div class="ph">{{ head }}</div>
       <label class="psearch">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
@@ -208,5 +263,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       </button>
       <p v-if="!visibleItems.length" class="pempty">No matches for “{{ query }}”</p>
     </div>
+    </Teleport>
   </div>
 </template>

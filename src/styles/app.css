@@ -1353,25 +1353,20 @@ kbd {
   color: var(--ink);
 }
 .pickmenu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 60;
-  display: none;
+  /* Teleported to <body>: a picker inside a scrolling dialog must not be
+     clipped by that dialog's overflow. Coordinates come from PickMenu. */
+  position: fixed;
+  z-index: 110;
+  display: block;
   min-width: 200px;
   max-width: 292px;
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: var(--r);
   box-shadow: 0 12px 30px -10px rgba(10, 10, 10, 0.28), 0 2px 6px -2px rgba(10, 10, 10, 0.07);
-}
-.pickwrap:nth-last-child(-n + 2) .pickmenu {
-  left: auto;
-  right: 0;
-}
-.pickwrap[data-open='1'] .pickmenu {
-  display: block;
 }
 .pickmenu .ph {
   font-family: var(--mono);
@@ -6521,11 +6516,8 @@ label.pick:has(input:focus-visible) {
   text-align: left;
 }
 .field-select .pickmenu {
-  width: 100%;
   min-width: 0;
   max-width: none;
-  max-height: 300px;
-  overflow: auto;
 }
 .field-select .pickbtn .mark,
 .field-select .pickopt .mark {
@@ -18144,11 +18136,6 @@ button.empty-link {
   background: var(--bg);
 }
 
-/* a pick menu that opens downward when the trigger is high in the viewport */
-.pickmenu[data-drop='down'] {
-  top: calc(100% + 6px);
-  bottom: auto;
-}
 
 /* ── new-thread folder: opt-in ──────────────────────────────────────── */
 .dir-toggle {

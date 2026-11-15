@@ -183,6 +183,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | A rail shortcut assumes one panel | Target the search field of the currently visible rail | Review |
 | Conversation shortcuts exist only in a view | Add them to `SHORTCUT_GROUPS` so the guide and handler agree | Review |
 | A chart canvas paints over a card's popup, so its controls cannot be clicked | A card with a popup needs its own stacking order above the charts that follow it (`isolation: isolate` alone is not enough) | `EntityDetailView` — `.entp-hero` |
+| A picker inside a scrolling dialog is cut off at the dialog edge | Teleport the popover to `<body>` with fixed coordinates; measure and flip on open, reposition on scroll/resize, cap the height and let it scroll | `PickMenu` |
 | A media artifact is a small image in a bordered box | Images, audio and video get the full-bleed grid stage: details and file actions in a floating top bar, zoom in a vertical rail, wheel/button zoom, drag to pan at any scale, Fit to reset; documents keep the plain preview | `ArtifactDetailView` |
 | Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
 | A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
