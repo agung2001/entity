@@ -777,7 +777,8 @@ public in its GitHub package settings.
 output streams. Keep `ENTITY_SECURE_COOKIE=true` behind TLS.
 
 The image runs as uid 10001 with a read-only root filesystem, a tmpfs `/tmp`,
-`cap_drop: ALL` and `no-new-privileges`; it needs Node built-ins only. The data
+`cap_drop: ALL` and `no-new-privileges`; it ships the production Node modules
+(the ZIP backup path needs `yazl` and `unzipper`) but no build tooling. The data
 directory is the named volume `entity-data` at `/data` (`ENTITY_HOME`).
 
 ## How it is put together

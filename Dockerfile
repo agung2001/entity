@@ -23,6 +23,16 @@ COPY src ./src
 COPY electron ./electron
 RUN npm run build
 
+# ── production dependencies ───────────────────────────────────────────
+# The runtime used to ship no node_modules because the server only needed
+# built-ins. Backups added yazl/unzipper to `electron/backup-store.cjs`, which
+# rpc requires at boot, so the image needs the production tree — not the dev
+# tooling from the build stage.
+FROM node:22-bookworm-slim AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
 # ── run the server ────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS runtime
 
@@ -41,13 +51,14 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# The server only needs Node built-ins plus the shared `electron/*.cjs` modules
-# (they are plain CommonJS; the optional Electron require is guarded). Copying
-# `dist` means no build tooling, no dev dependencies and nothing to `npm install`
-# at runtime.
+# The shared `electron/*.cjs` modules are plain CommonJS (the optional Electron
+# require is guarded), but they do require runtime packages: `yazl` and
+# `unzipper` for backups are loaded through rpc at boot. Ship the production
+# tree only — no Vite, no Playwright, no electron-builder.
 COPY --from=build --chown=entity:entity /app/dist ./dist
 COPY --chown=entity:entity server ./server
 COPY --chown=entity:entity electron ./electron
+COPY --from=prod-deps --chown=entity:entity /app/node_modules ./node_modules
 
 USER entity
 EXPOSE 1020
