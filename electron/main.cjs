@@ -1,5 +1,6 @@
-const { app, BrowserWindow, dialog, ipcMain, Notification, shell, session } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, shell, session } = require('electron')
 const { execFile } = require('node:child_process')
+const fs = require('node:fs')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
@@ -10,6 +11,15 @@ const remoteSync = require('./remote-sync.cjs')
 // Set by `npm run dev:desktop`; empty when running a built app.
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL
 const isDev = Boolean(RENDERER_URL)
+const isMac = process.platform === 'darwin'
+
+/* The window icon lives outside the asar in a packaged build (extraResources),
+   and in the checkout during development or `npm run start`. */
+const ICON_PATH = (() => {
+  const packaged = path.join(process.resourcesPath || '', 'icon.png')
+  const checkout = path.join(__dirname, '..', 'build', 'icon.png')
+  return process.resourcesPath && fs.existsSync(packaged) ? packaged : checkout
+})()
 
 let mainWindow = null
 let rpc = null
@@ -128,8 +138,17 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0f1115',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    /* Match the theme the app will paint, so the first frame is not a flash of
+       the wrong canvas. */
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#151411' : '#ffffff',
+    title: 'Entity',
+    icon: ICON_PATH,
+    /* Windows and Linux get the native frame plus a hidden menu bar: Alt still
+       reveals it, but the window opens without a File/Edit/View strip. */
+    autoHideMenuBar: !isMac,
+    /* A real title bar on every platform. `hiddenInset` on macOS left the
+       traffic lights floating over the rail and gave the window no drag area. */
+    titleBarStyle: 'default',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -185,9 +204,20 @@ function broadcast(event) {
   }
 }
 
-if (process.platform === 'win32') app.setAppUserModelId('com.artistudio.entity')
+app.setName('Entity')
+if (process.platform === 'win32') app.setAppUserModelId('com.entity.app')
 
 app.whenReady().then(() => {
+  /* In development the process is Electron.app, so the dock keeps the default
+     atom until we hand it the product icon. A packaged build reads the icns
+     from the bundle instead. */
+  if (isMac && !app.isPackaged && app.dock) {
+    try {
+      app.dock.setIcon(ICON_PATH)
+    } catch {
+      /* a missing icon must not stop the window from opening */
+    }
+  }
   /* Anything a previous instance left behind — a crash runs no handler — is
      still running and still spending the machine's CPU. Kill it before the
      window opens, not after the user notices the fan. */
