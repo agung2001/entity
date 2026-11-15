@@ -73,7 +73,7 @@ function onWheel(event) {
 }
 
 function startDrag(event) {
-  if (mediaKind.value !== 'image' || zoom.value <= 1 || event.button !== 0) return
+  if (mediaKind.value !== 'image' || event.button !== 0) return
   dragging.value = true
   dragFrom = { x: event.clientX - pan.value.x, y: event.clientY - pan.value.y }
   stage.value?.setPointerCapture?.(event.pointerId)
@@ -118,6 +118,10 @@ function when(iso) {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
+}
+
+function back() {
+  router.push({ name: 'overview', params: { workspace: route.params.workspace } })
 }
 
 function sizeLabel(bytes) {
@@ -231,117 +235,180 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="view artifact-detail">
-    <header v-if="item" class="page-head artifact-detail-head">
-      <div>
-        <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
-        <h1>{{ item.name }}</h1>
-        <p class="lede mono">{{ item.id }}</p>
-      </div>
-      <div class="head-actions">
-        <button class="btn" type="button" :disabled="Boolean(busy)" @click="download">
-          {{ busy === 'download' ? 'Preparing…' : 'Download' }}
-        </button>
-        <button class="btn" type="button" :disabled="Boolean(busy)" @click="reveal">
-          {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
-        </button>
-        <button
-          class="btn ws-danger"
-          type="button"
-          :class="{ confirming: confirming === item.id }"
-          :disabled="Boolean(busy)"
-          @click="remove"
-        >
-          {{ confirming === item.id ? 'Click again to delete' : 'Delete' }}
-        </button>
-      </div>
-    </header>
+  <div class="view artifact-detail" :class="{ 'artifact-detail--media': Boolean(mediaKind) }">
+    <div v-if="loading" class="empty-note media-message">
+      <b>Opening {{ item?.name || 'artifact' }}…</b>
+    </div>
 
-    <div v-if="loading" class="empty-note"><b>Opening {{ item?.name || 'artifact' }}…</b></div>
-
-    <div v-else-if="missing" class="empty-note">
+    <div v-else-if="missing" class="empty-note media-message">
       <b>That artifact is not in this workspace.</b>
       <span>It may have been removed on disk.</span>
-      <button class="btn" type="button" @click="router.push({ name: 'overview', params: { workspace: route.params.workspace } })">Back to overview</button>
+      <button class="btn" type="button" @click="back">Back to overview</button>
     </div>
 
     <template v-else-if="item">
-      <div class="artifact-detail-meta">
-        <span><em>Type</em>{{ item.mime || item.ext || 'file' }}</span>
-        <span><em>Size</em>{{ sizeLabel(item.size) }}</span>
-        <span><em>Modified</em>{{ when(item.modifiedAt) }}</span>
+      <div v-if="mediaKind" class="media-view">
+        <header class="media-top">
+          <button class="media-back" type="button" aria-label="Back to overview" title="Back" @click="back">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M13 8H3.4M7.4 3.4L3 8l4.4 4.6" />
+            </svg>
+          </button>
+          <div class="media-titles">
+            <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
+            <h1 :title="item.id">{{ item.name }}</h1>
+            <p class="media-meta">
+              <span>{{ item.mime || item.ext || 'file' }}</span>
+              <span aria-hidden="true">·</span>
+              <span>{{ sizeLabel(item.size) }}</span>
+              <span aria-hidden="true">·</span>
+              <span>Modified {{ when(item.modifiedAt) }}</span>
+            </p>
+          </div>
+          <div class="media-actions">
+            <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="download">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
+              </svg>
+              {{ busy === 'download' ? 'Preparing…' : 'Download' }}
+            </button>
+            <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="reveal">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+                <path d="M1.8 5.8v-2h4" />
+              </svg>
+              {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
+            </button>
+            <button
+              class="btn btn-sm ws-danger"
+              type="button"
+              :class="{ confirming: confirming === item.id }"
+              :disabled="Boolean(busy)"
+              @click="remove"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M3 4.6h10M6.4 4.6V3h3.2v1.6M4.4 4.6l.6 8.4h6l.6-8.4M6.8 7v4M9.2 7v4" />
+              </svg>
+              {{ confirming === item.id ? 'Confirm delete' : 'Delete' }}
+            </button>
+          </div>
+        </header>
+
+        <section
+          ref="stage"
+          class="media-canvas"
+          :data-kind="mediaKind"
+          :data-drag="dragging ? '1' : '0'"
+          @wheel="onWheel"
+          @pointerdown="startDrag"
+          @pointermove="drag"
+          @pointerup="endDrag"
+          @pointercancel="endDrag"
+          @dblclick="mediaKind === 'image' && (zoom > 1 ? resetView() : zoomBy(2, $event.clientX, $event.clientY))"
+        >
+          <aside v-if="mediaKind === 'image'" class="media-rail" @pointerdown.stop @dblclick.stop>
+            <button type="button" aria-label="Zoom in" title="Zoom in (+)" @click="zoomBy(1.15)">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M3.5 8h9M8 3.5v9" />
+              </svg>
+            </button>
+            <button type="button" class="media-zoom" title="Fit to the window" @click="resetView">
+              {{ Math.round(zoom * 100) }}%
+            </button>
+            <button type="button" aria-label="Zoom out" title="Zoom out (−)" @click="zoomBy(0.85)">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M3.5 8h9" />
+              </svg>
+            </button>
+            <span class="media-sep" aria-hidden="true"></span>
+            <button type="button" aria-label="Fit to the window" title="Fit" @click="resetView">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M6 2.8H2.8V6M10 2.8h3.2V6M6 13.2H2.8V10M10 13.2h3.2V10" />
+              </svg>
+            </button>
+          </aside>
+
+          <img
+            v-if="mediaKind === 'image' && previewData?.dataUrl"
+            class="media-img"
+            :src="previewData.dataUrl"
+            :alt="previewData.name"
+            draggable="false"
+            :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
+          />
+
+          <video
+            v-else-if="mediaKind === 'video' && previewData?.dataUrl"
+            :src="previewData.dataUrl"
+            controls
+            playsinline
+            preload="metadata"
+          ></video>
+
+          <div v-else-if="mediaKind === 'audio' && previewData?.dataUrl" class="media-sound">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" />
+            </svg>
+            <div>
+              <b>{{ previewData.name }}</b>
+              <audio :src="previewData.dataUrl" controls preload="metadata"></audio>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <section
-        v-if="mediaKind === 'image' && previewData?.dataUrl"
-        ref="stage"
-        class="media-stage"
-        :data-drag="dragging ? '1' : '0'"
-        :data-zoomed="zoom > 1 ? '1' : '0'"
-        @wheel="onWheel"
-        @pointerdown="startDrag"
-        @pointermove="drag"
-        @pointerup="endDrag"
-        @pointercancel="endDrag"
-        @dblclick="zoom > 1 ? resetView() : zoomBy(2, $event.clientX, $event.clientY)"
-      >
-        <div class="media-tools" @pointerdown.stop @dblclick.stop>
-          <button type="button" aria-label="Zoom out" title="Zoom out (−)" @click="zoomBy(0.85)">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9" /></svg>
-          </button>
-          <button type="button" class="media-zoom" title="Fit to the window" @click="resetView">
-            {{ Math.round(zoom * 100) }}%
-          </button>
-          <button type="button" aria-label="Zoom in" title="Zoom in (+)" @click="zoomBy(1.15)">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9M8 3.5v9" /></svg>
-          </button>
-          <span class="media-sep" aria-hidden="true"></span>
-          <button type="button" class="media-fit" @click="resetView">Fit</button>
-        </div>
-        <img
-          class="media-img"
-          :src="previewData.dataUrl"
-          :alt="previewData.name"
-          draggable="false"
-          :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
-        />
-      </section>
-
-      <section v-else-if="mediaKind === 'video' && previewData?.dataUrl" class="media-stage media-stage--video">
-        <video :src="previewData.dataUrl" controls playsinline preload="metadata"></video>
-      </section>
-
-      <section v-else-if="mediaKind === 'audio' && previewData?.dataUrl" class="media-stage media-stage--audio">
-        <div class="media-sound">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" />
-          </svg>
+      <template v-else>
+        <header class="page-head artifact-detail-head">
           <div>
-            <b>{{ previewData.name }}</b>
-            <audio :src="previewData.dataUrl" controls preload="metadata"></audio>
+            <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
+            <h1>{{ item.name }}</h1>
+            <p class="lede mono">{{ item.id }}</p>
           </div>
-        </div>
-      </section>
+          <div class="head-actions">
+            <button class="btn" type="button" :disabled="Boolean(busy)" @click="download">
+              {{ busy === 'download' ? 'Preparing…' : 'Download' }}
+            </button>
+            <button class="btn" type="button" :disabled="Boolean(busy)" @click="reveal">
+              {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
+            </button>
+            <button
+              class="btn ws-danger"
+              type="button"
+              :class="{ confirming: confirming === item.id }"
+              :disabled="Boolean(busy)"
+              @click="remove"
+            >
+              {{ confirming === item.id ? 'Click again to delete' : 'Delete' }}
+            </button>
+          </div>
+        </header>
 
-      <section v-else class="artifact-detail-preview">
-        <template v-if="previewData?.kind === 'text'">
-          <pre class="artifact-text">{{ previewData.text }}</pre>
-          <p v-if="previewData.truncated" class="mnote">
-            Preview is truncated. Download for the full file.
-          </p>
-        </template>
-        <iframe
-          v-else-if="previewData?.kind === 'pdf' && previewData?.dataUrl"
-          class="artifact-pdf"
-          :src="previewData.dataUrl"
-          :title="previewData.name"
-        ></iframe>
-        <div v-else class="empty-note">
-          <b>No inline preview for this file.</b>
-          <span>Download it to open with the application this machine already uses.</span>
-          <button class="btn btn-sm" type="button" @click="download">Download</button>
+        <div class="artifact-detail-meta">
+          <span><em>Type</em>{{ item.mime || item.ext || 'file' }}</span>
+          <span><em>Size</em>{{ sizeLabel(item.size) }}</span>
+          <span><em>Modified</em>{{ when(item.modifiedAt) }}</span>
         </div>
-      </section>
+
+        <section class="artifact-detail-preview">
+          <template v-if="previewData?.kind === 'text'">
+            <pre class="artifact-text">{{ previewData.text }}</pre>
+            <p v-if="previewData.truncated" class="mnote">
+              Preview is truncated. Download for the full file.
+            </p>
+          </template>
+          <iframe
+            v-else-if="previewData?.kind === 'pdf' && previewData?.dataUrl"
+            class="artifact-pdf"
+            :src="previewData.dataUrl"
+            :title="previewData.name"
+          ></iframe>
+          <div v-else class="empty-note">
+            <b>No inline preview for this file.</b>
+            <span>Download it to open with the application this machine already uses.</span>
+            <button class="btn btn-sm" type="button" @click="download">Download</button>
+          </div>
+        </section>
+      </template>
     </template>
   </div>
 </template>

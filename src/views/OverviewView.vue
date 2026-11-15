@@ -96,16 +96,6 @@ function openEntities() {
           <template v-else> Every entity file resolves.</template>
         </p>
       </div>
-      <div class="ovd-head-actions">
-        <button class="btn" type="button" data-sfx="nav" @click="openEntities">Entities</button>
-        <button
-          class="btn btn-ink"
-          type="button"
-          @click="router.push({ name: 'workspace', params: { workspace: hub.workspace } })"
-        >
-          Workspace settings
-        </button>
-      </div>
     </header>
 
     <WorkspaceStats />

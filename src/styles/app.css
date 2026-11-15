@@ -18219,18 +18219,30 @@ button.empty-link {
   color: var(--ink);
 }
 
-/* ── artifact media stage ───────────────────────────────────────────── */
-.artifact-detail .media-stage {
+/* ── artifact media: a full-bleed stage, not a page ─────────────────── */
+.artifact-detail--media {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.media-message {
+  margin: 34px 28px;
+}
+.media-view {
   position: relative;
+  height: calc(100vh - 56px);
+  min-height: 460px;
+  overflow: hidden;
+}
+.media-canvas {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: min(72vh, 760px);
-  min-height: 380px;
-  margin-top: 14px;
+  padding: 104px 104px 48px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
   background-color: var(--surface);
   background-image:
     linear-gradient(to right, color-mix(in oklab, var(--border) 65%, transparent) 1px, transparent 1px),
@@ -18238,14 +18250,17 @@ button.empty-link {
   background-size: 24px 24px;
   touch-action: none;
   user-select: none;
-}
-.artifact-detail .media-stage[data-zoomed='1'] {
   cursor: grab;
 }
-.artifact-detail .media-stage[data-drag='1'] {
+.media-canvas[data-kind='video'],
+.media-canvas[data-kind='audio'] {
+  padding: 100px 88px 48px;
+  cursor: default;
+}
+.media-canvas[data-drag='1'] {
   cursor: grabbing;
 }
-.artifact-detail .media-img {
+.media-canvas .media-img {
   max-width: 100%;
   max-height: 100%;
   border-radius: 6px;
@@ -18253,92 +18268,164 @@ button.empty-link {
   transform-origin: center center;
   will-change: transform;
 }
-.artifact-detail .media-stage[data-drag='1'] .media-img {
+.media-canvas[data-drag='1'] .media-img {
   transition: none;
 }
-.artifact-detail .media-tools {
+.media-top {
   position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 3;
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 34px;
-  padding: 3px 6px;
+  gap: 14px;
+  padding: 10px 12px 10px 10px;
   border: 1px solid var(--border-strong);
-  border-radius: 100px;
-  background: color-mix(in oklab, var(--bg) 92%, transparent);
-  box-shadow: 0 10px 28px -12px rgba(10, 10, 10, 0.35);
-  backdrop-filter: blur(10px);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  box-shadow: 0 14px 40px -24px rgba(10, 10, 10, 0.32);
+  backdrop-filter: blur(16px) saturate(140%);
 }
-.artifact-detail .media-tools button {
+.media-back {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
-  min-width: 26px;
-  padding: 0 7px;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
   border: 0;
-  border-radius: 100px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: 9.5px;
   cursor: pointer;
 }
-.artifact-detail .media-tools button:hover {
+.media-back:hover {
   color: var(--ink);
   background: var(--surface);
 }
-.artifact-detail .media-tools svg {
-  width: 12px;
-  height: 12px;
+.media-back svg {
+  width: 15px;
+  height: 15px;
 }
-.artifact-detail .media-zoom {
-  min-width: 44px !important;
-  color: var(--ink) !important;
+.media-titles {
+  flex: 1;
+  min-width: 0;
 }
-.artifact-detail .media-sep {
-  width: 1px;
+.media-titles .eyebrow {
+  margin: 0 0 1px;
+}
+.media-titles h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.media-meta span {
+  white-space: nowrap;
+}
+.media-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.media-actions .btn {
+  height: 30px;
+  font-size: 12px;
+}
+.media-rail {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  box-shadow: 0 14px 40px -24px rgba(10, 10, 10, 0.32);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+.media-rail button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.media-rail button:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+.media-rail svg {
+  width: 14px;
   height: 14px;
-  margin: 0 3px;
+}
+.media-rail .media-zoom {
+  width: auto;
+  min-width: 48px;
+  padding: 0 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink);
+}
+.media-sep {
+  width: 18px;
+  height: 1px;
+  margin: 3px 0;
   background: var(--border);
 }
-.artifact-detail .media-fit {
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-size: 8.5px !important;
-}
-.artifact-detail .media-stage--video video {
+.media-canvas video {
   max-width: 100%;
   max-height: 100%;
   border-radius: 6px;
   background: #000;
+  box-shadow: 0 18px 48px -18px rgba(10, 10, 10, 0.32);
 }
-.artifact-detail .media-stage--audio {
-  height: auto;
-  min-height: 240px;
-}
-.artifact-detail .media-sound {
+.media-sound {
   display: flex;
   align-items: center;
   gap: 16px;
-  width: min(560px, 88%);
+  width: min(560px, 84%);
   padding: 22px;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--bg);
   box-shadow: 0 18px 48px -24px rgba(10, 10, 10, 0.28);
 }
-.artifact-detail .media-sound > svg {
+.media-sound > svg {
   width: 36px;
   height: 36px;
   color: var(--muted);
   flex: none;
 }
-.artifact-detail .media-sound b {
+.media-sound b {
   display: block;
   margin-bottom: 8px;
   font-family: var(--font);
@@ -18346,6 +18433,68 @@ button.empty-link {
   font-weight: 600;
   color: var(--ink);
 }
-.artifact-detail .media-sound audio {
+.media-sound audio {
   width: 100%;
+}
+
+@media (max-width: 760px) {
+  .media-canvas {
+    padding: 124px 18px 40px 76px;
+  }
+  .media-top {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    gap: 8px;
+    padding: 8px;
+  }
+  .media-titles h1 {
+    font-size: 14px;
+  }
+  .media-meta span:nth-last-child(-n + 3) {
+    display: none;
+  }
+  .media-actions .btn {
+    width: 30px;
+    padding: 0;
+    font-size: 0;
+    gap: 0;
+  }
+  .media-actions .btn svg {
+    width: 14px;
+    height: 14px;
+  }
+  .media-rail {
+    left: 10px;
+  }
+  .media-sound {
+    width: 100%;
+  }
+}
+
+/* The native title bar is the window's own drag handle; this lets the app's
+   topbar drag too, so a tall window is not moved by aiming at 28 pixels.
+   Every control inside it opts out. */
+.topbar {
+  -webkit-app-region: drag;
+}
+.topbar a,
+.topbar button,
+.topbar input,
+.topbar .tools,
+.topbar .tools * {
+  -webkit-app-region: no-drag;
+}
+
+/* ── entity section actions ────────────────────────────────────────── */
+.entp-sec-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  align-self: center;
+}
+.entp-sec-actions .btn {
+  height: 28px;
+  font-size: 12px;
 }
