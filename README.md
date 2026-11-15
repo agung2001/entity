@@ -409,6 +409,20 @@ not a write:
 Reviewing costs one run of the entity's harness. If the harness cannot answer,
 the dialog says so and nothing changes.
 
+## Moving in from another tool
+
+There is no importer and no import button, on purpose: an entity is a file, so a
+migration is a reading pass plus a handful of writes you can review before they
+land.
+
+[`docs/migrating-from-multica.md`](docs/migrating-from-multica.md) is the runbook,
+written from a real 8-agent port: what maps to what, the export commands, the
+order that keeps every entity valid while you work (pool → skills → create →
+update), and the four failures that do not show up as errors — a per-agent MCP
+list that means the opposite thing here, `skill create` dropping `references/`,
+invented shape/colour ids falling back to one identical badge, and a brief that
+still points at the tool you just left.
+
 ## Chat transcripts
 
 Each turn is a real harness process in JSONL stream mode
