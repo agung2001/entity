@@ -680,6 +680,63 @@ function scanSkillNames({ machine = LOCAL_MACHINE } = {}) {
   }
 }
 
+/**
+ * Skills that belong to one directory rather than the machine.
+ *
+ * A project keeps its agent material beside the code: `.claude/skills`,
+ * `.agents/skills`, and the equivalents for the other harnesses. The base
+ * directory of a thread points at that project, so the `/` menu offers what the
+ * project ships, and `/project:<name>` resolves to it.
+ */
+const PROJECT_ROOTS = [
+  ['.agents', 'skills', 'agents'],
+  ['.claude', 'skills', 'claude'],
+  ['.pi', 'skills', 'pi'],
+  ['.opencode', 'skills', 'opencode'],
+  ['.codex', 'skills', 'codex'],
+  ['.gemini', 'skills', 'gemini'],
+  ['.antigravity', 'skills', 'antigravity'],
+]
+
+function scanProjectSkills({ dir } = {}) {
+  const root = String(dir || '').trim()
+  if (!root) return { dir: '', items: [], count: 0 }
+  if (!path.isAbsolute(root)) {
+    throw new Error('The base directory must be an absolute path.')
+  }
+  let stat
+  try {
+    stat = fs.statSync(root)
+  } catch {
+    throw new Error(`The base directory does not exist: ${root}`)
+  }
+  if (!stat.isDirectory()) throw new Error('The base directory is not a folder.')
+
+  const items = []
+  const seen = new Set()
+  const add = (skillRoot, harness, harnessLabel) => {
+    for (const item of scanSkillDir(skillRoot, { harness, harnessLabel })) {
+      const key = item.realPath || item.absolutePath
+      if (seen.has(key)) continue
+      seen.add(key)
+      items.push({ ...item, scope: 'project', projectDir: root })
+    }
+  }
+
+  for (const [folder, leaf, harness] of PROJECT_ROOTS) {
+    const skillRoot = path.join(root, folder, leaf)
+    if (!fs.existsSync(skillRoot)) continue
+    const meta = HARNESSES.find((entry) => entry.id === harness)
+    add(skillRoot, harness, `${meta?.label || harness} · this directory`)
+  }
+  /* a plain `<base>/skills` folder is the same convention the workspace uses */
+  const shared = path.join(root, 'skills')
+  if (fs.existsSync(shared)) add(shared, 'project', 'This directory')
+
+  items.sort((a, b) => a.name.localeCompare(b.name) || a.harness.localeCompare(b.harness))
+  return { dir: root, items, count: items.length }
+}
+
 function scanSkillLibrary({ machine = LOCAL_MACHINE } = {}) {
   if (machine && machine !== LOCAL_MACHINE) {
     return { ...remoteMachine(machine), harnesses: [], items: [], count: 0 }
@@ -792,6 +849,7 @@ module.exports = {
   probeSshHost,
   scanSkillLibrary,
   scanSkillNames,
+  scanProjectSkills,
   scanSkillDir,
   skillSources,
   harnessSourceOf,

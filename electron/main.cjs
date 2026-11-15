@@ -71,10 +71,10 @@ async function openInEditor(target) {
 }
 
 /** The native folder picker for Account → Backups. '' means cancelled. */
-async function chooseDirectory() {
+async function chooseDirectory(title = 'Choose a folder') {
   const owner = BrowserWindow.getFocusedWindow() || mainWindow
   const options = {
-    title: 'Choose a backup folder',
+    title,
     buttonLabel: 'Use this folder',
     properties: ['openDirectory', 'createDirectory'],
   }

@@ -506,9 +506,73 @@ async function youtrackProjects(workspace, query, mcpCall, limit = 5) {
  * (debounced) and a prefix repeats.
  */
 /** One page of suggestions, straight from a source. */
+const PROJECT_SKIP = new Set([
+  '.git',
+  'node_modules',
+  '.next',
+  '.nuxt',
+  'dist',
+  'build',
+  'target',
+  '.venv',
+  'venv',
+  '__pycache__',
+  '.cache',
+  '.turbo',
+  '.DS_Store',
+])
+
+/** Relative file paths under a project base directory, bounded and shallow. */
+function listProjectFiles(root, limit = 800) {
+  const out = []
+  const walk = (rel, depth) => {
+    if (out.length >= limit || depth > 5) return
+    let entries = []
+    try {
+      entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (out.length >= limit) return
+      if (PROJECT_SKIP.has(entry.name)) continue
+      const child = rel ? `${rel}/${entry.name}` : entry.name
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        walk(child, depth + 1)
+        continue
+      }
+      if (entry.isFile()) out.push(child)
+    }
+  }
+  walk('', 0)
+  out.sort()
+  return out
+}
+
 async function fetchPage(ctx, kind, fields, limit, offset) {
   const merged = ctx.deps
   const workspace = ctx.workspace
+
+  if (kind === 'file') {
+    /* `@file:` is resolved against the thread's base directory; listing it here
+       is what turns "type a path" into something a person can pick from. */
+    const root = ctx.dir
+    if (!root) return { items: [], more: false }
+    const query = fields.join(':').trim().toLowerCase()
+    const files = listProjectFiles(root)
+    const matched = query
+      ? files.filter((rel) => rel.toLowerCase().includes(query))
+      : files
+    return {
+      items: matched.slice(offset, offset + limit).map((rel) => ({
+        insert: /\s/.test(rel) ? `@file:"${rel}"` : `@file:${rel}`,
+        label: rel,
+        detail: path.join(root, rel),
+      })),
+      more: matched.length > offset + limit,
+    }
+  }
 
   if (kind === 'artifact') {
     const query = fields.join(':').trim()
@@ -664,9 +728,9 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
  * Suggestions for the `@` menu, one page at a time. Pages are cached for 30 s,
  * so backspacing over a prefix is free and "Show more" costs one call.
  */
-async function search({ record, kind, fields = [], limit = 10, offset = 0, deps = {} } = {}) {
-  const ctx = { record, workspace: record?.id, deps: { ...defaultDeps, ...deps } }
-  const key = `${kind}|${fields.join(':')}|${offset}|${limit}`
+async function search({ record, kind, fields = [], limit = 10, offset = 0, dir = '', deps = {} } = {}) {
+  const ctx = { record, workspace: record?.id, dir: String(dir || ''), deps: { ...defaultDeps, ...deps } }
+  const key = `${kind}|${ctx.dir}|${fields.join(':')}|${offset}|${limit}`
   const hit = searchCache.get(key)
   if (hit && Date.now() - hit.at < SEARCH_CACHE_MS) return hit.value
   const value = await fetchPage(ctx, kind, fields, limit, offset)
@@ -848,4 +912,15 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
   }
 }
 
-module.exports = { rewrite, parse, parseMention, tokenOf, sources, search, orcaRepos, resolveArtifact, blockFor }
+module.exports = {
+  rewrite,
+  parse,
+  parseMention,
+  tokenOf,
+  sources,
+  search,
+  orcaRepos,
+  resolveArtifact,
+  blockFor,
+  listProjectFiles,
+}

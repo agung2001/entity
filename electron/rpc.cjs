@@ -96,16 +96,27 @@ function createRpc({
     },
     'workspace.library': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
     'skills.names': ({ machine } = {}) => localData.scanSkillNames({ machine }),
+    /* project-level skills for a thread's base directory */
+    'skills.scanDir': ({ dir } = {}) => localData.scanProjectSkills({ dir }),
+    /* the native folder picker; null in a browser-only build */
+    'dialog.chooseDirectory': async ({ title } = {}) => {
+      if (typeof chooseDirectory !== 'function') {
+        throw new Error('Choosing a folder needs the desktop app. Type the path instead.')
+      }
+      const directory = await chooseDirectory(String(title || 'Choose a folder') || 'Choose a folder')
+      return directory ? { canceled: false, directory } : { canceled: true, directory: '' }
+    },
     /* Orca project names for the composer's `@` menu; cached in main for a minute */
     'mention.sources': () => mentionRef.sources(),
     /* what the composer offers while an `@kind:` is being typed */
-    'mention.search': ({ workspace, kind, fields, limit, offset }) =>
+    'mention.search': ({ workspace, kind, fields, limit, offset, dir }) =>
       mentionRef.search({
         record: workspaces.open(workspace),
         kind: String(kind || ''),
         fields: Array.isArray(fields) ? fields : [],
         limit: Number.isFinite(limit) ? limit : 10,
         offset: Number.isFinite(offset) ? offset : 0,
+        dir: String(dir || ''),
       }),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),

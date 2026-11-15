@@ -21,6 +21,8 @@ const props = defineProps({
   placeholder: { type: String, default: 'Ask anything — / for a skill, @ to mention' },
   /* the thread's machine: only this machine's skill libraries can be read */
   machine: { type: String, default: 'local' },
+  /* optional working directory: project skills and @file paths start here */
+  baseDir: { type: String, default: '' },
   /* a thread answers one turn at a time; the composer waits for it */
   disabled: { type: Boolean, default: false },
   sending: { type: Boolean, default: false },
@@ -38,6 +40,9 @@ const fileInput = ref(null)
 const folderInput = ref(null)
 const attachMenu = ref(false)
 const scanning = ref(false)
+const projectSkills = ref([])
+const projectScanned = ref('')
+let projectPending = false
 const sendShortcut = shortcutLabel('send')
 /* one library read per machine per composer mount, even if the scan fails */
 const requested = new Set()
@@ -50,7 +55,11 @@ let mentionAsked = false
 /* The four typed mentions. A bare `@name` is an entity, so entities are listed
    from the workspace rather than from this table. */
 const MENTION_KINDS = computed(() => [
-  { name: '@file:', desc: 'A local file for this turn only', kind: 'attachment-file' },
+  {
+    name: '@file:',
+    desc: props.baseDir ? 'A file under the base directory' : 'A local file for this turn only',
+    kind: 'attachment-file',
+  },
   ...(props.machine === 'local'
     ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
     : []),
@@ -154,7 +163,9 @@ function scheduleSearch(kind, fields) {
   searchFields = fields
   if (searchState.value.key === key) return
 
-  if (kind === 'file') {
+  /* Without a base directory there is nothing to list; the note asks for a
+     path. With one, the menu is a real file picker for that folder. */
+  if (kind === 'file' && !props.baseDir) {
     menu.value = []
     searchState.value = { key, more: false, error: '' }
     searching.value = false
@@ -187,6 +198,7 @@ function scheduleSearch(kind, fields) {
         fields,
         limit: PAGE,
         offset: 0,
+        dir: props.baseDir || '',
       })
       if (seq !== searchSeq) return
       searchState.value = { key, more: Boolean(data?.more), error: '' }
@@ -214,6 +226,7 @@ async function loadMore() {
         fields: searchFields,
         limit: PAGE,
         offset: menu.value.length,
+        dir: props.baseDir || '',
       })
       if (seq !== searchSeq) return
       menu.value = [...menu.value, ...toMenuItems(data?.items)]
@@ -246,7 +259,10 @@ const note = computed(() => {
   if (props.disabled) return ''
   if (menu.value.length || searching.value) return ''
   if (menuMode.value === 'mention-search') {
-    if (searchKind === 'file') return 'Type a path after @file: — a space finishes it.'
+    if (searchKind === 'file') {
+      if (!props.baseDir) return 'Type a path after @file: — a space finishes it.'
+      return `No match under ${props.baseDir} — keep typing or pick one below.`
+    }
     if (searchKind === 'mcp') return 'No MCP server by that name in this workspace.'
     return searchState.value.error || 'No match yet — keep typing, or Esc and send it as written.'
   }
@@ -324,6 +340,38 @@ async function scanNames() {
   }
 }
 
+/* Project skills live in the base directory, not in this machine's libraries:
+   `.claude/skills`, `.agents/skills` and the rest. One scan per directory. */
+async function scanProject() {
+  if (!props.baseDir || props.machine !== 'local') {
+    projectSkills.value = []
+    projectScanned.value = ''
+    return
+  }
+  if (projectScanned.value === props.baseDir || projectPending) return
+  projectPending = true
+  try {
+    const data = await call('skills.scanDir', { dir: props.baseDir })
+    if (data?.dir === props.baseDir) {
+      projectSkills.value = data.items || []
+      projectScanned.value = data.dir
+    }
+  } catch {
+    projectSkills.value = []
+  } finally {
+    projectPending = false
+  }
+}
+
+watch(
+  () => props.baseDir,
+  () => {
+    projectSkills.value = []
+    projectScanned.value = ''
+    if (draft.value.startsWith('/')) refresh()
+  },
+)
+
 function refresh() {
   if (props.disabled) return
   harvestAttachments(false)
@@ -356,8 +404,16 @@ function refresh() {
     props.machine,
     workspaces.remoteSkills[props.machine]?.items || [],
     localPrefix,
+    projectSkills.value,
   )
   if (active.value > menu.value.length - 1) active.value = 0
+  if (draft.value.startsWith('/') && props.baseDir && props.machine === 'local') {
+    if (projectScanned.value !== props.baseDir) {
+      scanProject().then(() => {
+        if (draft.value.startsWith('/')) refresh()
+      })
+    }
+  }
   if (remote) {
     if (!workspaces.remoteSkills[props.machine]) loadRemoteSkills(props.machine).catch(() => {})
     return

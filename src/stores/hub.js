@@ -561,7 +561,14 @@ const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
  * `machine` is the thread's machine. Only this machine's libraries can be read,
  * so a thread pinned anywhere else gets an empty menu and the composer's own
  * one-line explanation instead of a list of local paths. */
-export function slashMenu(value, agent, machine = 'local', remoteItems = [], localPrefix = false) {
+export function slashMenu(
+  value,
+  agent,
+  machine = 'local',
+  remoteItems = [],
+  localPrefix = false,
+  projectItems = [],
+) {
   const raw = String(value || '')
   const parts = raw.split(/\s/)
   if (!raw.startsWith('/') || parts.length !== 1) return []
@@ -621,6 +628,17 @@ export function slashMenu(value, agent, machine = 'local', remoteItems = [], loc
         a.name.localeCompare(b.name) ||
         a.harness.localeCompare(b.harness),
     )
+
+  /* Skills that ship with the thread's base directory come first: they are the
+     closest thing to "this project's instructions". */
+  for (const skill of projectItems || []) {
+    if (!SKILL_REF_NAME.test(skill.name)) continue
+    items.push({
+      name: `${prefix}project:${skill.name}`,
+      desc: skill.harnessLabel || 'This directory',
+      kind: 'project',
+    })
+  }
 
   for (const skill of harnessSkills) {
     items.push({
@@ -770,8 +788,9 @@ export const threadContext = () => {
         machine: thread.machine,
         harness: thread.harness,
         model: thread.model || '',
+        dir: thread.dir || '',
       }
-    : hub.chat.last
+    : { ...hub.chat.last, dir: '' }
 }
 
 export const threadStarted = (thread = activeThread()) =>
@@ -888,6 +907,7 @@ export async function createThread(overrides = {}) {
     machine,
     harness,
     model,
+    dir: String(overrides.dir || ''),
   })
   remember(thread)
   await refreshChatList()

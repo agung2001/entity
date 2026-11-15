@@ -4,6 +4,7 @@ import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { markFor, moodGlyph } from '@/composables/entityMark'
+import { call } from '@/composables/localBridge'
 import { agentById, createThread, hub } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
@@ -20,7 +21,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'created'])
 
-const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: '' })
+const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: '', dir: '' })
 const error = ref('')
 const busy = ref(false)
 const resetting = ref(false)
@@ -130,6 +131,7 @@ function reset() {
   const chosen = agentById(form.entity)
   form.harness = chosen?.harness || harnesses.items[0]?.id || ''
   form.model = chosen?.model || ''
+  form.dir = ''
   error.value = ''
   loadHarnesses().catch(() => {})
   settleMachine()
@@ -161,6 +163,23 @@ watch(
     if (!remote.value) loadModels(form.harness).catch(() => {})
   },
 )
+
+/* The base directory belongs to this machine: a far host cannot read it. */
+watch(remote, (isRemote) => {
+  if (isRemote) form.dir = ''
+})
+
+async function pickDirectory() {
+  if (busy.value || remote.value) return
+  try {
+    const picked = await call('dialog.chooseDirectory', {
+      title: 'Choose a base directory for this thread',
+    })
+    if (!picked?.canceled && picked?.directory) form.dir = picked.directory
+  } catch (problem) {
+    error.value = problem?.message || 'The folder picker is not available here.'
+  }
+}
 
 function settleMachine() {
   if (remote.value) {
@@ -214,6 +233,7 @@ async function submit() {
       machine: form.machine,
       harness: form.harness,
       model: form.model.trim(),
+      dir: form.dir.trim(),
     })
     emit('created', thread)
     emit('close')
@@ -228,7 +248,7 @@ async function submit() {
 <template>
   <div class="scrim" :data-open="open ? '1' : '0'" @click="busy || emit('close')"></div>
   <div
-    class="modal modal-narrow"
+    class="modal modal-narrow newthread-modal"
     :data-open="open ? '1' : '0'"
     role="dialog"
     aria-modal="true"
@@ -244,7 +264,7 @@ async function submit() {
       </button>
     </div>
 
-    <form class="mo-body thread-body" @submit.prevent="submit">
+    <form class="mo-body thread-body newthread-body" @submit.prevent="submit">
       <div class="fld">
         <span class="lbl">Entity</span>
         <PickMenu
@@ -324,9 +344,54 @@ async function submit() {
         </p>
       </div>
 
+      <div class="fld">
+        <span class="lbl">Base directory <em class="opt">optional</em></span>
+        <div class="dirpick">
+          <input
+            v-model="form.dir"
+            type="text"
+            class="acct-input"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="/Users/you/project"
+            aria-label="Base directory"
+            :disabled="busy || remote"
+            @keydown.enter.prevent
+          />
+          <button
+            class="btn dirpick-browse"
+            type="button"
+            :disabled="busy || remote"
+            @click="pickDirectory"
+          >
+            Browse…
+          </button>
+          <button
+            v-if="form.dir"
+            class="dirpick-clear"
+            type="button"
+            :disabled="busy"
+            aria-label="Clear base directory"
+            @click="form.dir = ''"
+          >
+            ×
+          </button>
+        </div>
+        <p class="mnote">
+          <template v-if="remote">
+            Only this machine can read a base directory; this thread runs on {{ form.machine }}.
+          </template>
+          <template v-else>
+            Start in a project folder: skills under <code class="mono">.claude/</code>,
+            <code class="mono">.agents/</code> appear in <code class="mono">/</code>, and
+            <code class="mono">@file:</code> paths resolve from here.
+          </template>
+        </p>
+      </div>
+
       <p v-if="error" class="acct-error" role="alert">{{ error }}</p>
 
-      <div class="mo-foot" style="padding: 8px 0 0; border: 0">
+      <div class="mo-foot newthread-foot">
         <button class="btn" type="button" :disabled="busy" @click="emit('close')">Cancel</button>
         <button class="btn btn-ink" type="submit" :disabled="busy || !hub.agents.length">
           {{ busy ? 'Starting…' : 'Start thread' }}

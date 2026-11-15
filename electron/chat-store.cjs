@@ -264,6 +264,8 @@ function normaliseThread(raw, record) {
     /* a thread may pin a model independently of the entity file; '' means the
        harness default (or the entity's own model, see runHarness) */
     model: String(raw.model || ''),
+    /* optional base directory: skills and `@file:` paths start here */
+    ...(typeof raw.dir === 'string' && raw.dir ? { dir: String(raw.dir) } : {}),
     attachmentsEnabled: Boolean(raw.attachmentsEnabled),
     /* chat history is private to the account that started it */
     user: threadOwner(raw, record),
@@ -400,6 +402,26 @@ function read({ workspace, id }) {
   return thread && canAccess(thread) ? attachArtifactsByTurn(thread) : null
 }
 
+/** An optional working directory, only for runs on this machine. */
+function checkBaseDir(dir, machine) {
+  const value = String(dir || '').trim()
+  if (!value) return ''
+  if (machine && machine !== 'local') {
+    throw new Error('A base directory is only available on this machine.')
+  }
+  if (!path.isAbsolute(value)) {
+    throw new Error('The base directory must be an absolute path.')
+  }
+  let stat
+  try {
+    stat = fs.statSync(value)
+  } catch {
+    throw new Error(`The base directory does not exist: ${value}`)
+  }
+  if (!stat.isDirectory()) throw new Error('The base directory is not a folder.')
+  return path.resolve(value)
+}
+
 function checkEntity(workspace, name) {
   const entity = entities.read(workspace, name)
   if (!entity) throw new Error(`No entity called "${name}" in this workspace.`)
@@ -427,18 +449,21 @@ function checkMachine(record, machine, harness) {
   return value
 }
 
-function create({ workspace, entity, machine = 'local', harness, model = '', message, attachmentsEnabled = false }) {
+function create({ workspace, entity, machine = 'local', harness, model = '', dir = '', message, attachmentsEnabled = false }) {
   const record = workspaces.open(workspace)
   const agent = checkEntity(workspace, entity)
   const chosenHarness = checkHarness(harness, agent)
+  const chosenMachine = checkMachine(record, machine, chosenHarness)
+  const baseDir = checkBaseDir(dir, chosenMachine)
   const thread = {
     schema: 1,
     id: newThreadId(),
     workspace: record.id,
     entity: agent.name,
-    machine: checkMachine(record, machine, chosenHarness),
+    machine: chosenMachine,
     harness: chosenHarness,
     model: String(model || '').trim(),
+    ...(baseDir ? { dir: baseDir } : {}),
     attachmentsEnabled: Boolean(attachmentsEnabled),
     user: currentUser() || threadOwner(null, record),
     title: '',
@@ -454,7 +479,7 @@ function create({ workspace, entity, machine = 'local', harness, model = '', mes
 }
 
 /** Context can only move before the first question — after that it is history. */
-function update({ workspace, id, entity, machine, harness, model, attachmentsEnabled }) {
+function update({ workspace, id, entity, machine, harness, model, dir, attachmentsEnabled }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
@@ -469,6 +494,11 @@ function update({ workspace, id, entity, machine, harness, model, attachmentsEna
   }
   if (harness) thread.harness = checkHarness(harness, checkEntity(workspace, thread.entity))
   if (machine) thread.machine = checkMachine(record, machine, thread.harness)
+  if (dir !== undefined) {
+    const baseDir = checkBaseDir(dir, thread.machine)
+    if (baseDir) thread.dir = baseDir
+    else delete thread.dir
+  }
   if (model !== undefined) thread.model = String(model || '').trim()
   if (typeof attachmentsEnabled === 'boolean') thread.attachmentsEnabled = attachmentsEnabled
   /* a model belongs to its harness: changing the harness without naming a new
@@ -726,7 +756,10 @@ function runHarness(
   return new Promise((resolve) => {
     let dir
     try {
-      dir = entities.resolveDir(entity)
+      dir = thread.dir || entities.resolveDir(entity)
+      if (thread.dir && !fs.existsSync(dir)) {
+        throw new Error(`The base directory for this thread no longer exists: ${dir}`)
+      }
     } catch (error) {
       resolve({
         ok: false,
@@ -936,7 +969,7 @@ function runHarness(
 }
 
 
-function resolveAttachments(record, list) {
+function resolveAttachments(record, list, baseDir = '') {
   const out = []
   const seen = new Set()
   const pool = workspaces.mcp(record.id)
@@ -982,7 +1015,11 @@ function resolveAttachments(record, list) {
       const absolute = expandHome(raw)
       const candidates = path.isAbsolute(absolute)
         ? [absolute]
-        : [path.resolve(record.path, absolute), path.resolve(process.cwd(), absolute)]
+        : [
+            ...(baseDir ? [path.resolve(baseDir, absolute)] : []),
+            path.resolve(record.path, absolute),
+            path.resolve(process.cwd(), absolute),
+          ]
       file = candidates.find((candidate) => {
         try {
           return fs.statSync(candidate).isFile()
@@ -1027,7 +1064,11 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     typeof attachmentsEnabled === 'boolean' ? attachmentsEnabled : Boolean(thread.attachmentsEnabled)
   const typed = enabled ? attachmentRef.extract(message) : { text: message, attachments: [] }
   const resolved = enabled
-    ? resolveAttachments(record, [...typed.attachments, ...(Array.isArray(attachments) ? attachments : [])])
+    ? resolveAttachments(
+        record,
+        [...typed.attachments, ...(Array.isArray(attachments) ? attachments : [])],
+        thread.dir || '',
+      )
     : { attachments: [], tempDir: '' }
   const resolvedAttachments = resolved.attachments
   const turnText = typed.text || (resolvedAttachments.length ? 'Use the attached resources.' : '')
@@ -1055,7 +1096,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
        transcript */
     const applied =
       thread.machine === 'local'
-        ? skillRef.rewrite(record, turnText, { machine: thread.machine })
+        ? skillRef.rewrite(record, turnText, { machine: thread.machine, dir: thread.dir || '' })
         : await remoteRunner.rewriteSkill(record, turnText, {
             machine: thread.machine,
             harness: thread.harness,

@@ -2,8 +2,10 @@
  * A skill reference at the start of a prompt.
  *
  *   /workspace:<name>   a skill attached to this workspace  (<ws>/skills/<name>)
+ *   /project:<name>     a skill shipped by the thread's base directory
+ *                       (<base>/.claude/skills, <base>/.agents/skills, …)
  *   /<harness>:<name>   a skill in that harness's own library (~/.claude/skills, …)
- *   /<name>             any library on this machine, when exactly one has it
+ *   /<name>             any library this thread can see, when exactly one has it
  *
  * The reference is resolved to an absolute path, and the prompt is rewritten to
  *
@@ -33,7 +35,9 @@ const path = require('node:path')
 const localData = require('./local-data.cjs')
 
 const WORKSPACE = 'workspace'
+const PROJECT = 'project'
 const WORKSPACE_LABEL = 'Workspace'
+const PROJECT_LABEL = 'This directory'
 const LOCAL_MACHINE = 'local'
 
 /* `[A-Za-z0-9._-]+` on purpose: a reference is typed, so a skill whose name has
@@ -115,9 +119,25 @@ function libraryItems() {
   return localData.scanSkillNames({ machine: LOCAL_MACHINE }).items
 }
 
+function projectItems(dir) {
+  if (!dir) return []
+  try {
+    return localData.scanProjectSkills({ dir }).items || []
+  } catch {
+    return []
+  }
+}
+
 /** The skill a qualified reference names, or null when this workspace cannot reach it. */
-function resolve(record, ref) {
+function resolve(record, ref, dir = '') {
   const wanted = String(ref.name || '').toLowerCase()
+
+  if (ref.namespace === PROJECT) {
+    const item = projectItems(dir).find(
+      (entry) => entry.name.toLowerCase() === wanted && !entry.missing,
+    )
+    return item ? describe(item, PROJECT, PROJECT_LABEL) : null
+  }
 
   if (ref.namespace === WORKSPACE) {
     const item = workspaceItems(record).find(
@@ -142,10 +162,20 @@ function resolve(record, ref) {
  * entries are the same file; `realPath` collapses them instead of offering the
  * same skill twice.
  */
-function candidates(record, name) {
+function candidates(record, name, dir = '') {
   const wanted = String(name || '').toLowerCase()
   const seen = new Set()
   const found = []
+
+  /* the closest scope wins the bare-name tie: this project, then the workspace,
+     then the machine libraries */
+  for (const item of projectItems(dir)) {
+    if (item.missing || item.name.toLowerCase() !== wanted) continue
+    const key = item.realPath || item.absolutePath
+    if (seen.has(key)) continue
+    seen.add(key)
+    found.push(describe(item, PROJECT, PROJECT_LABEL))
+  }
 
   for (const item of workspaceItems(record)) {
     if (item.missing || item.name.toLowerCase() !== wanted) continue
@@ -186,13 +216,17 @@ function prompt(skill, ref) {
  * skill this machine should have but cannot reach, or when a bare name is
  * ambiguous.
  */
-function rewrite(record, text, { machine = LOCAL_MACHINE } = {}) {
+function rewrite(record, text, { machine = LOCAL_MACHINE, dir = '' } = {}) {
   const source = String(text || '')
   const ref = parse(source)
   if (!ref) return { text: source, ref: null }
 
   const remote = Boolean(machine) && machine !== LOCAL_MACHINE
-  const owned = !ref.bare && (ref.namespace === WORKSPACE || harnessById.has(ref.namespace))
+  const owned =
+    !ref.bare &&
+    (ref.namespace === WORKSPACE ||
+      ref.namespace === PROJECT ||
+      harnessById.has(ref.namespace))
 
   if (remote) {
     /* A qualified reference is ours: the far side cannot see this machine's
@@ -209,10 +243,19 @@ function rewrite(record, text, { machine = LOCAL_MACHINE } = {}) {
   }
 
   if (owned) {
-    const skill = resolve(record, ref)
-    if (!skill) {
+    if (ref.namespace === PROJECT && !dir) {
       throw new Error(
-        `/${ref.namespace}:${ref.name} is not a skill this workspace can reach. ` +
+        `/${PROJECT}:${ref.name} needs a base directory. Set one when starting the thread.`,
+      )
+    }
+    const skill = resolve(record, ref, dir)
+    if (!skill) {
+      const scope =
+        ref.namespace === PROJECT
+          ? `is not a skill in this thread's base directory`
+          : `is not a skill this workspace can reach`
+      throw new Error(
+        `/${ref.namespace}:${ref.name} ${scope}. ` +
           'Type / in the composer to see the names it can use.',
       )
     }
@@ -220,7 +263,7 @@ function rewrite(record, text, { machine = LOCAL_MACHINE } = {}) {
   }
 
   if (ref.bare) {
-    const found = candidates(record, ref.name)
+    const found = candidates(record, ref.name, dir)
     if (!found.length) return { text: source, ref: null }
     if (found.length > 1) {
       const names = found.map((skill) => `/${skill.namespace}:${skill.name}`).join(', ')

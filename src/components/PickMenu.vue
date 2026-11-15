@@ -26,6 +26,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const open = ref(false)
+const drop = ref('up')
 const root = ref(null)
 const query = ref('')
 const searchEl = ref(null)
@@ -62,6 +63,16 @@ function toggle() {
   open.value = !open.value
   if (!open.value) return
   query.value = ''
+  /* The menu opens upward by default. Inside a scrolling dialog that would put
+     the first field's list under the modal edge, so drop when there is more
+     room below the trigger than above it. */
+  const trigger = root.value?.querySelector('.pickbtn')
+  if (trigger) {
+    const rect = trigger.getBoundingClientRect()
+    const above = rect.top
+    const below = window.innerHeight - rect.bottom
+    drop.value = above < Math.min(below, 300) ? 'down' : 'up'
+  }
   nextTick(() => searchEl.value?.focus())
 }
 
@@ -156,7 +167,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
       </svg>
     </button>
-    <div class="pickmenu" role="listbox" :aria-label="head" @keydown="onMenuKey">
+    <div class="pickmenu" :data-drop="drop" role="listbox" :aria-label="head" @keydown="onMenuKey">
       <div class="ph">{{ head }}</div>
       <label class="psearch">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">

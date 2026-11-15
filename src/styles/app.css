@@ -18061,3 +18061,101 @@ button.empty-link {
     width: 100%;
   }
 }
+
+/* ── base directory: new-thread field + composer chip ─────────────────── */
+.opt {
+  margin-left: 5px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dirpick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dirpick input {
+  min-width: 0;
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.dirpick-browse {
+  flex: none;
+  padding: 0 10px;
+  height: 30px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.dirpick-clear {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dirpick-clear:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.cp-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  padding: 0 7px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+.cp-dir svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  color: var(--muted);
+}
+.cp-dir .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── new-thread dialog: five fields must fit a short window ─────────────
+   The shared `.thread-body` leaves overflow visible (drawers rely on it), so
+   this form gets its own scroll area and a footer that stays reachable. */
+.newthread-modal {
+  max-height: min(92vh, 780px);
+}
+.modal .newthread-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.newthread-body .newthread-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 12px -18px 0;
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* a pick menu that opens downward when the trigger is high in the viewport */
+.pickmenu[data-drop='down'] {
+  top: calc(100% + 6px);
+  bottom: auto;
+}

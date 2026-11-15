@@ -108,6 +108,12 @@ const agentColor = computed(() => {
 const counts = computed(() => threadCounts(thread.value))
 const contextLocked = computed(() => threadStarted(thread.value))
 const mcpCount = computed(() => Object.keys(workspaces.mcp?.servers || {}).length)
+const baseDirName = computed(() => {
+  const value = String(ctx.value?.dir || '')
+  if (!value) return ''
+  const parts = value.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || value
+})
 const followups = computed(() => followupsFor(hub.chat.active))
 
 const lastMessageAt = computed(() => {
@@ -867,6 +873,13 @@ watch(
                     <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
                   </svg>
                 </button>
+                <span v-if="ctx.dir" class="cp-dir" :title="ctx.dir">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                    <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+                    <path d="M1.8 5.8v-2h4" />
+                  </svg>
+                  <span class="nm">{{ baseDirName }}</span>
+                </span>
                 <button
                   class="compose-voice"
                   type="button"
@@ -905,6 +918,7 @@ watch(
                   :machine="ctx.machine || 'local'"
                   :placeholder="`Message ${agent.name} — / skills · @ mentions`"
                   :focus-shortcut="focusShortcut"
+                  :base-dir="ctx.dir || ''"
                   :disabled="sending"
                   :sending="sending"
                   :stopping="stopping"
@@ -1061,7 +1075,7 @@ watch(
               The same button works for local and remote runs. Removing a chip removes that attachment.
             </p>
             <div v-for="row in [
-              { token: '@file:<path>', what: 'A local file for this turn. On a remote machine it is uploaded to a temporary directory and deleted after the answer.' },
+              { token: '@file:<path>', what: 'A local file for this turn, resolved from the thread’s base directory when one is set. On a remote machine it is uploaded to a temporary directory and deleted after the answer.' },
               { token: '@mcp:<server>', what: 'One workspace MCP server for this turn. MCP attachments are not saved. Remote MCP is not enabled in this build.' },
               { token: '@artifact:<name>', what: 'A workspace artifact attached for this turn.' },
             ]" :key="row.token" class="help-mention">
