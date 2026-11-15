@@ -141,18 +141,61 @@ export function words(text) {
  * Is this transcript just the entity hearing itself?
  *
  * Speech synthesis has no echo cancellation of its own, and a laptop speaker at
- * volume will feed straight back into the microphone. When most of a transcript
- * was already in the sentence being spoken, it is echo — sending it would make
- * the entity answer its own reply forever.
+ * volume feeds straight back into the microphone. An echo reproduces the words
+ * *from the beginning of the sentence being spoken*, so the test is a prefix
+ * match against the current sentence — not a bag-of-words overlap, and not
+ * containment. "run the tests" is contained in "I'll run the tests now" but it is
+ * a real thing a person says; an echo starts where the sentence starts.
+ *
+ * One word of slack allows the recognizer to drop or mishear the first word, and
+ * a word of tail slack allows the transcript to arrive mid-word.
  */
 export function echoLikely(transcript, spoken) {
   const heard = words(transcript)
-  if (!heard.length) return false
+  const said = words(spoken)
+  if (heard.length < 2 || !said.length) return false
+  const [shorter, longer] = heard.length <= said.length ? [heard, said] : [said, heard]
+  const need = Math.max(2, Math.min(shorter.length, 6) - 1)
+  for (const offset of [0, 1]) {
+    if (longer.length - offset < shorter.length) continue
+    let matched = 0
+    for (let index = 0; index < shorter.length; index += 1) {
+      if (shorter[index] !== longer[index + offset]) break
+      matched += 1
+    }
+    if (matched >= need) return true
+  }
+  return false
+}
+
+/**
+ * The coarser test, for streaming partials.
+ *
+ * A partial from a continuous recognizer can report the tail of the *previous*
+ * sentence just after the next one starts; a prefix test would then call it a
+ * person. For a barge-in decision the useful question is whether the words are
+ * new at all: if most of them already appear in the last sentence or two, the
+ * microphone is hearing the speaker.
+ */
+export function echoOverlap(transcript, spoken, { min = 3, ratio = 0.7 } = {}) {
+  const heard = words(transcript)
+  if (heard.length < min) return false
   const said = new Set(words(spoken))
   if (!said.size) return false
   const hits = heard.filter((word) => said.has(word)).length
-  return hits / heard.length >= 0.6
+  return hits / heard.length >= ratio
 }
+
+/**
+ * How loud a signal must be to take the floor while the entity is speaking.
+ *
+ * The entity's own output reaches the microphone at some level no matter how
+ * good its echo cancellation is; a person leaning in is well above it. Requiring
+ * roughly two and a half times the room's speech threshold is what keeps a reply
+ * from being cut off by its own voice.
+ */
+export const bargeThreshold = (threshold) =>
+  Math.max(0.03, (Number(threshold) || 0) * 2.4)
 
 /* ── engine detection ─────────────────────────────────────────────── */
 
@@ -511,6 +554,8 @@ export function createWebRecognizer({
 const FRAME = 2048
 const SILENCE_MS = 700
 const MIN_SPEECH_MS = 260
+/** How long a signal must stay above `bargeThreshold` to take the floor. */
+const BARGE_MS = 300
 
 /**
  * Open the microphone and hand back one WAV per spoken sentence.
@@ -529,6 +574,7 @@ export async function startMicrophone({
   onLevel = () => {},
   onSpeechStart = () => {},
   onSegment = () => {},
+  onBargeIn = () => {},
   onError = () => {},
   maxSeconds = 30,
 } = {}) {
@@ -582,6 +628,24 @@ export async function startMicrophone({
   let segment = []
   let level = 0
   let lastLevelAt = 0
+  /* While the entity is speaking the microphone stays open for barge-in but
+     records nothing: its own voice, transcribed, is the bug this prevents. */
+  let held = false
+  let loudMs = 0
+  let preRoll = []
+  /* what the entity's own output measures at the microphone; a person has to be
+     clearly above it, whatever the speaker volume is */
+  let echoPeak = 0
+
+  function beginSegment(seed = []) {
+    speaking = true
+    segment = seed.slice()
+    segmentMs = seed.length * frameMs
+    voicedMs = seed.length * frameMs
+    quietMs = 0
+    hot = 0
+    onSpeechStart()
+  }
 
   function flush() {
     speaking = false
@@ -633,16 +697,30 @@ export async function startMicrophone({
       onLevel(level)
     }
 
+    if (held) {
+      /* Keep the last ~300ms so the words that took the floor are not lost. */
+      preRoll.push(frame)
+      if (preRoll.length > 8) preRoll.shift()
+      /* The gate adapts to the speaker's leak: a loud output raises the bar, a
+         quiet one leaves the room threshold in charge. Evaluated against the
+         previous peak, so a steady level can never qualify as an interruption. */
+      const gate = Math.max(bargeThreshold(threshold), echoPeak * 1.7)
+      const loud = energy >= gate
+      echoPeak = Math.max(energy, echoPeak * 0.995)
+      loudMs = loud ? loudMs + frameMs : 0
+      if (!speaking && loudMs >= BARGE_MS) {
+        loudMs = 0
+        held = false
+        beginSegment(preRoll)
+        preRoll = []
+        onBargeIn()
+      }
+      return
+    }
+
     if (!speaking) {
       hot = energy >= threshold ? hot + 1 : 0
-      if (hot >= 2) {
-        speaking = true
-        segment = []
-        segmentMs = 0
-        voicedMs = 0
-        quietMs = 0
-        onSpeechStart()
-      }
+      if (hot >= 2) beginSegment()
       return
     }
 
@@ -688,11 +766,34 @@ export async function startMicrophone({
          when the dialog closes or the microphone is paused, and a transcript
          arriving after that would send a message nobody asked for. */
       speaking = false
+      held = false
       segment = []
       segmentMs = 0
       voicedMs = 0
+      preRoll = []
       release()
     },
+    /**
+     * Stop recording, keep the microphone for barge-in. An utterance already in
+     * progress is flushed first: those are the person's own words, recorded
+     * before the entity's voice had a chance to reach the microphone.
+     */
+    hold() {
+      if (stopped || held) return
+      if (speaking) flush()
+      held = true
+      loudMs = 0
+      preRoll = []
+      echoPeak = 0
+    },
+    /** Resume recording after the voice stops. */
+    release() {
+      held = false
+      loudMs = 0
+      preRoll = []
+      echoPeak = 0
+    },
+    held: () => held,
     level: () => level,
     threshold: () => threshold,
     sampleRate: () => context.sampleRate,

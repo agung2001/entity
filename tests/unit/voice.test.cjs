@@ -71,7 +71,12 @@ test('echoLikely recognises the entity hearing its own voice', async () => {
   const spoken = 'The build finished and all nine tests pass.'
   assert.equal(echoLikely('the build finished and all nine tests pass', spoken), true)
   assert.equal(echoLikely('the build finished', spoken), true)
+  /* the recognizer dropping the first word is still the same sentence */
+  assert.equal(echoLikely('build finished and all', spoken), true)
   assert.equal(echoLikely('actually run the tests again', spoken), false)
+  /* contained, but not a prefix — this is a person, not the speaker */
+  assert.equal(echoLikely('run the tests', "I'll run the tests now."), false)
+  assert.equal(echoLikely('tests', spoken), false)
   assert.equal(echoLikely('', spoken), false)
   assert.equal(echoLikely('anything', ''), false)
 })
@@ -97,6 +102,26 @@ test('vadThreshold stays between a quiet room and a loud one', async () => {
   assert.equal(vadThreshold(0.01), 0.033)
   assert.equal(vadThreshold(1), 0.12)
   assert.equal(vadThreshold(undefined), 0.012)
+})
+
+test('echoOverlap covers a recognizer reporting the previous sentence', async () => {
+  const { echoOverlap } = await load()
+  const recent = 'First we deploy to staging. Then the checks run on the build.'
+  /* a lagging partial repeats words that are already in the last two sentences */
+  assert.equal(echoOverlap('then the checks run on the build', recent), true)
+  /* a genuine interruption brings new words, even a short one */
+  assert.equal(echoOverlap('wait, use the staging branch', recent), false)
+  /* too short to decide */
+  assert.equal(echoOverlap('build', recent), false)
+  assert.equal(echoOverlap('', recent), false)
+})
+
+test('bargeThreshold clears the entity\'s own speaker', async () => {
+  const { bargeThreshold, vadThreshold } = await load()
+  /* a person taking the floor must be far above the room's speech floor */
+  assert.equal(bargeThreshold(0.012), 0.03)
+  assert.equal(bargeThreshold(0.05), 0.12)
+  assert.ok(bargeThreshold(vadThreshold(0.01)) > vadThreshold(0.01) * 2)
 })
 
 test('downsample averages windows instead of dropping samples', async () => {

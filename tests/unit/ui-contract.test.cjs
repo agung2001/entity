@@ -102,8 +102,18 @@ test('voice mode is a dismissible full dialog wired into the composer', () => {
   assert.match(list, /Read response aloud/, 'answers get a read-aloud action')
   assert.match(list, /msg-act/, 'it sits with copy, share and save')
 
+  /* the reply must not be cut off by its own voice */
+  assert.match(dialog, /mic\?\.hold\(\)/, 'the microphone is held while the entity speaks')
+  assert.match(dialog, /onBargeIn/, 'barge-in comes from the strict local gate')
+  assert.ok(
+    dialog.indexOf('isStopPhrase(clean)') < dialog.indexOf('echoLikely(clean'),
+    'a spoken "stop" must be handled before the echo test',
+  )
+
   assert.match(catalog, /id: 'voice'/, 'the shortcut belongs in the catalog')
   assert.match(chat, /matchesShortcut\('voice'/, 'the catalog entry needs a handler')
+  /* a browser tab's paste-as-plain keeps the combo inside a text field */
+  assert.match(chat, /isField\(event\.target\)/, 'voice must not steal paste-as-plain')
   assert.match(chat, /voiceShortcut = shortcutLabel\('voice'\)/, 'the hint comes from the catalog')
 })
 

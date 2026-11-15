@@ -11,6 +11,7 @@ import {
   createSpeaker,
   createWebRecognizer,
   echoLikely,
+  echoOverlap,
   isStopPhrase,
   resetWebSpeechFailure,
   speechText,
@@ -71,8 +72,13 @@ let mic = null
 let ticker = null
 let turnAt = 0
 let spokenText = ''
+/* the sentence currently being read; echo is matched against it, not the reply */
+let spokenChunk = ''
+/* the last two sentences, so a lagging partial from the previous one is echo */
+let recentSpeech = []
 let speechIdle = 0
 let lastSpeechAt = 0
+let voiceStartedAt = 0
 const spoken = new Set()
 
 const mark = computed(() => markFor(props.workspace || '', props.entity || ''))
@@ -186,14 +192,18 @@ function buildSpeaker() {
     onStart: () => {
       if (!props.open) return
       lastSpeechAt = Date.now()
+      if (mode.value !== 'speaking') voiceStartedAt = Date.now()
       mode.value = 'speaking'
     },
-    onChunk: (_text, index) => {
+    onChunk: (text, index) => {
+      spokenChunk = text
+      recentSpeech = [text, ...recentSpeech].slice(0, 2)
       activeChunk.value = index
     },
     onEnd: () => {
       if (!props.open) return
       activeChunk.value = -1
+      mic?.release()
       if (mode.value === 'speaking') mode.value = props.sending ? 'thinking' : 'listening'
     },
     onError: speakerError,
@@ -204,10 +214,47 @@ function speakReply(message) {
   const text = speechText(message?.text)
   if (!text) return
   spokenText = text
+  spokenChunk = ''
+  recentSpeech = []
   replyChunks.value = splitSpeech(text)
   activeChunk.value = -1
   if (muted.value || !speaker?.supported) return
+  /* Hold the segmenter *before* the voice can reach the microphone: recording
+     the entity's own words is what cut replies off and invented messages. */
+  mic?.hold()
   speaker.speak(text)
+}
+
+/**
+ * The person is talking over the entity: give them the floor.
+ *
+ * `speaker.stop()` ends the utterance and its `onEnd` releases the microphone,
+ * so the sentence that interrupted is recorded from the pre-roll the segmenter
+ * kept. This is also the only path that ends a reply early — the voice never
+ * stops itself.
+ */
+function stopVoiceForUser() {
+  if (mode.value !== 'speaking') return
+  speaker?.stop()
+  mic?.release()
+  mode.value = 'listening'
+  caption.value = 'Go ahead.'
+}
+
+/**
+ * A segment has begun. While a turn runs those words will interrupt it, so say
+ * so; while the entity speaks this fires for its own voice too and must not
+ * change the surface.
+ */
+function onSpeechStart() {
+  if (mode.value === 'thinking') caption.value = 'Listening — this will interrupt the turn.'
+}
+
+/** Barge-in from the local segmenter: sustained, clearly louder than the room. */
+function onBargeIn() {
+  /* the first moments of a reply are the voice itself landing in the mic */
+  if (Date.now() - voiceStartedAt < 600) return
+  stopVoiceForUser()
 }
 
 /* Follow the line being read. The block is short and scrolls, so a long answer
@@ -225,17 +272,9 @@ function handleFinal(text, source = 'voice') {
   const clean = String(text || '').trim()
   partial.value = ''
   if (!clean) return
-  /* The entity hearing its own speaker is not a message. Only recent speech can
-     be an echo: minutes later the same words are a person quoting the answer. */
-  if (
-    source === 'voice' &&
-    Date.now() - lastSpeechAt < 1500 &&
-    echoLikely(clean, spokenText)
-  ) {
-    caption.value = 'That sounded like my own voice — go ahead.'
-    return
-  }
-  /* A typed "stop" is a message; a spoken one is an instruction. */
+  /* A spoken "stop" is an instruction and must win over every other rule — it
+     is short, so an echo test could otherwise swallow it. A typed "stop" is a
+     message. */
   if (source === 'voice' && isStopPhrase(clean)) {
     if (props.sending) emit('stop')
     caption.value = 'Stopped.'
@@ -243,9 +282,23 @@ function handleFinal(text, source = 'voice') {
     mode.value = props.sending ? 'thinking' : 'listening'
     return
   }
+  /* The entity hearing its own speaker is not a message. Only recent speech can
+     be an echo: minutes later the same words are a person quoting the answer. */
+  if (
+    source === 'voice' &&
+    Date.now() - lastSpeechAt < 1500 &&
+    echoLikely(clean, spokenChunk || spokenText)
+  ) {
+    caption.value = 'That sounded like my own voice — go ahead.'
+    return
+  }
   heard.value = clean
   error.value = ''
-  /* a new turn retires the previous answer's text */
+  /* a new turn retires the previous answer's voice and text */
+  if (mode.value === 'speaking') {
+    speaker?.stop()
+    mic?.release()
+  }
   replyChunks.value = []
   activeChunk.value = -1
   if (props.sending) {
@@ -257,16 +310,6 @@ function handleFinal(text, source = 'voice') {
   }
   turnAt = clock.value
   mode.value = 'thinking'
-}
-
-function onSpeechStart() {
-  /* Barge-in: the moment a person starts talking, the entity's voice stops.
-     Recognition is left running so the sentence that interrupted still lands. */
-  if (mode.value === 'speaking') {
-    speaker?.stop()
-    mode.value = 'listening'
-    caption.value = 'Go ahead.'
-  }
 }
 
 function webSpeechProblem(reason) {
@@ -302,8 +345,21 @@ async function listen() {
       recognizer = createWebRecognizer({
         language: typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US',
         onPartial: (text) => {
+          if (mode.value === 'speaking') {
+            /* no microphone handle on this engine: a transcript that is not an
+               echo of the sentence being read is a person taking the floor */
+            const count = String(text || '').trim().split(/\s+/).filter(Boolean).length
+            if (
+              count >= 2 &&
+              Date.now() - voiceStartedAt > 600 &&
+              !echoOverlap(text, `${spokenChunk} ${recentSpeech.join(' ')}`)
+            ) {
+              stopVoiceForUser()
+            }
+            return
+          }
           partial.value = text
-          if (text && mode.value !== 'speaking' && mode.value !== 'thinking') mode.value = 'listening'
+          if (text && mode.value !== 'thinking') mode.value = 'listening'
         },
         onFinal: (text) => handleFinal(text),
         onSpeechStart,
@@ -324,6 +380,7 @@ async function listen() {
           level.value = value
         },
         onSpeechStart,
+        onBargeIn,
         onSegment: (bytes) => transcribe(bytes),
         onError: (reason) => {
           caption.value = String(reason)
@@ -367,6 +424,7 @@ function toggleMic() {
 
 async function transcribe(bytes) {
   if (!props.open) return
+  const resumed = micOn.value ? 'listening' : 'idle'
   mode.value = 'transcribing'
   try {
     const result = await call('voice.transcribe', {
@@ -375,11 +433,13 @@ async function transcribe(bytes) {
       language: typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US',
     })
     if (!props.open) return
-    mode.value = micOn.value ? 'listening' : 'idle'
+    /* a reply may have started while the take was in the transcriber: never
+       overwrite "Speaking…" with a stale "Listening…" */
+    if (mode.value === 'transcribing') mode.value = resumed
     handleFinal(result?.text || '')
   } catch (failure) {
     if (!props.open) return
-    mode.value = micOn.value ? 'listening' : 'idle'
+    if (mode.value === 'transcribing') mode.value = resumed
     caption.value = String(failure?.message || failure)
   }
 }
@@ -427,6 +487,7 @@ function retry() {
 function stopNow() {
   if (mode.value === 'speaking') {
     speaker?.stop()
+    mic?.release()
     mode.value = micOn.value ? 'listening' : 'idle'
     return
   }

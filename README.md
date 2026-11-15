@@ -415,7 +415,8 @@ does not exist stops the message; a **search** with no hits only adds a note.
 
 ## Voice
 
-The microphone in the composer (immediately before Composer help, or `⌘⇧V`)
+The microphone in the composer (immediately before Composer help, or `⌘⇧V`;
+`⌥⇧V` in a browser tab, where `⌘⇧V` stays paste-as-plain inside a text field)
 opens a full-screen voice surface: the entity's animated mark, its mood emoji at
 full size, and a live transcript. Talk and the entity answers out loud.
 
@@ -424,6 +425,11 @@ the voice stops immediately; finish a sentence while a turn is running and that
 turn is interrupted — the app cancels it, waits for the harness to settle, and
 sends your new words as the next message. Say "stop" (or "cancel", "never
 mind") to cancel a turn without sending anything at all.
+
+While the entity speaks, the microphone keeps listening for an interruption but
+records nothing, so the entity can never transcribe its own voice or cut itself
+off. Taking the floor needs a sustained signal clearly above the room, not a
+single loud frame.
 
 **The transcription engine is chosen, not assumed.** Two are supported, in
 order, and the dialog names the one it is using:

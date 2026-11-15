@@ -344,16 +344,36 @@ transcript, and a typed field for when speech is not there.
   released by `teardown()`: recognizer stopped, tracks stopped, audio context
   closed. A closed dialog with a hot microphone, or a recorder that survives a
   thread switch, is a bug.
-- **Talking wins.** A speech onset while the entity is speaking stops synthesis at
-  once (barge-in). A finished utterance while a turn runs interrupts it: cancel
+- **Talking wins.** A finished utterance while a turn runs interrupts it: cancel
   the turn, wait for `waitForTurn` to report the thread idle, then send the new
   words as the next message. Never start a parallel turn, which `chatSend`
   refuses anyway, and never drop the new context.
+- **An interrupt is a turn handover, and it races.** The cancelled call settles
+  *after* the next turn started: its snapshot predates the new question and its
+  `finally` must not clear the flag the new turn owns. `hub.chat` gives each send
+  a per-thread turn token — only the current owner applies a snapshot or clears
+  `sending` / `live`, and a stale `chat.turn` event may append its own row but
+  never paints steps or takes down the live bubble. Without this the new
+  question appears and then vanishes.
+- **The voice must not cut itself off.** While the entity speaks, the local
+  segmenter is *held*: the microphone stays open for barge-in but records
+  nothing, so the entity's own voice is never transcribed and never trips
+  barge-in. Taking the floor needs a sustained signal above both `bargeThreshold`
+  (2.4× the room's speech floor) and 1.7× the level the entity's own output
+  measures at the microphone, for 300 ms; the first 600 ms are ignored. The
+  gate adapts to the speaker volume, so a loud laptop cannot cut itself off.
+  On the browser engine, which has no microphone handle, barge-in needs a
+  partial of two or more words that is *not* an echo (`echoOverlap`). A reply is
+  only ever stopped by a person, never by its own speaker.
 - **`stop` is an instruction, not a message.** `isStopPhrase` matches short
-  commands only; those cancel a turn locally and are never sent to a model.
-- **The entity must not hear itself.** Echo cancellation is on, and `echoLikely`
-  drops a transcript that is mostly the sentence being spoken; otherwise the
-  entity answers its own voice forever.
+  commands only, and is checked **before** the echo test — a spoken "stop" is
+  short enough to look like an echo. Those cancel a turn locally and are never
+  sent to a model.
+- **The entity must not hear itself.** Echo cancellation is on, and two tests
+  keep the loop closed: `echoLikely` (a *prefix* of the sentence being read,
+  used for finals) and `echoOverlap` (word overlap with the last two sentences,
+  used for streaming partials). Prefix, not containment: "run the tests" is
+  contained in "I'll run the tests now" but is a real thing a person says.
 - **A take is a temp file with one owner.** The renderer records 16 kHz mono WAV
   and sends bytes, never a path or a command. `electron/voice.cjs` writes it to a
   `mkdtemp` directory, runs the probed binary and model, and removes the directory

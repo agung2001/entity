@@ -254,12 +254,24 @@ async function stepThread(delta) {
   if (target && target.id !== hub.chat.active) await pickThread(target.id)
 }
 
+/** Is the key going into a field where the browser's own paste/undo should win? */
+function isField(target) {
+  return Boolean(
+    target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]'),
+  )
+}
+
 function onChatKey(event) {
   /* The voice dialog's shortcut still closes it; every other shortcut stays
      behind the dialog, because a key pressed there belongs to that surface.
-     In a browser tab the native combo (Ctrl/Cmd+Shift+V) is paste-as-plain, so
-     a tab must press the catalog's browser variant (Option/Alt). */
-  if (matchesShortcut('voice', event) && (isDesktopApp() || event.altKey) && thread.value) {
+     In a browser tab the desktop combo (Ctrl/Cmd+Shift+V) is paste-as-plain, so
+     it only opens voice when the keystroke is not going into a field; the
+     catalog's browser variant (Option/Alt) always works. */
+  if (
+    matchesShortcut('voice', event) &&
+    (isDesktopApp() || event.altKey || !isField(event.target)) &&
+    thread.value
+  ) {
     event.preventDefault()
     event.stopPropagation()
     voiceOpen.value = !voiceOpen.value
@@ -470,6 +482,10 @@ function onLiveEvent(event) {
   if (!id) return
 
   const current = hub.chat.live[id]
+  /* A cancelled turn keeps emitting for a moment after the interrupt started the
+     next one. Only the live turn may paint steps, clear the working flag or take
+     down the live bubble; an older turn still appends its own transcript row. */
+  const stale = Boolean(current && event.messageId && current.messageId !== event.messageId)
   const base =
     current && current.messageId === event.messageId
       ? current
@@ -486,6 +502,7 @@ function onLiveEvent(event) {
   }
 
   if (event.phase === 'step') {
+    if (stale) return
     const step = event.data?.step
     if (!step) return
     const steps = [...base.steps]
@@ -518,15 +535,17 @@ function onLiveEvent(event) {
           : entry,
       )
     }
-    const nextLive = { ...hub.chat.live }
-    delete nextLive[id]
-    hub.chat.live = nextLive
-    if (hub.chat.sending[id]) {
-      const nextSending = { ...hub.chat.sending }
-      delete nextSending[id]
-      hub.chat.sending = nextSending
+    if (!stale) {
+      const nextLive = { ...hub.chat.live }
+      delete nextLive[id]
+      hub.chat.live = nextLive
+      if (hub.chat.sending[id]) {
+        const nextSending = { ...hub.chat.sending }
+        delete nextSending[id]
+        hub.chat.sending = nextSending
+      }
+      playSfx(message?.error ? 'error' : 'receive')
     }
-    playSfx(message?.error ? 'error' : 'receive')
     playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})

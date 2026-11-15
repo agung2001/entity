@@ -67,7 +67,13 @@ case "$MODE" in
     ;;
 esac
 
-case "$PROMPT" in
+# A marker belongs to the latest user message, not to the whole conversation: a
+# second turn must not inherit the behaviour of the first one (an interrupt's
+# prompt still quotes the message it interrupted).
+LAST="$(printf '%s\n' "$PROMPT" | awk '/^User: /{last=$0} END{print last}')"
+LAST="${LAST:-$PROMPT}"
+
+case "$LAST" in
   *E2E-401*)
     printf '401 unauthorized: not signed in\n' >&2
     exit 1
