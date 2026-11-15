@@ -189,7 +189,7 @@ function openRowMenu(event, thread) {
   }
   const rect = event.currentTarget.getBoundingClientRect()
   const width = 170
-  const height = 116
+  const height = 152
   const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8)
   let top = rect.bottom + 5
   if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 5)
@@ -208,6 +208,25 @@ function menuRename() {
   const thread = menuItem.value
   menuItem.value = null
   if (thread) startRename(thread)
+}
+
+async function menuCopyLink() {
+  const thread = menuItem.value
+  menuItem.value = null
+  if (!thread) return
+  const href = router.resolve({
+    name: 'chat',
+    params: { workspace: hub.workspace },
+    query: { thread: thread.id },
+  }).href
+  const url = new URL(href, window.location.href).href
+  try {
+    await navigator.clipboard.writeText(url)
+    toast('Thread link copied')
+    playSfx('confirm')
+  } catch {
+    toast(url)
+  }
 }
 
 async function menuDelete() {
@@ -539,6 +558,13 @@ defineExpose({ newThread })
             <path d="M9.4 3.2l2.4 2.4" />
           </svg>
           Rename thread
+        </button>
+        <button class="rchat-menu-item" type="button" role="menuitem" @click="menuCopyLink">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M6.4 9.6l3.2-3.2M5.2 10.8l-1 .9a2.2 2.2 0 01-3.1-3.1l2-2a2.2 2.2 0 013.1 0" />
+            <path d="M10.8 5.2l1-.9a2.2 2.2 0 013.1 3.1l-2 2a2.2 2.2 0 01-3.1 0" />
+          </svg>
+          Copy URL
         </button>
         <button
           class="rchat-menu-item rchat-menu-danger"
