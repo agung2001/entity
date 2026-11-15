@@ -8,6 +8,7 @@ import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
 import { credentials, hub, isSending, toast } from '@/stores/hub'
 import { gravatarUrl } from '@/lib/gravatar'
+import { createSpeaker } from '@/lib/voice'
 
 /**
  * The thread surface. It scrolls itself to the newest message whenever the
@@ -37,6 +38,10 @@ const showFollowups = computed(() => {
 
 const box = ref(null)
 const saving = ref('')
+/* Which message is being read aloud, by key. One speaker per thread: starting a
+   second read stops the first instead of queueing behind it. */
+const reading = ref('')
+let reader = null
 const appliedFocus = ref('')
 /* A collapsed trace is a label, not a mounted DOM tree. Long tool transcripts
    were being rendered for every message even while their folds were shut. */
@@ -63,6 +68,8 @@ watch(
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
   clockTimer = null
+  reader?.stop()
+  reader = null
 })
 
 const liveSteps = computed(() => props.live?.steps || [])
@@ -385,6 +392,57 @@ async function saveMessage(message) {
   }
 }
 
+function readKey(message) {
+  return message.id || message.at || 'reply'
+}
+
+function readerFor() {
+  if (!reader) {
+    reader = createSpeaker({
+      language: typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US',
+      onEnd: () => {
+        reading.value = ''
+      },
+      onError: () => {
+        reading.value = ''
+        toast('The system voice could not read that response.')
+      },
+    })
+  }
+  return reader
+}
+
+/**
+ * Read one answer aloud. The same voice mode uses, without opening the dialog:
+ * a long reply is often easier to follow while reading something else, and it
+ * is the fastest way to hear how an answer actually sounds.
+ */
+function readMessage(message) {
+  const key = readKey(message)
+  if (reading.value === key) {
+    reader?.stop()
+    reading.value = ''
+    return
+  }
+  const speaker = readerFor()
+  if (!speaker.supported) {
+    toast('This build has no speech synthesis.')
+    return
+  }
+  /* an answer being read stops before a different one starts */
+  if (reading.value) speaker.stop()
+  reading.value = key
+  if (!speaker.speak(message.text)) reading.value = ''
+}
+
+watch(
+  () => props.threadId,
+  () => {
+    reader?.stop()
+    reading.value = ''
+  },
+)
+
 function formatDuration(ms) {
   if (!Number.isFinite(ms)) return ''
   if (ms < 1000) return `${Math.max(1, Math.round(ms))}ms`
@@ -587,6 +645,24 @@ function traceSummary(message) {
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
             <path d="M3 2.4h6l4 4v7.2H3z" />
             <path d="M9 2.4v4h4M5.4 9.4h5.2M5.4 11.6h3.4" />
+          </svg>
+        </button>
+        <button
+          v-if="m.who === 'agent'"
+          class="msg-act"
+          type="button"
+          :data-on="reading === readKey(m) ? '1' : '0'"
+          :aria-pressed="reading === readKey(m) ? 'true' : 'false'"
+          :title="reading === readKey(m) ? 'Stop reading' : 'Read response aloud'"
+          :aria-label="reading === readKey(m) ? 'Stop reading' : 'Read response aloud'"
+          @click="readMessage(m)"
+        >
+          <svg v-if="reading === readKey(m)" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <rect x="4.4" y="4.4" width="7.2" height="7.2" rx="1.2" />
+          </svg>
+          <svg v-else viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
+            <path d="M8.6 2.6L4.9 5.6H2.6v4.8h2.3l3.7 3z" />
+            <path d="M11.2 5.8a3.1 3.1 0 010 4.4M13 4a5.2 5.2 0 010 8" />
           </svg>
         </button>
       </div>

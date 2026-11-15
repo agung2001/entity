@@ -30,6 +30,7 @@ const usage = require('./usage.cjs')
 const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
 const backups = require('./backup-store.cjs')
+const voice = require('./voice.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 function createRpc({
@@ -208,6 +209,11 @@ function createRpc({
 
     /* spend and activity, folded from the thread files */
     'usage.summary': (args) => usage.summary(args),
+
+    /* voice mode: which local transcriber this machine has, and one take. The
+       renderer sends audio only — never a path or a command. */
+    'voice.status': () => voice.status(),
+    'voice.transcribe': (args) => voice.transcribe(args || {}),
 
     /* harness sessions, read from each CLI's own store */
     'sessions.list': (args) => sessions.list(args),

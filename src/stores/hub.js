@@ -781,6 +781,23 @@ export const threadStarted = (thread = activeThread()) =>
 export const isSending = (id = hub.chat.active) => Boolean(hub.chat.sending[id])
 export const isStopping = (id = hub.chat.active) => Boolean(hub.chat.stopping[id])
 
+/**
+ * Wait for a thread's turn to finish.
+ *
+ * A cancel is not synchronous with the send it cancels: `chat.cancel` returns
+ * as soon as the harness was signalled, while `chat.send` settles a moment
+ * later and clears the flag. Voice mode interrupts by cancelling and then
+ * sending again, so it has to wait for the flag rather than race it. Returns
+ * false if the turn is still running at the deadline.
+ */
+export async function waitForTurn(id = hub.chat.active, { timeout = 15_000, step = 100 } = {}) {
+  const deadline = Date.now() + timeout
+  while (isSending(id) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, step))
+  }
+  return !isSending(id)
+}
+
 export const summaryFor = (id) => hub.chat.summaries.find((thread) => thread.id === id) || null
 
 export async function openThread(id) {
@@ -945,6 +962,11 @@ export async function setThreadContext(kind, value) {
   }
 }
 
+/* Which call currently owns a thread's `sending` flag. An interrupt cancels one
+   send and starts another; the cancelled call settles later, and its `finally`
+   must not clear the flag the new turn just set. */
+const turnTokens = new Map()
+
 export async function chatSend(text, { retry = false, attachments = [], attachmentsEnabled = false } = {}) {
   const thread = activeThread()
   if (!thread || isSending(thread.id)) return
@@ -965,6 +987,8 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
       ? base
       : [...base, { who: 'me', text: message, at: new Date().toISOString() }],
   }
+  const token = (turnTokens.get(thread.id) || 0) + 1
+  turnTokens.set(thread.id, token)
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: optimistic }
   hub.chat.sending = { ...hub.chat.sending, [thread.id]: true }
   if (hub.chat.stopping[thread.id]) {
@@ -983,6 +1007,13 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
       attachments,
       attachmentsEnabled,
     })
+    /* An interrupt cancelled this call and already started the next turn. This
+       snapshot predates the optimistic row that turn appended, so applying it
+       would delete the new question — the event stream has already added this
+       turn's own row, and the next snapshot carries both. */
+    if ((turnTokens.get(thread.id) || 0) !== token) {
+      return hub.chat.threads[thread.id] || updated
+    }
     remember(updated)
     if (!patchChatSummary(updated)) await refreshChatList()
     return updated
@@ -996,17 +1027,22 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
       /* the list keeps the last readable state */
     }
   } finally {
-    const sending = { ...hub.chat.sending }
-    delete sending[thread.id]
-    hub.chat.sending = sending
-    const stopping = { ...hub.chat.stopping }
-    delete stopping[thread.id]
-    hub.chat.stopping = stopping
-    /* a dropped event must not leave a live fold spinning after the turn */
-    if (hub.chat.live[thread.id]) {
-      const live = { ...hub.chat.live }
-      delete live[thread.id]
-      hub.chat.live = live
+    /* Only the current owner may clear the turn state. A cancelled send settles
+       after the interrupt has already started the next one. */
+    if ((turnTokens.get(thread.id) || 0) === token) {
+      turnTokens.delete(thread.id)
+      const sending = { ...hub.chat.sending }
+      delete sending[thread.id]
+      hub.chat.sending = sending
+      const stopping = { ...hub.chat.stopping }
+      delete stopping[thread.id]
+      hub.chat.stopping = stopping
+      /* a dropped event must not leave a live fold spinning after the turn */
+      if (hub.chat.live[thread.id]) {
+        const live = { ...hub.chat.live }
+        delete live[thread.id]
+        hub.chat.live = live
+      }
     }
   }
 }

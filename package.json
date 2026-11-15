@@ -63,7 +63,10 @@
     ],
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Entity uses the microphone only while voice mode is open, so you can talk to an entity instead of typing. The recording stays on this machine."
+      }
     },
     "win": {
       "target": "nsis"
