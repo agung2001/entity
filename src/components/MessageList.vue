@@ -345,9 +345,10 @@ async function copyMessage(message) {
 
 async function shareMessage(message, index) {
   let url = ''
-  if (props.shareUrl) {
+  const raw = props.shareUrl ? props.shareUrl(index) : ''
+  if (raw) {
     try {
-      url = new URL(props.shareUrl(index), window.location.href).href
+      url = new URL(raw, window.location.href).href
     } catch {
       url = ''
     }
@@ -371,7 +372,7 @@ async function shareMessage(message, index) {
     copied
       ? url
         ? 'Link to this message copied'
-        : 'Response copied for sharing'
+        : 'Message copied - this workspace has no shareable link yet.'
       : 'The response could not be shared.',
   )
 }

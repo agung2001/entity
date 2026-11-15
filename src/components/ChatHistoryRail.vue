@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
+import { shareHref } from '@/lib/share-url'
 import { playSfx } from '@/lib/sfx'
 import {
   ago,
@@ -219,7 +220,11 @@ async function menuCopyLink() {
     params: { workspace: hub.workspace },
     query: { thread: thread.id },
   }).href
-  const url = new URL(href, window.location.href).href
+  const url = shareHref(href, hub.workspace)
+  if (!url) {
+    toast('This workspace has no shareable link yet - it exists only on this machine.')
+    return
+  }
   try {
     await navigator.clipboard.writeText(url)
     toast('Thread link copied')

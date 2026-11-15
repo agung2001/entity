@@ -21,8 +21,10 @@ import { isDesktopApp, matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { playSfx } from '@/lib/sfx'
 import { clearFollowups, ensureFollowups, followupsFor } from '@/lib/followups'
 import { deletionTarget } from '@/lib/delete-intent'
+import { shareHref } from '@/lib/share-url'
 import { loadArtifacts } from '@/stores/artifacts'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
+import { loadRemote } from '@/stores/remote'
 import {
   activeThread,
   agentById,
@@ -151,11 +153,14 @@ const messages = computed(() => {
 })
 
 const shareUrlFor = (index) =>
-  router.resolve({
-    name: 'chat',
-    params: { workspace: route.params.workspace },
-    query: { ...route.query, thread: hub.chat.active, msg: String(index) },
-  }).href
+  shareHref(
+    router.resolve({
+      name: 'chat',
+      params: { workspace: route.params.workspace },
+      query: { ...route.query, thread: hub.chat.active, msg: String(index) },
+    }).href,
+    route.params.workspace,
+  )
 
 function readMessageFocus() {
   const raw = typeof route.query.msg === 'string' ? Number(route.query.msg) : NaN
@@ -626,6 +631,7 @@ onMounted(async () => {
   offEvent = onRunEvent(onLiveEvent)
   window.addEventListener('keydown', onChatKey, true)
   if (!fleet.loaded) loadFleet()
+  loadRemote().catch(() => {})
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   await openInitialThread(wanted)
   /* A remembered thread that was already active never fired the watcher, so
