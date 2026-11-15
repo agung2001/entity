@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   notificationPermission,
   notificationSettings,
@@ -37,6 +37,7 @@ const supportLabel = computed(() => {
 const canTest = computed(
   () => notificationSettings.enabled && notificationPermission.value === 'granted',
 )
+const testResult = ref('')
 
 function refresh() {
   refreshNotificationPermission()
@@ -83,13 +84,30 @@ async function ask() {
 }
 
 async function test() {
-  const shown = await notify({
+  testResult.value = 'Sending…'
+  const result = await notify({
     force: true,
     kind: 'reply',
     title: 'entity',
     body: 'Notifications are working. This is what a finished turn looks like.',
   })
-  if (!shown) playSfx('error')
+  if (!result?.shown) {
+    testResult.value = result?.reason || 'Not shown.'
+    playSfx('error')
+    return
+  }
+  if (result.reason === 'delivered') {
+    testResult.value = 'Delivered.'
+    playSfx('signal')
+    return
+  }
+  if (result.reason) {
+    testResult.value = result.reason
+    playSfx('error')
+    return
+  }
+  testResult.value = 'Shown.'
+  playSfx('signal')
 }
 </script>
 
@@ -224,6 +242,7 @@ async function test() {
           Send test
         </button>
       </div>
+      <p v-if="testResult" class="mnote notif-help" role="status">{{ testResult }}</p>
     </section>
 
     <aside class="role-card notif-note">

@@ -8,6 +8,7 @@ const registry = require('./child-registry.cjs')
 const { ensureGuiPath } = require('./shell-path.cjs')
 const workspaces = require('./workspace-store.cjs')
 const remoteSync = require('./remote-sync.cjs')
+const { routeFromUrl } = require('./deep-link.cjs')
 
 /* Finder and the Dock start Electron with a bare PATH; a harness installed by
    Homebrew or npm would look "not installed". Restore the usual locations
@@ -31,6 +32,18 @@ let mainWindow = null
 let rpc = null
 let watcher = null
 
+/* The renderer owns the setting copy in localStorage; main keeps the last sync
+   so a turn that finishes after the window closed can still decide. */
+const notificationPrefs = { enabled: true, replies: true, errors: true, backgroundOnly: true }
+
+/* Windows and Linux hand a protocol launch to this process in argv. It is
+   forwarded once the window can receive it, then forgotten. */
+let launchRoute = ''
+if (!isMac) {
+  const raw = process.argv.find((arg) => /^entity:\/\//i.test(String(arg)))
+  if (raw) launchRoute = routeFromUrl(raw)
+}
+
 function focusWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return
   if (mainWindow.isMinimized()) mainWindow.restore()
@@ -39,8 +52,8 @@ function focusWindow() {
 }
 
 /* `entity://open` is how the browser build reaches the installed app. The
- * protocol points at this executable and a second launch only focuses the
- * window that already exists. */
+ * protocol points at this executable; a second launch focuses the window and
+ * carries the route it was opened with. */
 const PROTOCOL = 'entity'
 
 function registerProtocol() {
@@ -55,6 +68,17 @@ function registerProtocol() {
   }
 }
 
+function sendDeepLink(route) {
+  if (!route) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('app:deep-link', { route })
+}
+
+function openDeepLink(raw) {
+  focusWindow()
+  sendDeepLink(routeFromUrl(raw))
+}
+
 /* Dev and the packaged app share a userData directory, so a lock would make
    `dev:desktop` silently quit whenever the installed app is open. Keep the lock
    for the shipped app; dev runs beside it. */
@@ -62,10 +86,16 @@ const primaryInstance = isDev || app.requestSingleInstanceLock()
 if (!primaryInstance) {
   app.quit()
 } else {
-  app.on('second-instance', () => focusWindow())
-  app.on('open-url', (event) => {
+  app.on('second-instance', (_event, commandLine = []) => {
+    const raw = (Array.isArray(commandLine) ? commandLine : []).find((arg) =>
+      /^entity:\/\//i.test(String(arg)),
+    )
+    if (raw) openDeepLink(raw)
+    else focusWindow()
+  })
+  app.on('open-url', (event, raw) => {
     event.preventDefault()
-    focusWindow()
+    openDeepLink(raw)
   })
 }
 
@@ -132,24 +162,99 @@ async function chooseDirectory(title = 'Choose a folder') {
   return result.filePaths[0]
 }
 
-function showNotification({ title, body, route, tag } = {}) {
-  if (!Notification.isSupported()) return false
-  const note = new Notification({
-    title: String(title || 'entity'),
-    body: String(body || ''),
-    silent: true,
-  })
-  note.on('click', () => {
-    focusWindow()
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('app:notification-click', {
-        route: String(route || ''),
-        tag: String(tag || 'entity'),
-      })
+function showNotification({ title, body, route, tag, silent = false, probe = false } = {}) {
+  if (!Notification.isSupported()) {
+    return Promise.resolve({
+      shown: false,
+      reason: 'Notifications are not supported on this system.',
+    })
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      resolve(result)
     }
+    const note = new Notification({
+      title: String(title || 'entity'),
+      body: String(body || ''),
+      silent: Boolean(silent),
+    })
+    note.on('failed', (_event, error) => {
+      finish({ shown: false, reason: String(error || 'The notification could not be shown.') })
+    })
+    note.on('click', () => {
+      focusWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:notification-click', {
+          route: String(route || ''),
+          tag: String(tag || 'entity'),
+        })
+      }
+    })
+    try {
+      note.show()
+    } catch (error) {
+      finish({ shown: false, reason: String(error?.message || error) })
+      return
+    }
+
+    /* macOS drops a banner for an unsigned bundle without firing `failed`.
+       Notification Center is the only honest read-back; elsewhere show() not
+       throwing is all the platform tells us. */
+    if (probe && process.platform === 'darwin' && typeof Notification.getHistory === 'function') {
+      setTimeout(async () => {
+        try {
+          const history = await Notification.getHistory()
+          const found = history.some(
+            (entry) => entry.title === note.title && entry.body === note.body,
+          )
+          finish(
+            found
+              ? { shown: true, reason: 'delivered' }
+              : {
+                  shown: true,
+                  reason:
+                    'macOS did not deliver it — check System Settings → Notifications → Entity',
+                },
+          )
+        } catch {
+          finish({ shown: true, reason: '' })
+        }
+      }, 400)
+      return
+    }
+
+    /* `failed` arrives shortly after show() when it arrives at all. */
+    setTimeout(() => finish({ shown: true, reason: '' }), 200)
   })
-  note.show()
-  return true
+}
+
+/** The chat-turn banner main owns when the window is not in front of the person. */
+function turnNotification(event) {
+  const message = event?.data?.message
+  if (!message || message.who === 'sys') return null
+  if (!notificationPrefs.enabled) return null
+  const kind = message.error ? 'error' : 'reply'
+  if (kind === 'error' && !notificationPrefs.errors) return null
+  if (kind === 'reply' && !notificationPrefs.replies) return null
+  const away =
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.isMinimized() ||
+    !mainWindow.isFocused()
+  if (notificationPrefs.backgroundOnly && !away) return null
+
+  const entity = event.entity || 'Entity'
+  const text = String(message.text || message.error || '').replace(/\s+/g, ' ').trim()
+  const body = text.length > 160 ? `${text.slice(0, 159)}…` : text
+  return {
+    title: message.error ? `${entity} needs attention` : `${entity} replied`,
+    body: body || (message.error ? 'The turn failed.' : 'A new reply is ready.'),
+    route: `/${event.workspace}/chat?thread=${encodeURIComponent(event.threadId)}`,
+    tag: `chat:${event.threadId}`,
+  }
 }
 
 /**
@@ -266,6 +371,13 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (!launchRoute) return
+    const route = launchRoute
+    launchRoute = ''
+    sendDeepLink(route)
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -284,6 +396,10 @@ function broadcast(event) {
   }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('entity:event', event)
+  }
+  if (event?.kind === 'chat.turn' && event.phase === 'done') {
+    const payload = turnNotification(event)
+    if (payload) void showNotification(payload)
   }
 }
 
@@ -342,6 +458,13 @@ app.whenReady().then(() => {
   }))
 
   ipcMain.handle('app:notify', (_event, payload) => showNotification(payload || {}))
+
+  ipcMain.handle('app:notification-settings', (_event, payload = {}) => {
+    for (const key of Object.keys(notificationPrefs)) {
+      if (typeof payload?.[key] === 'boolean') notificationPrefs[key] = payload[key]
+    }
+    return { ...notificationPrefs }
+  })
 
   /* One channel for every local call. The renderer never gets a path or a
      shell — it asks for a parsed result, and the call table decides what that

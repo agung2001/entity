@@ -15,6 +15,7 @@ const router = useRouter()
 let offRun = null
 let offNotice = null
 let offAccount = null
+let offDeepLink = null
 
 function notificationFor(event) {
   if (!event || event.kind !== 'chat.turn' || event.phase !== 'done') return
@@ -40,7 +41,7 @@ onMounted(async () => {
     const info = await globalThis.desktop.getAppInfo()
     document.body.classList.toggle('is-mac', info.platform === 'darwin')
   }
-  offRun = onRunEvent(notificationFor)
+  offRun = globalThis.desktop?.isElectron ? null : onRunEvent(notificationFor)
   offNotice = onNotificationActivate((route) => {
     if (route && router.currentRoute.value.fullPath !== route) router.push(route)
   })
@@ -49,6 +50,10 @@ onMounted(async () => {
       router.push({ name: 'account' })
     }
   })
+  offDeepLink = globalThis.desktop?.onDeepLink?.((payload) => {
+    const route = String(payload?.route || '')
+    if (route && route !== router.currentRoute.value.fullPath) router.push(route)
+  })
   prepareNotifications()
 })
 
@@ -56,6 +61,7 @@ onBeforeUnmount(() => {
   offRun?.()
   offNotice?.()
   offAccount?.()
+  offDeepLink?.()
 })
 </script>
 

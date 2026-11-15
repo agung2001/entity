@@ -77,6 +77,7 @@ export function setNotifications(patch = {}) {
     notificationSettings.backgroundOnly = patch.backgroundOnly
   }
   persist()
+  syncSettings()
 }
 
 export async function requestNotificationPermission() {
@@ -161,7 +162,21 @@ function hookWorker() {
 }
 
 /** Warm the browser notification worker once permission exists. */
+function syncSettings() {
+  const bridge = desktop()
+  if (typeof bridge?.syncNotificationSettings !== 'function') return
+  bridge
+    .syncNotificationSettings({
+      enabled: notificationSettings.enabled,
+      replies: notificationSettings.replies,
+      errors: notificationSettings.errors,
+      backgroundOnly: notificationSettings.backgroundOnly,
+    })
+    .catch(() => {})
+}
+
 export function prepareNotifications() {
+  syncSettings()
   if (notificationSupport.value !== 'browser') return
   if (notificationPermission.value !== 'granted') return
   hookWorker()
@@ -175,12 +190,12 @@ function keepNote(note) {
   return release
 }
 
-async function showBrowserNotification(title, body, tag, route) {
+async function showBrowserNotification(title, body, tag, route, silent = false) {
   hookWorker()
   const options = {
     body,
     tag,
-    silent: true,
+    silent: Boolean(silent),
     requireInteraction: true,
     icon: assetUrl('favicon.svg'),
     data: { route },
@@ -239,9 +254,13 @@ function bodyOf(payload) {
  * rules, but still obeys the browser's permission decision.
  */
 export async function notify(payload = {}) {
-  if (!payload.force && !allowed(payload.kind || 'reply')) return false
+  if (!payload.force && !allowed(payload.kind || 'reply')) {
+    return { shown: false, reason: 'Notifications are quiet right now.' }
+  }
   refreshNotificationPermission()
-  if (notificationPermission.value !== 'granted') return false
+  if (notificationPermission.value !== 'granted') {
+    return { shown: false, reason: 'Notification permission is not granted.' }
+  }
 
   const title = titleOf(payload)
   const body = bodyOf(payload)
@@ -250,20 +269,39 @@ export async function notify(payload = {}) {
 
   if (notificationSupport.value === 'electron') {
     try {
-      const shown = await desktop().notify({ title, body, route, tag })
-      if (shown) playSfx('signal')
-      return Boolean(shown)
-    } catch {
-      return false
+      const result = await desktop().notify({
+        title,
+        body,
+        route,
+        tag,
+        silent: Boolean(payload.silent),
+        probe: Boolean(payload.force),
+      })
+      if (result?.shown) playSfx('signal')
+      return result && typeof result === 'object'
+        ? result
+        : { shown: Boolean(result), reason: '' }
+    } catch (error) {
+      return { shown: false, reason: String(error?.message || error) }
     }
   }
 
-  if (notificationSupport.value !== 'browser') return false
+  if (notificationSupport.value !== 'browser') {
+    return { shown: false, reason: 'Notifications are not available in this window.' }
+  }
   try {
-    const shown = await showBrowserNotification(title, body, tag, route)
+    const shown = await showBrowserNotification(
+      title,
+      body,
+      tag,
+      route,
+      Boolean(payload.silent),
+    )
     if (shown) playSfx('signal')
     return shown
-  } catch {
-    return false
+      ? { shown: true, reason: '' }
+      : { shown: false, reason: 'The notification could not be shown.' }
+  } catch (error) {
+    return { shown: false, reason: String(error?.message || error) }
   }
 }

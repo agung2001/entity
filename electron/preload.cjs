@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('desktop', {
   /* Native notification. The main process owns the Notification object and
      sends the click target back so the renderer can open the thread. */
   notify: (payload) => ipcRenderer.invoke('app:notify', payload),
+  syncNotificationSettings: (payload) =>
+    ipcRenderer.invoke('app:notification-settings', payload),
   onNotificationClick: (cb) => {
     const listener = (_event, payload) => cb(payload)
     ipcRenderer.on('app:notification-click', listener)
@@ -21,6 +23,13 @@ contextBridge.exposeInMainWorld('desktop', {
     const listener = () => cb()
     ipcRenderer.on('app:open-account', listener)
     return () => ipcRenderer.removeListener('app:open-account', listener)
+  },
+
+  /* A protocol launch carries a hash-router path from the main process. */
+  onDeepLink: (cb) => {
+    const listener = (_event, payload) => cb(payload)
+    ipcRenderer.on('app:deep-link', listener)
+    return () => ipcRenderer.removeListener('app:deep-link', listener)
   },
 
   /* All local data goes through one call table (electron/rpc.cjs). The renderer
