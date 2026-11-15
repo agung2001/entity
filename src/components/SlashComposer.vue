@@ -450,6 +450,16 @@ function closeMenu() {
   menu.value = []
 }
 
+/* A pick, a token insert or a send ends the menu outright: the rows, the
+   spinner and any note left over from the query that produced them all go, so
+   no "No match yet" line can outlive the search it belonged to. */
+function settle() {
+  closeMenu()
+  stopSearch()
+  menuMode.value = 'slash'
+  searchKind = ''
+}
+
 /* A textarea that grows with the draft, then scrolls at a sane ceiling. The
    border belongs to the dock, not to this field, so there is only one box. */
 function grow() {
@@ -471,7 +481,7 @@ function submit() {
   if (!text && !props.attachments.length) return
   emit('send', text || 'Use the attached resources.')
   draft.value = ''
-  closeMenu()
+  settle()
   nextTick(() => {
     grow()
     input.value?.focus()
@@ -492,7 +502,7 @@ function pick(cmd) {
   const next = `${text.slice(0, start)}${insert}${text.slice(caret)}`
   draft.value = next
   harvestAttachments(false)
-  closeMenu()
+  settle()
   nextTick(() => {
     const at = start + insert.length
     el?.focus()
@@ -513,6 +523,13 @@ function onKey(e) {
   }
   /* Shift+Enter is always a newline, including while the command menu is up. */
   if (e.key === 'Enter' && e.shiftKey) return
+  /* Escape closes the box whatever it holds — rows, the spinner, or only the
+     note — so it has to be handled before the rows guard below. */
+  if (e.key === 'Escape' && boxOpen.value) {
+    e.preventDefault()
+    settle()
+    return
+  }
   if (!open.value) return
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault()
@@ -529,9 +546,6 @@ function onKey(e) {
       e.preventDefault()
       pick(item)
     }
-  } else if (e.key === 'Escape') {
-    closeMenu()
-    stopSearch()
   }
 }
 
@@ -647,7 +661,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 function insertToken(token) {
   const space = draft.value && !/\s$/.test(draft.value) ? ' ' : ''
   draft.value = `${draft.value}${space}${token}`
-  closeMenu()
+  settle()
   nextTick(() => {
     input.value?.focus()
     grow()
