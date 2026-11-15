@@ -252,7 +252,9 @@ function duplicate({ workspace, name, nextName = '', shape = '', color = '', moo
   }
   target = safeName(target)
   if (fs.existsSync(entityPath(workspace, target))) {
-    throw new Error(`${target}.md already exists in this workspace.`)
+    throw new Error(
+      `${target}.md already exists in this workspace. Rename the entity or pick another name.`,
+    )
   }
   return write({
     ...source,
@@ -275,11 +277,11 @@ function cloneTo({ from, to, name, nextName = '', shape = '', color = '', mood =
   const source = read(from, name)
   if (!source) throw new Error(`${name}.md does not exist in ${from}.`)
   const base = safeName(nextName || source.name)
-  let target = base
+  const target = base
   if (fs.existsSync(entityPath(to, target))) {
-    let n = 2
-    while (fs.existsSync(entityPath(to, `${base}-${n}`))) n += 1
-    target = `${base}-${n}`
+    throw new Error(
+      `${target}.md already exists in ${to}. Rename the entity or pick another name.`,
+    )
   }
   return write({
     ...source,

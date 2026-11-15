@@ -3,12 +3,12 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityCloneDialog from '@/components/EntityCloneDialog.vue'
 import { forgetMark, markFor } from '@/composables/entityMark'
-import { duplicateEntity, removeEntity, revealEntity } from '@/stores/entities'
+import { removeEntity, revealEntity } from '@/stores/entities'
 import { chatFocusEntity, hub, toast } from '@/stores/hub'
 
 /**
  * The row's rare actions live behind one three-dot menu: chat, reveal,
- * duplicate, clone and delete. The row itself opens the entity page; every
+ * clone and delete. The row itself opens the entity page; every
  * control here stops propagation so clicking an action never also opens it.
  */
 const props = defineProps({
@@ -26,7 +26,7 @@ const cloneOpen = ref(false)
 let confirmTimer = 0
 
 const WIDTH = 184
-const HEIGHT = 186
+const HEIGHT = 148
 
 function stop(event) {
   event.stopPropagation()
@@ -77,22 +77,6 @@ async function reveal() {
 function openClone() {
   closeMenu()
   cloneOpen.value = true
-}
-
-async function duplicate() {
-  closeMenu()
-  try {
-    const mark = markFor(hub.workspace, props.entity.name, props.entity.mark || null)
-    const copy = await duplicateEntity(props.entity.name, {
-      shape: mark.shape,
-      color: mark.color,
-      mood: mark.mood,
-    })
-    toast(`${copy.name}.md duplicated`)
-    router.push({ name: 'entity', params: { workspace: hub.workspace, name: copy.name } })
-  } catch (error) {
-    toast(error?.message || 'The entity could not be duplicated.')
-  }
 }
 
 async function remove() {
@@ -187,19 +171,12 @@ onBeforeUnmount(() => {
         </svg>
         Reveal file
       </button>
-      <button class="row-menu-item" type="button" role="menuitem" @click="duplicate">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <rect x="5.2" y="5.2" width="8" height="8" rx="1" />
-          <path d="M10.8 5.2V3.6a1 1 0 00-1-1H3.6a1 1 0 00-1 1v6.2a1 1 0 001 1h1.6" />
-        </svg>
-        Duplicate entity
-      </button>
       <button class="row-menu-item" type="button" role="menuitem" @click="openClone">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
           <path d="M3.2 5.2h4.2l1.2 1.5h4.2v6H3.2z" />
           <path d="M5.2 3.2h4.2l1.2 1.5h2.2" />
         </svg>
-        Clone to workspace…
+        Clone to…
       </button>
       <button
         class="row-menu-item row-menu-danger"

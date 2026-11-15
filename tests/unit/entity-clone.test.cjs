@@ -34,9 +34,12 @@ test('an entity clones into another workspace without replacing files', () => {
   assert.deepEqual(copy.mark, original.mark)
   assert.equal(fs.existsSync(entities.locate({ workspace: target, name: 'writer' })), true)
 
-  /* A second clone never overwrites the first. */
-  const second = entities.cloneTo({ from: source, to: target, name: 'writer' })
-  assert.equal(second.name, 'writer-2')
+  /* A second clone never overwrites the first: it names the collision and
+     asks for a rename instead of inventing a suffix. */
+  assert.throws(
+    () => entities.cloneTo({ from: source, to: target, name: 'writer' }),
+    /already exists.*Rename the entity/,
+  )
 
   /* A different target name is honoured. */
   const renamed = entities.cloneTo({
@@ -47,7 +50,17 @@ test('an entity clones into another workspace without replacing files', () => {
   })
   assert.equal(renamed.name, 'editor')
 
-  /* The source file is untouched. */
-  assert.equal(entities.list(source).length, 1)
-  assert.equal(entities.list(target).length, 3)
+  /* The same workspace is a valid target under another name. */
+  const inPlace = entities.cloneTo({
+    from: source,
+    to: source,
+    name: 'writer',
+    nextName: 'writer-copy',
+  })
+  assert.equal(inPlace.workspace, source)
+  assert.equal(inPlace.name, 'writer-copy')
+
+  /* The source keeps its original plus the copy; the target keeps its two. */
+  assert.equal(entities.list(source).length, 2)
+  assert.equal(entities.list(target).length, 2)
 })

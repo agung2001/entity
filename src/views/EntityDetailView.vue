@@ -240,27 +240,6 @@ async function copyPath() {
         <span class="entp-crumb">{{ agent.name }}</span>
         <span class="spacer"></span>
         <div class="entp-actions">
-          <button class="btn btn-sm" type="button" @click="cloneOpen = true">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-              <rect x="5.4" y="5.4" width="7.6" height="7.6" rx="1.4" />
-              <path d="M10.6 5.4V4.4A1.4 1.4 0 009.2 3H4.4A1.4 1.4 0 003 4.4v4.8A1.4 1.4 0 004.4 10.6h1" />
-            </svg>
-            Clone to…
-          </button>
-          <button class="btn btn-sm" type="button" @click="copyPath">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-              <rect x="3.4" y="3.4" width="9.2" height="10.2" rx="1.6" />
-              <path d="M6 3.4V2.6h4v.8M5.8 7.2h4.4M5.8 9.8h3.2" />
-            </svg>
-            Copy path
-          </button>
-          <button class="btn btn-sm" type="button" @click="reveal">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-              <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
-              <path d="M1.8 5.8v-2h4" />
-            </svg>
-            Reveal file
-          </button>
           <button class="btn btn-ink" type="button" @click="chat">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
               <path d="M2.2 3.6h11.6v7.2H8l-3.2 2.4v-2.4H2.2z" />
@@ -517,8 +496,34 @@ async function copyPath() {
             </div>
           </Teleport>
           <div class="entp-rail-actions">
-            <button type="button" @click="copyPath">Copy file path <span>file</span></button>
-            <button type="button" @click="chat">Open chat <span>↵</span></button>
+            <button type="button" @click="cloneOpen = true">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <rect x="5.4" y="5.4" width="7.6" height="7.6" rx="1.4" />
+                <path d="M10.6 5.4V4.4A1.4 1.4 0 009.2 3H4.4A1.4 1.4 0 003 4.4v4.8A1.4 1.4 0 004.4 10.6h1" />
+              </svg>
+              <span class="nm">Clone to…</span>
+            </button>
+            <button type="button" @click="copyPath">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <rect x="3.4" y="3.4" width="9.2" height="10.2" rx="1.6" />
+                <path d="M6 3.4V2.6h4v.8M5.8 7.2h4.4M5.8 9.8h3.2" />
+              </svg>
+              <span class="nm">Copy path</span>
+            </button>
+            <button type="button" @click="reveal">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+                <path d="M1.8 5.8v-2h4" />
+              </svg>
+              <span class="nm">Reveal file</span>
+            </button>
+            <button type="button" @click="chat">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <path d="M2.2 3.6h11.6v7.2H8l-3.2 2.4v-2.4H2.2z" />
+              </svg>
+              <span class="nm">Open chat</span>
+              <span class="hint">↵</span>
+            </button>
           </div>
         </aside>
       </div>

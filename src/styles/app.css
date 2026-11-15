@@ -18607,3 +18607,33 @@ button.empty-link {
   height: 28px;
   font-size: 12px;
 }
+
+/* ── entity rail actions: icons, labels, optional shortcut hint ───── */
+.entp-rail-actions button {
+  justify-content: flex-start;
+}
+.entp-rail-actions button svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--muted);
+}
+.entp-rail-actions button .nm {
+  flex: 1;
+  text-align: left;
+  font-family: var(--font);
+  font-size: 11.5px;
+  color: inherit;
+}
+.entp-rail-actions button .hint {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+
+.clone-conflict {
+  color: var(--danger);
+}
+.clone-conflict b {
+  color: inherit;
+}
