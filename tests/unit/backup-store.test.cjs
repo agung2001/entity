@@ -109,9 +109,10 @@ test('a ZIP snapshot carries the workspace and leaves secrets and transients out
   assert.equal(manifest.kind, 'entity.workspace.backup')
   assert.equal(manifest.files, snapshot.files)
   assert.ok(manifest.dirs.includes('empty-dir'))
-  assert.equal(manifest.links.length, linked ? 1 : 0)
+  /* The link was materialised before the walk: the ZIP carries the bytes. */
+  assert.equal(manifest.links.length, 0)
   assert.equal(entries.has('skills/demo'), false)
-  if (linked) assert.equal(manifest.links[0].path, 'skills/demo')
+  if (linked) assert.match(entries.get('skills/demo/SKILL.md').toString(), /# skill/)
 })
 
 test('default mode is smart, a run updates status, and manual-only stops the timer', async () => {
@@ -272,21 +273,26 @@ test('restore extracts a ZIP into a new workspace and never touches the live one
   assert.equal(members.workspace, copy.id)
 
   if (linked) {
-    assert.ok(fs.lstatSync(path.join(copy.path, 'skills', 'demo')).isSymbolicLink())
+    const skill = path.join(copy.path, 'skills', 'demo')
+    assert.equal(fs.lstatSync(skill).isSymbolicLink(), false)
+    assert.match(fs.readFileSync(path.join(skill, 'SKILL.md'), 'utf8'), /# skill/)
   }
 
   assert.equal(fs.existsSync(path.join(record.path, 'entities/agent.md')), false)
 })
 
-test('a dangling skill link is dropped on restore and bad names are refused', async () => {
+test('a backup does not depend on the library link target, and bad names are refused', async () => {
   const { record, linked, skillTarget } = makeWorkspace()
   const snapshot = await backups.createSnapshot(record, { reason: 'manual', mode: 'smart' })
 
   if (linked) {
+    /* The library entry can disappear; the snapshot already has the bytes. */
     fs.rmSync(skillTarget, { recursive: true, force: true })
     const restored = await backups.restore({ id: record.id, name: snapshot.name })
-    assert.equal(fs.existsSync(path.join(restored.record.path, 'skills', 'demo')), false)
-    assert.ok(restored.warnings.some((line) => /skill link/.test(line)))
+    assert.match(
+      fs.readFileSync(path.join(restored.record.path, 'skills', 'demo', 'SKILL.md'), 'utf8'),
+      /# skill/,
+    )
   }
 
   await assert.rejects(() => backups.restore({ id: record.id, name: '../escape.zip' }), /ZIP name/)

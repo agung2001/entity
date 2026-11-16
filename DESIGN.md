@@ -195,9 +195,12 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
 | A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
 | A summary row inherits the card heading size | Set label/meta sizes explicitly: 12px label, 10px count | Review |
+| An inventory hides a parked or disabled row, so synced data looks absent | List the row with its state and show the parked count; a disabled remote MCP server is present, not missing | `McpView` |
+| A remote MCP server or skill needs a second setup step on every clone | Definitions travel enabled; attached skills are copied into the workspace, never linked; only a change to an existing server's command/url is held local and reported | `workspace-store.cjs`, `remote-sync.cjs` |
 | The first inventory row has a double border | Use one separator system: no container top border plus row borders | Review |
 | “No models” is repeated in the summary and the body | Keep the summary to `0 models`; explain once in the body/tooltip | Review |
 | An inventory row is taller than a normal list row | Keep 8px vertical padding and details behind the disclosure | Review |
+| One long skill description makes the whole grid scroll sideways | `1fr` tracks need `minmax(0, 1fr)`, cards need `min-width: 0`, and clamped text needs `overflow-wrap: anywhere` | `SkillsView` / `.grid3` |
 | A metadata row lists a path that cannot be opened | Only list paths that `fs.statSync` found, and re-check before acting | `thread-metadata.cjs` |
 | The renderer names the path the main process opens | `thread.pathAction` re-derives the metadata and accepts only a member of it | `electron/rpc.cjs` |
 | A drawer is only closable by its X button | Register it with `useDialogDismiss`, like a modal | `npm test` (drawer contract) |

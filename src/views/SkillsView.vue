@@ -13,7 +13,7 @@ const props = defineProps({
 /**
  * One page, two scopes — workspace first.
  *
- * `workspace` is intent: the symlinks this workspace owns. It is the tab the
+ * `workspace` is intent: the skills this workspace owns (real copies). It is the tab the
  * page opens on, and it is one small directory read.
  *
  * `harness libraries` is discovery: every skill each harness on this machine
@@ -150,7 +150,7 @@ async function attach(item) {
 
       <div v-else class="empty-note">
         <b>No skills in this workspace yet.</b>
-        <span>Attaching one from a harness library is a symlink, not a copy.</span>
+        <span>Attaching one from a harness library copies it into this workspace.</span>
         <div class="empty-actions">
           <button class="btn btn-sm" type="button" @click="tab = 'library'">
             Open the harness libraries

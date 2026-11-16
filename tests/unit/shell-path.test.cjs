@@ -30,6 +30,34 @@ test('the GUI PATH gains the home and version-manager bins, once each', () => {
   assert.equal(env.PATH, value)
 })
 
+test('pnpm global bins are found in both layouts', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-path-'))
+  /* pnpm 10 puts shims in `<PNPM_HOME>/bin`; older versions used `<PNPM_HOME>`.
+     A pi installed by the nested layout was reported as “not installed”. */
+  const flat = path.join(home, 'Library', 'pnpm')
+  const nested = path.join(flat, 'bin')
+  fs.mkdirSync(flat, { recursive: true })
+  fs.mkdirSync(nested, { recursive: true })
+
+  const dirs = ensureGuiPath({ platform: 'darwin', home, env: { PATH: '/usr/bin:/bin' } }).split(':')
+  assert.ok(dirs.includes(flat))
+  assert.ok(dirs.includes(nested))
+})
+
+test('a custom PNPM_HOME is added, with and without its bin directory', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-path-'))
+  const pnpmHome = path.join(home, 'custom-pnpm')
+  fs.mkdirSync(path.join(pnpmHome, 'bin'), { recursive: true })
+
+  const dirs = ensureGuiPath({
+    platform: 'darwin',
+    home,
+    env: { PATH: '/usr/bin:/bin', PNPM_HOME: pnpmHome },
+  }).split(':')
+  assert.ok(dirs.includes(pnpmHome))
+  assert.ok(dirs.includes(path.join(pnpmHome, 'bin')))
+})
+
 test('version-manager bins are ordered newest first', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-path-'))
   const nvm = path.join(home, '.nvm', 'versions', 'node')

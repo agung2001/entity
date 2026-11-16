@@ -2464,7 +2464,7 @@ kbd {
 /* ── cards grid (skills / machines views) ─────────────────────── */
 .grid3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 .grid2 {
@@ -2479,6 +2479,7 @@ kbd {
   padding: 14px;
   text-align: left;
   display: block;
+  min-width: 0;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .card2:hover {
@@ -2529,6 +2530,11 @@ kbd {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* A skill description can contain a long unbroken token (a path list, a
+     base64 blob). Without this, the min-content width of one card widens every
+     grid track and the whole page scrolls sideways. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .card2 .p {
   font-family: var(--mono);
@@ -4832,6 +4838,12 @@ select:focus-visible {
   letter-spacing: 0.03em;
   color: var(--muted);
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+}
+.lib-meta.mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .hint-n {
   opacity: 0.65;

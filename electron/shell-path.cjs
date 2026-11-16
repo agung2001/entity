@@ -23,8 +23,13 @@ const HOME_DIRS = [
   '.npm-global/bin',
   '.bun/bin',
   '.volta/bin',
+  /* pnpm used `~/Library/pnpm` for global bins, then moved to `~/Library/pnpm/bin`.
+     Both spellings exist on real machines, so both belong here: pi installed by a
+     recent pnpm is only in the nested one, and the flat one has its siblings. */
   '.local/share/pnpm',
+  '.local/share/pnpm/bin',
   'Library/pnpm',
+  'Library/pnpm/bin',
   '.asdf/shims',
   '.local/share/mise/shims',
   '.nodenv/shims',
@@ -67,19 +72,24 @@ function versionManagerDirs(home) {
 }
 
 function candidateDirs({ platform = process.platform, home = os.homedir(), env = process.env } = {}) {
+  const pnpmHome = String(env.PNPM_HOME || '').trim()
+  const pnpmDirs = pnpmHome ? [pnpmHome, path.join(pnpmHome, 'bin')] : []
   if (platform === 'win32') {
     const dirs = []
     const appData = env.APPDATA || ''
     const localAppData = env.LOCALAPPDATA || ''
     const profile = env.USERPROFILE || home
     if (appData) dirs.push(path.join(appData, 'npm'))
-    if (localAppData) dirs.push(path.join(localAppData, 'pnpm'))
-    dirs.push(path.join(profile, '.volta', 'bin'), path.join(profile, '.bun', 'bin'))
+    if (localAppData) dirs.push(path.join(localAppData, 'pnpm'), path.join(localAppData, 'pnpm', 'bin'))
+    dirs.push(path.join(profile, '.volta', 'bin'), path.join(profile, '.bun', 'bin'), ...pnpmDirs)
     return dirs
   }
   return [
     ...POSIX_PREFIX,
     ...HOME_DIRS.map((rel) => path.join(home, rel)),
+    /* A custom PNPM_HOME is where pnpm itself puts global bins, and it is not
+       derivable from `home`. */
+    ...pnpmDirs,
     ...versionManagerDirs(home),
     ...POSIX_SYSTEM,
   ]

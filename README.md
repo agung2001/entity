@@ -352,7 +352,7 @@ survives quitting the app.
     workspace.json              { label, kind, context, mcpStrict, members }
     members.json                owner + roster
     entities/<name>.md          frontmatter = config, body = instructions
-    skills/<name>               symlink into a harness skill library
+    skills/<name>               copied from a harness skill library
     mcp.json                    the workspace MCP pool (mode 0600)
     machine-facts.json          harness/model inventory from an explicit ssh test
     chats/<threadId>.json       one conversation per file, private to its account
@@ -888,7 +888,8 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
   enforced per workspace, and host-level actions are administrator-only. Sync
   paths are scoped to `entities/` and `artifacts/`, re-checked against the
   workspace root, and dotfiles, `..`, absolute paths, symlinks and files over
-  25 MB are refused or skipped.
+  25 MB are refused or skipped. Workspace-owned skills under `skills/` travel
+  as real files, including execute bits.
 
 ## Ceilings (stated, not hidden)
 

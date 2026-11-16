@@ -6,6 +6,8 @@
  *
  *   entities/**            Markdown instruction files
  *   artifacts/**           documents, images, whatever the workspace keeps
+ *   skills/**              workspace-owned skill bodies (a harness symlink is
+ *                          skipped and travels only as a name in skills.json)
  *   workspace.json         label, context, mcpStrict, members   (virtual)
  *   mcp.json               enabled servers only, secrets redacted (virtual)
  *   skills.json            attached names + harness            (virtual)
@@ -26,12 +28,12 @@
  * response to "the remote told the agent to export its key".
  *
  * Safety rails:
- *   - no path outside `entities/` or `artifacts/` is ever written
+ *   - no path outside `entities/`, `artifacts/` or `skills/` is ever written
  *   - deletions go to `<ws>/.remote-trash/<timestamp>/` on both sides
  *   - pushes are conditional (`x-entity-base`), so a concurrent edit wins and
  *     the next pass resolves it instead of being clobbered
- *   - MCP servers new to this machine land in `disabled[]` (quarantine): a
- *     remote `command` is code, and running it stays a local decision
+ *   - an existing enabled MCP server cannot be repointed at a new command,
+ *     args or URL by the server; the local definition wins and is reported
  *   - the bearer token is stored 0600, the password never at all
  */
 const fs = require('node:fs')
@@ -51,6 +53,9 @@ const LOCAL_DEBOUNCE_MS = 2500
 const PULL_TOTAL_CAP = 250 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 30_000
 const TRANSFER_TIMEOUT_MS = 120_000
+/* Over a WAN the cost of a first sync is round-trips, not bytes. Six in flight
+   matches what a browser does per origin and turns N × RTT into N/6 × RTT. */
+const TRANSFER_CONCURRENCY = 6
 
 /* Sync state is per workspace. A second manual click while a sync is running
    joins the first instead of starting a racing writer. */
@@ -146,6 +151,7 @@ function publicState(record, state) {
     summary: state.lastSummary || null,
     blocked: state.blocked || null,
     quarantined: state.quarantined || [],
+    missingSkills: state.missingSkills || state.lastSummary?.missingSkills || [],
     mcpDiverged: state.mcpDiverged || [],
     guard: normaliseGuard(state.guard, { validate: false }),
     pendingConflicts: state.pendingConflicts || [],
@@ -348,9 +354,14 @@ const mergeServer = manifest.mergeServer
 /**
  * Applying `mcp.json` is a merge, not an overwrite:
  *   - a server the machine already has keeps its local secret values
- *   - a server that is new to this machine is parked in `disabled[]` until a
- *     person enables it (the definition is still there to review)
+ *   - a server that is new to this machine is added to the enabled pool, so a
+ *     teammate gets a working workspace without configuring anything
+ *   - a server the person parked locally stays parked
  *   - local-only servers survive, so the next push offers them to the server
+ *
+ * The one thing a shared workspace may not do silently is repoint an existing
+ * enabled server at a different command/args/url. That case keeps the local
+ * definition and is reported.
  */
 function applyRemoteMcp(record, incoming) {
   const file = path.join(record.path, 'mcp.json')
@@ -361,13 +372,16 @@ function applyRemoteMcp(record, incoming) {
   const quarantined = []
   const diverged = []
 
+  const enable = (name, entry) => {
+    const clean = { ...entry }
+    delete clean.__remote
+    delete clean.__remoteAt
+    servers[name] = servers[name] ? mergeServer(servers[name], clean) : clean
+  }
+
   for (const [name, entry] of Object.entries(remoteServers)) {
     if (!entry || (!entry.command && !entry.url)) continue
     if (servers[name]) {
-      /* An enabled server is code this machine will spawn. A shared workspace
-         must not be able to repoint an existing `command`, `args` or `url` at
-         something new; that is a remote-code-execution path, not a settings
-         update. The local definition wins and the divergence is reported. */
       const changed = ['command', 'url', 'transport'].some(
         (key) => String(entry[key] || '') !== String(servers[name][key] || ''),
       ) || JSON.stringify(entry.args || []) !== JSON.stringify(servers[name].args || [])
@@ -378,16 +392,44 @@ function applyRemoteMcp(record, incoming) {
       servers[name] = mergeServer(servers[name], entry)
       continue
     }
-    if (disabled[name]) {
+    if (disabled[name] && !disabled[name].__remote) {
+      /* The person parked this one; a sync must not switch it back on. */
       disabled[name] = mergeServer(disabled[name], entry)
       continue
     }
-    disabled[name] = { ...entry, __remote: true, __remoteAt: nowIso() }
-    quarantined.push(name)
+    /* New to this machine, or parked by an older sync: enable it. */
+    delete disabled[name]
+    enable(name, entry)
   }
 
   writeJson(file, { schema: 1, servers, disabled }, { mode: 0o600 })
   return { quarantined, diverged }
+}
+
+/**
+ * Older builds parked every server that came from the server. Promote those
+ * once, so an existing clone picks up the new enabled behaviour on the next
+ * sync. A server the person parked themselves has no `__remote` marker and is
+ * left alone.
+ */
+function promoteAutoParked(record) {
+  const file = path.join(record.path, 'mcp.json')
+  const current = readJson(file, null)
+  if (!current || typeof current !== 'object') return false
+  const servers = current.servers && typeof current.servers === 'object' ? { ...current.servers } : {}
+  const disabled = current.disabled && typeof current.disabled === 'object' ? { ...current.disabled } : {}
+  let changed = false
+  for (const [name, entry] of Object.entries(disabled)) {
+    if (!entry || !entry.__remote) continue
+    const clean = { ...entry }
+    delete clean.__remote
+    delete clean.__remoteAt
+    servers[name] = servers[name] ? mergeServer(servers[name], clean) : clean
+    delete disabled[name]
+    changed = true
+  }
+  if (changed) writeJson(file, { schema: 1, servers, disabled }, { mode: 0o600 })
+  return changed
 }
 
 /** Attach what this machine's libraries can satisfy; report the rest honestly. */
@@ -424,7 +466,45 @@ function conflictName(rel) {
   return `artifacts/conflicts/${parsed.dir}/${parsed.name}.${stamp()}.local${parsed.ext}`
 }
 
-function applyPull(record, rel, buffer, { conflict }) {
+/**
+ * A local skill attached from a harness library is a symlink. If a remote edit
+ * is about to write through it, the library would change too — a teammate's
+ * edit silently rewriting `~/.pi/agent/skills/…`. Materialise the skill first
+ * (a real copy inside the workspace), then apply the pulled file to that copy.
+ */
+function materialiseSkill(record, rel) {
+  const parts = String(rel).split('/')
+  if (parts[0] !== 'skills' || parts.length < 2) return
+  const top = path.join(record.path, 'skills', parts[1])
+  let stat = null
+  try {
+    stat = fs.lstatSync(top)
+  } catch {
+    return
+  }
+  if (!stat.isSymbolicLink()) return
+  let real
+  try {
+    real = fs.realpathSync(top)
+  } catch {
+    return
+  }
+  const tmp = `${top}.${process.pid}.${Date.now()}.tmp`
+  try {
+    fs.cpSync(real, tmp, { recursive: true, dereference: true })
+    fs.unlinkSync(top)
+    fs.renameSync(tmp, top)
+  } catch {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+function applyPull(record, rel, buffer, { conflict, executable } = {}) {
+  const mode = executable ? 0o755 : undefined
   if (rel === 'workspace.json') {
     let parsed
     try {
@@ -458,12 +538,13 @@ function applyPull(record, rel, buffer, { conflict }) {
     try {
       const local = fs.readFileSync(manifest.absoluteFor(record.path, rel))
       const target = manifest.absoluteFor(record.path, conflictName(rel))
-      manifest.writeAtomic(target, local)
+      manifest.writeAtomic(target, local, { mode })
     } catch {
       /* the local side may already be gone */
     }
   }
-  manifest.writeAtomic(manifest.absoluteFor(record.path, rel), buffer)
+  materialiseSkill(record, rel)
+  manifest.writeAtomic(manifest.absoluteFor(record.path, rel), buffer, { mode })
   return { quarantined: [] }
 }
 
@@ -500,7 +581,7 @@ function diff(base, localFiles, remoteFiles) {
       continue
     }
     if (b !== undefined && l === b && r !== undefined) {
-      plan.pull.push({ path: rel, sha256: r })
+      plan.pull.push({ ...(remoteFiles.get(rel) || {}), path: rel, sha256: r })
       continue
     }
     if (b !== undefined && r === b && l !== undefined) {
@@ -508,7 +589,7 @@ function diff(base, localFiles, remoteFiles) {
       continue
     }
     if (l === undefined) {
-      plan.pull.push({ path: rel, sha256: r })
+      plan.pull.push({ ...(remoteFiles.get(rel) || {}), path: rel, sha256: r })
       continue
     }
     if (r === undefined) {
@@ -520,14 +601,14 @@ function diff(base, localFiles, remoteFiles) {
        first state; applyPull knows how to merge the roster, the MCP pool and
        the skill list. */
     if (manifest.isVirtual(rel)) {
-      plan.pull.push({ path: rel, sha256: r })
+      plan.pull.push({ ...(remoteFiles.get(rel) || {}), path: rel, sha256: r })
       continue
     }
     /* Both sides have different bytes and neither equals the base (or there is
        no base): keep both. Remote takes the path; the local bytes are parked in
        artifacts/conflicts and pushed on the next pass. */
     plan.conflict.push({ path: rel, local: l, remote: r })
-    plan.pull.push({ path: rel, sha256: r, conflict: true })
+    plan.pull.push({ ...(remoteFiles.get(rel) || {}), path: rel, sha256: r, conflict: true })
   }
   return plan
 }
@@ -536,6 +617,28 @@ function diff(base, localFiles, remoteFiles) {
 
 async function readRemoteManifest(record, state) {
   return request(record, state, `/workspaces/${encodeURIComponent(state.remoteWorkspace)}/manifest`)
+}
+
+/**
+ * Run `fn` over `items` with at most `limit` calls in flight, preserving the
+ * input order in the result. A first sync is dominated by latency per file, so
+ * awaiting each blob one after another is the difference between seconds and
+ * minutes on a real network.
+ */
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length)
+  const width = Math.max(1, Math.min(limit, items.length))
+  let next = 0
+  const worker = async () => {
+    for (;;) {
+      const index = next
+      next += 1
+      if (index >= items.length) return
+      results[index] = await fn(items[index], index)
+    }
+  }
+  await Promise.all(Array.from({ length: width }, worker))
+  return results
 }
 
 async function fetchBlob(record, state, rel, expected = '') {
@@ -552,7 +655,7 @@ async function fetchBlob(record, state, rel, expected = '') {
   return buffer
 }
 
-async function pushBlob(record, state, rel, buffer, baseSha) {
+async function pushBlob(record, state, rel, buffer, baseSha, { executable = false } = {}) {
   const query = `?path=${encodeURIComponent(rel)}`
   return request(record, state, `/workspaces/${encodeURIComponent(state.remoteWorkspace)}/blob${query}`, {
     method: 'PUT',
@@ -561,6 +664,7 @@ async function pushBlob(record, state, rel, buffer, baseSha) {
       'content-type': 'application/octet-stream',
       'x-entity-base': baseSha === undefined || baseSha === null ? '' : baseSha,
       'x-entity-sha256': manifest.sha256(buffer),
+      ...(executable ? { 'x-entity-executable': '1' } : {}),
     },
     timeout: TRANSFER_TIMEOUT_MS,
   })
@@ -624,6 +728,10 @@ function summarise(plan, applied) {
 }
 
 async function performSync(record, state, reason) {
+  promoteAutoParked(record)
+  /* A clone gets real skill bytes, and the author's own workspace stops
+     depending on a harness library path. */
+  workspaces.materialiseSkillLinks(record)
   const remote = await readRemoteManifest(record, state)
   const remoteFiles = new Map(
     (Array.isArray(remote.files) ? remote.files : []).map((entry) => [
@@ -633,27 +741,61 @@ async function performSync(record, state, reason) {
   )
   const local = await manifest.manifestForRecord(record)
   const plan = diff(state.base, local.byPath, remoteFiles)
+  /* An older server does not walk `skills/` at all. Pushing files it will never
+     advertise would make the next pass look like a remote deletion, so keep
+     skill files local until the server is updated and says it supports them. */
+  const remoteSupportsSkills =
+    Array.isArray(remote.scopes) && remote.scopes.includes('skills')
+  if (!remoteSupportsSkills) {
+    const isSkill = (entry) => String(entry?.path || entry || '').startsWith('skills/')
+    plan.pull = plan.pull.filter((entry) => !isSkill(entry))
+    plan.push = plan.push.filter((entry) => !isSkill(entry))
+    plan.deleteLocal = plan.deleteLocal.filter((entry) => !isSkill(entry))
+    plan.deleteRemote = plan.deleteRemote.filter((entry) => !isSkill(entry))
+    plan.conflict = plan.conflict.filter((entry) => !isSkill(entry))
+  }
+  /* The manifest's skill roster is authoritative when present; an older server
+     omits it, and then the pulled skills.json is the fallback. */
+  const remoteSkillList = Array.isArray(remote.skills)
+    ? manifest.normaliseSkills(remote.skills)
+    : null
+  const remoteSkillNames = new Set((remoteSkillList || []).map((skill) => skill.name.toLowerCase()))
 
   /* ---- pulls: fetch + guard everything before writing anything ---- */
-  const pulls = []
+  const toFetch = []
   const blockedEntries = []
+  if (!remoteSupportsSkills) {
+    const localSkillFiles = [...local.byPath.keys()].filter((rel) => rel.startsWith('skills/'))
+    if (localSkillFiles.length) {
+      blockedEntries.push('skills/: this server does not sync skill files yet; update the server')
+    }
+  }
   let pullBytes = 0
   for (const entry of plan.pull) {
     if (manifest.isVirtual(entry.path)) {
       /* virtual entries are small; always fetched so the local file reflects
          the server's canonical form, not a cached one */
-      const buffer = await fetchBlob(record, state, entry.path, entry.sha256)
-      pulls.push({ ...entry, buffer })
+      toFetch.push(entry)
       continue
     }
-    if (pullBytes + (remoteFiles.get(entry.path)?.size || 0) > PULL_TOTAL_CAP) {
+    const size = remoteFiles.get(entry.path)?.size || 0
+    if (pullBytes + size > PULL_TOTAL_CAP) {
       blockedEntries.push(`${entry.path}: pull cap reached; will continue on the next sync`)
       continue
     }
-    const buffer = await fetchBlob(record, state, entry.path, entry.sha256)
-    pullBytes += buffer.length
-    pulls.push({ ...entry, buffer })
+    /* Reserve the declared size up front: with several transfers in flight the
+       cap has to be decided before the first byte arrives. */
+    pullBytes += size
+    toFetch.push(entry)
   }
+  const pulls = await mapWithConcurrency(toFetch, TRANSFER_CONCURRENCY, async (entry) => {
+    const buffer = await fetchBlob(record, state, entry.path, entry.sha256)
+    return { ...entry, buffer }
+  })
+  /* Real files land before the virtual roster: `skills.json` attaches by name,
+     and a workspace-owned skill directory that just arrived is already an
+     attachment. Applying the roster first would report it as missing. */
+  pulls.sort((a, b) => Number(manifest.isVirtual(a.path)) - Number(manifest.isVirtual(b.path)))
 
   /* Scan what a harness could read as instructions. An MCP definition's env
      *names* are not a payload (a token key is expected); its command and args
@@ -760,6 +902,7 @@ async function performSync(record, state, reason) {
   for (const entry of pulls) {
     const appliedPull = applyPull(record, entry.path, entry.buffer, {
       conflict: Boolean(entry.conflict),
+      executable: Boolean(entry.executable),
     })
     nextBase[entry.path] = entry.sha256
     applied.pulled += 1
@@ -792,18 +935,42 @@ async function performSync(record, state, reason) {
   /* ---- push: recompute so merges and conflict copies are included ---- */
   const after = await manifest.manifestForRecord(record)
   const pushPlan = diff(nextBase, after.byPath, remoteFiles)
-  const pushes = [...pushPlan.push]
+  if (!remoteSupportsSkills) {
+    pushPlan.push = pushPlan.push.filter((entry) => !entry.path.startsWith('skills/'))
+    pushPlan.deleteRemote = pushPlan.deleteRemote.filter(
+      (entry) => !entry.path.startsWith('skills/'),
+    )
+  }
+  /* Sending a roster that is a strict subset of the server's is a no-op: the
+     server unions it, and the local side cannot attach the missing bodies.
+     Without this, every pass pushes an empty or partial skills.json and the
+     missing skills stop being visible. */
+  const rosterIsSubset = (() => {
+    if (!remoteSkillList) return false
+    try {
+      const localSkills = manifest.normaliseSkills(
+        JSON.parse(after.virtual['skills.json'].toString('utf8')).skills,
+      )
+      return localSkills.every((skill) => remoteSkillNames.has(skill.name.toLowerCase()))
+    } catch {
+      return false
+    }
+  })()
+  const pushes = pushPlan.push.filter(
+    (entry) => entry.path !== 'skills.json' || !rosterIsSubset,
+  )
   /* A virtual file whose local form is a union (local secret extras, skills the
      server did not know) differs from the server without being "changed"; it is
      still a legitimate push. Only push virtuals when both sides have content. */
   for (const rel of manifest.VIRTUAL) {
     if (pushes.some((entry) => entry.path === rel)) continue
+    if (rel === 'skills.json' && rosterIsSubset) continue
     const l = after.byPath.get(rel)?.sha256
     const r = remoteFiles.get(rel)?.sha256
     if (l && r && l !== r) pushes.push({ path: rel, sha256: l, base: r })
   }
 
-  for (const entry of pushes) {
+  await mapWithConcurrency(pushes, TRANSFER_CONCURRENCY, async (entry) => {
     if (entry.path === 'mcp.json') {
       /* Merge redacted secrets with the local copy before sending. */
       const localRaw = readJson(path.join(record.path, 'mcp.json'), { schema: 1, servers: {} })
@@ -819,7 +986,7 @@ async function performSync(record, state, reason) {
         if (error.status === 409) applied.conflicts.push(entry.path)
         else throw error
       }
-      continue
+      return
     }
     let buffer
     if (manifest.isVirtual(entry.path)) {
@@ -829,12 +996,14 @@ async function performSync(record, state, reason) {
         buffer = fs.readFileSync(manifest.absoluteFor(record.path, entry.path))
       } catch {
         applied.skipped.push(`${entry.path}: vanished before it could be pushed`)
-        continue
+        return
       }
     }
-    if (!buffer) continue
+    if (!buffer) return
     try {
-      const result = await pushBlob(record, state, entry.path, buffer, entry.base ?? '')
+      const result = await pushBlob(record, state, entry.path, buffer, entry.base ?? '', {
+        executable: Boolean(after.byPath.get(entry.path)?.executable),
+      })
       nextBase[entry.path] = result.sha256 || manifest.sha256(buffer)
       applied.pushed += 1
     } catch (error) {
@@ -842,15 +1011,15 @@ async function performSync(record, state, reason) {
         /* Someone edited the server between the manifest and this write. Leave
            the base alone; the next pass sees both changes and resolves them. */
         applied.conflicts.push(entry.path)
-        continue
+        return
       }
       throw error
     }
-  }
+  })
 
   /* ---- remote deletions ---- */
-  for (const entry of plan.deleteRemote) {
-    if (manifest.isVirtual(entry.path)) continue
+  await mapWithConcurrency(plan.deleteRemote, TRANSFER_CONCURRENCY, async (entry) => {
+    if (manifest.isVirtual(entry.path)) return
     try {
       await deleteRemote(record, state, entry.path, entry.base ?? '')
       delete nextBase[entry.path]
@@ -859,31 +1028,42 @@ async function performSync(record, state, reason) {
       if (error.status === 409) applied.conflicts.push(entry.path)
       else throw error
     }
+  })
+
+  /* Skills the server names but this workspace still cannot attach are reported
+     on every pass, not only on the pass that first pulled the roster. A skill
+     whose body arrived under `skills/` is attached; a symlinked harness skill
+     needs the same library to exist on this machine. */
+  const remoteSkills = (() => {
+    if (remoteSkillList) return remoteSkillList
+    const roster = pulls.find((entry) => entry.path === 'skills.json')
+    if (!roster) return []
+    try {
+      return manifest.normaliseSkills(JSON.parse(roster.buffer.toString('utf8')).skills)
+    } catch {
+      return []
+    }
+  })()
+  const attachedNow = new Set(
+    manifest.readAttachedSkills(record.path).map((entry) => entry.name.toLowerCase()),
+  )
+  for (const skill of remoteSkills) {
+    if (!attachedNow.has(skill.name.toLowerCase())) applied.missingSkills.push(skill.name)
   }
 
-  /* Skills that the server has and this machine's libraries do not are reported
-     once per sync, never silently pretended to work. */
-  const wanted = pulls.find((entry) => entry.path === 'skills.json')
-  if (wanted) {
-    try {
-      const parsed = JSON.parse(wanted.buffer.toString('utf8'))
-      const attached = new Set(
-        manifest
-          .readAttachedSkills(record.path)
-          .map((entry) => entry.name.toLowerCase()),
-      )
-      for (const skill of manifest.normaliseSkills(parsed.skills)) {
-        if (!attached.has(skill.name.toLowerCase())) applied.missingSkills.push(skill.name)
-      }
-    } catch {
-      /* already validated */
-    }
-  }
+  /* Quarantine is a property of the local pool, not of this pass: a server that
+     arrived last week is still parked even when today pulled nothing. */
+  const parked = readJson(path.join(record.path, 'mcp.json'), {})
+  const parkedNames = Object.entries(
+    parked?.disabled && typeof parked.disabled === 'object' ? parked.disabled : {},
+  )
+    .filter(([, entry]) => entry && entry.__remote)
+    .map(([name]) => name)
 
   applied.conflicts = [...new Set(applied.conflicts)]
-  applied.quarantined = [...new Set(applied.quarantined)]
+  applied.quarantined = [...new Set(parkedNames)].sort()
   applied.mcpDiverged = [...new Set(applied.mcpDiverged)]
-  applied.missingSkills = [...new Set(applied.missingSkills)]
+  applied.missingSkills = [...new Set(applied.missingSkills)].sort()
 
   const nextState = {
     ...state,
@@ -898,6 +1078,7 @@ async function performSync(record, state, reason) {
     lastSummary: summarise(plan, applied),
     quarantined: applied.quarantined,
     mcpDiverged: applied.mcpDiverged,
+    missingSkills: applied.missingSkills,
     pendingConflicts: applied.conflicts,
   }
   if (disconnected.has(record.id)) {
@@ -1307,6 +1488,7 @@ module.exports = {
   publicState,
   readState,
   diff,
+  mapWithConcurrency,
   mergeServer,
   applyRemoteMcp,
 }

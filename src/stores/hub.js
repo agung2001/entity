@@ -380,7 +380,7 @@ export function applyLibrary(items = []) {
     harness: String(item?.harness || ''),
     harnessLabel: String(item?.harnessLabel || item?.harness || ''),
     /* the resolved target and the entry path, so the composer can tell that a
-       workspace symlink and a harness skill are the same file */
+       a legacy workspace symlink and a harness skill are the same file */
     absolutePath: String(item?.absolutePath || ''),
     realPath: String(item?.realPath || item?.absolutePath || ''),
   }))

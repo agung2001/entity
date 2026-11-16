@@ -509,6 +509,9 @@ function skillsDir(record) {
 
 function skills(id) {
   const record = open(id)
+  /* Opening the inventory is the natural moment to finish the old symlink
+     migration: a link is not portable to a backup or another machine. */
+  materialiseSkillLinks(record)
   return localData.scanSkillDir(skillsDir(record), {
     harness: 'workspace',
     harnessLabel: 'Workspace',
@@ -530,9 +533,12 @@ function findLibrarySkill(name, harness) {
 }
 
 /**
- * One syscall to attach a skill: a symlink into the harness library, so the
- * workspace follows library updates instead of forking them. A filesystem that
- * refuses symlinks (Windows without privilege) gets a copy, marked as such.
+ * Attach a skill by **copying** it into the workspace.
+ *
+ * A symlink would make the workspace depend on `~/.pi/agent/skills` existing on
+ * every machine that restores a backup or pulls a remote copy. The workspace is
+ * the portable unit, so the bytes live here. Updates to the library do not flow
+ * through afterwards; re-attach (or edit the workspace copy) intentionally.
  */
 function attachSkillTo(dir, name, harness) {
   const source = findLibrarySkill(name, harness)
@@ -559,26 +565,65 @@ function attachSkillTo(dir, name, harness) {
     real = source.absolutePath
   }
 
-  const tmp = `${target}.${process.pid}.tmp`
-  let copied = false
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
   try {
-    fs.symlinkSync(real, tmp)
+    /* `dereference` also turns links inside a skill directory into real bytes. */
+    fs.cpSync(real, tmp, { recursive: true, dereference: true })
     fs.renameSync(tmp, target)
   } catch (error) {
     try {
-      fs.rmSync(tmp, { force: true })
+      fs.rmSync(tmp, { recursive: true, force: true })
     } catch {
       /* nothing staged */
     }
-    /* EPERM / EACCES / ENOSYS: fall back to a copy on platforms without links */
-    if (!['EPERM', 'EACCES', 'ENOSYS', 'EINVAL'].includes(error?.code)) {
-      throw new Error(`Could not link ${source.name}: ${error.message}`)
-    }
-    fs.cpSync(real, target, { recursive: true })
-    copied = true
+    throw new Error(`Could not copy ${source.name}: ${error.message}`)
   }
 
-  return { name: source.name, harness: source.harness, copied, path: tilde(target) }
+  return { name: source.name, harness: source.harness, copied: true, path: tilde(target) }
+}
+
+/**
+ * Replace old workspace skill symlinks with real copies.
+ *
+ * Older builds attached a harness skill as a link. A backup or a clone on another
+ * machine then carried a path that does not exist there. This migration is
+ * idempotent: it is called when the inventory is opened, before an export or
+ * backup, and at the start of a remote sync. A dangling link is left alone so
+ * the UI can still report it as missing.
+ */
+function materialiseSkillLinks(record) {
+  const dir = skillsDir(record)
+  let entries = []
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const copied = []
+  for (const entry of entries) {
+    if (!entry.isSymbolicLink()) continue
+    const target = path.join(dir, entry.name)
+    let real
+    try {
+      real = fs.realpathSync(target)
+    } catch {
+      continue
+    }
+    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
+    try {
+      fs.cpSync(real, tmp, { recursive: true, dereference: true })
+      fs.unlinkSync(target)
+      fs.renameSync(tmp, target)
+      copied.push(entry.name)
+    } catch {
+      try {
+        fs.rmSync(tmp, { recursive: true, force: true })
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+  return copied
 }
 
 function attachSkill({ id, name, harness }) {
@@ -852,6 +897,7 @@ function exportedSkills(record) {
 
 function exportWorkspace({ id } = {}) {
   const record = open(id)
+  materialiseSkillLinks(record)
   const raw = readJson(path.join(record.path, 'workspace.json'), {}) || {}
   const files = {}
   for (const dir of EXPORT_DIRS) {
@@ -1107,6 +1153,7 @@ module.exports = {
   factsFile,
   skills,
   skillsDir,
+  materialiseSkillLinks,
   attachSkill,
   detachSkill,
   skillRead,
