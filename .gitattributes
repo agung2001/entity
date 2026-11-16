@@ -1,0 +1,4 @@
+# Shell scripts are POSIX and some are piped straight to `sh -s` over ssh
+# (`electron/fleet-scan.sh`). A CRLF checkout makes dash abort with
+# "Illegal option -", so keep them LF on every platform.
+*.sh text eol=lf
