@@ -8,8 +8,9 @@ Two rules make the scope coherent:
 
 1. **The workspace is data; the machine is the source.** `~/.ssh/config` is the only
    list of hosts, and it stays user-local. Nothing is attached to a workspace.
-2. **No cross-workspace references.** `skills:` and `mcp:` resolve only inside their
-   own workspace. The same name in two workspaces is two unrelated things.
+2. **No cross-workspace references.** A skill or MCP server belongs to its own
+   workspace and resolves only there. The same name in two workspaces is two
+   unrelated things.
 
 ## Which machine a turn runs on
 

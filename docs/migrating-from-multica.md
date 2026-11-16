@@ -24,22 +24,21 @@ runtimes, the workspace skill library — the note says so.
 | Instructions + system instructions | body, after the frontmatter | one field becomes one brief |
 | Runtime (e.g. `Pi (ubuntu)`) | `harness:` | `claude`, `codex`, `gemini`, `opencode`, `pi` |
 | Agent model | `model:` | omit it and the harness picks its own default |
-| Per-agent skills | `skills:` | must resolve in `skills/`, or the entity is *not ok* |
-| Per-agent MCP list | `mcp:` | **narrowing**, see the warning below |
+| Per-agent skills | not carried | a skill belongs to the workspace; every entity sees all of them |
+| Per-agent MCP list | not carried | every entity gets the whole workspace pool |
 | Workspace | workspace | a directory under `~/.entity/workspaces/` |
 | Workspace skill library | `skills/<name>/SKILL.md` | copy of a harness skill, or a workspace-owned skill |
 | Workspace MCP servers | `mcp.json` | the pool every entity draws from |
 | Archived agent | usually skip | in practice these are `Name (Personal)` twins |
 | Conversation history, run logs, autopilot schedules | **not carried** | entities start with no history and no schedule |
 
-> **The one difference that silently breaks agents.** In Multica the per-agent
-> MCP list was *additive* to the workspace's servers. Here `mcp:` is a
-> **narrowing** of the workspace pool: an entity that names three servers sees
-> only those three, and an empty/absent `mcp:` means the whole pool. Port the
-> list verbatim and the agent loses the servers it actually uses — while still
-> reporting `ok: true`, because a narrowing that names only servers that exist is
-> not a problem. Decide the list per entity, from the body, not from the source
-> field.
+> **There is no per-agent list here.** Multica attached MCP servers and skills
+> per agent; in Entity they belong to the workspace and **every entity gets all
+> of them**. So the port is a union, not a decision: read what the bodies need,
+> put each server in the workspace pool and each skill in `skills/`, and stop.
+> Nothing goes in an entity file, and an agent cannot be given a server its
+> siblings are denied. A `skills:`/`mcp:` line copied from the source is inert —
+> the reader ignores it and the next write removes it.
 
 ---
 
@@ -86,8 +85,10 @@ done
 `multica daemon status` will probably say **stopped**. That only affects running
 work, not reading it — leave it stopped, and nothing in this runbook needs it.
 
-Fields worth keeping per agent: `instructions`, `systemInstructions`, `skills`,
-`mcp`, `runtime`, `model`, `description`, `conversationStarters`, `archived`.
+Fields worth keeping per agent: `instructions`, `systemInstructions`, `runtime`,
+`model`, `description`, `conversationStarters`, `archived`. Its `skills` and `mcp`
+lists are read to widen the **workspace** — nowhere in Entity is either of them
+per agent.
 
 The dumps contain whatever the source agent embedded in its own brief. Check them
 before you commit them to a repository: a brief often quotes internal hostnames,
@@ -206,16 +207,17 @@ you and never returns one. `mcp list` shows `envKeys` and `headerKeys` only —
 header *values* stay redacted, so a working server and a stale token look
 identical from the CLI.
 
-**What to carry.** Only the servers some ported entity will actually name.
-Machine-local HTTP servers exist only while their host process runs; registration
-is still correct, but an entity using one will say "server not active" until it is
-up. Say that out loud in the handover instead of letting the user discover it.
+**What to carry.** Every server any ported entity's body relies on — the union,
+because the pool is the workspace's and there is nothing per entity to trim. A
+machine-local HTTP server exists only while its host process runs; registration is
+still correct, but a turn will report it unreachable until it is up. Say that out
+loud in the handover instead of letting the user discover it.
 
 `strict` (`mcpStrict` in `workspace.json`, on by default, shown in the MCP
 panel's footer) is carried to remote mirrors and kept per workspace — leave it at
-the default. Note that the *"mcp server `x` is not in this workspace"* problem is
-reported whether `strict` is on or off, so a typo in `mcp:` is always visible; do
-not rely on `strict` to catch it for you.
+the default. With no per-entity list there is no `mcp:` typo to catch: a server
+either is in `mcp.json` (and every entity gets it) or it is not there at all, which
+the MCP page shows as a missing row.
 
 ---
 
@@ -246,9 +248,9 @@ Two limits bite during a port:
 > create, into `skills/<name>/`, and check they landed. A SKILL.md that tells the
 > agent to read `references/cli-location.md` is broken without it.
 
-Then make sure each ported entity's `skills:` names the skills it actually
-needs — the same narrowing trap as `mcp:`, and the same silence when it is wrong
-except for `skill "x" is missing`.
+Then check the bodies' skill references resolve: a ported brief that says "use the
+tracker skill" needs that skill in `skills/`, because every entity shares the same
+library and nothing points at one skill from one file.
 
 ---
 
@@ -326,7 +328,7 @@ share both.
 
 > **There is no verb that sets a mark on an existing entity.** `--shape/--color/
 > --mood` exist only on `entity create`; `entity set-fields` covers
-> `harness/model/dir/skills/mcp`. Changing a mark afterwards is an in-place edit
+> `harness/model/dir` and nothing else. Changing a mark afterwards is an in-place edit
 > of three frontmatter lines — see §12 for what that costs you in the audit log.
 
 > **A mark picked in the UI beats the file.** The picker saves
@@ -380,15 +382,15 @@ time, not at validation time.
 | `harness "x" is unknown` | not one of the five supported harnesses |
 | `dir is not set` | no `dir:` in the frontmatter |
 | `dir … does not exist` | the path is not a directory on this machine |
-| `skill "x" is missing` | not attached to this workspace |
-| `mcp server "x" is not in this workspace` | not in `mcp.json` |
+| `harness "x" is unknown` | a harness this build does not run |
+| `dir ~/x does not exist` | the working directory is not on this machine |
 | `name "x" does not match the file name` | frontmatter/name drift |
 
 `ok: true` is necessary, not sufficient. It cannot tell you that the body still
-says "Multica", that `mcp:` names the wrong three servers, or that the mark is a
-grey smudge — all three of which happened in the port this document is drawn
-from. Grep the bodies, re-read the `mcp:` and `skills:` lists against the body's
-own claims, and eyeball the roster in the app.
+says "Multica", that the pool is missing a server a body relies on, or that the
+mark is a grey smudge — all three of which happened in the port this document is
+drawn from. Grep the bodies, check every server and skill they name exists in the
+workspace, and eyeball the roster in the app.
 
 ---
 
@@ -422,7 +424,7 @@ Back up before each batch. The workspace is small enough that
 - [ ] skills attached or created, `references/` and `scripts/` copied in
 - [ ] bodies ported with `--body-file`; platform sections stripped
 - [ ] `grep -ri multica entities/` → clean, or every hit explained
-- [ ] `mcp:` and `skills:` per entity re-derived from the body, not copied
+- [ ] every server and skill the bodies name is in the workspace pool / `skills/` (no per-entity list)
 - [ ] marks set on create; contested glyphs rendered before believing them
 - [ ] `entity list` → every entity `ok: true`, `problems` empty
 - [ ] every external server started, or its "not active" state handed over
@@ -455,8 +457,9 @@ What the checklist caught, in order:
 3. A dozen dead pointers across five bodies ("put it on a Multica issue") →
    retargeted to the workspace's own tracker, with the tracker skill added to the
    entities whose Records section now points there.
-4. Another entity would have **lost** the two servers it existed to maintain —
-   the additive source list translated to a narrowing one.
+4. The port had to decide, agent by agent, which servers to attach — the trap the
+   old narrowing rule created. That decision is gone: the pool is the union, and
+   every entity gets it.
 5. Five entities were created with invented shape/colour ids and rendered as five
    identical gold squircles, one of them printing the word *energetic*.
 6. The last mark fix was a compass emoji that was legal and still vanished at
@@ -473,7 +476,7 @@ That is the whole reason §1's warning and §9 exist.
 | Archived agents and `(Personal)` twins | duplicates of a BASE agent; they would contend for the same work |
 | Conversations, run logs, token spend | entity history starts at the first turn in this app |
 | Autopilot / cron schedules, webhooks | schedules are per-machine here; re-create them deliberately, not by migration |
-| Agent-level MCP *grants* | this app has a pool and narrowing, not per-agent provisioning |
+| Agent-level MCP *grants* | the pool belongs to the workspace; every entity gets all of it, so a per-agent grant has nothing to attach to |
 | Issue tracker history | stays where it is; the briefs point at it instead of copying it |
 
 Nothing above is lost by accident. Anything you actually need — a schedule, a

@@ -59,7 +59,11 @@ See [the agent CLI](agent-cli.md) for the rest of the verbs.
 Two libraries with the same name is an error, not a guess — the message lists both
 qualified forms so you can say which one you meant. A library skill that is missing
 its body (a link into a library this machine does not have) is shown as *missing* on
-the skill and on the entity that names it.
+the skill itself.
+
+Nothing here is per entity. A skill belongs to the workspace — every entity sees all
+of them — so there is no `skills:` list to keep in step, and one agent cannot hold a
+skill its siblings lack.
 
 ## Related
 

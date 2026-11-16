@@ -39,8 +39,6 @@ name: brand-writer
 harness: claude
 model: claude-sonnet-4-5
 dir: ~/Documents/campaigns
-skills: brand-voice, writing-style
-mcp: notion, slack
 ---
 # Brand Writer
 
@@ -55,7 +53,7 @@ post. Warm, plain, never salesy.
 
 ```mermaid
 flowchart LR
-  F["entities/brand-writer.md"] -->|"frontmatter"| C["harness · model · dir<br/>skills · mcp"]
+  F["entities/brand-writer.md"] -->|"frontmatter"| C["harness · model · dir"]
   F -->|"body"| P["system prompt<br/>or prompt text"]
   C --> S["spawn the harness<br/>cwd = dir"]
   P --> S
@@ -65,9 +63,10 @@ flowchart LR
 
 The body reaches the harness as a system prompt (`claude`, `pi`) or as prompt text
 (`codex`, `opencode`, `gemini`); the prompt itself always goes in on **stdin**, and
-`cwd` is the entity's `dir`. A `skills:` or `mcp:` name that does not resolve is
-reported as a problem on the entity — the file stays readable and the run is still
-allowed.
+`cwd` is the entity's `dir`. Skills and MCP servers are not in that frontmatter:
+they belong to the workspace, so every entity gets all of them and an entity cannot
+narrow the list. Its problems are its own — an unknown harness, a `dir` that is not
+there — and the file stays readable and the run is still allowed.
 
 Nothing is seeded behind your back: a new workspace is empty, and the sample roles
 are a checkbox in the create form — each one listed so you choose which files to
@@ -105,7 +104,7 @@ failures that do not show up as errors.
 
 ## Related
 
-- [Skills](skills.md) — what `skills:` and `/workspace:` resolve to
-- [MCP servers](mcp.md) — what `mcp:` names
+- [Skills](skills.md) — what `/workspace:` resolves to
+- [MCP servers](mcp.md) — what the workspace pool is
 - [Conversations](conversations.md) — what lands in `chats/`
 - [Artifacts and backups](artifacts.md) — what lands in `artifacts/`

@@ -4,10 +4,14 @@
 
 <picture><source srcset="assets/readme-features/mcp.webp" type="image/webp" /><img src="assets/readme-features/mcp.poster.jpg" alt="The workspace MCP servers with transports, commands and the entities that name each server" width="820" /></picture>
 
-A workspace has one set of servers (`<ws>/mcp.json`) and every entity gets it. Add a
-server once — on the MCP page, or by **attaching** one a harness already has
-configured — and any thread can use it. An entity may narrow the list in its own
-frontmatter, and `mcp: none` opts out entirely.
+A workspace has one set of servers (`<ws>/mcp.json`) and **every entity gets all of
+them**. Add a server once — on the MCP page, or by **attaching** one a harness
+already has configured — and any thread can use it.
+
+There is no per-entity list, on purpose: a server is attached to the workspace or it
+is not, and one agent cannot be given a server its siblings are denied. A `mcp:` line
+left in an older entity file is ignored by the reader and dropped by the next write;
+`mcp: none` no longer opts anything out.
 
 - **Attach** copies the definition verbatim, including the header or env value that
   makes it work. That is the point, and it is why the file is `0600`.
