@@ -45,7 +45,12 @@ const RULES = [
     severity: 'high',
     title: 'credential exfiltration',
     message: 'Text asks for credentials, keys or the system prompt to be revealed or sent.',
-    re: /\b(reveal|print|show|output|send|post|upload|exfiltrate|leak|cat|read|include|return)\b[^\n]{0,60}\b(system prompt|api[ _-]?key|secret|token|password|credential|private key|id_rsa|\.env)\b/i,
+    /* The verb has to take the credential as its object, `print the .env`,
+       not merely share a sentence with it: `upload to (… has a token)` is
+       ordinary prose about a YouTube tool and must not block a sync. The
+       filler list is determiners and possessives only — a preposition between
+       the verb and the noun means the noun is not the thing being revealed. */
+    re: /\b(reveal|print|show|output|send|post|upload|exfiltrate|leak|cat|read|include|return)\b[ \t]+(?:(?:me|us|out|back|the|your|its|my|our|their|his|her|all|any|every|full|entire|complete|raw|verbatim|contents?|of)[ \t]+){0,4}(?:[\w.~\/-]*[\/\\])?(system prompt|api[ _-]?key|secret|token|password|credential|private[ _-]?key|id_rsa|id_ed25519|\.env)\b/i,
   },
   {
     id: 'credential-path',
