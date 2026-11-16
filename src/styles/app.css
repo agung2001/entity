@@ -8411,6 +8411,55 @@ button.msg-attach-copy:hover b {
 .thread-shell > .c-thread {
   width: 100%;
 }
+/* Sits over the transcript, right where the reader left off: a streamed answer
+   below must never drag them back down, but getting back is one click. The dock
+   floats over the transcript, so this clears it the way the list's own padding
+   does — otherwise the composer swallows the click. */
+.jump-live {
+  position: absolute;
+  z-index: 33;
+  left: 50%;
+  bottom: calc(var(--dock-space, 190px) + var(--term-space, 0px) + 12px);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(10, 10, 10, 0.14);
+}
+.jump-live svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.jump-live:hover {
+  color: var(--ink);
+  border-color: var(--border-strong);
+}
+.jump-live-enter-active,
+.jump-live-leave-active {
+  transition:
+    opacity 0.14s ease-out,
+    transform 0.14s ease-out;
+}
+.jump-live-enter-from,
+.jump-live-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 6px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .jump-live-enter-active,
+  .jump-live-leave-active {
+    transition: none;
+  }
+}
 .c-thread .ask-sys[data-error='1'] {
   display: inline-flex;
   align-items: center;

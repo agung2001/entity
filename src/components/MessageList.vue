@@ -138,9 +138,17 @@ let growing = 0
    bottom — a switch is not a reason to scroll someone into the middle of a
    transcript. A wheel, touch or key hands control back. */
 let pin = true
+/* The template needs the same fact: a reader who left the bottom is offered a
+   way back. `setPin` is the only writer, so the two can never disagree. */
+const following = ref(true)
+
+function setPin(value) {
+  pin = value
+  following.value = value
+}
 
 function releasePin() {
-  pin = false
+  setPin(false)
 }
 
 let settleToken = 0
@@ -163,7 +171,7 @@ function resetWindow() {
   const focused = props.focusIndex >= 0
   firstShown.value = focused ? 0 : Math.max(0, total - INITIAL_ROWS)
   /* A link to one message owns the scroll position; nothing may snap away. */
-  pin = !focused
+  setPin(!focused)
   grow()
   if (pin) settleLater()
 }
@@ -203,11 +211,11 @@ function onScroll() {
   /* Clearly away from the end: stop following resizes (a growing composer
      should not pull a reader down). Small gaps are just rows settling. */
   const gap = el.scrollHeight - el.scrollTop - el.clientHeight
-  if (gap > 400) pin = false
-  else if (gap < 8) pin = true
+  if (gap > 400) setPin(false)
+  else if (gap < 8) setPin(true)
   if (firstShown.value <= 0 || el.scrollTop >= 800) return
   /* Reading backwards means the newest message no longer owns the viewport. */
-  pin = false
+  setPin(false)
   grow(true)
 }
 
@@ -237,15 +245,30 @@ watch(
   { immediate: true },
 )
 
-let pinned = false
+let scrolling = false
 
+/**
+ * Follow the newest row — but only while the reader is still following. A
+ * streamed chunk must never pull someone back down: that is the whole point of
+ * the follow flag, and these watchers fire many times a second during a turn.
+ */
 function toBottom() {
+  if (!pin) return
   /* Three watchers can fire in the same tick; one scroll is enough, and each
      one forces a layout of the whole transcript. */
-  if (pinned) return
-  pinned = true
+  if (scrolling) return
+  scrolling = true
   nextTick(() => {
-    pinned = false
+    scrolling = false
+    if (!pin) return
+    if (box.value) box.value.scrollTop = box.value.scrollHeight
+  })
+}
+
+/** One click puts the reader back on the live turn and follows it again. */
+function toNewest() {
+  setPin(true)
+  nextTick(() => {
     if (box.value) box.value.scrollTop = box.value.scrollHeight
   })
 }
@@ -319,7 +342,7 @@ async function scrollToAnchor(index, attempt = 0) {
 /** Mount down to a message and put it on screen; used by the header search. */
 async function jumpTo(index) {
   if (typeof index !== 'number' || index < 0) return
-  pin = false
+  setPin(false)
   revealThrough(index)
   await nextTick()
   await scrollToAnchor(index)
@@ -780,6 +803,22 @@ function traceSummary(message) {
         </button>
       </div>
     </div>
+
+    <Transition name="jump-live">
+      <button
+        v-if="!following && messages.length"
+        class="jump-live"
+        type="button"
+        title="Jump to the newest message"
+        @click="toNewest"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+          <path d="M8 2.6v10.8" />
+          <path d="M3.6 9.2L8 13.6l4.4-4.4" />
+        </svg>
+        <span>{{ live ? 'Newest activity' : 'Newest message' }}</span>
+      </button>
+    </Transition>
 
     <ThreadMinimap
       :messages="messages"

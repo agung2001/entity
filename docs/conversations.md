@@ -56,6 +56,10 @@ and spend sit beside the steps, from the same records the charts use.
   is never replaced by a later turn; the rail falls back to the first message only while
   the thread has no title of its own.
 - The right-edge outline draws one tick per message and opens a jump card.
+- The transcript follows a streaming turn only while you are at the bottom. Scroll
+  up mid-answer and it stays put — the text keeps arriving below — and a pill above
+  the composer (`↓ Newest activity`) puts you back on it in one click. Reaching the
+  bottom by hand resumes following too.
 
 ## The links and paths are a second view
 

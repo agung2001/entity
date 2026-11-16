@@ -172,6 +172,8 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Two surfaces open and both close on one `Esc` | One stack entry per surface, last opened is top | `useDialog.js` |
 | A new shortcut exists but is not in `?` | Add it to `SHORTCUT_GROUPS`; render the guide from the catalog | Review + guide |
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
+| Scrolling up during a turn snaps back to the newest chunk | A programmatic scroll to the bottom arms the follow flag; the live watchers are not exempt | `tests/e2e/full/13-scroll-follow.spec.js` |
+| The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `app.css` (`.jump-live`) |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
 | A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
 | An attachment is typed into the prompt instead of the chip row | Prompts stay prompts; file/MCP attachments live in chips below | Review |
@@ -273,6 +275,12 @@ loading state.
 - Keep first-step and first-text timings on the execution record
   (`ttfbMs`, `firstTextMs`) so a slow turn can be separated from a slow model.
 - A live turn owns the loading bubble; do not add a second `Waiting for…` row.
+- **Following the stream is a state, not a default.** A reader who scrolls up
+  mid-turn stays where they are; every scroll-to-newest — the watchers on live
+  text and tool steps included — arms the follow flag first. Detaching shows one
+  pill above the composer that puts them back on the live turn in a click, and
+  reaching the bottom resumes following by itself. A streamed chunk must never
+  move the viewport: that is the one case the flag exists for.
 - An `@entity` mention is a sub-run, not the outer thread. Show the delegated
   entity, its answer and its trace separately from the outer entity's reply; the
   outer entity must not appear to have run the child's tools.

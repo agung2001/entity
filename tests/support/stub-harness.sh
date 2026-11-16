@@ -5,6 +5,7 @@
 # profile by `seed-profile.mjs`. It understands a few prompt markers so the
 # suite can prove the app's plumbing without calling a model:
 #
+#   E2E-FLOOD       stream a long answer in 90 pieces (~27s) (scroll/follow testing)
 #   E2E-SLOW        emit one thinking step, then wait to be stopped
 #   E2E-SELF-EDIT   read this entity with the real CLI, then rewrite it
 #   E2E-ARTIFACT    write a file onto the workspace artifact shelf
@@ -89,6 +90,19 @@ case "$LAST" in
     printf '{"type":"assistant","message":{"model":"e2e-stub","content":[{"type":"text","text":"E2E-STREAM-TWO"}]}}\n'
     sleep 1
     printf '{"type":"result","subtype":"success","result":"E2E-STREAM-ONE E2E-STREAM-TWO"}\n'
+    exit 0
+    ;;
+  *E2E-FLOOD*)
+    # A long answer that arrives in pieces: enough height to scroll a transcript
+    # and enough time to leave it, which is what the follow-flag test needs.
+    printf '{"type":"system","subtype":"init","model":"e2e-stub"}\n'
+    i=0
+    while [ "$i" -lt 90 ]; do
+      i=$((i + 1))
+      printf '{"type":"assistant","message":{"model":"e2e-stub","content":[{"type":"text","text":"E2E-FLOOD-%s a paragraph of streamed answer text that is long enough to grow the transcript while the reader is somewhere else entirely.\\n\\n"}]}}\n' "$i"
+      sleep 0.3
+    done
+    printf '{"type":"result","subtype":"success","result":"E2E-FLOOD-DONE"}\n'
     exit 0
     ;;
   *E2E-SLOW*)
