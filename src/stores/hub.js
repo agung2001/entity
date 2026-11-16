@@ -885,8 +885,20 @@ function activate(thread) {
   }
 }
 
-function remember(thread) {
+/**
+ * Keep a thread's newest content in memory *without* claiming the screen.
+ *
+ * A turn settles whenever the harness finishes, which has nothing to do with
+ * where the reader is. Moving `active` here is what pulled people out of the
+ * conversation they were reading the moment somebody else's turn completed.
+ */
+function store(thread) {
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: thread }
+}
+
+/** Remember a thread this window just opened or created: content and screen. */
+function remember(thread) {
+  store(thread)
   hub.chat.active = thread.id
   hub.chat.last = {
     entity: thread.entity,
@@ -1070,14 +1082,19 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
     if ((turnTokens.get(thread.id) || 0) !== token) {
       return hub.chat.threads[thread.id] || updated
     }
-    remember(updated)
+    /* Content only: the rail row, the live fold and the notification already
+       say the turn landed. Stealing `active` would move the reader. */
+    store(updated)
     if (!patchChatSummary(updated)) await refreshChatList()
     return updated
   } catch (error) {
     hub.chat.error = error?.message || 'The message could not be sent.'
     toast(hub.chat.error)
     try {
-      await openThread(thread.id)
+      /* The failure row belongs to its own thread: read it in without moving
+         the reader there, or a failed turn becomes a jump scare. */
+      const failed = await call('chat.read', { workspace: hub.workspace, id: thread.id })
+      if (failed) store(failed)
       await refreshChatList()
     } catch {
       /* the list keeps the last readable state */

@@ -172,6 +172,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Two surfaces open and both close on one `Esc` | One stack entry per surface, last opened is top | `useDialog.js` |
 | A new shortcut exists but is not in `?` | Add it to `SHORTCUT_GROUPS`; render the guide from the catalog | Review + guide |
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
+| A finished turn switches the conversation you are reading | Store the result and update the rail row; `active` moves only from a click, a deep link, a new thread or a delete | `tests/e2e/full/14-turn-settles.spec.js` |
 | Scrolling up during a turn snaps back to the newest chunk | A programmatic scroll to the bottom arms the follow flag; the live watchers are not exempt | `tests/e2e/full/13-scroll-follow.spec.js` |
 | The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `app.css` (`.jump-live`) |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
@@ -276,6 +277,11 @@ loading state.
 - Keep first-step and first-text timings on the execution record
   (`ttfbMs`, `firstTextMs`) so a slow turn can be separated from a slow model.
 - A live turn owns the loading bubble; do not add a second `Waiting for…` row.
+- **A turn that settles never moves the reader.** Finishing is an event about a
+  thread, not about the person: store the new content, update the rail row and
+  let the notification policy speak — never assign the active thread from a
+  send, a retry or a failure handler. The chat route follows `hub.chat.active`,
+  so one stray assignment is a navigation the reader did not ask for.
 - **Following the stream is a state, not a default.** A reader who scrolls up
   mid-turn stays where they are; every scroll-to-newest — the watchers on live
   text and tool steps included — arms the follow flag first. Detaching shows one

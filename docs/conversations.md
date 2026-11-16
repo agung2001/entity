@@ -41,6 +41,9 @@ and spend sit beside the steps, from the same records the charts use.
   is stopped.
 - A failed turn carries **Retry** — it re-runs the same question without adding a
   second copy of it, and keeps the files it already saved.
+- A turn finishing somewhere else does not move you: the rail row turns from
+  *working* to *done* and the reply waits where it belongs. Nothing switches the
+  conversation you are reading — not a completion, not a retry, not a failure.
 - Every message has copy and share; share is a deep link (`?thread=…&msg=…`) that
   opens the thread and scrolls to the row.
 - The newest reply offers three **follow-ups** — short actions with a full prompt
