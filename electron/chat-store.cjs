@@ -675,10 +675,13 @@ function artifactSummary(item) {
   return {
     id: item.id,
     name: item.name,
+    ext: item.ext,
     kind: item.kind,
     mime: item.mime,
     size: item.size,
     modifiedAt: item.modifiedAt,
+    /* What the card may offer besides Download, decided by the extension. */
+    ...(Array.isArray(item.capabilities) ? { capabilities: item.capabilities } : {}),
   }
 }
 

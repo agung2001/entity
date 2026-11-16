@@ -159,6 +159,21 @@ export const SHORTCUT_GROUPS = [
       },
     ],
   },
+  {
+    id: 'artifact',
+    label: 'In an artifact preview',
+    items: [
+      {
+        id: 'annotate',
+        label: 'Annotate the preview',
+        desc: 'Pick an element in a rendered page and write a note about it; the notes go to the open conversation.',
+        /* Not an Option/Alt letter: on macOS that produces a dead-key character
+           (Option+Shift+C is Ç) and the tab owns several Alt+Shift letters. */
+        desktop: ['mod', 'shift', 'A'],
+        browser: ['alt', 'shift', 'A'],
+      },
+    ],
+  },
 ]
 
 const BY_ID = new Map(

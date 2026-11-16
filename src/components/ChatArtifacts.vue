@@ -1,8 +1,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useDialogDismiss } from '@/composables/useDialog'
-import { downloadArtifact, readArtifact } from '@/stores/artifacts'
-import { toast } from '@/stores/hub'
+import { downloadArtifact, openArtifact, readArtifact } from '@/stores/artifacts'
+import { hub, openArtifactPreview, toast } from '@/stores/hub'
 
 /**
  * Files a harness produced during one chat turn. The chat is a reading surface,
@@ -14,15 +13,37 @@ const props = defineProps({
   items: { type: Array, default: () => [] },
 })
 
-/* The template has two roots (the card and the zoom teleport), so Vue cannot
-   forward `class`/`data-*` automatically. Keep them for the card itself. */
-defineOptions({ inheritAttrs: false })
-
 const state = reactive({})
 const root = ref(null)
-const zoom = ref(null)
 const busy = ref('')
 let observer = null
+
+/**
+ * One action row, decided by the file. Reveal and the artifact page apply to
+ * everything; an editor only makes sense for text, a browser only for a page
+ * (`.html`, `.pdf`). The list comes from the server's own capability check, so
+ * the card never offers a verb the RPC would refuse.
+ */
+const caps = (item) => (Array.isArray(item.capabilities) ? item.capabilities : ['reveal'])
+const can = (item, how) => caps(item).includes(how)
+
+/* The artifact page a card links to, by id (ids carry slashes for subfolders). */
+const pageOf = (item) => ({
+  name: 'artifact',
+  params: { workspace: hub.workspace, id: item.id },
+})
+
+async function open(item, how) {
+  if (busy.value) return
+  busy.value = `${item.id}:${how}`
+  try {
+    await openArtifact(item.id, how)
+  } catch (error) {
+    toast(error?.message || 'That file could not be opened.')
+  } finally {
+    busy.value = ''
+  }
+}
 
 const extFor = (item) =>
   String(item.ext || item.name?.split('.').pop() || 'file')
@@ -82,20 +103,9 @@ function observe() {
   for (const target of targets) observer.observe(target)
 }
 
-function openZoom(item) {
-  zoom.value = item
-  load(item)
-}
-
-function closeZoom() {
-  zoom.value = null
-}
-
-useDialogDismiss({ active: () => Boolean(zoom.value), close: closeZoom })
-
 async function download(item) {
   if (busy.value) return
-  busy.value = item.id
+  busy.value = `${item.id}:download`
   try {
     const data = await downloadArtifact(item.id)
     if (!data?.dataUrl) throw new Error('That artifact has nothing to download.')
@@ -140,7 +150,8 @@ watch(
           type="button"
           :data-artifact-load="item.id"
           :aria-label="`Open ${item.name}`"
-          @click="openZoom(item)"
+          :title="`Open ${item.name}`"
+          @click="openArtifactPreview(item.id)"
         >
           <img
             v-if="state[item.id]?.dataUrl"
@@ -155,54 +166,113 @@ watch(
         <figcaption>
           <span class="msg-attach-name" :title="item.id">{{ item.name }}</span>
           <span class="msg-attach-meta">{{ sizeLabel(item.size) || 'image' }}</span>
-          <button
-            class="msg-attach-dl"
-            type="button"
-            :disabled="busy === item.id"
-            @click="download(item)"
-          >
-            Download
-          </button>
+          <div class="msg-attach-acts">
+            <button
+              class="msg-act"
+              type="button"
+              title="Open in Finder"
+              aria-label="Open in Finder"
+              :disabled="busy === `${item.id}:reveal`"
+              @click="open(item, 'reveal')"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+                <path d="M1.8 5.8v-2h4" />
+              </svg>
+            </button>
+            <router-link class="msg-act" :to="pageOf(item)" title="Go to artifact page" aria-label="Go to artifact page">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <path d="M4 1.8h5l3.4 3.4v9H4z" />
+                <path d="M9 1.8v3.6h3.4" />
+              </svg>
+            </router-link>
+            <button
+              class="msg-act"
+              type="button"
+              title="Download"
+              aria-label="Download"
+              :disabled="busy === `${item.id}:download`"
+              @click="download(item)"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
+              </svg>
+            </button>
+          </div>
         </figcaption>
       </template>
-      <div v-else class="msg-attach-file">
-        <span class="msg-attach-ext" :data-ext="item.ext">{{ extFor(item) }}</span>
-        <span class="msg-attach-copy">
-          <b :title="item.id">{{ item.name }}</b>
-          <span>{{ item.kind }}<template v-if="sizeLabel(item.size)"> · {{ sizeLabel(item.size) }}</template></span>
-        </span>
-        <button
-          class="msg-attach-dl"
-          type="button"
-          :disabled="busy === item.id"
-          @click="download(item)"
-        >
-          Download
-        </button>
-      </div>
+      <template v-else>
+        <div class="msg-attach-file">
+          <span class="msg-attach-ext" :data-ext="item.ext">{{ extFor(item) }}</span>
+          <!-- The card opens the artifact page over the conversation: preview,
+               editor, annotator and every action, in one place. -->
+          <button class="msg-attach-copy" type="button" :title="`Open ${item.name}`" @click="openArtifactPreview(item.id)">
+            <b :title="item.id">{{ item.name }}</b>
+            <span>{{ item.kind }}<template v-if="sizeLabel(item.size)"> · {{ sizeLabel(item.size) }}</template></span>
+          </button>
+        </div>
+        <div class="msg-attach-acts msg-attach-acts--row">
+          <button
+            class="msg-act"
+            type="button"
+            title="Open in Finder"
+            aria-label="Open in Finder"
+            :disabled="busy === `${item.id}:reveal`"
+            @click="open(item, 'reveal')"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+              <path d="M1.8 5.8v-2h4" />
+            </svg>
+          </button>
+          <router-link class="msg-act" :to="pageOf(item)" title="Go to artifact page" aria-label="Go to artifact page">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <path d="M4 1.8h5l3.4 3.4v9H4z" />
+              <path d="M9 1.8v3.6h3.4" />
+            </svg>
+          </router-link>
+          <button
+            v-if="can(item, 'editor')"
+            class="msg-act"
+            type="button"
+            title="Open in VS Code"
+            aria-label="Open in VS Code"
+            :disabled="busy === `${item.id}:editor`"
+            @click="open(item, 'editor')"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <path d="M5.6 4.4L2.6 8l3 3.6M10.4 4.4l3 3.6-3 3.6" />
+            </svg>
+          </button>
+          <button
+            v-if="can(item, 'browser')"
+            class="msg-act"
+            type="button"
+            title="Open in browser"
+            aria-label="Open in browser"
+            :disabled="busy === `${item.id}:browser`"
+            @click="open(item, 'browser')"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" />
+              <path d="M2 8h12M8 2c1.8 1.7 2.8 3.7 2.8 6S9.8 12.3 8 14c-1.8-1.7-2.8-3.7-2.8-6S6.2 3.7 8 2z" />
+            </svg>
+          </button>
+          <button
+            class="msg-act"
+            type="button"
+            title="Download"
+            aria-label="Download"
+            :disabled="busy === `${item.id}:download`"
+            @click="download(item)"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
+            </svg>
+          </button>
+        </div>
+      </template>
     </figure>
   </div>
 
-  <Teleport to="body">
-    <div
-      v-if="zoom"
-      class="msg-artifact-modal"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="zoom.name"
-      @click.self="closeZoom"
-    >
-      <button class="msg-artifact-modal-x" type="button" aria-label="Close preview" @click="closeZoom">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <path d="M3 3l10 10M13 3L3 13" />
-        </svg>
-      </button>
-      <img v-if="state[zoom.id]?.dataUrl" :src="state[zoom.id].dataUrl" :alt="zoom.name" />
-      <p v-else class="msg-artifact-modal-note">{{ state[zoom.id]?.error || 'Opening screenshot…' }}</p>
-      <div class="msg-artifact-modal-foot">
-        <span>{{ zoom.name }}</span>
-        <button class="msg-attach-dl" type="button" @click="download(zoom)">Download</button>
-      </div>
-    </div>
-  </Teleport>
 </template>

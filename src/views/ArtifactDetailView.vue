@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ArtifactHtmlPreview from '@/components/ArtifactHtmlPreview.vue'
 import CodeEditor from '@/components/CodeEditor.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { shortcutLabel, matchesShortcut } from '@/lib/shortcuts'
@@ -10,6 +11,7 @@ import {
   downloadArtifact,
   loadArtifacts,
   readArtifact,
+  openArtifact,
   removeArtifact,
   revealArtifact,
   writeArtifactText,
@@ -25,6 +27,17 @@ import {
  */
 const route = useRoute()
 const router = useRouter()
+
+/**
+ * The same page, twice: routed (`/ws/artifacts/…`) and as a dialog over the
+ * chat. `id` is the dialog's argument; `modal` only changes where "back" points
+ * and where the notes are sent.
+ */
+const props = defineProps({
+  id: { type: String, default: '' },
+  modal: { type: Boolean, default: false },
+})
+const emit = defineEmits(['close'])
 const preview = ref(null)
 const previewData = ref(null)
 const loading = ref(false)
@@ -52,19 +65,51 @@ const mediaKind = computed(() => {
   return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : ''
 })
 
-const id = computed(() => String(route.params.id || ''))
+const id = computed(() => String(props.id || route.params.id || ''))
 const item = computed(() => artifacts.items.find((entry) => entry.id === id.value) || null)
 const isMarkdown = computed(() => {
   const name = item.value?.name || previewData.value?.name || ''
   const mime = item.value?.mime || previewData.value?.mime || ''
   return /\.md$/i.test(name) || /markdown/i.test(mime)
 })
+/* An HTML artifact opens as the page it is, with a Source switch. Everything
+   else that is text goes straight to its editor. */
+const isHtml = computed(() => {
+  const name = item.value?.name || previewData.value?.name || ''
+  return /\.[xX]?[hH][tT][mM][lL]$/.test(name)
+})
+/* One mode per artifact: reopening a page should show the page. */
+const mode = ref('preview')
+/* Whether the rendered surface is the one on screen right now. */
+const htmlPreview = computed(
+  () => isHtml.value && mode.value === 'preview' && previewData.value?.kind === 'text',
+)
+watch(
+  () => item.value?.id,
+  () => {
+    mode.value = 'preview'
+  },
+)
+
 /* Every text artifact is editable: Markdown gets the prose editor, anything
    else gets CodeMirror. A truncated read stays read-only, because saving it
    would delete the half that was never loaded. */
 const canEditText = computed(
   () => previewData.value?.kind === 'text' && !previewData.value?.truncated,
 )
+
+/**
+ * A note written on the preview belongs in the chat, where the agent is. The
+ * message is a draft, not a send: the person reads it and presses send.
+ */
+function sendAnnotations(prompt) {
+  if (!prompt) return
+  hub.chat.draft = prompt
+  toast('Notes added to the chat draft')
+  /* Over the conversation already: the notes land in this thread's composer. */
+  if (props.modal) emit('close')
+  else router.push({ name: 'chat', params: { workspace: hub.workspace } })
+}
 const codeLanguage = computed(() => (/\.[Pp][Yy]$/.test(item.value?.name || '') ? 'python' : 'plain'))
 const dirty = computed(() => canEditText.value && draftText.value !== savedText.value)
 const saveShortcut = shortcutLabel('save')
@@ -155,7 +200,11 @@ function when(iso) {
 }
 
 function back() {
-  router.push({ name: 'overview', params: { workspace: route.params.workspace } })
+  if (props.modal) {
+    emit('close')
+    return
+  }
+  router.push({ name: 'overview', params: { workspace: hub.workspace } })
 }
 
 function sizeLabel(bytes) {
@@ -261,6 +310,12 @@ async function download() {
   }
 }
 
+/** What this file allows beyond Download and Reveal, decided by the server. */
+const capabilities = computed(() =>
+  Array.isArray(item.value?.capabilities) ? item.value.capabilities : ['reveal'],
+)
+const can = (how) => capabilities.value.includes(how)
+
 async function reveal() {
   const current = item.value
   if (!current || busy.value) return
@@ -269,6 +324,19 @@ async function reveal() {
     await revealArtifact(current.id)
   } catch (error) {
     toast(error?.message || 'The artifact could not be revealed.')
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function openWith(how) {
+  const current = item.value
+  if (!current || busy.value) return
+  busy.value = how
+  try {
+    await openArtifact(current.id, how)
+  } catch (error) {
+    toast(error?.message || 'That file could not be opened.')
   } finally {
     busy.value = ''
   }
@@ -289,7 +357,7 @@ async function remove() {
   try {
     await removeArtifact(current.id)
     toast(`${current.name} removed`)
-    router.push({ name: 'overview', params: { workspace: route.params.workspace } })
+    router.push({ name: 'overview', params: { workspace: hub.workspace } })
   } catch (error) {
     toast(error?.message || 'The artifact could not be removed.')
   } finally {
@@ -365,6 +433,24 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div class="artifact-actions">
+          <div v-if="isHtml" class="artifact-mode" role="group" aria-label="How to show this file">
+            <button
+              type="button"
+              :aria-pressed="mode === 'preview'"
+              :class="{ on: mode === 'preview' }"
+              @click="mode = 'preview'"
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              :aria-pressed="mode === 'source'"
+              :class="{ on: mode === 'source' }"
+              @click="mode = 'source'"
+            >
+              Source
+            </button>
+          </div>
           <button
             v-if="canEditText"
             class="btn btn-sm"
@@ -389,6 +475,33 @@ onBeforeUnmount(() => {
               <path d="M1.8 5.8v-2h4" />
             </svg>
             {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
+          </button>
+          <button
+            v-if="can('editor')"
+            class="btn btn-sm"
+            type="button"
+            :disabled="Boolean(busy)"
+            :title="`Open ${item.name} in VS Code`"
+            @click="openWith('editor')"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M5.6 4.4L2.6 8l3 3.6M10.4 4.4l3 3.6-3 3.6" />
+            </svg>
+            {{ busy === 'editor' ? 'Opening…' : 'VS Code' }}
+          </button>
+          <button
+            v-if="can('browser')"
+            class="btn btn-sm"
+            type="button"
+            :disabled="Boolean(busy)"
+            :title="`Open ${item.name} in your browser`"
+            @click="openWith('browser')"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" />
+              <path d="M2 8h12M8 2c1.8 1.7 2.8 3.7 2.8 6S9.8 12.3 8 14c-1.8-1.7-2.8-3.7-2.8-6S6.2 3.7 8 2z" />
+            </svg>
+            {{ busy === 'browser' ? 'Opening…' : 'Browser' }}
           </button>
           <button
             class="btn btn-sm ws-danger"
@@ -474,8 +587,16 @@ onBeforeUnmount(() => {
         </div>
 
         <section v-else class="artifact-doc">
+          <ArtifactHtmlPreview
+            v-if="htmlPreview"
+            :key="`preview:${item.id}:${previewData.text?.length || 0}`"
+            :html="previewData.text || ''"
+            :id="item.id"
+            :name="item.name"
+            @send="sendAnnotations"
+          />
           <MarkdownEditor
-            v-if="canEditText && isMarkdown"
+            v-else-if="canEditText && isMarkdown"
             :key="item.id"
             v-model="draftText"
             :rows="26"

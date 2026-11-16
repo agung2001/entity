@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ArtifactDialog from '@/components/ArtifactDialog.vue'
 import ChatHarnessDialog from '@/components/ChatHarnessDialog.vue'
 import ChatMcpDialog from '@/components/ChatMcpDialog.vue'
 import CloneConsentCard from '@/components/CloneConsentCard.vue'
@@ -76,6 +77,49 @@ const pendingClone = ref(null)
 const cloneBusy = ref(false)
 let pendingCloneToken = 0
 const composer = ref(null)
+/* A draft handed over by another page (annotations on an artifact preview).
+   It waits here until the composer is on screen, then it is restored once. */
+const pendingDraft = ref('')
+
+function applyPendingDraft() {
+  if (!pendingDraft.value || !composer.value) return
+  composer.value.restore(pendingDraft.value)
+  pendingDraft.value = ''
+}
+
+function consumeDraft() {
+  const text = String(hub.chat.draft || '')
+  if (!text) return
+  hub.chat.draft = ''
+  /* Notes written on an artifact are only useful in a composer. With no thread
+     open there is none, so the words go to the clipboard rather than nowhere. */
+  if (!thread.value) {
+    navigator.clipboard?.writeText(text).catch(() => {})
+    toast('No thread is open — the notes are on your clipboard')
+    return
+  }
+  pendingDraft.value = text
+  applyPendingDraft()
+}
+
+watch(composer, applyPendingDraft)
+
+/* A draft can also arrive while the chat is already open — annotations sent
+   from the artifact dialog over it. */
+watch(
+  () => hub.chat.draft,
+  (text) => {
+    if (!text) return
+    hub.chat.draft = ''
+    if (!thread.value) {
+      navigator.clipboard?.writeText(text).catch(() => {})
+      toast('No thread is open — the notes are on your clipboard')
+      return
+    }
+    pendingDraft.value = text
+    applyPendingDraft()
+  },
+)
 const dragDepth = ref(0)
 const focusMessage = ref(-1)
 const titleEditing = ref(false)
@@ -840,6 +884,7 @@ onMounted(async () => {
   loadRemote().catch(() => {})
   const wanted = typeof route.query.thread === 'string' ? route.query.thread : ''
   await openInitialThread(wanted)
+  consumeDraft()
   /* A remembered thread that was already active never fired the watcher, so
      /chat could stay in the address bar without ?thread. */
   syncThreadUrl()
@@ -1508,5 +1553,8 @@ watch(
       :live="live"
       @close="timelineOpen = false"
     />
+    <!-- A screenshot or a page opened from the turn: the artifact page itself,
+         over the conversation, so a note can go straight into the composer. -->
+    <ArtifactDialog />
   </div>
 </template>

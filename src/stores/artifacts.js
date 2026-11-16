@@ -141,3 +141,12 @@ export async function writeArtifactText(id, text) {
 export async function revealArtifact(id) {
   return call('artifact.reveal', { workspace: hub.workspace, id })
 }
+
+/**
+ * Open an artifact with the verb its extension allows (`editor`, `browser`).
+ * The server re-checks the verb against the file's own capabilities, so a dead
+ * button here is a message, never a shell.
+ */
+export async function openArtifact(id, how) {
+  return call('artifact.open', { workspace: hub.workspace, id, how })
+}

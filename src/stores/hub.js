@@ -315,11 +315,19 @@ export const hub = reactive({
   /* --- consoles ------------------------------------------------------ */
   /* Chat threads are files in the workspace. `summaries` is the history list;
      `threads` holds the full transcript of anything opened in this session. */
+  /* The artifact page as a dialog over the conversation: `open` is the id of
+     the file being previewed, empty when nothing is open. */
+  artifact: {
+    open: '',
+  },
   chat: {
     loading: false,
     loaded: false,
     error: '',
     workspace: '',
+    /* A message another page prepared (artifact annotations) and the chat
+       consumes once the composer exists. Empty means nothing is waiting. */
+    draft: '',
     summaries: [],
     threads: {},
     active: '',
@@ -477,6 +485,15 @@ export function ago(iso) {
 
 /* ── toast ────────────────────────────────────────────────────────── */
 let toastTimer = 0
+/** Open the artifact page as a dialog over the chat (image, page, document). */
+export function openArtifactPreview(id) {
+  hub.artifact.open = String(id || '')
+}
+
+export function closeArtifactPreview() {
+  hub.artifact.open = ''
+}
+
 export function toast(message) {
   hub.toast.message = message
   hub.toast.open = true

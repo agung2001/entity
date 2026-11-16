@@ -147,6 +147,20 @@ function uniqueName(dir, name) {
   return candidate
 }
 
+/* What a person can *do* with a file besides downloading it. One list, on the
+   server, because the same rules decide what the chat card offers and what
+   `artifact.open` is allowed to launch. */
+const BROWSER_EXT = new Set(['.html', '.htm', '.pdf'])
+
+function capabilitiesFor(name) {
+  const ext = path.extname(String(name || '')).toLowerCase()
+  const kind = kindFor(name)
+  const out = ['reveal']
+  if (kind === 'text') out.push('editor')
+  if (BROWSER_EXT.has(ext)) out.push('browser')
+  return out
+}
+
 function metadata(record, rel, stat) {
   const name = path.basename(rel)
   const ext = path.extname(name).toLowerCase()
@@ -159,6 +173,8 @@ function metadata(record, rel, stat) {
     kind: kindFor(name),
     size: stat.size,
     modifiedAt: stat.mtime.toISOString(),
+    /* Reveal applies to every file; editor/browser depend on the extension. */
+    capabilities: capabilitiesFor(name),
   }
 }
 
@@ -352,9 +368,16 @@ function remove({ workspace, id } = {}) {
 
 function locate({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
+  const rel = safeRelative(id)
   const file = absolute(record, id)
-  if (!fs.existsSync(file)) throw new Error('That artifact no longer exists.')
-  return { file, root: artifactsDir(record) }
+  let stat
+  try {
+    stat = fs.statSync(file)
+  } catch {
+    throw new Error('That artifact no longer exists.')
+  }
+  if (!stat.isFile()) throw new Error('That artifact is not a file.')
+  return { file, root: artifactsDir(record), meta: metadata(record, rel, stat) }
 }
 
 function rootPath({ workspace } = {}) {
@@ -393,4 +416,5 @@ module.exports = {
   brief,
   mimeFor,
   kindFor,
+  capabilitiesFor,
 }

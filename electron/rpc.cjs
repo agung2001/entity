@@ -173,6 +173,46 @@ function createRpc({
       reveal(found.file)
       return found
     },
+    /**
+     * Open an artifact the way its extension allows: the file manager, VS Code,
+     * or whatever the OS opens `.html` / `.pdf` with. The renderer names an id
+     * and a verb, never a path or a command, and the verb is checked against
+     * the server's own capability list rather than trusted.
+     */
+    'artifact.open': async ({ workspace, id, how = 'reveal' } = {}) => {
+      const found = artifacts.locate({ workspace, id })
+      const allowed = found.meta.capabilities || []
+      if (!allowed.includes(how)) {
+        throw new Error(
+          how === 'editor'
+            ? 'This file is not text, so there is nothing to open in an editor.'
+            : how === 'browser'
+              ? 'That file has no rendered page to open in a browser.'
+              : `This build cannot open an artifact that way (${how}).`,
+        )
+      }
+      if (how === 'reveal') {
+        if (typeof reveal !== 'function') {
+          throw new Error('Revealing files is not available in this build.')
+        }
+        reveal(found.file)
+        return { ...found.meta, how }
+      }
+      if (how === 'editor') {
+        if (typeof openInEditor !== 'function') {
+          throw new Error('Opening an editor is not available in this build.')
+        }
+        await openInEditor(found.file)
+        return { ...found.meta, how }
+      }
+      /* A browser-open goes through the OS handler, so a multi-file HTML
+         artifact keeps resolving its sibling files and assets. */
+      if (typeof openPath !== 'function') {
+        throw new Error('Opening files is not available in this build.')
+      }
+      await openPath(found.file)
+      return { ...found.meta, how }
+    },
 
     /* workspace backups: snapshots, retention and restore-as-a-copy */
     'backup.status': () => backups.status(),
