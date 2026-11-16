@@ -21,9 +21,9 @@ const queries = computed(() =>
 const replies = computed(() =>
   summaries.value.reduce((sum, thread) => sum + (thread.replies || 0), 0),
 )
-const skillsDeclared = computed(() =>
-  hub.agents.reduce((sum, agent) => sum + (agent.skills?.length || 0), 0),
-)
+/* One workspace list: every entity can use all of these, so a per-entity
+   count would print the same number once per entity. */
+const skillsAvailable = computed(() => hub.skills.length)
 onMounted(() => {
   if (!fleet.loaded) loadFleet()
 })
@@ -74,9 +74,7 @@ function focusAttention() {
 
   <p class="ovd-stat-foot">
     <span>
-      <b>{{ hub.skills.length }}</b> skills
-      <span aria-hidden="true">·</span>
-      <b>{{ skillsDeclared }}</b> declarations
+      <b>{{ skillsAvailable }}</b> skills
       <span aria-hidden="true">·</span>
       last activity <b>{{ lastActivity }}</b>
     </span>

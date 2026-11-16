@@ -35,8 +35,6 @@ export function toAgent(entity) {
     dir,
     status: 'sleep',
     desc: entity.summary || 'No description in the file yet.',
-    skills: entity.skills,
-    mcp: entity.mcp,
     /* the seed's first shape/colour/mood, before the picker writes its own */
     mark: entity.mark || null,
     /* step 1 runs on this machine only; a remote placement is a later step */

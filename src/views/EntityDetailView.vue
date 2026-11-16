@@ -262,7 +262,9 @@ async function copyPath() {
                 <span class="state" :data-s="statusState"><i></i>{{ agent.status }}</span>
                 <span class="entp-chip" data-kind="harness"><HarnessIcon :name="agent.harness" :size="10" />{{ agent.harnessLabel }}</span>
                 <span class="entp-chip">{{ agent.model || 'harness default' }}</span>
-                <span class="entp-chip">{{ agent.skills.length }} {{ agent.skills.length === 1 ? 'skill' : 'skills' }}</span>
+                <span class="entp-chip">
+                  all {{ hub.skills.length }} {{ hub.skills.length === 1 ? 'workspace skill' : 'workspace skills' }}
+                </span>
               </div>
             </div>
           </header>

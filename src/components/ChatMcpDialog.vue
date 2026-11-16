@@ -266,7 +266,7 @@ watch(
           </div>
           <div v-else class="empty-note ctxdlg-empty">
             <b>No MCP servers in this workspace.</b>
-            <span>Add one in Workspace → MCP, then an entity can opt in with <code class="mono">mcp: name</code>.</span>
+            <span>Add one in Workspace → MCP and every entity in the workspace gets it.</span>
           </div>
         </template>
       </div>

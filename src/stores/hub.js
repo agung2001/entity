@@ -434,10 +434,6 @@ export const harnessById = (id) =>
   { id: String(id || ''), label: String(id || 'no harness') }
 export const skillByName = (name) => hub.skills.find((s) => s.name === name) || null
 
-export const skillOwners = (name) => hub.agents.filter((a) => a.skills.includes(name))
-export const skillMachineIds = (name) => [
-  ...new Set(skillOwners(name).flatMap((a) => a.machines)),
-]
 
 /** A workspace skill is in place exactly once: on the machine you are using. */
 export function skillCoverage(name) {
@@ -570,10 +566,12 @@ const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
  *   /<harness>:<name>   a skill in that harness's own library
  *   /<name>             any of them, when exactly one library has that name
  *
- * The entity's own `skills:` come first, then the rest of the workspace, then
- * the harness libraries — and a skill attached to the workspace is not offered
- * twice when it is the same file as a harness one (deduped on the resolved
- * path, not the name: a copied skill is a different file and stays visible).
+ * Workspace skills come first, then the harness libraries — and a skill
+ * attached to the workspace is not offered twice when it is the same file as a
+ * harness one (deduped on the resolved path, not the name: a copied skill is a
+ * different file and stays visible). Every entity sees the same list: nothing
+ * here is ordered by what one entity "carries", because no entity carries a
+ * skill of its own.
  *
  * `machine` is the thread's machine. Only this machine's libraries can be read,
  * so a thread pinned anywhere else gets an empty menu and the composer's own
@@ -605,7 +603,6 @@ export function slashMenu(
       .slice(0, 500)
   }
 
-  const own = new Set((agent?.skills || []).map((name) => name.toLowerCase()))
   const attachedItems = hub.skills.filter(
     (skill) => !skill.missing && SKILL_REF_NAME.test(skill.name),
   )
@@ -628,16 +625,10 @@ export function slashMenu(
     })
   }
 
-  const workspaceNames = [
-    ...attached.filter((name) => own.has(name.toLowerCase())),
-    ...attached.filter((name) => !own.has(name.toLowerCase())),
-  ]
-  for (const name of workspaceNames) {
+  for (const name of attached) {
     items.push({
       name: `${prefix}workspace:${name}`,
-      desc: own.has(name.toLowerCase())
-        ? 'Skill this entity carries'
-        : 'Skill attached to this workspace',
+      desc: 'Skill attached to this workspace',
       kind: 'skill',
     })
   }

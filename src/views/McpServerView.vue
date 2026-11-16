@@ -40,7 +40,6 @@ const definition = computed(() => poolDefinition.value || globalRow.value?.defin
 const transport = computed(() => (definition.value ? transportOf(definition.value) : 'unknown'))
 const command = computed(() => (definition.value ? commandLine(definition.value) : ''))
 const envKeys = computed(() => envNames(definition.value))
-const namedBy = computed(() => hub.agents.filter((agent) => (agent.mcp || []).includes(name.value)))
 
 const tools = ref({ loading: false, error: '', list: [] })
 const editing = ref(false)
@@ -249,7 +248,7 @@ watch(name, async () => {
             <span class="entp-chip">{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</span>
             <span class="entp-chip">{{ tools.list.length }} tools</span>
             <span class="entp-chip">
-              {{ namedBy.length ? `${namedBy.length} entities narrow to it` : 'every entity' }}
+              {{ hub.agents.length }} {{ hub.agents.length === 1 ? 'entity' : 'entities' }}
             </span>
           </div>
           <p v-if="parkedReason" class="mcpp-note">
@@ -330,19 +329,19 @@ watch(name, async () => {
           <section class="entp-sec">
             <div class="entp-sec-head">
               <h2>Entities</h2>
-              <span class="n">{{ namedBy.length ? `${namedBy.length} narrow to it` : 'the whole workspace' }}</span>
+              <span class="n">the whole workspace</span>
             </div>
             <div class="entp-mcp-env">
               <router-link
-                v-for="agent in namedBy"
+                v-for="agent in hub.agents"
                 :key="agent.name"
                 class="entp-skchip"
                 :to="{ name: 'entity', params: { workspace: route.params.workspace, name: agent.name } }"
               >
                 <i></i>{{ agent.name }}
               </router-link>
-              <span v-if="!namedBy.length" class="entp-skchip">
-                <i></i>no entity narrows itself — every entity gets this server
+              <span v-if="!hub.agents.length" class="entp-skchip">
+                <i></i>no entities in this workspace yet
               </span>
             </div>
           </section>

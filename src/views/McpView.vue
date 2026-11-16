@@ -57,7 +57,6 @@ const disabledCount = computed(() => pool.value.length - enabledCount.value)
 const unavailableCount = computed(() => pool.value.filter((entry) => entry.reason).length)
 const totalGlobals = computed(() => globals.groups.reduce((total, group) => total + (group.servers?.length || 0), 0))
 
-const usedBy = (name) => hub.agents.filter((agent) => agent.mcp.includes(name)).map((agent) => agent.name)
 const inPool = (name) => Boolean(workspaces.mcp?.servers?.[name])
 
 function sourcesFor(name) {
@@ -68,7 +67,7 @@ function sourcesFor(name) {
 
 function poolMatches(entry) {
   return matchesQuery(
-    `${entry.name} ${commandLine(entry.definition)} ${envNames(entry.definition).join(' ')} ${usedBy(entry.name).join(' ')} ${sourcesFor(entry.name).join(' ')}`,
+    `${entry.name} ${commandLine(entry.definition)} ${envNames(entry.definition).join(' ')} ${sourcesFor(entry.name).join(' ')}`,
     search.value,
   )
 }
@@ -99,7 +98,6 @@ const workspaceRows = computed(() =>
       transport: transportOf(entry.definition),
       command: commandLine(entry.definition),
       env: envNames(entry.definition),
-      used: usedBy(entry.name),
       sources: sourcesFor(entry.name),
     }))
     .filter(poolMatches)
@@ -283,7 +281,7 @@ onMounted(() => {
         <h1>MCP</h1>
         <p class="lede">
           Every server the workspace carries, and every server the harnesses already know.
-          Every entity gets these servers; an entity can narrow it with <code class="mono">mcp: name</code>.
+          Every entity in this workspace gets all of them — no server is exclusive to one agent.
         </p>
       </div>
       <div class="head-actions">
@@ -303,7 +301,7 @@ onMounted(() => {
         <h2>MCP inventory</h2>
         <p class="lede">
           The servers attached to this workspace and the harness configs on this machine, one table.
-          Every entity gets them; an entity can narrow it with <code class="mono">mcp: name</code>.
+          Every entity gets all of them — no server is exclusive to one agent.
         </p>
       </div>
       <div class="mcp-inv-actions">
@@ -424,8 +422,7 @@ onMounted(() => {
           <span class="mono mcp-inv-command">{{ row.command }}</span>
           <span class="mono mcp-inv-env">{{ row.env.length ? row.env.join(', ') : '—' }}</span>
           <span v-if="scope === 'workspace'" class="mcp-inv-used">
-            <span v-if="row.used.length" v-for="entity in row.used" :key="entity" class="mcp-inv-u">{{ entity }}</span>
-            <span v-else class="mcp-inv-none">every entity</span>
+            <span class="mcp-inv-none">every entity</span>
           </span>
           <span v-else class="mono mcp-inv-file">{{ row.file || '—' }}</span>
           <span v-if="scope === 'workspace'" class="mcp-inv-src">
@@ -465,7 +462,6 @@ onMounted(() => {
       <span>
         <b>{{ enabledCount }}</b> active<template v-if="disabledCount"> · <b>{{ disabledCount }}</b> parked</template>
         <template v-if="unavailableCount"> · <b>{{ unavailableCount }}</b> bound to another machine</template>
-        · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> narrow it
         · <b>{{ totalGlobals }}</b> on this machine
       </span>
       <span class="r">Harness configs stay read-only · strict {{ workspaces.mcp?.strict ? 'on' : 'off' }}</span>

@@ -214,7 +214,7 @@ function openEntities() {
             </template>
             <span v-else class="ovd-nowhere">nowhere</span>
           </span>
-          <span class="sk">{{ agent.skills.length }} skills</span>
+          <span class="sk">{{ hub.skills.length }} skills</span>
           <span class="l">{{ lastChat(agent.name) }}</span>
           <EntityActions :entity="agent" />
         </div>

@@ -158,7 +158,7 @@ const entityItems = computed(() =>
   hub.agents.map((agent) => ({
     id: `entity:${agent.id}`,
     label: agent.name,
-    meta: `${agent.harnessLabel} · ${agent.skills.length} skills`,
+    meta: `${agent.harnessLabel} · ${hub.skills.length} skills available`,
     act: () => router.push({ name: 'entity', params: { workspace: hub.workspace, name: agent.name } }),
   })),
 )

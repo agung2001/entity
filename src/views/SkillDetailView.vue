@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { readSkillEntry } from '@/composables/localBridge'
-import { hub, skillOwners, toast } from '@/stores/hub'
+import { hub, toast } from '@/stores/hub'
 import {
   attachSkill,
   detachSkill,
@@ -56,7 +56,6 @@ let token = 0
 
 const files = computed(() => entry.value?.files || [])
 const currentFile = computed(() => files.value[fileIndex.value] || null)
-const usedBy = computed(() => skillOwners(name.value))
 const version = computed(() => item.value?.version || '')
 /* the composer's `/` menu uses the same grammar; a name with a space is not a
    callable reference, so the page does not advertise one */
@@ -260,11 +259,13 @@ async function attach() {
               <p v-else-if="error" class="tnote"><span>{{ error }}</span></p>
             </div>
 
+            <!-- A skill belongs to the workspace, so the answer is the same for
+                 every entity: there is no list to keep in sync. -->
             <div class="blk">
-              <h2>Used by <span class="k">— {{ usedBy.length }} entities</span></h2>
-              <div v-if="usedBy.length" class="ents">
+              <h2>Available to <span class="k">— every entity in this workspace</span></h2>
+              <div v-if="hub.agents.length" class="ents">
                 <button
-                  v-for="a in usedBy"
+                  v-for="a in hub.agents"
                   :key="a.id"
                   class="ent"
                   type="button"
@@ -279,7 +280,7 @@ async function attach() {
                 </button>
               </div>
               <p v-else class="tnote">
-                <span>No entity names this skill in its <code class="mono">skills:</code> line yet.</span>
+                <span>No entities in this workspace yet.</span>
               </p>
             </div>
           </div>
