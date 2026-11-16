@@ -380,7 +380,7 @@ export function applyLibrary(items = []) {
     harness: String(item?.harness || ''),
     harnessLabel: String(item?.harnessLabel || item?.harness || ''),
     /* the resolved target and the entry path, so the composer can tell that a
-       workspace symlink and a harness skill are the same file */
+       a legacy workspace symlink and a harness skill are the same file */
     absolutePath: String(item?.absolutePath || ''),
     realPath: String(item?.realPath || item?.absolutePath || ''),
   }))
@@ -943,6 +943,28 @@ export async function pinThread(id, pinned) {
   }
   await refreshChatList()
   return updated
+}
+
+/** Tags are thread metadata, editable at any time like the title and the pin. */
+export async function setThreadTags(id, tags) {
+  const updated = await call('chat.tags', { workspace: hub.workspace, id, tags })
+  if (hub.chat.threads[id]) {
+    hub.chat.threads = { ...hub.chat.threads, [id]: updated }
+  }
+  await refreshChatList()
+  return updated
+}
+
+/** Every tag in the workspace, for suggestions and the rail filter. */
+export const liveTags = () => {
+  const seen = new Map()
+  for (const thread of liveSummaries()) {
+    for (const tag of thread.tags || []) {
+      const key = String(tag).toLowerCase()
+      if (!seen.has(key)) seen.set(key, tag)
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b))
 }
 
 export async function removeThread(id) {

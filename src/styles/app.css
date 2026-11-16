@@ -1583,6 +1583,16 @@ kbd {
   line-height: 1;
   color: var(--ink-2);
 }
+.slash-hint-sep {
+  opacity: 0.55;
+}
+/* the second half of the hint is a hint too: it names the terminal shortcut
+   without turning the composer row into a legend */
+.slash-hint-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .go {
   display: grid;
   place-items: center;
@@ -2454,7 +2464,7 @@ kbd {
 /* ── cards grid (skills / machines views) ─────────────────────── */
 .grid3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 .grid2 {
@@ -2469,6 +2479,7 @@ kbd {
   padding: 14px;
   text-align: left;
   display: block;
+  min-width: 0;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .card2:hover {
@@ -2519,6 +2530,11 @@ kbd {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* A skill description can contain a long unbroken token (a path list, a
+     base64 blob). Without this, the min-content width of one card widens every
+     grid track and the whole page scrolls sideways. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .card2 .p {
   font-family: var(--mono);
@@ -3316,8 +3332,9 @@ kbd {
      screen feel like a column and truncated the thread title for no gain. */
   --pad: clamp(20px, 2.4vw, 40px);
   /* one number for the floating header, read by the bar and by the transcript.
-     Two lines of a long title plus the metadata need the extra room. */
-  --cp-head-h: 76px;
+     The bar is the height of the app top bar; it only grows when a long title
+     wraps to a second line. */
+  --cp-head-h: 56px;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -3331,11 +3348,11 @@ kbd {
    this reads as glass is to let the conversation scroll beneath it.
 
    Three zones, each anchored in its own region — identity on the left, the
-   counters in the middle, the two actions on the right — instead of one row
-   with two clumps pressed against the edges and a hole down the centre. The
-   middle track is the only one that flexes, so the counters stay near the
-   middle however long the title gets, and the actions keep the width their
-   labels need rather than overflowing a third. */
+   thread search and its totals in the middle, the two actions on the right —
+   instead of one row with two clumps pressed against the edges and a hole down
+   the centre. The middle track is the only one that flexes, so the search
+   stays near the middle however long the title gets, and the actions keep the
+   width their labels need rather than overflowing a third. */
 .cp-head {
   position: absolute;
   top: 0;
@@ -3343,14 +3360,15 @@ kbd {
   right: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 310px) auto;
   align-items: center;
   gap: 12px;
-  /* A two-line title must not be clipped; the measured height feeds
-     --cp-head-h so the transcript starts below whatever the bar became. */
+  /* A 56px bar, the same height as the app top bar. A two-line title is the
+     only reason it grows; the measured height feeds --cp-head-h so the
+     transcript starts below whatever the bar became. */
   height: auto;
-  min-height: 58px;
-  padding: 8px var(--pad);
+  min-height: 56px;
+  padding: 6px var(--pad);
   border-bottom: 1px solid var(--border);
   /* a size container, so the pieces below answer to the column they are in and
      not to the window: the rail eats 300px and is not part of this bar */
@@ -3385,6 +3403,18 @@ kbd {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+/* The pencil is a flex sibling of the text. A block heading put it on a second
+   line and left an empty gap under every one-line title. */
+.cp-head h2.cp-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cp-title-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .cp-head p {
   display: flex;
   align-items: center;
@@ -3403,12 +3433,175 @@ kbd {
   flex: none;
   opacity: 0.65;
 }
+
+/* The middle zone: find the line in the thread, and the two totals. It is one
+   compact row so the bar keeps the app top bar's 56px height. */
+.cp-mid {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  justify-self: end;
+}
+.cp-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--bg) 72%, transparent);
+  color: var(--muted);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.cp-search:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.cp-search > svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.cp-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 11.5px;
+}
+.cp-search input::placeholder {
+  color: var(--muted);
+}
+.cp-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.cp-search-count {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.cp-search-steps {
+  display: inline-flex;
+  flex: none;
+  gap: 1px;
+}
+.cp-search-steps button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cp-search-steps button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.cp-search-steps svg {
+  width: 10px;
+  height: 10px;
+}
+/* The two totals close the composer's context row, immediately before voice
+   and help. They describe the conversation, so they live with the controls that
+   end it, not in the header or over the transcript. */
+.cp-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cp-stats b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.cp-stats i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+/* A tag is a label, not a chip row: the bar may not grow because a thread has
+   six of them. The list clips at the meta line and the dialog owns editing. */
+.cp-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.cp-tags > svg {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  opacity: 0.8;
+}
+.cp-tags:hover {
+  color: var(--ink);
+}
+.cp-tag {
+  flex: none;
+  max-width: 96px;
+  padding: 1px 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--accent) 44%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent-soft) 55%, transparent);
+  color: var(--accent-ink);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-tag--empty {
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+}
+.cp-tags:hover .cp-tag--empty {
+  color: var(--ink);
+}
 /* The bar is 880px at its widest and the two action buttons alone are most of
    that. Rather than let them overflow the right edge, the bar gives up detail
    in the order it can spare it: shortcut chips first, then the counters, then
    the button labels — the tooltips and the shortcuts dialog still name both. */
 @container cphead (max-width: 840px) {
   .cp-head .trace-kbd {
+    display: none;
+  }
+  /* the meta line has no room for chips beside the date: the tag button keeps
+     its icon, and the tooltip still names the tags */
+  .cp-tags .cp-tag {
+    display: none;
+  }
+}
+@container cphead (max-width: 760px) {
+  .cp-mid {
     display: none;
   }
 }
@@ -3445,6 +3638,17 @@ kbd {
   font-size: 12.7px;
   line-height: 1.6;
   padding: 9px 11px;
+}
+/* Header search paints the matching rows instead of rewriting their Markdown. */
+.c-thread .msg[data-search-hit='1'],
+.c-thread .ask-sys[data-search-hit='1'] {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 42%, transparent);
+}
+.c-thread .msg[data-search-active='1'],
+.c-thread .ask-sys[data-search-active='1'] {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 6px color-mix(in oklab, var(--accent) 20%, transparent);
 }
 /* the account bubble carries the signed-in gravatar; the reply carries the
    entity mark, animation and mood sticker */
@@ -4186,14 +4390,92 @@ kbd {
   gap: 8px;
   margin-bottom: 10px;
 }
+/* A member is a person, not a row of fields: the Gravatar leads, the owner row
+   is marked, and the role select carries its own description in the tooltip. */
 .member-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) 118px 78px;
+  grid-template-columns: 34px minmax(0, 1.05fr) minmax(0, 1.35fr) 112px 30px;
   gap: 8px;
   align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  transition: border-color 0.14s ease;
+}
+.member-row:hover {
+  border-color: var(--border-strong);
+}
+.member-row[data-owner='1'] {
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border));
 }
 .member-row .acct-input {
   min-width: 0;
+  background: var(--bg);
+}
+.member-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  user-select: none;
+}
+.member-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.member-row[data-owner='1'] .member-avatar {
+  border-color: color-mix(in oklab, var(--accent) 62%, var(--border-strong));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.member-role {
+  padding-right: 4px;
+  font-family: var(--font);
+  font-size: 12px;
+}
+.member-remove {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+.member-remove:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--danger) 30%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.member-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.member-remove svg {
+  width: 12px;
+  height: 12px;
+}
+.member-note {
+  margin-top: 8px;
+  line-height: 1.55;
+}
+.member-note b {
+  font-weight: 500;
+  color: var(--ink-2);
 }
 .mcp-group {
   margin-bottom: 26px;
@@ -4556,6 +4838,12 @@ select:focus-visible {
   letter-spacing: 0.03em;
   color: var(--muted);
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+}
+.lib-meta.mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .hint-n {
   opacity: 0.65;
@@ -4600,11 +4888,28 @@ select:focus-visible {
     grid-template-columns: 1fr 1fr;
   }
   .member-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 34px minmax(0, 1fr) 104px 30px;
+    grid-template-areas:
+      'avatar name name remove'
+      'avatar email role remove';
+    row-gap: 6px;
   }
-  .member-row .btn {
-    grid-column: 1 / -1;
-    justify-self: start;
+  .member-avatar {
+    grid-area: avatar;
+    align-self: start;
+  }
+  .member-name {
+    grid-area: name;
+  }
+  .member-email {
+    grid-area: email;
+  }
+  .member-role {
+    grid-area: role;
+  }
+  .member-remove {
+    grid-area: remove;
+    align-self: start;
   }
   .grid3 {
     grid-template-columns: 1fr 1fr;
@@ -6718,12 +7023,10 @@ label.pick:has(input:focus-visible) {
   height: 10px;
 }
 .model-menu {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 70;
-  max-height: 280px;
+  /* teleported to the body: a picker inside a scrolling dialog must not be
+     clipped by the dialog edge. Inline geometry is measured from the field. */
+  position: fixed;
+  z-index: 200;
   overflow: auto;
   padding: 6px;
   background: var(--bg);
@@ -10367,6 +10670,92 @@ label.pick:has(input:focus-visible) {
 .ctxdlg-body {
   padding-top: 14px;
 }
+
+/* ── thread tags ───────────────────────────────────────────────────────── */
+.tagdlg-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.tagdlg-input:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.tagdlg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -4px 0 12px;
+}
+.tagdlg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 2px 4px 2px 7px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--accent) 44%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent-soft) 55%, transparent);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagdlg-chip-x {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.tagdlg-chip-x:hover {
+  background: color-mix(in oklab, var(--accent-ink) 14%, transparent);
+  opacity: 1;
+}
+.tagdlg-chip-x svg {
+  width: 8px;
+  height: 8px;
+}
+.tagdlg-chip--button {
+  cursor: pointer;
+  font-family: var(--mono);
+}
+.tagdlg-chip--button:hover {
+  border-color: var(--accent-ink);
+}
+.tagdlg-suggest {
+  margin-bottom: 12px;
+}
+.tagdlg-suggest-label {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tagdlg-suggest > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .ctxdlg-facts {
   margin: 0;
   display: flex;
@@ -13104,7 +13493,168 @@ label.pick:has(input:focus-visible) {
 
 /* ── artifact detail page ──────────────────────────────────────────────── */
 .artifact-detail {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* the same horizontal inset as `.topbar`, so the bar and the page agree with
+     the breadcrumb above them */
+  --pad: 28px;
+}
+.artifact-state {
+  margin: 34px 28px;
+}
+/* The same glass recipe as the chat header: the file scrolls beneath the bar,
+   so the tint has something to prove itself against. */
+.artifact-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 6px var(--pad);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  background: color-mix(in oklab, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  backdrop-filter: blur(16px) saturate(1.8);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 30%, transparent);
+}
+.artifact-titles {
+  flex: 1;
+  min-width: 0;
+}
+.artifact-titles .eyebrow {
+  margin: 0 0 1px;
+}
+.artifact-titles h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artifact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.artifact-unsaved {
+  color: var(--accent-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.artifact-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.artifact-actions .btn {
+  height: 30px;
+  font-size: 12px;
+}
+.artifact-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: calc(var(--abar-h, 56px) + 18px) var(--pad) 72px;
+}
+.artifact-doc {
   max-width: 1120px;
+  margin: 0 auto;
+}
+/* The editor is the surface, not a box on a page: it starts at the glass bar
+   and fills the column to the bottom. No side gutters, no rounded frame, no
+   dead white strip under a short document. */
+.artifact-scroll--document {
+  display: flex;
+  overflow: hidden;
+  padding: var(--abar-h, 56px) 0 0;
+}
+.artifact-scroll--document .artifact-doc {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  display: flex;
+}
+.artifact-scroll--document .md-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+}
+.artifact-scroll--document .md-bar {
+  flex: none;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.artifact-scroll--document .md-input {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  padding: 16px 18px;
+  resize: none;
+}
+.artifact-scroll--document .md-preview {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 18px 22px;
+  overflow: auto;
+}
+/* A plain text artifact is a surface too: no box, no side gutter, and it fills
+   the column to the bottom. */
+.artifact-scroll--document .artifact-text {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 16px 18px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  overflow: auto;
+}
+.artifact-scroll--document .code-editor {
+  flex: 1;
+  min-height: 0;
+}
+.code-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.code-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor-host .cm-editor {
+  height: 100%;
+}
+.code-editor-error {
+  margin: 12px 18px;
+  color: var(--danger);
 }
 .artifact-detail-head .lede {
   overflow-wrap: anywhere;
@@ -13145,10 +13695,8 @@ label.pick:has(input:focus-visible) {
   background: var(--surface);
 }
 .artifact-detail-preview .artifact-text {
-  max-height: 72vh;
   margin: 0;
   padding: 18px;
-  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--r);
   background: var(--surface);
@@ -13359,6 +13907,12 @@ button.empty-link {
   .wsl-hero-mark .brand-mark {
     width: 42px;
     height: 42px;
+  }
+}
+
+@media (max-width: 700px) {
+  .cp-stats {
+    display: none;
   }
 }
 
@@ -15371,6 +15925,70 @@ button.empty-link {
 }
 .rchat-status-switch button[data-status='failed'][aria-pressed='true'] b {
   background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+
+/* rows can be found by tag as well as by title: the chips are the same label
+   in the rail and in the open thread, and clicking one narrows the list */
+.rchat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 1px;
+}
+.rchat-tag {
+  max-width: 108px;
+  padding: 1px 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent-soft) 44%, transparent);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rchat-tag[data-on='1'] {
+  border-color: var(--accent-ink);
+  background: var(--accent);
+  color: var(--bg);
+}
+.rchat-tagfilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.rchat-tagfilter button {
+  height: 23px;
+  max-width: 100%;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rchat-tagfilter button:hover {
+  border-color: var(--accent);
+  color: var(--ink-2);
+}
+.rchat-tagfilter button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.rchat-tagfilter-empty {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 @media (max-width: 360px) {
   .rchat-status-switch button {
@@ -17880,7 +18498,7 @@ button.empty-link {
   place-items: center;
   width: 24px;
   height: 24px;
-  margin-left: auto;
+  margin-left: 0;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 5px;
@@ -18335,6 +18953,13 @@ button.empty-link {
   margin: 0;
   padding: 0;
 }
+.artifact-detail--media .artifact-scroll {
+  padding: 0;
+  overflow: hidden;
+}
+.artifact-detail--media .media-view {
+  height: 100%;
+}
 .media-message {
   margin: 34px 28px;
 }
@@ -18350,7 +18975,7 @@ button.empty-link {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 104px 104px 48px;
+  padding: calc(var(--abar-h, 56px) + 48px) 104px 48px;
   overflow: hidden;
   background-color: var(--surface);
   background-image:
@@ -18363,7 +18988,7 @@ button.empty-link {
 }
 .media-canvas[data-kind='video'],
 .media-canvas[data-kind='audio'] {
-  padding: 100px 88px 48px;
+  padding: calc(var(--abar-h, 56px) + 44px) 88px 48px;
   cursor: default;
 }
 .media-canvas[data-drag='1'] {
@@ -18380,28 +19005,12 @@ button.empty-link {
 .media-canvas[data-drag='1'] .media-img {
   transition: none;
 }
-.media-top {
-  position: absolute;
-  top: 14px;
-  left: 16px;
-  right: 16px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 12px 10px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  background: color-mix(in oklab, var(--bg) 88%, transparent);
-  box-shadow: 0 14px 40px -24px rgba(10, 10, 10, 0.32);
-  backdrop-filter: blur(16px) saturate(140%);
-}
 .media-back {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   flex: none;
   padding: 0;
   border: 0;
@@ -18415,48 +19024,8 @@ button.empty-link {
   background: var(--surface);
 }
 .media-back svg {
-  width: 15px;
-  height: 15px;
-}
-.media-titles {
-  flex: 1;
-  min-width: 0;
-}
-.media-titles .eyebrow {
-  margin: 0 0 1px;
-}
-.media-titles h1 {
-  margin: 0;
-  font-family: var(--font);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.media-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 3px 0 0;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-}
-.media-meta span {
-  white-space: nowrap;
-}
-.media-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-.media-actions .btn {
-  height: 30px;
-  font-size: 12px;
+  width: 14px;
+  height: 14px;
 }
 .media-rail {
   position: absolute;
@@ -18548,30 +19117,36 @@ button.empty-link {
 
 @media (max-width: 760px) {
   .media-canvas {
-    padding: 124px 18px 40px 76px;
+    padding: calc(var(--abar-h, 56px) + 68px) 18px 40px 76px;
   }
-  .media-top {
-    top: 10px;
-    left: 10px;
-    right: 10px;
+  .artifact-bar {
     gap: 8px;
-    padding: 8px;
+    padding: 6px 12px;
   }
-  .media-titles h1 {
-    font-size: 14px;
+  .artifact-titles h1 {
+    font-size: 13.5px;
   }
-  .media-meta span:nth-last-child(-n + 3) {
+  .artifact-meta span:nth-last-child(-n + 3) {
     display: none;
   }
-  .media-actions .btn {
+  .artifact-actions .btn {
     width: 30px;
     padding: 0;
     font-size: 0;
     gap: 0;
   }
-  .media-actions .btn svg {
+  .artifact-actions .btn svg {
     width: 14px;
     height: 14px;
+  }
+  .artifact-actions .btn-kbd {
+    display: none;
+  }
+  .artifact-scroll {
+    padding: calc(var(--abar-h, 56px) + 10px) 14px 48px;
+  }
+  .artifact-scroll--document {
+    padding: var(--abar-h, 56px) 0 0;
   }
   .media-rail {
     left: 10px;

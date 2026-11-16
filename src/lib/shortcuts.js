@@ -88,6 +88,13 @@ export const SHORTCUT_GROUPS = [
         desktop: ['esc'],
         browser: ['esc'],
       },
+      {
+        id: 'save',
+        label: 'Save the open document',
+        desc: 'Write the Markdown artifact you are editing back to disk.',
+        desktop: ['mod', 'S'],
+        browser: ['mod', 'S'],
+      },
     ],
   },
   {

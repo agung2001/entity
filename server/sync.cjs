@@ -134,6 +134,9 @@ function readSkills(record) {
 /* ── manifest ─────────────────────────────────────────────────────── */
 
 function buildFor(record) {
+  /* The server workspace is the shared copy: make any old skill link real
+     before its manifest (and therefore every client) reads it. */
+  workspaces.materialiseSkillLinks(record)
   const inputs = manifest.recordInputs(record)
   inputs.skills = manifest.normaliseSkills([...readSkills(record), ...inputs.skills])
   return manifest.buildManifest(record.path, inputs)
@@ -464,6 +467,7 @@ async function handle(req, res, url) {
         rev: built.rev,
         files: built.files,
         skipped: built.skipped,
+        scopes: built.scopes,
         updatedAt: nowIso(),
         meta: manifest.canonicalMeta(record),
         skills: readSkills(record),
@@ -560,7 +564,13 @@ async function handle(req, res, url) {
         }
         applySkills(record, parsed)
       } else {
-        manifest.writeAtomic(manifest.absoluteFor(record.path, rel), body, { mode: 0o644 })
+        if (rel.startsWith('skills/')) workspaces.materialiseSkillLinks(record)
+        /* A workspace-owned skill may ship an executable script. Only the
+           execute bit travels; group/world write never does. */
+        const executable = String(req.headers['x-entity-executable'] || '') === '1'
+        manifest.writeAtomic(manifest.absoluteFor(record.path, rel), body, {
+          mode: executable ? 0o755 : 0o644,
+        })
       }
 
       const sha = manifest.isVirtual(rel)

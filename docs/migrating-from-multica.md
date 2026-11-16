@@ -27,7 +27,7 @@ runtimes, the workspace skill library — the note says so.
 | Per-agent skills | `skills:` | must resolve in `skills/`, or the entity is *not ok* |
 | Per-agent MCP list | `mcp:` | **narrowing**, see the warning below |
 | Workspace | workspace | a directory under `~/.entity/workspaces/` |
-| Workspace skill library | `skills/<name>/SKILL.md` | symlink to a harness library, or a workspace-owned skill |
+| Workspace skill library | `skills/<name>/SKILL.md` | copy of a harness skill, or a workspace-owned skill |
 | Workspace MCP servers | `mcp.json` | the pool every entity draws from |
 | Archived agent | usually skip | in practice these are `Name (Personal)` twins |
 | Conversation history, run logs, autopilot schedules | **not carried** | entities start with no history and no schedule |
@@ -230,7 +230,7 @@ Two kinds, and they are not interchangeable:
 ```
 
 - **`attach`** is the cheap path: the skill already lives in a harness library
-  (`~/.pi/agent/skills/…` and friends), and the workspace gets a symlink. Use it
+  (`~/.pi/agent/skills/…` and friends), and the workspace gets a copy. Use it
   whenever the skill is not really yours.
 - **`create`** writes `skills/<name>/SKILL.md` under the workspace. Use it for
   skills that only make sense for this workspace.

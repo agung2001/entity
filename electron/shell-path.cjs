@@ -23,8 +23,13 @@ const HOME_DIRS = [
   '.npm-global/bin',
   '.bun/bin',
   '.volta/bin',
+  /* pnpm used `~/Library/pnpm` for global bins, then moved to `~/Library/pnpm/bin`.
+     Both spellings exist on real machines, so both belong here: pi installed by a
+     recent pnpm is only in the nested one, and the flat one has its siblings. */
   '.local/share/pnpm',
+  '.local/share/pnpm/bin',
   'Library/pnpm',
+  'Library/pnpm/bin',
   '.asdf/shims',
   '.local/share/mise/shims',
   '.nodenv/shims',
@@ -39,36 +44,52 @@ function readdir(dir) {
 }
 
 function newestFirst(a, b) {
-  return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
+  return String(b).localeCompare(String(a), undefined, { numeric: true, sensitivity: 'base' })
+}
+
+/**
+ * The version directories, newest first, so the first `node` on PATH is the one
+ * a terminal would use. Takes plain names, not `Dirent` objects — sorting the
+ * objects themselves is what broke a packaged build in the first place.
+ */
+function newestNames(dir) {
+  return readdir(dir)
+    .map((entry) => entry.name)
+    .sort(newestFirst)
 }
 
 /** Version managers keep their bin directories under the home folder. */
 function versionManagerDirs(home) {
   const dirs = []
   const nvm = path.join(home, '.nvm', 'versions', 'node')
-  for (const entry of readdir(nvm).sort(newestFirst)) dirs.push(path.join(nvm, entry.name, 'bin'))
+  for (const name of newestNames(nvm)) dirs.push(path.join(nvm, name, 'bin'))
 
   const fnm = path.join(home, '.fnm', 'node-versions')
-  for (const entry of readdir(fnm).sort(newestFirst)) {
-    dirs.push(path.join(fnm, entry.name, 'installation', 'bin'))
+  for (const name of newestNames(fnm)) {
+    dirs.push(path.join(fnm, name, 'installation', 'bin'))
   }
   return dirs
 }
 
 function candidateDirs({ platform = process.platform, home = os.homedir(), env = process.env } = {}) {
+  const pnpmHome = String(env.PNPM_HOME || '').trim()
+  const pnpmDirs = pnpmHome ? [pnpmHome, path.join(pnpmHome, 'bin')] : []
   if (platform === 'win32') {
     const dirs = []
     const appData = env.APPDATA || ''
     const localAppData = env.LOCALAPPDATA || ''
     const profile = env.USERPROFILE || home
     if (appData) dirs.push(path.join(appData, 'npm'))
-    if (localAppData) dirs.push(path.join(localAppData, 'pnpm'))
-    dirs.push(path.join(profile, '.volta', 'bin'), path.join(profile, '.bun', 'bin'))
+    if (localAppData) dirs.push(path.join(localAppData, 'pnpm'), path.join(localAppData, 'pnpm', 'bin'))
+    dirs.push(path.join(profile, '.volta', 'bin'), path.join(profile, '.bun', 'bin'), ...pnpmDirs)
     return dirs
   }
   return [
     ...POSIX_PREFIX,
     ...HOME_DIRS.map((rel) => path.join(home, rel)),
+    /* A custom PNPM_HOME is where pnpm itself puts global bins, and it is not
+       derivable from `home`. */
+    ...pnpmDirs,
     ...versionManagerDirs(home),
     ...POSIX_SYSTEM,
   ]

@@ -49,7 +49,7 @@ useDialogDismiss({ active: () => addOpen.value, close: closeAdd })
 useDialogDismiss({ active: () => jsonOpen.value, close: closeJson })
 
 const pool = computed(() => poolEntries(workspaces.mcp))
-const poolServers = computed(() => poolEntries(workspaces.mcp).filter((entry) => entry.enabled))
+const poolServers = computed(() => pool.value.filter((entry) => entry.enabled))
 const enabledCount = computed(() => poolServers.value.length)
 const disabledCount = computed(() => pool.value.length - enabledCount.value)
 const totalGlobals = computed(() => globals.groups.reduce((total, group) => total + (group.servers?.length || 0), 0))
@@ -85,8 +85,11 @@ function compare(a, b) {
   return sortDir.value === 'asc' ? order : -order
 }
 
+/* Parked (disabled) servers are part of the pool and must be visible: a remote
+   workspace's server arrives parked, and a hidden definition reads as "sync is
+   broken". The row opens the server page, where it can be enabled. */
 const workspaceRows = computed(() =>
-  poolServers.value
+  pool.value
     .map((entry) => ({
       ...entry,
       kind: 'pool',
@@ -126,7 +129,7 @@ const globalRows = computed(() => {
 })
 
 const rows = computed(() => (scope.value === 'workspace' ? workspaceRows.value : globalRows.value))
-const totalRows = computed(() => (scope.value === 'workspace' ? enabledCount.value : totalGlobals.value))
+const totalRows = computed(() => (scope.value === 'workspace' ? pool.value.length : totalGlobals.value))
 
 function toggleSort(key) {
   if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
@@ -330,7 +333,7 @@ onMounted(() => {
           type="button"
           :aria-pressed="scope === 'workspace' ? 'true' : 'false'"
           @click="setScope('workspace')"
-        >Workspace <span>{{ enabledCount }}</span></button>
+        >Workspace <span>{{ pool.length }}</span></button>
         <button
           type="button"
           :aria-pressed="scope === 'globals' ? 'true' : 'false'"
@@ -405,7 +408,8 @@ onMounted(() => {
         >
           <span class="mcp-inv-nm">
             <b>{{ row.name }}</b>
-            <span>{{ row.kind === 'pool' ? (row.transport === 'http' ? 'remote' : 'local') : row.harnessLabel }}</span>
+            <span v-if="row.kind === 'pool' && !row.enabled">disabled</span>
+            <span v-else>{{ row.kind === 'pool' ? (row.transport === 'http' ? 'remote' : 'local') : row.harnessLabel }}</span>
           </span>
           <span v-if="scope === 'workspace'">
             <span class="mcp-inv-tc" :data-t="row.transport"><i></i>{{ row.transport === 'http' ? 'http' : 'stdio' }}</span>
@@ -445,17 +449,21 @@ onMounted(() => {
     </div>
 
     <div v-else-if="!globals.loading" class="empty-note mcp-inv-empty">
-      <b>{{ scope === 'workspace' && !enabledCount ? 'No MCP servers in this pool yet.' : 'Nothing matches.' }}</b>
+      <b>{{ scope === 'workspace' && !pool.length ? 'No MCP servers in this pool yet.' : 'Nothing matches.' }}</b>
       <span>
-        {{ scope === 'workspace' && !enabledCount ? 'Add one, or attach a server the harnesses already know.' : 'Search covers names, commands, env keys, entities and harnesses.' }}
+        {{ scope === 'workspace' && !pool.length ? 'Add one, or attach a server the harnesses already know.' : 'Search covers names, commands, env keys, entities and harnesses.' }}
       </span>
-      <button v-if="scope === 'workspace' && !enabledCount" class="btn btn-ink" type="button" @click="beginAdd">
+      <button v-if="scope === 'workspace' && !pool.length" class="btn btn-ink" type="button" @click="beginAdd">
         Add server
       </button>
     </div>
 
     <div class="mcp-inv-foot">
-      <span><b>{{ enabledCount }}</b> in the pool · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> narrow it · <b>{{ totalGlobals }}</b> on this machine</span>
+      <span>
+        <b>{{ enabledCount }}</b> active<template v-if="disabledCount"> · <b>{{ disabledCount }}</b> parked</template>
+        · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> narrow it
+        · <b>{{ totalGlobals }}</b> on this machine
+      </span>
       <span class="r">Harness configs stay read-only · strict {{ workspaces.mcp?.strict ? 'on' : 'off' }}</span>
     </div>
 

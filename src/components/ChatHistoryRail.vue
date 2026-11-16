@@ -12,6 +12,7 @@ import {
   hub,
   isSending,
   liveSummaries,
+  liveTags,
   loadChats,
   pinThread,
   removeThread,
@@ -56,6 +57,7 @@ const STATUS_OPTIONS = [
 const STATUS_KEY = 'entity.rail.chatStatus.v2'
 const status = ref(readStatus())
 const filtersOpen = ref(false)
+const tagFilter = ref('')
 const customStart = ref('')
 const customEnd = ref('')
 
@@ -72,9 +74,20 @@ const advancedActive = computed(
   () =>
     status.value !== 'all' ||
     range.value !== 'all' ||
+    Boolean(tagFilter.value) ||
     Boolean(customStart.value) ||
     Boolean(customEnd.value),
 )
+
+/* Tags are thread metadata, so the rail's tag list is derived from the rows it
+   already has. A tag that no longer exists cannot remain selected. */
+const tags = computed(() => liveTags())
+
+watch(tags, (list) => {
+  if (tagFilter.value && !list.some((tag) => tag.toLowerCase() === tagFilter.value.toLowerCase())) {
+    tagFilter.value = ''
+  }
+})
 
 function pickStatus(id) {
   status.value = id
@@ -83,6 +96,11 @@ function pickStatus(id) {
   } catch {
     /* session-only */
   }
+}
+
+function toggleTag(tag) {
+  const value = String(tag || '')
+  tagFilter.value = tagFilter.value.toLowerCase() === value.toLowerCase() ? '' : value
 }
 
 const threads = computed(() => liveSummaries())
@@ -152,9 +170,13 @@ const filteredThreads = computed(() =>
   threads.value
     .filter((thread) => {
       if (status.value !== 'all' && statusOf(thread) !== status.value) return false
+      if (tagFilter.value) {
+        const wanted = tagFilter.value.toLowerCase()
+        if (!(thread.tags || []).some((tag) => String(tag).toLowerCase() === wanted)) return false
+      }
       if (!inRange(thread)) return false
       return matchesQuery(
-        `${titleOf(thread)} ${thread.preview || ''} ${thread.entity || ''}`,
+        `${titleOf(thread)} ${thread.preview || ''} ${thread.entity || ''} ${(thread.tags || []).join(' ')}`,
         query.value,
       )
     })
@@ -444,6 +466,28 @@ defineExpose({ newThread })
           </div>
         </div>
         <div class="rchat-filter">
+          <span class="rchat-filter-label">Tags</span>
+          <div v-if="tags.length" class="rchat-tagfilter" role="group" aria-label="Filter threads by tag">
+            <button
+              type="button"
+              :aria-pressed="tagFilter === '' ? 'true' : 'false'"
+              @click="tagFilter = ''"
+            >
+              Any tag
+            </button>
+            <button
+              v-for="tag in tags"
+              :key="tag"
+              type="button"
+              :aria-pressed="tagFilter.toLowerCase() === tag.toLowerCase() ? 'true' : 'false'"
+              @click="toggleTag(tag)"
+            >
+              {{ tag }}
+            </button>
+          </div>
+          <p v-else class="rchat-tagfilter-empty">No tags yet. Add them from a thread’s header.</p>
+        </div>
+        <div class="rchat-filter">
           <span class="rchat-filter-label">Status</span>
           <div class="rchat-status-switch rchat-status-switch--grid" role="group" aria-label="Filter threads by status">
             <button
@@ -517,6 +561,19 @@ defineExpose({ newThread })
                     <span class="rchat-sep" aria-hidden="true">·</span>
                     <span>{{ stateOf(thread) }}</span>
                   </span>
+                  <span v-if="thread.tags?.length" class="rchat-tags">
+                    <button
+                      v-for="tag in thread.tags"
+                      :key="tag"
+                      type="button"
+                      class="rchat-tag"
+                      :data-on="tagFilter.toLowerCase() === tag.toLowerCase() ? '1' : '0'"
+                      :title="`Filter by ${tag}`"
+                      @click.stop="toggleTag(tag)"
+                    >
+                      {{ tag }}
+                    </button>
+                  </span>
                 </span>
               </div>
               <button
@@ -537,7 +594,7 @@ defineExpose({ newThread })
       </template>
 
       <p v-else-if="threads.length" class="rchat-empty">
-        No {{ statusNoun }} match this search and time filter.
+        No {{ statusNoun }} match this search, tag and time filter.
       </p>
       <p v-else class="rchat-empty">
         No chats yet. Use + to start one.

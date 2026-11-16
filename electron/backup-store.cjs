@@ -645,6 +645,9 @@ async function createSnapshot(record, { reason = 'auto', mode = DEFAULT_MODE } =
   const tmp = path.join(dir, `.tmp-${path.basename(target)}-${process.pid}`)
   fs.rmSync(tmp, { force: true })
 
+  /* A backup must contain the skill bytes, not a link to a harness library
+     that the next machine may not have. */
+  workspaces.materialiseSkillLinks(record)
   const collected = collectWorkspace(record.path)
   const manifest = {
     schema: SCHEMA,

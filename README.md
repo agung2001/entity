@@ -305,7 +305,9 @@ npm run dev:desktop      # Vite + Electron, HMR included
 | `npm run test:regression` | The deterministic Playwright regression pack |
 | `npm run test:e2e` | Both Playwright packs |
 | `npm run test:gate` | Unit + smoke — the release gate |
-| `npm run package` | Builds a distributable with electron-builder → `release/` |
+| `npm run package` | Builds a distributable for the current platform → `release/` |
+| `npm run package:mac` | Builds the universal macOS DMG → `release/` (macOS only) |
+| `npm run package:win` | Builds the x64 Windows installer → `release/` (run on Windows; needs Wine on macOS) |
 | `git tag v0.0.1 && git push origin v0.0.1` | Builds macOS and Windows installers, publishes a GitHub Release, and pushes the container image to GHCR |
 | `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
 
@@ -350,7 +352,7 @@ survives quitting the app.
     workspace.json              { label, kind, context, mcpStrict, members }
     members.json                owner + roster
     entities/<name>.md          frontmatter = config, body = instructions
-    skills/<name>               symlink into a harness skill library
+    skills/<name>               copied from a harness skill library
     mcp.json                    the workspace MCP pool (mode 0600)
     machine-facts.json          harness/model inventory from an explicit ssh test
     chats/<threadId>.json       one conversation per file, private to its account
@@ -886,7 +888,8 @@ per feature. Keep `contextIsolation: true`, `nodeIntegration: false` and
   enforced per workspace, and host-level actions are administrator-only. Sync
   paths are scoped to `entities/` and `artifacts/`, re-checked against the
   workspace root, and dotfiles, `..`, absolute paths, symlinks and files over
-  25 MB are refused or skipped.
+  25 MB are refused or skipped. Workspace-owned skills under `skills/` travel
+  as real files, including execute bits.
 
 ## Ceilings (stated, not hidden)
 

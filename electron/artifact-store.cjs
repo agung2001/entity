@@ -305,6 +305,37 @@ function saveText({ workspace, name, text } = {}) {
   return metadata(record, target, fs.statSync(file))
 }
 
+/**
+ * Save an edit back to the artifact it came from. `saveText` always allocates
+ * a new name, which is right for a derived chat export but wrong for an editor:
+ * a person fixing a typo in `influencer.md` expects that file to change, not a
+ * second copy beside it. The id is re-validated here, and only text artifacts
+ * are writable — an editor must not overwrite a PNG or a ZIP with prose.
+ */
+function writeText({ workspace, id, text } = {}) {
+  const record = workspaces.open(workspace)
+  const rel = safeRelative(id)
+  const file = absolute(record, rel)
+  let stat
+  try {
+    /* lstat, not stat: an editor must not follow a link out of the shelf. */
+    stat = fs.lstatSync(file)
+  } catch {
+    throw new Error('That artifact no longer exists.')
+  }
+  if (stat.isSymbolicLink()) throw new Error('That artifact is a link, not a file.')
+  if (!stat.isFile()) throw new Error('That artifact is not a file.')
+  const meta = metadata(record, rel, stat)
+  if (meta.kind !== 'text') throw new Error('Only text artifacts can be edited here.')
+  const body = String(text ?? '')
+  const bytes = Buffer.byteLength(body, 'utf8')
+  if (bytes > MAX_WRITE_BYTES) throw new Error('That text is larger than 25 MB.')
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, body, 'utf8')
+  fs.renameSync(tmp, file)
+  return metadata(record, rel, fs.statSync(file))
+}
+
 function remove({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
   const file = absolute(record, id)
@@ -356,6 +387,7 @@ module.exports = {
   download,
   upload,
   saveText,
+  writeText,
   remove,
   locate,
   brief,

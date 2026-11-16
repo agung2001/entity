@@ -240,18 +240,19 @@ async function attach() {
             <div class="blk">
               <h2>
                 {{ inWorkspace ? 'Attached here' : 'In the harness library' }}
-                <span class="k">— {{ inWorkspace ? 'workspace link' : item.harnessLabel }}</span>
+                <span class="k">— {{ inWorkspace ? 'workspace copy' : item.harnessLabel }}</span>
               </h2>
               <p v-if="missing" class="bad">
-                The symlink is still in the workspace, but its target is gone. That is the
-                truthful state: re-attach it when the harness library has it again.
+                The workspace skill is incomplete — its entry file is gone. Re-attach it
+                from the harness library or restore it from a backup.
               </p>
               <p v-else-if="!inWorkspace">
                 This copy lives in {{ item.harnessLabel }}’s own library. Attach it to this
-                workspace to add a symlink here — the files stay where they are.
+                workspace to copy the files here.
               </p>
               <p v-else>
-                {{ item.copied ? 'This is a copy, because this filesystem cannot symlink.' : 'This is a symlink into the harness library, so updates flow through.' }}
+                This is a copy in the workspace, so a backup or another machine carries the
+                files. Re-attach it if you want a newer library version.
               </p>
               <pre class="code">{{ item.path }}</pre>
               <p v-if="item.sourcePath" class="tnote"><span>→ {{ item.sourcePath }}</span></p>

@@ -19,7 +19,7 @@ export async function openNewThreadDialog(page) {
  * Choose from a `PickMenu`. The menu body is teleported to `body` (so it can
  * escape an overflowing dialog), which means it is a sibling of the dialog,
  * not a descendant: the options have to be found on the page, scoped by the
- * menu's `aria-label` head.
+ * menu's `aria-label` head (see DESIGN.md).
  */
 async function chooseFromMenu(page, dialog, label, text) {
   await dialog.getByRole('button', { name: new RegExp(`^${label}:`) }).click()

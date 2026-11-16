@@ -20,10 +20,18 @@ const emit = defineEmits(['update:modelValue'])
 
 const root = ref(null)
 const input = ref(null)
+const menu = ref(null)
 const open = ref(false)
 const searching = ref(false)
 const active = ref(-1)
 const draft = ref(props.modelValue)
+/* The suggestion list is a teleported, fixed layer. Inside a dialog it used to
+   be clipped at the dialog edge and scrolled inside a 280px box; measuring the
+   viewport instead lets it grow to the room that actually exists and flip above
+   the field when the dialog sits low. */
+const MIN_MENU = 200
+const MAX_MENU = 420
+const menuPos = ref({ top: '0px', left: '0px', width: '0px', maxHeight: `${MAX_MENU}px` })
 
 const matched = computed(() => {
   const needle = searching.value ? draft.value.trim() : ''
@@ -47,6 +55,42 @@ function openList() {
   searching.value = false
   active.value = -1
 }
+
+function positionMenu() {
+  const el = input.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const gap = 6
+  const edge = 8
+  const below = window.innerHeight - rect.bottom - gap - edge
+  const above = rect.top - gap - edge
+  const flip = below < MIN_MENU && above > below
+  const room = Math.max(MIN_MENU, Math.min(MAX_MENU, flip ? above : below))
+  menuPos.value = {
+    left: `${Math.round(rect.left)}px`,
+    width: `${Math.round(rect.width)}px`,
+    maxHeight: `${Math.floor(room)}px`,
+    ...(flip
+      ? { bottom: `${Math.round(window.innerHeight - rect.top + gap)}px`, top: 'auto' }
+      : { top: `${Math.round(rect.bottom + gap)}px`, bottom: 'auto' }),
+  }
+}
+
+function listenForLayout(active) {
+  const method = active ? 'addEventListener' : 'removeEventListener'
+  window[method]('resize', positionMenu)
+  window[method]('scroll', positionMenu, true)
+}
+
+watch(open, async (value) => {
+  if (!value) {
+    listenForLayout(false)
+    return
+  }
+  await nextTick()
+  positionMenu()
+  listenForLayout(true)
+})
 
 function onInput() {
   searching.value = true
@@ -99,14 +143,19 @@ function onKey(event) {
 }
 
 function onDocumentClick(event) {
-  if (!open.value || root.value?.contains(event.target)) return
+  if (!open.value) return
+  const target = event.target
+  if (root.value?.contains(target) || menu.value?.contains(target)) return
   open.value = false
 }
 
 useDialogDismiss({ active: () => open.value, close: () => (open.value = false) })
 
 onMounted(() => document.addEventListener('click', onDocumentClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  listenForLayout(false)
+})
 </script>
 
 <template>
@@ -149,30 +198,40 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       </svg>
     </button>
 
-    <div v-if="open" class="model-menu" role="listbox" :aria-label="`${label} suggestions`">
-      <div class="ph">{{ label }} suggestions</div>
-      <button
-        v-for="(item, index) in visible"
-        :key="item"
-        class="model-opt"
-        type="button"
-        role="option"
-        :aria-selected="item === modelValue ? 'true' : 'false'"
-        :data-on="index === active ? '1' : '0'"
-        @click="pick(item)"
+    <Teleport to="body">
+      <div
+        v-if="open"
+        ref="menu"
+        class="model-menu"
+        data-layer="fixed"
+        role="listbox"
+        :style="menuPos"
+        :aria-label="`${label} suggestions`"
       >
-        <span class="nm mono">{{ item }}</span>
-        <svg class="ck" viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2 5.4l2 2 4-4.8" fill="none" stroke="currentColor" stroke-width="1.5" />
-        </svg>
-      </button>
-      <p v-if="loading && !visible.length" class="pempty pempty-loading"><span class="model-spin" aria-hidden="true"></span> Detecting models…</p>
-      <p v-else-if="!visible.length" class="pempty">
-        Keep typing a custom model name, or clear the search.
-      </p>
-      <p v-if="remaining" class="pnote">
-        Showing the first {{ visible.length }} of {{ visible.length + remaining }}. Keep typing to narrow.
-      </p>
-    </div>
+        <div class="ph">{{ label }} suggestions</div>
+        <button
+          v-for="(item, index) in visible"
+          :key="item"
+          class="model-opt"
+          type="button"
+          role="option"
+          :aria-selected="item === modelValue ? 'true' : 'false'"
+          :data-on="index === active ? '1' : '0'"
+          @click="pick(item)"
+        >
+          <span class="nm mono">{{ item }}</span>
+          <svg class="ck" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 5.4l2 2 4-4.8" fill="none" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+        </button>
+        <p v-if="loading && !visible.length" class="pempty pempty-loading"><span class="model-spin" aria-hidden="true"></span> Detecting models…</p>
+        <p v-else-if="!visible.length" class="pempty">
+          Keep typing a custom model name, or clear the search.
+        </p>
+        <p v-if="remaining" class="pnote">
+          Showing the first {{ visible.length }} of {{ visible.length + remaining }}. Keep typing to narrow.
+        </p>
+      </div>
+    </Teleport>
   </div>
 </template>

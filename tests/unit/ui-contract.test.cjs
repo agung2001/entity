@@ -207,7 +207,7 @@ test('the composer ceiling lives in CSS, not in the component', () => {
    flow has nothing to blur, and one that does not pay for its own measured
    height hides the first line of the thread. */
 
-test('the chat header floats over the thread with two zones of glass', () => {
+test('the chat header floats over the thread with three zones of glass', () => {
   const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
   const view = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
 
@@ -225,10 +225,12 @@ test('the chat header floats over the thread with two zones of glass', () => {
   assert.ok(columns, 'the header is not a grid')
   /* one entry per track: collapse minmax(...) first, its contents hold spaces */
   const tracks = columns[1].trim().replace(/\([^()]*\)/g, 'track').split(/\s+/)
-  assert.equal(tracks.length, 2, `the header needs two zones: ${columns[1]}`)
-  /* a long title wraps; the measured height keeps the transcript clear */
+  assert.equal(tracks.length, 3, `the header needs three zones: ${columns[1]}`)
+  /* the bar matches the app top bar and only grows when the title wraps */
   assert.match(rule[0], /height:\s*auto/, 'the header cannot grow with the title')
+  assert.match(rule[0], /min-height:\s*56px/, 'the header is not the top bar height')
   assert.match(view, /headObserver/, 'the header height is not measured')
+  assert.match(view, /borderBoxSize/, 'the header reserves only its content box')
 
   /* the list owes the floating bar its height, from the same variable */
   const list = css.match(/\n\.c-thread \{[^}]*\}/)
@@ -239,11 +241,95 @@ test('the chat header floats over the thread with two zones of glass', () => {
     'the transcript does not reserve the floating header',
   )
 
-  /* counters are not chrome: the timeline already names the turns */
+  /* identity, search, actions: the middle is not another button clump */
   const header = view.match(/<header[^>]*class="cp-head"[^>]*>[\s\S]*?<\/header>/)
   assert.ok(header, 'no chat header in the view')
   assert.match(header[0], /class="cp-left"/, 'the identity is not a zone of its own')
-  assert.equal((view.match(/class="ask-stat"/g) || []).length, 0, 'the counters came back')
+  assert.match(header[0], /class="cp-mid"/, 'the search is not a zone')
+  assert.match(header[0], /type="search"/, 'the thread needs a visible search field')
+  assert.doesNotMatch(header[0], /cp-stats|cp-floatstats/, 'the totals do not belong in the bar')
+
+  /* the totals close the composer's context row, before voice and help */
+  const statsAt = view.indexOf('class="cp-stats"')
+  const voiceAt = view.indexOf('class="compose-voice"')
+  const helpAt = view.indexOf('class="compose-help"')
+  assert.ok(statsAt > 0, 'the queries/responses totals are missing')
+  assert.ok(voiceAt > statsAt && helpAt > voiceAt, 'the totals must precede voice and help')
+  const stats = css.match(/\n\.cp-stats \{[^}]*\}/)
+  assert.ok(stats, '.cp-stats has no base rule')
+  assert.match(stats[0], /margin-left:\s*auto/, 'the totals do not close the row')
+  assert.doesNotMatch(css, /\.cp-floatstats/, 'the floating pill came back')
+})
+
+test('grading a thread is a tag list, not a second title', () => {
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  const rail = fs.readFileSync(path.join(SRC, 'components', 'ChatHistoryRail.vue'), 'utf8')
+  const dialog = fs.readFileSync(path.join(SRC, 'components', 'ThreadTagsDialog.vue'), 'utf8')
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'hub.js'), 'utf8')
+  const backend = fs.readFileSync(path.join(ROOT, 'electron', 'chat-store.cjs'), 'utf8')
+  const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
+
+  assert.match(chat, /<ThreadTagsDialog\b/, 'the chat owns the tag dialog')
+  assert.match(chat, /class="cp-tags"/, 'tags show in the header')
+  assert.match(rail, /liveTags\(\)/, 'the rail lists the workspace tags')
+  assert.match(rail, /toggleTag\(/, 'a rail tag narrows the list')
+  assert.match(dialog, /useDialogDismiss\s*\(/, 'Esc closes the tag dialog')
+  assert.match(dialog, /Comma separated/, 'the dialog explains its one syntax')
+  assert.match(dialog, /tagdlg-chip-x/, 'a saved tag cannot be removed before saving')
+  assert.match(dialog, /removeTag\(/, 'the chip has no remove handler')
+  assert.match(store, /chat\.tags/, 'the renderer has a tag call')
+  assert.match(backend, /function tags\(/, 'the main process stores tags')
+  assert.match(rpc, /'chat\.tags'/, 'the call table exposes tags')
+})
+
+test('a code artifact is editable with the lazy code editor', () => {
+  const view = fs.readFileSync(path.join(SRC, 'views', 'ArtifactDetailView.vue'), 'utf8')
+  const editor = fs.readFileSync(path.join(SRC, 'components', 'CodeEditor.vue'), 'utf8')
+  assert.match(view, /<CodeEditor\b/, 'the artifact page does not mount the code editor')
+  assert.match(view, /canEditText/, 'only Markdown is treated as editable')
+  assert.match(editor, /import\('codemirror'\)/, 'the editor is not lazy')
+  assert.match(editor, /lang-python/, 'Python has no language support')
+  assert.match(editor, /updateListener/, 'the editor never reports its text')
+})
+
+test('workspace members are people with an avatar, not a row of fields', () => {
+  const view = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceView.vue'), 'utf8')
+  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  assert.match(view, /from '@\/lib\/gravatar'/, 'members do not show a Gravatar')
+  assert.match(view, /class="member-avatar"/, 'the member row has no avatar')
+  assert.match(view, /aria-label="Member email/, 'the email field is unlabelled')
+  assert.match(view, /roleHint\(member\.role\)/, 'the role description is not discoverable')
+  assert.match(view, /class="member-remove"/, 'remove is not an icon control')
+  const avatar = css.match(/\n\.member-avatar \{[^}]*\}/)
+  assert.ok(avatar, '.member-avatar has no base rule')
+  assert.match(css, /\.member-avatar img \{[^}]*object-fit:\s*cover/, 'the avatar is not cropped')
+})
+
+test('the artifact page reuses the chat glass bar and edits Markdown', () => {
+  const view = fs.readFileSync(path.join(SRC, 'views', 'ArtifactDetailView.vue'), 'utf8')
+  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'artifacts.js'), 'utf8')
+  const backend = fs.readFileSync(path.join(ROOT, 'electron', 'artifact-store.cjs'), 'utf8')
+
+  assert.match(view, /class="artifact-bar"/, 'the file needs the chat glass bar')
+  assert.match(view, /MarkdownEditor/, 'a Markdown artifact opens in the editor')
+  assert.match(view, /writeArtifactText/, 'the editor saves back to the file')
+  assert.match(store, /artifact\.writeText/, 'the renderer has an in-place text write')
+  assert.match(backend, /function writeText\(/, 'the main process writes the same artifact')
+  assert.match(css, /\.artifact-bar \{[^}]*backdrop-filter:\s*blur\(/, 'the bar is not glass')
+  assert.doesNotMatch(css, /\.media-top \{[\s\S]{0,400}?border-radius:\s*14px/, 'the floating card came back')
+})
+
+test('a popover inside a dialog is a teleported, measured layer', () => {
+  const input = fs.readFileSync(path.join(SRC, 'components', 'ModelInput.vue'), 'utf8')
+  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  assert.match(input, /<Teleport to="body">/, 'model suggestions are clipped by the dialog')
+  assert.match(input, /positionMenu/, 'the layer is measured from the field')
+  assert.match(input, /window\[method\]\('scroll'/, 'the layer does not follow its field')
+  const menu = css.match(/\n\.model-menu \{[^}]*\}/)
+  assert.ok(menu, '.model-menu has no base rule')
+  assert.match(menu[0], /position:\s*fixed/, 'the suggestions still live inside the dialog')
+  assert.doesNotMatch(menu[0], /max-height:\s*280px/, 'the suggestion list is still capped at 280px')
 })
 
 test('the terminal sheet is a closed card, not a flap', () => {

@@ -43,6 +43,9 @@ function openDesktopApp() {
 }
 
 const isChat = computed(() => route.name === 'chat')
+/* The artifact detail page owns its own scroll: its glass bar floats over the
+   file the same way the chat header floats over the thread. */
+const isFlush = computed(() => isChat.value || route.name === 'artifact')
 const isSkill = computed(() => route.name === 'skill')
 const isEntity = computed(() => route.name === 'entity')
 const isMachine = computed(() => route.name === 'machine')
@@ -219,7 +222,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         </button>
       </AppTopbar>
 
-      <div class="main-scroll" :class="{ 'main-scroll--flush': isChat }">
+      <div class="main-scroll" :class="{ 'main-scroll--flush': isFlush }">
         <router-view />
       </div>
     </main>

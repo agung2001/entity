@@ -6,12 +6,15 @@
  * a caller with a path: every path is normalised, scoped, and re-checked
  * against the workspace root before it is read or written.
  *
- * Real files live under `entities/` and `artifacts/`. Three *virtual* entries
+ * Real files live under `entities/`, `artifacts/` and `skills/`. A skill that
+ * is a symlink into a harness library is skipped by the walk (the target is
+ * machine-local); a workspace-owned skill directory is synced like any other
+ * file, because its body lives in this workspace. Three *virtual* entries
  * describe the parts of a workspace that are configuration rather than files:
  *
  *   workspace.json   label, context, mcpStrict, members   (never id or path)
  *   mcp.json         enabled servers only, secrets replaced by "***"
- *   skills.json      attached skill names + harness      (never skill bodies)
+ *   skills.json      attached skill names + harness      (the roster, not bodies)
  *
  * Secrets are redacted on purpose. A MCP server definition can carry an API key
  * in `env` or `headers`; copying that between machines (or into a server log)
@@ -22,7 +25,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
 
-const SCOPES = ['entities', 'artifacts']
+const SCOPES = ['entities', 'artifacts', 'skills']
 const VIRTUAL = ['workspace.json', 'mcp.json', 'skills.json']
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 const MAX_FILES = 20_000
@@ -260,36 +263,112 @@ function readAttachedSkills(dir) {
 }
 
 /**
- * Walk `entities/` and `artifacts/` and return the manifest. Symlinks are
- * skipped (a link can point anywhere), dotfiles are skipped (`.remote.json` is
- * sync state, not content), files above the cap are reported as skipped rather
- * than silently dropped.
+ * Walk the sync scopes and return the manifest. Dotfiles are skipped
+ * (`.remote.json` is sync state, not content) and files above the cap are
+ * reported as skipped rather than silently dropped.
+ *
+ * `skills/` is special: a skill attached from a harness library is a symlink
+ * (`<ws>/skills/<name> -> ~/.pi/agent/skills/<name>`). A team clone must get the
+ * real files, not a link that only works on the author's machine, so the walker
+ * dereferences a top-level skill link and records its contents under the same
+ * `skills/<name>/…` paths. Nested links are still skipped: a link inside a skill
+ * can point anywhere, and the skill itself is the unit that was attached.
  */
-async function walkScope(root, rel, files, skipped) {
-  if (rel.split('/').length > 20) {
-    skipped.push(`${rel}: directory nesting is too deep to sync`)
+function skillTarget(file) {
+  try {
+    const stat = fs.statSync(file)
+    if (stat.isDirectory()) {
+      return fs.existsSync(path.join(file, 'SKILL.md')) ? { stat, directory: true } : null
+    }
+    if (stat.isFile() && file.toLowerCase().endsWith('.md')) return { stat, directory: false }
+  } catch {
+    /* broken link */
+  }
+  return null
+}
+
+async function recordFile(full, rel, stat, files, skipped) {
+  if (stat.size > MAX_FILE_BYTES) {
+    skipped.push(`${rel}: ${stat.size} bytes is over the per-file sync cap`)
+    return
+  }
+  let digest
+  try {
+    digest = await hashFileCached(full, stat)
+  } catch {
+    skipped.push(`${rel}: unreadable`)
+    return
+  }
+  files.set(rel, {
+    path: rel,
+    sha256: digest,
+    size: stat.size,
+    mtimeMs: Math.round(stat.mtimeMs),
+    /* A workspace-owned skill may ship a runnable script. Preserve only the
+       execute bits, never setuid/setgid or group/world write. */
+    executable: (stat.mode & 0o111) !== 0,
+    virtual: false,
+  })
+}
+
+/**
+ * `base` is the directory on disk, `diskRel` is where to read under it, and
+ * `manifestRel` is the path the file will have in the manifest. They differ for
+ * a dereferenced skill symlink: the bytes live in the harness library, but the
+ * shared path is `skills/<name>/…`.
+ */
+async function walkDir(base, diskRel, manifestRel, files, skipped, depth, followTopLink) {
+  if (depth > 20) {
+    skipped.push(`${manifestRel}: directory nesting is too deep to sync`)
     return
   }
   let entries = []
   try {
-    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
+    entries = fs.readdirSync(diskRel ? path.join(base, diskRel) : base, {
+      withFileTypes: true,
+    })
   } catch {
     return
   }
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue
-    const child = `${rel}/${entry.name}`
-    const full = path.join(root, child)
+    const diskChild = diskRel ? path.join(diskRel, entry.name) : entry.name
+    const rel = `${manifestRel}/${entry.name}`
+    const full = path.join(base, diskChild)
     if (entry.isSymbolicLink()) {
-      skipped.push(`${child}: symlink not followed`)
+      if (!followTopLink) {
+        skipped.push(`${rel}: symlink not followed`)
+        continue
+      }
+      let real
+      try {
+        real = fs.realpathSync(full)
+      } catch {
+        skipped.push(`${rel}: broken symlink`)
+        continue
+      }
+      const target = skillTarget(real)
+      if (!target) {
+        skipped.push(`${rel}: symlink target is not a skill`)
+        continue
+      }
+      if (target.directory) {
+        if (files.size >= MAX_FILES) {
+          skipped.push(`${rel}: file limit reached`)
+          return
+        }
+        await walkDir(real, '', rel, files, skipped, depth + 1, false)
+      } else {
+        await recordFile(real, rel, target.stat, files, skipped)
+      }
       continue
     }
     if (entry.isDirectory()) {
       if (files.size >= MAX_FILES) {
-        skipped.push(`${child}: file limit reached`)
+        skipped.push(`${rel}: file limit reached`)
         return
       }
-      await walkScope(root, child, files, skipped)
+      await walkDir(base, diskChild, rel, files, skipped, depth + 1, false)
       continue
     }
     if (!entry.isFile()) continue
@@ -300,25 +379,14 @@ async function walkScope(root, rel, files, skipped) {
       continue
     }
     if (!stat.isFile()) continue
-    if (stat.size > MAX_FILE_BYTES) {
-      skipped.push(`${child}: ${stat.size} bytes is over the per-file sync cap`)
-      continue
-    }
-    let digest
-    try {
-      digest = await hashFileCached(full, stat)
-    } catch {
-      skipped.push(`${child}: unreadable`)
-      continue
-    }
-    files.set(child, {
-      path: child,
-      sha256: digest,
-      size: stat.size,
-      mtimeMs: Math.round(stat.mtimeMs),
-      virtual: false,
-    })
+    await recordFile(full, rel, stat, files, skipped)
   }
+}
+
+async function walkScope(root, rel, files, skipped) {
+  /* Only the top level of `skills/` dereferences links; everything below a
+     skill (and every other scope) keeps the "a link is not content" rule. */
+  await walkDir(root, rel, rel, files, skipped, 0, rel === 'skills')
 }
 
 async function buildManifest(dir, { record, skills, mcpRaw, skipped = [] } = {}) {
@@ -348,6 +416,10 @@ async function buildManifest(dir, { record, skills, mcpRaw, skipped = [] } = {})
     byPath: files,
     virtual,
     skipped,
+    /* Capability marker: an older server omits this and cannot exchange
+       workspace-owned skill files. Clients use it to avoid treating "the
+       server does not track skills" as "the server deleted the skills". */
+    scopes: [...SCOPES],
     updatedAt: new Date().toISOString(),
   }
 }
