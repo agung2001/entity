@@ -1,6 +1,6 @@
 import { test, expect, readProfile } from '../fixtures.js'
 import { newThread, openChat, sendMessage, waitForAnswer } from '../helpers/app.js'
-import { logsMatching, newestMeta } from '../helpers/profile.js'
+import { logsMatching, metaCwd, newestMeta, samePath } from '../helpers/profile.js'
 
 /**
  * UAT D01/D02/D04 — the headline "the entity can reach files outside its
@@ -19,8 +19,9 @@ test('@smoke external files: the harness cwd and reads are outside the workspace
   await waitForAnswer(page, 'E2E-EXTERNAL-OK')
 
   const meta = newestMeta(profile)
-  expect(meta).toContain(`cwd: ${profile.paths.external}`)
-  expect(meta).not.toContain(`cwd: ${profile.workspacePath}`)
+  const cwd = metaCwd(meta)
+  expect(samePath(cwd, profile.paths.external)).toBe(true)
+  expect(samePath(cwd, profile.workspacePath)).toBe(false)
 
   const reads = logsMatching(profile, '.external', 'E2E-EXTERNAL-CANARY-42')
   expect(reads.length).toBeGreaterThan(0)

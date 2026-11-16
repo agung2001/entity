@@ -89,8 +89,8 @@ test('the geometry is clamped instead of trusted', () => {
   assert.equal(clampSize(0, 80, 20, 400), 20)
   assert.equal(clampSize(9999, 80, 20, 400), 400)
   assert.equal(clampSize('abc', 80, 20, 400), 80)
-  assert.equal(buildCommand({ machine: 'local', cols: 5, rows: 1 }).cols, 20)
-  assert.equal(buildCommand({ machine: 'local', cols: 5, rows: 1 }).rows, 5)
+  assert.equal(buildCommand({ machine: 'local', cols: 5, rows: 1, platform: 'linux' }).cols, 20)
+  assert.equal(buildCommand({ machine: 'local', cols: 5, rows: 1, platform: 'linux' }).rows, 5)
 })
 
 test('a shell answers: open, write, read the echo', { skip: !POSIX }, async () => {

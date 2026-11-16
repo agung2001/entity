@@ -101,7 +101,9 @@ test('paths: only real files and directories, relative to the turn cwd', () => {
     ]),
   })
 
-  const found = out.paths.map((entry) => entry.display)
+  /* `path`, not `display`: display is tilde-shortened, and a temp directory
+     lives under the home folder on Windows. */
+  const found = out.paths.map((entry) => entry.path)
   assert.ok(found.includes(path.join(root, 'src', 'views', 'ChatView.vue')))
   assert.ok(found.includes(path.join(root, 'README.md')))
   assert.ok(found.includes(path.join(root, 'src', 'views')))

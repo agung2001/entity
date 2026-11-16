@@ -1,6 +1,6 @@
 import { test, expect, readProfile } from '../fixtures.js'
 import { newThread, openChat, readActiveThread, sendMessage, waitForAnswer } from '../helpers/app.js'
-import { logsMatching, newestPrompt } from '../helpers/profile.js'
+import { logsMatching, metaCwd, newestPrompt, samePath } from '../helpers/profile.js'
 
 /**
  * UAT E02 — mentioning another entity is a real sub-run, not a label.
@@ -38,7 +38,7 @@ test('@smoke mentions: @secretary reads a file and its answer is injected', asyn
   expect(reads.length).toBeGreaterThan(0)
 
   const meta = logsMatching(profile, '.meta', 'entity: secretary').at(-1)
-  expect(meta).toContain(`cwd: ${profile.paths.external}`)
+  expect(samePath(metaCwd(meta), profile.paths.external)).toBe(true)
 
   const thread = await readActiveThread(page, profile)
   const asked = thread.messages.find((message) => message.who === 'me')

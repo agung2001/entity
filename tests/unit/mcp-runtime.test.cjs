@@ -113,7 +113,10 @@ test('a named server becomes a strict, secret-bearing config file', () => {
     /* the name became a value, and the placeholder was expanded */
     assert.equal(doc.mcpServers.github.env.ENTITY_TEST_TOKEN, 'sekret-value')
     assert.equal(doc.mcpServers.github.args[3], 'sekret-value')
-    assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    /* 0600 is a POSIX permission bit; Windows has no equivalent. */
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    }
   } finally {
     const file = out.files[0]
     out.cleanup()
@@ -200,7 +203,9 @@ test('pi >= 0.99 gets a generated extension and keeps its agent dir untouched', 
     assert.equal(out.argv[0], '--extension')
     const file = out.argv[1]
     assert.match(file, /\.mjs$/)
-    assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    }
     const script = fs.readFileSync(file, 'utf8')
     assert.match(script, /registerMcpServer/)
     assert.match(script, /server-github/)
@@ -233,8 +238,12 @@ test('pi before 0.99 falls back to a mirrored agent dir with a merged mcp.json',
     /* the user's own server stays, the pool is merged in */
     const merged = JSON.parse(fs.readFileSync(path.join(dir, 'mcp.json'), 'utf8'))
     assert.deepEqual(Object.keys(merged.mcpServers).sort(), ['github', 'mine'])
-    /* auth is symlinked through, not copied */
-    assert.equal(fs.lstatSync(path.join(dir, 'auth.json')).isSymbolicLink(), true)
+    /* auth is symlinked through, not copied. Creating a symlink needs a
+       privilege Windows does not grant by default, so the mirror falls back to
+       leaving it out (see `mirror`). */
+    if (process.platform !== 'win32') {
+      assert.equal(fs.lstatSync(path.join(dir, 'auth.json')).isSymbolicLink(), true)
+    }
   } finally {
     out.cleanup()
     assert.equal(fs.existsSync(out.env.PI_CODING_AGENT_DIR || '/nonexistent'), false)

@@ -423,7 +423,10 @@ test('a server cannot repoint an already-enabled MCP server', async () => {
   }
 })
 
-test('the configured local harness reviews pulled files, and can stop the sync', async () => {
+/* The stand-in `claude` is a POSIX shell script, and the guard spawns the
+   resolved binary with an argv array (never through a shell), so it cannot run
+   on Windows. */
+test('the configured local harness reviews pulled files, and can stop the sync', { skip: process.platform === 'win32' }, async () => {
   const remote = writeRemoteWorkspace()
   const { server, url } = await startServer(remote)
 

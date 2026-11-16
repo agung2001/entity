@@ -12,7 +12,11 @@ const entities = require('../../electron/entity-store.cjs')
 const chats = require('../../electron/chat-store.cjs')
 const harnesses = require('../../electron/harness-store.cjs')
 
-test('stopping a live turn records a stopped message, not a harness failure', async (t) => {
+/* The stand-ins are POSIX shell scripts (`#!/bin/sh`), and a run is spawned with
+   an argv array (never through a shell), so they cannot execute on Windows. */
+const POSIX = process.platform !== 'win32'
+
+test('stopping a live turn records a stopped message, not a harness failure', { skip: !POSIX }, async (t) => {
   const record = workspaces.create({ label: 'cancel' })
   const workspace = record.id
   entities.scaffold({ workspace, name: 'slow-agent', harness: 'pi' })
@@ -40,7 +44,7 @@ test('stopping a live turn records a stopped message, not a harness failure', as
   assert.equal(last.execution.status, 'canceled')
 })
 
-test('a thread that is answering cannot be deleted', async (t) => {
+test('a thread that is answering cannot be deleted', { skip: !POSIX }, async (t) => {
   const record = workspaces.create({ label: 'delete-lock' })
   const workspace = record.id
   entities.scaffold({ workspace, name: 'busy-agent', harness: 'pi' })

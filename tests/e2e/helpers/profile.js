@@ -139,6 +139,38 @@ export function logsMatching(p, suffix, needle) {
   }
 }
 
+/** The directory a stub harness recorded in its `.meta` file. */
+export function metaCwd(meta = '') {
+  const line = String(meta)
+    .split(/\r?\n/)
+    .find((entry) => entry.startsWith('cwd:'))
+  return line ? line.slice(4).trim() : ''
+}
+
+/**
+ * Whether two paths name the same directory, however the shell spelled them.
+ *
+ * The stub runs under the system shell, and the MSYS `sh` a Windows harness
+ * hands a `#!` script prints `cwd` as `/c/Users/…` where the app passed
+ * `C:\Users\…`. macOS prints one form for both, so this stays a plain compare
+ * there.
+ */
+export function samePath(a, b) {
+  return normalisePath(a) === normalisePath(b)
+}
+
+function normalisePath(value) {
+  let text = String(value || '').trim().replace(/\\/g, '/')
+  const drive = text.match(/^([A-Za-z]):\/(.*)$/)
+  if (drive) text = `${drive[1]}/${drive[2]}`
+  else {
+    const msys = text.match(/^\/([A-Za-z])\/(.*)$/)
+    if (msys) text = `${msys[1]}/${msys[2]}`
+  }
+  text = text.replace(/\/+$/, '')
+  return process.platform === 'win32' ? text.toLowerCase() : text
+}
+
 export function threadUserId(p) {
   return p.user.email
 }
