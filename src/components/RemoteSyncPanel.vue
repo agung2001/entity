@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import {
@@ -37,6 +37,72 @@ const installedHarnesses = computed(() => harnesses.items.filter((item) => item.
 const evalModelState = computed(() => harnesses.models[evalHarness.value] || null)
 const evalModels = computed(() => evalModelState.value?.models || [])
 const state = computed(() => remoteFor(props.workspace))
+/** True while a pass is running, whoever started it (this panel, or the poll). */
+const syncing = computed(() => state.value?.status === 'syncing')
+const progress = computed(() => remote.progress[props.workspace] || null)
+const elapsedMs = ref(0)
+let ticker = null
+
+/*
+ * A pass is one manifest round trip plus a walk on each end, so it is normally
+ * finished before anyone reads the panel. The cases worth watching are the
+ * first pull (one request per file) and the agent reviewer (a local CLI) — both
+ * long enough that "Syncing…" with no way out is the wrong answer.
+ */
+const phaseText = computed(() => {
+  const p = progress.value
+  if (!p) return 'Reading both manifests'
+  const count = p.total ? `${p.done} of ${p.total}` : ''
+  switch (p.phase) {
+    case 'compare':
+      return p.done ? 'Compared both sides' : 'Reading both manifests'
+    case 'pull':
+      return `Pulling ${count}${p.path ? ` · ${p.path}` : ''}`
+    case 'guard':
+      return `Checking ${p.total || 'pulled'} file${p.total === 1 ? '' : 's'}`
+    case 'review':
+      return `Your agent is reviewing ${p.total} file${p.total === 1 ? '' : 's'}`
+    case 'apply':
+      return `Writing ${count}${p.path ? ` · ${p.path}` : ''}`
+    case 'push':
+      return `Pushing ${count}${p.path ? ` · ${p.path}` : ''}`
+    case 'remove':
+      return `Removing ${count}`
+    default:
+      return 'Working'
+  }
+})
+const percent = computed(() => {
+  const p = progress.value
+  if (!p || !p.total) return p?.done ? 100 : 0
+  return Math.max(0, Math.min(100, Math.round((p.done / p.total) * 100)))
+})
+const elapsed = computed(() => {
+  const ms = Math.max(0, elapsedMs.value)
+  const seconds = Math.floor(ms / 1000)
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+})
+
+watch(
+  syncing,
+  (on) => {
+    if (ticker) clearInterval(ticker)
+    ticker = null
+    if (!on) {
+      elapsedMs.value = 0
+      return
+    }
+    const startedAt = progress.value?.startedAt || Date.now()
+    elapsedMs.value = Date.now() - startedAt
+    ticker = setInterval(() => {
+      elapsedMs.value = Date.now() - (progress.value?.startedAt || startedAt)
+    }, 250)
+  },
+  { immediate: true },
+)
+onUnmounted(() => {
+  if (ticker) clearInterval(ticker)
+})
 const findings = computed(() => {
   const live = remote.findings[props.workspace]
   const stored = state.value?.blocked?.findings
@@ -128,7 +194,7 @@ async function saveEvaluator() {
 }
 
 async function syncNow() {
-  if (busy.value) return
+  if (busy.value || syncing.value) return
   busy.value = true
   try {
     await syncRemote(props.workspace)
@@ -211,12 +277,24 @@ async function disconnect() {
         <div class="rmt-status" :data-tone="blocked ? 'danger' : state.status === 'error' || state.status === 'unauthorized' ? 'danger' : 'ok'">
           <span class="rmt-dot"></span>
           <div>
-            <b>{{ blocked ? 'Sync stopped for review' : state.status === 'syncing' ? 'Syncing…' : state.status === 'error' ? 'Last sync failed' : state.status === 'unauthorized' ? 'Session rejected' : 'Connected' }}</b>
-            <span>
-              Last sync {{ when(state.lastSyncAt) }} · {{ state.counts.tracked }} tracked files · auto every
+            <b>{{ blocked ? 'Sync stopped for review' : syncing ? 'Syncing…' : state.status === 'error' ? 'Last sync failed' : state.status === 'unauthorized' ? 'Session rejected' : 'Connected' }}</b>
+            <span v-if="syncing">
+              {{ phaseText }} · {{ elapsed }} elapsed
+            </span>
+            <span v-else>
+              Last sync {{ when(state.lastSyncAt) }}
+              · {{ state.counts.tracked }} tracked files · auto every
               {{ Math.round((state.intervalMs || 0) / 3_600_000) }}h
             </span>
           </div>
+        </div>
+
+        <div v-if="syncing" class="rmt-progress" role="progressbar" :aria-valuenow="percent" aria-valuemin="0" aria-valuemax="100">
+          <span><i :style="{ width: `${percent}%` }"></i></span>
+          <span class="rmt-progress-now mono">
+            {{ progress?.total ? `${progress.done}/${progress.total}` : '' }}
+            {{ percent }}%
+          </span>
         </div>
 
         <p v-if="state.lastError" class="rmt-error" role="alert">{{ state.lastError }}</p>
@@ -267,6 +345,9 @@ async function disconnect() {
           <b>MCP servers parked.</b> These arrived from the server and are disabled
           locally until you review them in MCP:
           <span class="mono">{{ summary.quarantined.join(', ') }}</span>.
+          A definition that points at the machine that shared it — a loopback address,
+          or a command inside a home directory — cannot work here at all; enable it only
+          if this machine really runs that service.
         </div>
 
         <div v-if="summary?.mcpDiverged?.length" class="rmt-note">
@@ -382,13 +463,19 @@ async function disconnect() {
         v-if="findings.length"
         class="btn"
         type="button"
-        :disabled="busy"
+        :disabled="busy || syncing"
         @click="approve"
       >
         {{ busy ? 'Working…' : 'I reviewed it — approve & sync' }}
       </button>
-      <button v-if="state" class="btn btn-ink" type="button" :disabled="busy" @click="syncNow">
-        {{ busy || state.status === 'syncing' ? 'Syncing…' : 'Sync now' }}
+      <button
+        v-if="state"
+        class="btn btn-ink"
+        type="button"
+        :disabled="busy || syncing"
+        @click="syncNow"
+      >
+        {{ busy || syncing ? 'Syncing…' : 'Sync now' }}
       </button>
     </footer>
   </div>

@@ -73,6 +73,12 @@ function sendJson(res, status, payload, headers = {}) {
 
 const TOKEN = 'test-token'
 
+function shutdown(server) {
+  /* Keep-alive sockets would otherwise hold the test process open. */
+  if (typeof server.closeAllConnections === 'function') server.closeAllConnections()
+  server.close()
+}
+
 function startServer(remote, { delayMs = 0, legacy = false } = {}) {
   let inFlight = 0
   let maxInFlight = 0
@@ -372,6 +378,52 @@ test('a pulled MCP server is enabled and its secret is never synced', async () =
     const idle = await remoteSync.sync({ id: record.id, reason: 'test' })
     assert.equal(idle.summary.pushed, 0)
     assert.deepEqual(idle.summary.quarantined, [])
+  } finally {
+    server.close()
+  }
+})
+
+test('a pulled MCP server that points at the author machine is parked, not enabled', async () => {
+  const remote = writeRemoteWorkspace()
+  fs.writeFileSync(
+    path.join(remote.path, 'mcp.json'),
+    JSON.stringify({
+      schema: 1,
+      servers: {
+        maka: {
+          url: 'http://127.0.0.1:4780/mcp',
+          headers: { Authorization: 'a-secret-value' },
+        },
+        search: { command: 'npx', args: ['-y', 'search-mcp'] },
+      },
+    }),
+  )
+  const { server, url } = await startServer(remote)
+
+  try {
+    const { record, result } = await remoteSync.connect({
+      serverUrl: url,
+      email: 'owner@example.com',
+      password: 'secret-password',
+    })
+    assert.equal(result.ok, true)
+    const file = path.join(record.path, 'mcp.json')
+    let pool = JSON.parse(fs.readFileSync(file, 'utf8'))
+    /* The portable one still arrives ready to use — this must not become a
+       second setup step on every clone. */
+    assert.ok(pool.servers.search)
+    /* The loopback one is present but parked: on this host `127.0.0.1` is the
+       clone, where nothing is listening. */
+    assert.equal(pool.servers.maka, undefined)
+    assert.match(pool.disabled.maka.__unavailable, /loopback/)
+    assert.deepEqual(result.summary.quarantined, ['maka'])
+
+    /* And a later pass does not promote it back. */
+    const idle = await remoteSync.sync({ id: record.id, reason: 'test' })
+    assert.equal(idle.ok, true)
+    pool = JSON.parse(fs.readFileSync(file, 'utf8'))
+    assert.equal(pool.servers.maka, undefined)
+    assert.match(pool.disabled.maka.__unavailable, /loopback/)
   } finally {
     server.close()
   }
@@ -766,5 +818,75 @@ test('a remote-only skill is reported missing on every pass, not just the first'
     assert.equal(again.summary.pushed, 0)
   } finally {
     server.close()
+  }
+})
+
+/* ── the evaluator setting survives a pass ──────────────────────── */
+
+test('turning the evaluator off while a pass runs is not undone by that pass', async () => {
+  const remote = writeRemoteWorkspace()
+  const { server, url } = await startServer(remote)
+
+  /* A stand-in `claude` that takes a second, which is exactly the window in
+     which a person turns the reviewer off. */
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-guard-slow-'))
+  fs.writeFileSync(
+    path.join(bin, 'claude'),
+    ['#!/bin/sh', 'cat >/dev/null', 'sleep 1', 'echo \'{"findings":[]}\'', ''].join('\n'),
+    { mode: 0o755 },
+  )
+  const oldPath = process.env.PATH
+  process.env.PATH = `${bin}${path.delimiter}${oldPath}`
+
+  try {
+    const { record } = await remoteSync.connect({
+      serverUrl: url,
+      email: 'owner@example.com',
+      password: 'secret-password',
+    })
+    assert.equal(
+      remoteSync.setGuard({ id: record.id, guard: { enabled: true, harness: 'claude', model: '' } })
+        .guard.enabled,
+      true,
+    )
+    writeRemoteEntity(remote, 'reviewed', '# reviewed\n\nOrdinary instructions.\n')
+
+    let reviewing
+    const inReview = new Promise((resolve) => {
+      reviewing = resolve
+    })
+    /* A missing event must fail the test, not hang the run. The timer is
+       cleared below so it cannot keep the process alive either. */
+    let giveUpTimer = null
+    const giveUp = new Promise((resolve) => {
+      giveUpTimer = setTimeout(resolve, 20_000, 'timeout')
+    })
+    const task = remoteSync.sync(
+      { id: record.id, reason: 'test' },
+      {
+        emit: (event) => {
+          if (event.kind === 'remote-sync-progress' && event.phase === 'review') reviewing()
+        },
+      },
+    )
+    const seen = await Promise.race([inReview, giveUp])
+    clearTimeout(giveUpTimer)
+    assert.notEqual(seen, 'timeout', 'review phase never reported')
+    const off = remoteSync.setGuard({ id: record.id, guard: { enabled: false } })
+    assert.equal(off.guard.enabled, false)
+
+    const result = await task
+    assert.equal(result.ok, true)
+    /* The pass started with the reviewer on; the file it reviewed was written.
+       What must not happen is the setting coming back on. */
+    assert.equal(
+      remoteSync.status({ id: record.id }).guard.enabled,
+      false,
+      'the pass wrote back the evaluator setting it started with',
+    )
+    assert.equal(fs.existsSync(localEntity(record, 'reviewed')), true)
+  } finally {
+    process.env.PATH = oldPath
+    shutdown(server)
   }
 })

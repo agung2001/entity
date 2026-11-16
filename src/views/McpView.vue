@@ -52,6 +52,9 @@ const pool = computed(() => poolEntries(workspaces.mcp))
 const poolServers = computed(() => pool.value.filter((entry) => entry.enabled))
 const enabledCount = computed(() => poolServers.value.length)
 const disabledCount = computed(() => pool.value.length - enabledCount.value)
+/* Parked because the definition points at the machine that shared it: the
+   inventory says so, otherwise the row reads as a sync that dropped a server. */
+const unavailableCount = computed(() => pool.value.filter((entry) => entry.reason).length)
 const totalGlobals = computed(() => globals.groups.reduce((total, group) => total + (group.servers?.length || 0), 0))
 
 const usedBy = (name) => hub.agents.filter((agent) => agent.mcp.includes(name)).map((agent) => agent.name)
@@ -408,7 +411,7 @@ onMounted(() => {
         >
           <span class="mcp-inv-nm">
             <b>{{ row.name }}</b>
-            <span v-if="row.kind === 'pool' && !row.enabled">disabled</span>
+            <span v-if="row.kind === 'pool' && !row.enabled" :title="row.reason || 'Parked in this workspace'">{{ row.reason ? 'other machine' : 'disabled' }}</span>
             <span v-else>{{ row.kind === 'pool' ? (row.transport === 'http' ? 'remote' : 'local') : row.harnessLabel }}</span>
           </span>
           <span v-if="scope === 'workspace'">
@@ -461,6 +464,7 @@ onMounted(() => {
     <div class="mcp-inv-foot">
       <span>
         <b>{{ enabledCount }}</b> active<template v-if="disabledCount"> · <b>{{ disabledCount }}</b> parked</template>
+        <template v-if="unavailableCount"> · <b>{{ unavailableCount }}</b> bound to another machine</template>
         · <b>{{ hub.agents.filter((agent) => agent.mcp.length).length }}</b> narrow it
         · <b>{{ totalGlobals }}</b> on this machine
       </span>

@@ -74,3 +74,40 @@ test('the migration turns an old workspace link into a real copy', () => {
   /* And it is idempotent. */
   assert.deepEqual(workspaces.materialiseSkillLinks(record), [])
 })
+
+test('a pre-scanned library index attaches without walking the libraries again', () => {
+  const one = writeSkill(fs.mkdtempSync(path.join(os.tmpdir(), 'entity-skill-a-')), '# one\n')
+  const two = writeSkill(fs.mkdtempSync(path.join(os.tmpdir(), 'entity-skill-b-')), '# two\n')
+  const record = workspaces.create({ label: 'skills-index', skills: [] })
+
+  /* The real scan reads every harness skill directory: 40-80 ms on a machine
+     with a few libraries. A sync that attaches a roster must pay that once. */
+  let scans = 0
+  const real = localData.skillSources
+  localData.skillSources = () => {
+    scans += 1
+    return [one, two].map((dir) => ({
+      name: path.basename(dir),
+      harness: 'pi',
+      harnessLabel: 'pi',
+      absolutePath: dir,
+      realPath: dir,
+    }))
+  }
+  try {
+    const sources = workspaces.skillSourceIndex()
+    assert.equal(scans, 1)
+    for (const name of [path.basename(one), path.basename(two)]) {
+      workspaces.attachSkill({ id: record.id, name, harness: 'pi', sources })
+    }
+    assert.equal(scans, 1, 'attaching two skills re-used the one scan')
+  } finally {
+    localData.skillSources = real
+  }
+
+  for (const dir of [one, two]) {
+    const landed = path.join(record.path, 'skills', path.basename(dir), 'SKILL.md')
+    assert.equal(fs.existsSync(landed), true)
+    assert.equal(fs.lstatSync(path.dirname(landed)).isSymbolicLink(), false)
+  }
+})

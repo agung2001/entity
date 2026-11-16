@@ -31,6 +31,34 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024
 const MAX_FILES = 20_000
 const REDACTED = '***'
 
+/*
+ * Machine-bound MCP definitions — the ones that cannot answer anywhere but the
+ * computer that wrote them:
+ *
+ *   loopback    an http URL on `127.0.0.1`, `localhost`, `::1`, … A synced
+ *               workspace on another host resolves that to itself, where
+ *               nothing listens.
+ *   home-path   a command or argument that is a path inside a home directory or
+ *               an app bundle (`~/…`, `/Users/…`, `/home/…`, `/Applications/…`).
+ *               A home directory does not exist on the other machine under the
+ *               same name, and an app bundle may not exist at all.
+ *
+ * The definition still travels: a teammate may run the same service. What does
+ * not travel is the assumption that it is reachable, so the far side parks it
+ * with the reason instead of enabling a server that cannot answer.
+ */
+const LOOPBACK_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  '::1',
+  '[::1]',
+  'host.docker.internal',
+  'host.containers.internal',
+  'gateway.docker.internal',
+])
+const HOME_PATH = /(?:^|[\s"'=:])(?:~\/|\/Users\/|\/home\/|\/root\/|\/Applications\/|\/opt\/homebrew\/|[A-Za-z]:\\)/
+
 /** `a/b/c.md` → `a/b/c.md`; anything that could escape the root → null. */
 function safeRel(value) {
   let rel = String(value || '').replace(/\\/g, '/')
@@ -116,6 +144,36 @@ function sortMembers(members) {
     .sort((a, b) => `${a.email}|${a.name}`.localeCompare(`${b.email}|${b.name}`))
 }
 
+/** `''` when the definition is portable, else the token that makes it local. */
+function machineBoundReason(entry) {
+  if (!entry || typeof entry !== 'object') return ''
+  const url = String(entry.url || '')
+  if (url) {
+    try {
+      if (LOOPBACK_HOSTS.has(new URL(url).hostname.toLowerCase())) return 'loopback'
+    } catch {
+      /* not a URL: the command check below still gets a say */
+    }
+  }
+  const tokens = [
+    String(entry.command || ''),
+    ...(Array.isArray(entry.args) ? entry.args.map(String) : []),
+  ]
+  if (tokens.some((token) => HOME_PATH.test(String(token || '')))) return 'home-path'
+  return ''
+}
+
+/** The sentence a parked pool entry carries, so the UI can explain itself. */
+function machineBoundNote(reason) {
+  if (reason === 'loopback') {
+    return 'its URL is a loopback address, so it only answers on the machine that set it up'
+  }
+  if (reason === 'home-path') {
+    return 'its command is a path inside a home directory on the machine that shared it'
+  }
+  return ''
+}
+
 function normaliseOwner(owner) {
   if (!owner || typeof owner !== 'object') return null
   const email = String(owner.email || '').trim()
@@ -167,6 +225,10 @@ function sanitizeMcp(raw) {
       )
     }
     if (!clean.command && !clean.url) continue
+    /* Travel the fact, not just the definition: the receiving machine parks it
+       instead of offering a server that points at the sender's computer. */
+    const machine = machineBoundReason(entry)
+    if (machine) clean.machineLocal = machine
     out[name] = clean
   }
   return { schema: 1, servers: out }
@@ -479,6 +541,8 @@ module.exports = {
   recordInputs,
   canonicalMeta,
   sanitizeMcp,
+  machineBoundReason,
+  machineBoundNote,
   mergeServer,
   normaliseSkills,
   readAttachedSkills,

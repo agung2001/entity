@@ -25,6 +25,11 @@ const inPool = computed(
 )
 const enabled = computed(() => Boolean(poolServers.value[name.value]))
 const poolDefinition = computed(() => poolServers.value[name.value] || poolDisabled.value[name.value] || null)
+/* Set when sync parked it: the definition points at the machine that shared
+   it, so enabling it here would offer a server that cannot answer. */
+const parkedReason = computed(() =>
+  enabled.value ? '' : String(poolDisabled.value[name.value]?.__unavailable || ''),
+)
 
 /* A server the harnesses already know is readable here too, with one action:
    copy it into the pool. */
@@ -48,6 +53,11 @@ const confirming = ref(false)
 const redactedDefinition = computed(() => {
   if (!definition.value) return ''
   const copy = JSON.parse(JSON.stringify(definition.value))
+  /* `__remote` / `__pinned` / `__unavailable` are pool bookkeeping, not part of
+     the definition; the page states the parked reason in prose instead. */
+  for (const key of Object.keys(copy)) {
+    if (key.startsWith('__')) delete copy[key]
+  }
   if (copy.headers && typeof copy.headers === 'object' && !Array.isArray(copy.headers)) {
     for (const key of Object.keys(copy.headers)) copy.headers[key] = '•••'
   }
@@ -234,6 +244,10 @@ watch(name, async () => {
               {{ namedBy.length ? `${namedBy.length} entities narrow to it` : 'every entity' }}
             </span>
           </div>
+          <p v-if="parkedReason" class="mcpp-note">
+            Parked because {{ parkedReason }}. Enable it if this machine really does run it —
+            the pin then keeps the next sync from parking it again.
+          </p>
         </div>
       </header>
 

@@ -778,14 +778,20 @@ clones the one you pick into a local workspace of the same name.
 - **What does not:** skill bodies (each machine links its own library), MCP secrets,
   machine capability snapshots (they describe the local fleet), chats and run logs.
 - **Incremental:** both ends hash a content-addressed manifest; the local side keeps
-  the base manifest and does a three-way diff, so only changed paths move.
+  the base manifest and does a three-way diff, so only changed paths move. A pass with
+  nothing to do is one manifest request and one walk of the workspace on each end
+  (milliseconds, not a re-upload).
 - **Conflict copies, never silent loss:** if both sides changed a file, the remote
   version keeps the path and the local bytes go to
   `artifacts/conflicts/<path>.<stamp>.local.<ext>`. Deletes move to
   `.remote-trash/<stamp>/`. Writes are conditional (`x-entity-base`), so a
   concurrent edit answers `409` and is resolved on the next pass.
-- **MCP is quarantined:** a server new to this machine lands in `mcp.json`'s
-  `disabled[]` until a person enables it. A remote `command` is code.
+- **MCP travels ready to use, except where it cannot work:** a portable server is
+  enabled on the clone with no second setup step. A definition bound to the machine
+  that wrote it — a loopback URL, a command inside a home directory — is still shared
+  but lands in `mcp.json`'s `disabled[]` with the reason; enabling it by hand pins it,
+  and the next sync leaves it alone. A server a teammate parked is never switched on
+  by a sync.
 - **The guard runs first:** every pulled text blob is scanned for prompt injection,
   credential export, shell pipes, invisible unicode and injected markup. A
   high-severity finding aborts before any write, marks the connection `blocked` and

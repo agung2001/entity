@@ -133,10 +133,49 @@ function readSkills(record) {
 
 /* ── manifest ─────────────────────────────────────────────────────── */
 
+/**
+ * Park the machine-bound definitions this workspace cannot use.
+ *
+ * A workspace the server hosts is written by the clients, so a loopback URL or
+ * a command inside a home directory arrived from a computer that is not this
+ * one. Leaving it enabled here offers a server that can never answer, and the
+ * entity that names it fails on every turn. The definition stays in the pool,
+ * parked with the reason, so the workspace page explains itself and a person
+ * who really does run that service here can enable it — which pins it, and a
+ * pin survives every later pass.
+ */
+function parkMachineBound(record) {
+  const file = path.join(record.path, 'mcp.json')
+  const current = readJson(file, null)
+  if (!current || typeof current !== 'object') return []
+  const servers = current?.servers && typeof current.servers === 'object' ? { ...current.servers } : {}
+  const disabled = current?.disabled && typeof current.disabled === 'object' ? { ...current.disabled } : {}
+  const parked = []
+  for (const [name, entry] of Object.entries(servers)) {
+    if (!entry || entry.__pinned) continue
+    const reason = manifest.machineBoundReason(entry)
+    if (!reason) continue
+    disabled[name] = {
+      ...entry,
+      __remote: true,
+      __remoteAt: nowIso(),
+      __unavailable: manifest.machineBoundNote(reason),
+    }
+    delete servers[name]
+    parked.push(name)
+  }
+  if (!parked.length) return parked
+  writeJson(file, { schema: 1, servers, disabled }, { mode: 0o600 })
+  return parked.sort()
+}
+
 function buildFor(record) {
   /* The server workspace is the shared copy: make any old skill link real
      before its manifest (and therefore every client) reads it. */
   workspaces.materialiseSkillLinks(record)
+  /* The same moment finishes the MCP repair: a definition that only works on
+     the machine that shared it must not sit enabled in the shared copy. */
+  parkMachineBound(record)
   const inputs = manifest.recordInputs(record)
   inputs.skills = manifest.normaliseSkills([...readSkills(record), ...inputs.skills])
   return manifest.buildManifest(record.path, inputs)
@@ -219,7 +258,25 @@ function applyMcp(record, incoming) {
 
   for (const [name, entry] of Object.entries(incomingServers)) {
     if (!entry || (!entry.command && !entry.url)) continue
-    servers[name] = servers[name] ? manifest.mergeServer(servers[name], entry) : entry
+    /* The marker belongs to the sender; this machine recomputes its own. */
+    const clean = { ...entry }
+    delete clean.machineLocal
+    const existing = servers[name]
+    const reason = entry.machineLocal || manifest.machineBoundReason(entry)
+    /* Parked, not enabled: it points at the sender's computer. A person who
+       enabled it here on purpose is pinned, and the pin wins — every other
+       case would leave a server that can never answer looking healthy. */
+    if (reason && !existing?.__pinned) {
+      disabled[name] = {
+        ...clean,
+        __remote: true,
+        __remoteAt: nowIso(),
+        __unavailable: manifest.machineBoundNote(reason),
+      }
+      delete servers[name]
+      continue
+    }
+    servers[name] = existing ? manifest.mergeServer(existing, clean) : clean
   }
   writeJson(file, { schema: 1, servers, disabled }, { mode: 0o600 })
 }
@@ -773,6 +830,8 @@ module.exports = {
   readRawBody,
   secureRequest,
   buildFor,
+  parkMachineBound,
+  applyMcp,
   readSkills,
   MAX_BODY,
 }

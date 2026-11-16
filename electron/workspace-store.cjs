@@ -520,11 +520,11 @@ function skills(id) {
 }
 
 /** The library entry a workspace symlink should point at. */
-function findLibrarySkill(name, harness) {
+function findLibrarySkill(name, harness, sources = null) {
   const wanted = String(name || '').toLowerCase()
   const wantedHarness = String(harness || '')
-  const sources = localData.skillSources()
-  const matches = sources.filter((item) => item.name.toLowerCase() === wanted)
+  const list = sources || localData.skillSources()
+  const matches = list.filter((item) => item.name.toLowerCase() === wanted)
   return (
     matches.find((item) => item.harness === wantedHarness) ||
     matches[0] ||
@@ -540,8 +540,8 @@ function findLibrarySkill(name, harness) {
  * the portable unit, so the bytes live here. Updates to the library do not flow
  * through afterwards; re-attach (or edit the workspace copy) intentionally.
  */
-function attachSkillTo(dir, name, harness) {
-  const source = findLibrarySkill(name, harness)
+function attachSkillTo(dir, name, harness, sources = null) {
+  const source = findLibrarySkill(name, harness, sources)
   if (!source) {
     throw new Error(`No skill called "${name}" in the harness libraries on this machine.`)
   }
@@ -626,8 +626,20 @@ function materialiseSkillLinks(record) {
   return copied
 }
 
-function attachSkill({ id, name, harness }) {
-  return attachSkillTo(skillsDir(open(id)), name, harness)
+function attachSkill({ id, name, harness, sources = null }) {
+  return attachSkillTo(skillsDir(open(id)), name, harness, sources)
+}
+
+/**
+ * Every skill the harnesses on this machine carry, in one walk.
+ *
+ * `skillSources()` reads `~/.pi`, `~/.claude`, `~/.codex`, … and their SKILL.md
+ * frontmatter (tens of milliseconds once the libraries grow). A sync that
+ * attaches a whole roster calls it once and hands the list to each attach,
+ * instead of walking every library again per missing name.
+ */
+function skillSourceIndex() {
+  return localData.skillSources()
 }
 
 function detachSkill({ id, name }) {
@@ -771,6 +783,11 @@ function writeMcp({ id, servers, disabled }) {
  * Enable/disable one server without losing its definition. Disabling moves the
  * definition into `disabled`; enabling moves it back. Global servers that are
  * not in the pool yet can be enabled by sending their definition.
+ *
+ * Enabling pins the definition (`__pinned`). Automatic passes park a definition
+ * that points at the machine that shared it, and a person pressing Enable here
+ * is the one signal that this machine really does run that server — the pin is
+ * what stops the next sync from parking it again.
  */
 function setMcpEnabled({ id, name, enabled, definition = null }) {
   const record = open(id)
@@ -780,12 +797,19 @@ function setMcpEnabled({ id, name, enabled, definition = null }) {
   if (enabled) {
     const entry = disabled[key] || servers[key] || definition
     if (!entry) throw new Error(`No definition for MCP server "${key}".`)
-    servers[key] = validServer(key, entry)
+    const clean = { ...entry, __pinned: true }
+    /* The reason for the park has been answered by enabling it. */
+    delete clean.__unavailable
+    delete clean.__remote
+    delete clean.__remoteAt
+    servers[key] = validServer(key, clean)
     delete disabled[key]
   } else {
     const entry = servers[key] || disabled[key] || definition
     if (entry) {
-      disabled[key] = validServer(key, entry)
+      const clean = { ...entry }
+      delete clean.__pinned
+      disabled[key] = validServer(key, clean)
       delete servers[key]
     }
   }
@@ -1155,6 +1179,7 @@ module.exports = {
   skillsDir,
   materialiseSkillLinks,
   attachSkill,
+  skillSourceIndex,
   detachSkill,
   skillRead,
   mcp,

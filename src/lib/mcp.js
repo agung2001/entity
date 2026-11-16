@@ -40,7 +40,15 @@ export function poolEntries(pool) {
     map.set(name, { name, definition, enabled: true })
   }
   for (const [name, definition] of Object.entries(pool?.disabled || {})) {
-    if (!map.has(name)) map.set(name, { name, definition, enabled: false })
+    if (map.has(name)) continue
+    map.set(name, {
+      name,
+      definition,
+      enabled: false,
+      /* Set by the sync when the definition points at the machine that shared
+         it. The row is present, not missing — it just cannot answer here. */
+      reason: String(definition?.__unavailable || ''),
+    })
   }
   return [...map.values()]
 }

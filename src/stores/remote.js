@@ -19,6 +19,8 @@ export const remote = reactive({
   items: {},
   /** workspace id → the findings that stopped the last sync */
   findings: {},
+  /** workspace id → what the running pass is doing (phase, done, total, startedAt) */
+  progress: {},
   /** one action at a time; values are `connect`, `sync:<id>`, `approve:<id>` */
   busy: '',
   /** the workspace whose remote panel is open */
@@ -61,12 +63,36 @@ function summaryLine(result) {
   return parts.join(' · ')
 }
 
+function clearProgress(id) {
+  if (!id || !remote.progress[id]) return
+  const next = { ...remote.progress }
+  delete next[id]
+  remote.progress = next
+}
+
 function onRemoteEvent(event) {
-  if (!event || event.kind !== 'remote-sync' || !event.workspace) return
+  if (!event || !event.workspace) return
   const id = event.workspace
+
+  if (event.kind === 'remote-sync-progress') {
+    remote.progress = {
+      ...remote.progress,
+      [id]: {
+        phase: event.phase || '',
+        done: Number(event.done || 0),
+        total: Number(event.total || 0),
+        path: event.path || '',
+        startedAt: Number(event.startedAt || Date.now()),
+      },
+    }
+    return
+  }
+
+  if (event.kind !== 'remote-sync') return
   refreshOne(id)
 
   if (event.status === 'blocked') {
+    clearProgress(id)
     const count = Array.isArray(event.findings) ? event.findings.length : 0
     remote.findings = { ...remote.findings, [id]: event.findings || [] }
     toast(
@@ -75,20 +101,23 @@ function onRemoteEvent(event) {
     return
   }
   if (event.status === 'unauthorized') {
+    clearProgress(id)
     toast('Remote sync stopped: the server rejected this session. Reconnect to continue.')
     return
   }
   if (event.status === 'error') {
+    clearProgress(id)
     toast(`Remote sync failed: ${event.error || 'the server did not answer.'}`)
     return
   }
   if (event.status === 'idle') {
+    clearProgress(id)
     const line = summaryLine(event)
     remote.findings = { ...remote.findings, [id]: [] }
     if (line && event.reason !== 'poll') toast(`Remote synced · ${line}`)
     if (event.quarantined?.length) {
       toast(
-        `${event.quarantined.length} MCP server${event.quarantined.length === 1 ? '' : 's'} from the server parked for review.`,
+        `${event.quarantined.length} MCP server${event.quarantined.length === 1 ? '' : 's'} from the server parked in the pool.`,
       )
     }
     if (event.mcpDiverged?.length) {
@@ -184,7 +213,8 @@ export async function connectRemote({ serverUrl, email, password, remoteWorkspac
 
 export async function syncRemote(id) {
   if (remote.busy) throw new Error('A remote action is already running.')
-  remote.busy = `sync:${id}`
+  const key = `sync:${id}`
+  remote.busy = key
   try {
     const result = await call('remote.sync', { id, reason: 'manual' })
     const state = await call('remote.status', { id }).catch(() => null)
@@ -197,7 +227,7 @@ export async function syncRemote(id) {
     }
     return result
   } finally {
-    remote.busy = ''
+    if (remote.busy === key) remote.busy = ''
   }
 }
 
@@ -207,8 +237,14 @@ export async function syncRemote(id) {
  */
 /** Change the second-opinion evaluator for a connected workspace. */
 export async function setRemoteGuard(id, guard) {
-  if (remote.busy) throw new Error('A remote action is already running.')
-  remote.busy = `guard:${id}`
+  /* Saving the evaluator is a config write, not a pass: it must work while a
+     sync is running, or the person has no way to turn the reviewer off the
+     moment it starts costing them time. */
+  const key = `guard:${id}`
+  if (remote.busy && remote.busy !== `sync:${id}`) {
+    throw new Error('A remote action is already running.')
+  }
+  remote.busy = key
   try {
     const state = await call('remote.setGuard', { id, guard })
     if (state?.connected) remote.items = { ...remote.items, [id]: state }
@@ -219,7 +255,7 @@ export async function setRemoteGuard(id, guard) {
     )
     return state
   } finally {
-    remote.busy = ''
+    if (remote.busy === key) remote.busy = ''
   }
 }
 
