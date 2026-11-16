@@ -164,6 +164,7 @@ function createRpc({
     'artifact.download': (args) => artifacts.download(args),
     'artifact.upload': (args) => artifacts.upload(args),
     'artifact.saveText': (args) => artifacts.saveText(args),
+    'artifact.writeText': (args) => artifacts.writeText(args),
     'artifact.remove': (args) => artifacts.remove(args),
     'artifact.root': (args) => artifacts.rootPath(args),
     'artifact.reveal': (args) => {
@@ -277,6 +278,7 @@ function createRpc({
     'chat.update': (args) => chats.update(args),
     'chat.rename': (args) => chats.rename(args),
     'chat.pin': (args) => chats.pin(args),
+    'chat.tags': (args) => chats.tags(args),
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
     'chat.cancel': (args) => chats.cancel(args),

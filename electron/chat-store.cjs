@@ -35,6 +35,8 @@ const { expandHome } = require('./frontmatter.cjs')
 const MAX_THREADS_SCANNED = 400
 const MAX_OUTPUT_CHARS = 240_000
 const MAX_PROMPT_CHARS = 48_000
+const MAX_TAGS = 12
+const MAX_TAG_CHARS = 32
 const HARNESS_IDLE_MS = 15 * 60 * 1000
 const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
 
@@ -250,6 +252,32 @@ function normaliseMessage(message) {
   }
 }
 
+/**
+ * Tags are a short label list, not prose. The dialog sends comma-separated
+ * text, and the file may have been written by hand: trim, drop empties,
+ * collapse duplicates case-insensitively and cap both count and length so a
+ * pasted paragraph cannot turn a history row into a wall of chips.
+ */
+function normaliseTags(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  const seen = new Set()
+  for (const entry of raw) {
+    const tag = String(entry || '')
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, MAX_TAG_CHARS)
+    if (!tag) continue
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(tag)
+    if (out.length >= MAX_TAGS) break
+  }
+  return out
+}
+
 function normaliseThread(raw, record) {
   if (!raw || raw.schema !== 1 || typeof raw.id !== 'string') return null
   const entity = String(raw.entity || '')
@@ -271,6 +299,7 @@ function normaliseThread(raw, record) {
     user: threadOwner(raw, record),
     title: String(raw.title || ''),
     pinned: Boolean(raw.pinned),
+    tags: normaliseTags(raw.tags),
     createdAt: raw.createdAt || now(),
     updatedAt: raw.updatedAt || raw.createdAt || now(),
     messages: Array.isArray(raw.messages) ? raw.messages.map(normaliseMessage).filter(Boolean) : [],
@@ -329,6 +358,7 @@ function summarise(thread) {
     dir: thread.dir || '',
     title: thread.title || titleOf(thread),
     pinned: Boolean(thread.pinned),
+    tags: thread.tags || [],
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     queries,
@@ -471,6 +501,7 @@ function create({ workspace, entity, machine = 'local', harness, model = '', dir
     user: currentUser() || threadOwner(null, record),
     title: '',
     pinned: false,
+    tags: [],
     createdAt: now(),
     updatedAt: now(),
     messages: [],
@@ -544,6 +575,17 @@ function pin({ workspace, id, pinned }) {
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   thread.pinned = Boolean(pinned)
+  thread.updatedAt = now()
+  writeThread(record, thread)
+  return thread
+}
+
+/** Tags are editable at any time, like the title and the pin. */
+function tags({ workspace, id, tags: nextTags }) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  thread.tags = normaliseTags(nextTags)
   thread.updatedAt = now()
   writeThread(record, thread)
   return thread
@@ -1355,6 +1397,7 @@ module.exports = {
   update,
   rename,
   pin,
+  tags,
   remove,
   send,
   cancel,

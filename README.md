@@ -305,7 +305,9 @@ npm run dev:desktop      # Vite + Electron, HMR included
 | `npm run test:regression` | The deterministic Playwright regression pack |
 | `npm run test:e2e` | Both Playwright packs |
 | `npm run test:gate` | Unit + smoke — the release gate |
-| `npm run package` | Builds a distributable with electron-builder → `release/` |
+| `npm run package` | Builds a distributable for the current platform → `release/` |
+| `npm run package:mac` | Builds the universal macOS DMG → `release/` (macOS only) |
+| `npm run package:win` | Builds the x64 Windows installer → `release/` (run on Windows; needs Wine on macOS) |
 | `git tag v0.0.1 && git push origin v0.0.1` | Builds macOS and Windows installers, publishes a GitHub Release, and pushes the container image to GHCR |
 | `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
 

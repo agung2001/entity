@@ -183,7 +183,14 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | A rail shortcut assumes one panel | Target the search field of the currently visible rail | Review |
 | Conversation shortcuts exist only in a view | Add them to `SHORTCUT_GROUPS` so the guide and handler agree | Review |
 | A chart canvas paints over a card's popup, so its controls cannot be clicked | A card with a popup needs its own stacking order above the charts that follow it (`isolation: isolate` alone is not enough) | `EntityDetailView` — `.entp-hero` |
-| A picker inside a scrolling dialog is cut off at the dialog edge | Teleport the popover to `<body>` with fixed coordinates; measure and flip on open, reposition on scroll/resize, cap the height and let it scroll | `PickMenu` |
+| A picker inside a scrolling dialog is cut off at the dialog edge | Teleport the popover to `<body>` with fixed coordinates; measure and flip on open, reposition on scroll/resize, cap the height and let it scroll | `PickMenu`, `ModelInput` |
+| The model suggestions scroll inside a 280px box clipped by the dialog | The layer measures the viewport, not a fixed `max-height`; it grows to the room that exists and flips above when the field sits low | `ModelInput` |
+| A one-line title leaves an empty gap and the bar is taller than the top bar | A heading with a decorative icon is a flex row: the text is its own span and the icon never wraps to a second line. A block `h2` rule must not win over `.cp-title` | `.cp-head h2.cp-title` |
+| The first line of the thread slides under the glass bar | The measured header height is its border box, not `contentRect` (which excludes padding) | `ChatView.watchHead` |
+| Thread tags only exist on the open conversation | Tags are thread metadata: the header shows and edits them, the rail shows them on every row and filters by them | `ChatView`, `ChatHistoryRail`, `ThreadTagsDialog` |
+| Two counters take a header track from the title and search, or float over the answer | Conversation totals close the composer's context row, before voice and help | `.cp-stats` |
+| A Markdown or code artifact is dumped as raw text in a bordered box | Documents use the chat glass bar and open in MarkdownEditor / CodeEditor, full-bleed under it; Save writes back to the same file, never a copy | `ArtifactDetailView`, `artifact.writeText` |
+| A members list is a row of unlabeled name/email/role fields | Each member is a card led by their Gravatar (initials when there is no email), with labelled inputs and an icon remove button; the owner row is marked | `WorkspaceView` |
 | A media artifact is a small image in a bordered box | Images, audio and video get the full-bleed grid stage: details and file actions in a floating top bar, zoom in a vertical rail, wheel/button zoom, drag to pan at any scale, Fit to reset; documents keep the plain preview | `ArtifactDetailView` |
 | Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
 | A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
@@ -218,6 +225,8 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
 | Entity learning review | `src/components/EntityLearnDialog.vue` | Esc, scrim, Cancel (guarded while applying); `entity.learn` writes nothing |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
+| Thread tags | `src/components/ThreadTagsDialog.vue` | Esc, scrim, Cancel (guarded while saving) |
+| Artifact document editor | `src/views/ArtifactDetailView.vue` | page surface; Save button and the catalog `save` shortcut |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
 
@@ -286,16 +295,71 @@ text passes under it.
   (`--cp-head-h`, declared on `.cpanel`) feeds both, so the bar's height can
   never disagree with the reserve — a first line born under the glass is a line
   nobody can read.
-- **Three zones: identity · counters · actions.** The counters are a header
-  child of their own, not part of the button cluster, and the middle track is
-  the only one that flexes, so the bar reads as three groups instead of two
-  clumps pressed against the edges with a hole down the centre.
-- **The bar is a size container.** Below 840px of column the shortcut chips go,
-  below 720px the counters, below 600px the button labels. Container queries,
-  not media queries: the rail takes 300px, so the column and not the window is
-  what runs out of room.
+- **Measure the border box.** The `ResizeObserver` reads `borderBoxSize`, not
+  `contentRect`: the content box drops the bar's own padding and the transcript
+  then reserves ~16px less than the glass actually covers.
+- **One row, the top bar's height.** The bar is 56px, the same as `.topbar`. It
+  grows only when a long title wraps to a second line. Nothing else in the bar
+  may make it taller: tag chips clip, counters hide, the search stays 30px.
+- **No decorative second line.** The title is `display: flex` with the text in
+  `.cp-title-text` and the pencil as a sibling. A `display: block` heading put
+  the pencil on its own line and left an empty gap under every short title.
+- **Three zones: identity · search · actions.** The thread search is a header
+  child of its own (`cp-mid`), not part of the button cluster, and the middle
+  track is the only one that flexes, so the bar reads as three groups instead of
+  two clumps pressed against the edges with a hole down the centre.
+- **The query/response totals close the composer's context row.** They describe
+  the conversation, so `cp-stats` sits immediately before voice and Composer
+  help with `margin-left: auto`. They do not take a header track from the title
+  and search, and they do not float over the transcript where they would cover
+  a line of the answer.
+- **The bar is a size container.** Below 840px of column the shortcut chips and
+  tag chips go; below 760px the search goes; below 600px the button labels.
+  Container queries, not media queries: the rail takes 300px, so the column and
+  not the window is what runs out of room.
+- **Search is a jump, not a filter.** `cp-search` counts the messages that
+  contain the text, highlights each row, and Enter / Shift+Enter move through
+  them. It never rewrites the Markdown or hides context.
 - The tint is roughly two-thirds of `--bg` over `blur(16px) saturate(1.8)`. Keep
   it light enough that a line of text under the bar stays readable as a smudge.
+
+## Thread tags are metadata, not a second title
+
+A long history is navigated by what a conversation was *about*, not only by
+remembering its opening sentence.
+
+- Tags live on the thread (`tags: []` in the thread JSON), like the title and
+  the pin. `chat.tags` normalises them: trimmed, case-insensitively deduped,
+  capped at 12 tags of 32 characters. The dialog previews exactly what will be
+  saved.
+- The header shows the chips in the meta line and opens `ThreadTagsDialog` on
+  click. It is a comma-separated field, because the file is hand-editable and one
+  syntax must serve both. Every preview chip carries its own `×`; removing it
+  rewrites the same field.
+- The history rail shows every row's tags and filters by tag alongside time and
+  status. A tag chip in a row is a filter button, not decoration.
+- Tags belong in the rail search text too: a person searching `billing` should
+  find the thread even when the title never says it.
+
+## An artifact is a file with the chat's bar, not a card in a page
+
+The artifact detail page is a full-height surface with its own scroll. It uses
+the chat header recipe rather than a floating rounded card.
+
+- `.artifact-bar` is absolute glass over `.artifact-scroll`. The bar carries
+  three text lines and is taller than 56px, so the view measures its **border
+  box** into `--abar-h`; the scroll and the media stage reserve that, never a
+  hard-coded number.
+- A **Markdown** artifact opens in `MarkdownEditor` (Write / Review, word count,
+  formatting tools) as the surface itself: `.artifact-scroll--editor` removes
+  the side gutters, the frame and the bottom padding, and the editor flexes to
+  the full width and height under the bar. A short document must not leave a
+  white strip below the textarea. Save writes back to the same id through
+  `artifact.writeText` — `saveText` allocates a new name and is only for derived
+  exports. `save` is in the shortcut catalog.
+- Other text artifacts keep a plain scrollable preview; PDFs keep the iframe;
+  binaries keep Download. Editing is not offered where it would corrupt the
+  file.
 
 ## Backups are copies, not exports
 
@@ -347,6 +411,10 @@ inventory, and Markdown parsing must not happen until a reply needs it.
   `src/lib/echarts-core.js` with `import()`. Views import formatting from
   `src/lib/chart-math.js`, never the renderer, or the library lands in a route
   chunk.
+- **The code editor is a chunk until a code artifact is opened.** `CodeEditor.vue`
+  imports `codemirror` and `@codemirror/lang-python` with `import()` inside
+  `onMounted`, so the artifact route does not pay for an editor a reader never
+  opens.
 - **The terminal is a chunk until it is opened.** `@xterm/xterm` (287 kB) and its
   fit addon are imported by `src/lib/terminal.js` on first open, behind a cached
   promise that retries after a failure. A conversation that never opens a shell

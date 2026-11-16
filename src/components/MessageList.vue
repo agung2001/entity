@@ -26,6 +26,10 @@ const props = defineProps({
   shareUrl: { type: Function, default: null },
   followups: { type: Array, default: () => [] },
   followupsBusy: { type: Boolean, default: false },
+  /* The thread search lives in the chat header; the list only paints the hits
+     and scrolls to the one that is active. */
+  searchHits: { type: Array, default: () => [] },
+  searchActive: { type: Number, default: -1 },
 })
 const emit = defineEmits(['chip', 'retry', 'followup', 'suggest'])
 
@@ -287,10 +291,19 @@ watch(() => liveText.value.length, toBottom)
 async function scrollToFocus() {
   if (props.focusIndex < 0) return false
   await nextTick()
+  return scrollToAnchor(props.focusIndex)
+}
+
+/** Scroll one anchor into view, mounting older rows first when needed. */
+async function scrollToAnchor(index, attempt = 0) {
   const boxEl = box.value
   if (!boxEl) return false
-  const target = boxEl.querySelector(`[data-thread-anchor="${props.focusIndex}"]`)
-  if (!target) return false
+  const target = boxEl.querySelector(`[data-thread-anchor="${index}"]`)
+  if (!target) {
+    if (attempt >= 2) return false
+    await nextTick()
+    return scrollToAnchor(index, attempt + 1)
+  }
   const top =
     target.getBoundingClientRect().top - boxEl.getBoundingClientRect().top + boxEl.scrollTop - 16
   const distance = Math.abs(top - boxEl.scrollTop)
@@ -302,6 +315,17 @@ async function scrollToFocus() {
   })
   return true
 }
+
+/** Mount down to a message and put it on screen; used by the header search. */
+async function jumpTo(index) {
+  if (typeof index !== 'number' || index < 0) return
+  pin = false
+  revealThrough(index)
+  await nextTick()
+  await scrollToAnchor(index)
+}
+
+defineExpose({ jumpTo })
 
 watch(
   () => [props.messages.length, props.focusIndex, props.threadId],
@@ -528,6 +552,8 @@ function traceSummary(message) {
           class="ask-sys"
           :data-error="m.error ? '1' : '0'"
           :data-thread-anchor="i"
+          :data-search-hit="searchHits.includes(i) ? '1' : '0'"
+          :data-search-active="searchActive === i ? '1' : '0'"
         >
           <span>{{ m.text }}</span>
           <button
@@ -552,6 +578,8 @@ function traceSummary(message) {
         class="msg"
         :data-who="m.who"
         :data-thread-anchor="i"
+        :data-search-hit="searchHits.includes(i) ? '1' : '0'"
+        :data-search-active="searchActive === i ? '1' : '0'"
         :data-avatar="m.who === 'me' && userAvatar ? '1' : '0'"
         :style="m.who === 'me' && userAvatar ? { '--msg-avatar': 'url(' + userAvatar + ')' } : null"
       >

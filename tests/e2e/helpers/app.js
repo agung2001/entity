@@ -22,18 +22,34 @@ export async function openNewThreadDialog(page) {
 export async function newThread(page, { entity, harness, machine } = {}) {
   const dialog = await openNewThreadDialog(page)
 
+  /* A pick menu is teleported to <body> so a scrolling dialog cannot clip it
+     (DESIGN.md), which means its options are no longer inside the dialog
+     subtree. Scope them by the listbox's own label. */
   await dialog.getByRole('button', { name: /^Entity:/ }).click()
-  await dialog.getByRole('option').filter({ hasText: entity }).first().click()
+  await page
+    .getByRole('listbox', { name: 'Entity' })
+    .getByRole('option')
+    .filter({ hasText: entity })
+    .first()
+    .click()
 
   /* Always choose the machine explicitly. Without this, a test that runs after
      a remote thread inherits that host as its default and silently runs on the
      wrong machine. */
   await dialog.getByRole('button', { name: /^Machine:/ }).click()
-  await dialog.locator(`.pickopt[data-val="${machine || 'local'}"]`).click()
+  await page
+    .getByRole('listbox', { name: 'Machine' })
+    .locator(`.pickopt[data-val="${machine || 'local'}"]`)
+    .click()
 
   if (harness) {
     await dialog.getByRole('button', { name: /^Harness:/ }).click()
-    await dialog.getByRole('option').filter({ hasText: harness }).first().click()
+    await page
+      .getByRole('listbox', { name: 'Harness' })
+      .getByRole('option')
+      .filter({ hasText: harness })
+      .first()
+      .click()
   }
 
   await dialog.getByRole('button', { name: 'Start thread' }).click()

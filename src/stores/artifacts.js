@@ -123,6 +123,21 @@ export async function removeArtifact(id) {
   return result
 }
 
+/**
+ * Save an editor draft back to the artifact it came from. The read cache for
+ * that id is dropped, so the next open sees the bytes that are now on disk.
+ */
+export async function writeArtifactText(id, text) {
+  const item = await call('artifact.writeText', {
+    workspace: hub.workspace,
+    id,
+    text,
+  })
+  forgetRead(hub.workspace, id)
+  await loadArtifacts()
+  return item
+}
+
 export async function revealArtifact(id) {
   return call('artifact.reveal', { workspace: hub.workspace, id })
 }

@@ -1,6 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import CodeEditor from '@/components/CodeEditor.vue'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import { shortcutLabel, matchesShortcut } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import {
   artifacts,
@@ -9,11 +12,16 @@ import {
   readArtifact,
   removeArtifact,
   revealArtifact,
+  writeArtifactText,
 } from '@/stores/artifacts'
 
 /**
  * One artifact, with its bytes loaded only for this page. The shelf itself is
  * the rail's second tier, so there is no list page between the two.
+ *
+ * The page borrows the chat's glass bar: it floats over the file and scrolls
+ * beneath it, instead of being a floating card on a page. A Markdown artifact
+ * is opened in the editor, not dumped as raw text in a box.
  */
 const route = useRoute()
 const router = useRouter()
@@ -23,11 +31,16 @@ const loading = ref(false)
 const missing = ref(false)
 const busy = ref('')
 const confirming = ref('')
+const saving = ref(false)
+const draftText = ref('')
+const savedText = ref('')
+const barRef = ref(null)
+const barHeight = ref(56)
+let barObserver = null
 let token = 0
 
 /* A media artifact gets a stage, not a thumbnail in a box: the bytes are often
-   a screenshot or a screen recording, and reading them is the whole point.
-   Documents keep the plain preview below. */
+   a screenshot or a screen recording, and reading them is the whole point. */
 const stage = ref(null)
 const zoom = ref(1)
 const pan = ref({ x: 0, y: 0 })
@@ -38,6 +51,23 @@ const mediaKind = computed(() => {
   const kind = previewData.value?.kind
   return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : ''
 })
+
+const id = computed(() => String(route.params.id || ''))
+const item = computed(() => artifacts.items.find((entry) => entry.id === id.value) || null)
+const isMarkdown = computed(() => {
+  const name = item.value?.name || previewData.value?.name || ''
+  const mime = item.value?.mime || previewData.value?.mime || ''
+  return /\.md$/i.test(name) || /markdown/i.test(mime)
+})
+/* Every text artifact is editable: Markdown gets the prose editor, anything
+   else gets CodeMirror. A truncated read stays read-only, because saving it
+   would delete the half that was never loaded. */
+const canEditText = computed(
+  () => previewData.value?.kind === 'text' && !previewData.value?.truncated,
+)
+const codeLanguage = computed(() => (/\.[Pp][Yy]$/.test(item.value?.name || '') ? 'python' : 'plain'))
+const dirty = computed(() => canEditText.value && draftText.value !== savedText.value)
+const saveShortcut = shortcutLabel('save')
 
 function clampZoom(value) {
   return Math.min(8, Math.max(0.25, value))
@@ -91,7 +121,14 @@ function endDrag(event) {
   stage.value?.releasePointerCapture?.(event.pointerId)
 }
 
-function onMediaKey(event) {
+function onKey(event) {
+  /* Saving a draft works even while the editor has focus; the browser's own
+     Save Page dialog must not open over the app. */
+  if (matchesShortcut('save', event) && canEditText.value) {
+    event.preventDefault()
+    save()
+    return
+  }
   if (!mediaKind.value || event.metaKey || event.ctrlKey || event.altKey) return
   const tag = String(event.target?.tagName || '').toLowerCase()
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return
@@ -106,9 +143,6 @@ function onMediaKey(event) {
     resetView()
   }
 }
-
-const id = computed(() => String(route.params.id || ''))
-const item = computed(() => artifacts.items.find((entry) => entry.id === id.value) || null)
 
 function when(iso) {
   if (!iso) return 'unknown'
@@ -131,6 +165,16 @@ function sizeLabel(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10_485_760 ? 1 : 0)} MB`
 }
 
+function syncDraft(data) {
+  if (data?.kind === 'text') {
+    draftText.value = data.text || ''
+    savedText.value = draftText.value
+  } else {
+    draftText.value = ''
+    savedText.value = ''
+  }
+}
+
 async function loadPreview() {
   const current = item.value
   if (!current) {
@@ -146,11 +190,21 @@ async function loadPreview() {
   const ask = ++token
   try {
     const data = await readArtifact(current.id)
-    if (ask === token) previewData.value = data
+    if (ask === token) {
+      previewData.value = data
+      syncDraft(data)
+    }
   } catch (error) {
     if (ask === token) toast(error?.message || 'The artifact could not be opened.')
   } finally {
-    if (ask === token) loading.value = false
+    if (ask === token) {
+      loading.value = false
+      /* The header only exists once the loading state is gone, so the bar is
+         measured after the DOM swap — not from the item watcher, which fires
+         while the spinner is still the visible branch. */
+      await nextTick()
+      watchBar()
+    }
   }
 }
 
@@ -163,6 +217,27 @@ async function boot() {
     return
   }
   await loadPreview()
+}
+
+async function save() {
+  const current = item.value
+  if (!current || !canEditText.value || saving.value || !dirty.value) return
+  saving.value = true
+  try {
+    const meta = await writeArtifactText(current.id, draftText.value)
+    savedText.value = draftText.value
+    previewData.value = {
+      ...(previewData.value || {}),
+      ...meta,
+      text: draftText.value,
+      truncated: false,
+    }
+    toast(`${current.name} saved`)
+  } catch (error) {
+    toast(error?.message || 'The document could not be saved.')
+  } finally {
+    saving.value = false
+  }
 }
 
 async function download() {
@@ -224,173 +299,195 @@ async function remove() {
 
 watch(id, boot)
 
+/**
+ * The glass bar is out of the flow, so the scroll owes it its real height. The
+ * bar holds three text lines and can be taller than the top bar; measuring the
+ * border box (not `contentRect`) keeps the editor flush under it.
+ */
+function watchBar() {
+  if (!barRef.value || typeof ResizeObserver !== 'function') return
+  barObserver?.disconnect()
+  barObserver = new ResizeObserver((entries) => {
+    const entry = entries[0]
+    const box = entry?.borderBoxSize?.[0]?.blockSize
+    const height = Number.isFinite(box) ? box : entry?.target?.getBoundingClientRect().height
+    barHeight.value = Math.round(height || 56)
+  })
+  barObserver.observe(barRef.value)
+}
+
+
 onMounted(() => {
   boot()
-  window.addEventListener('keydown', onMediaKey)
+  window.addEventListener('keydown', onKey)
 })
 onBeforeUnmount(() => {
   token += 1
-  window.removeEventListener('keydown', onMediaKey)
+  barObserver?.disconnect()
+  barObserver = null
+  window.removeEventListener('keydown', onKey)
 })
 </script>
 
 <template>
-  <div class="view artifact-detail" :class="{ 'artifact-detail--media': Boolean(mediaKind) }">
-    <div v-if="loading" class="empty-note media-message">
+  <div
+    class="view artifact-detail"
+    :class="{ 'artifact-detail--media': Boolean(mediaKind) }"
+    :style="{ '--abar-h': `${barHeight}px` }"
+  >
+    <div v-if="loading" class="empty-note artifact-state">
       <b>Opening {{ item?.name || 'artifact' }}…</b>
     </div>
 
-    <div v-else-if="missing" class="empty-note media-message">
+    <div v-else-if="missing" class="empty-note artifact-state">
       <b>That artifact is not in this workspace.</b>
       <span>It may have been removed on disk.</span>
       <button class="btn" type="button" @click="back">Back to overview</button>
     </div>
 
     <template v-else-if="item">
-      <div v-if="mediaKind" class="media-view">
-        <header class="media-top">
-          <button class="media-back" type="button" aria-label="Back to overview" title="Back" @click="back">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M13 8H3.4M7.4 3.4L3 8l4.4 4.6" />
-            </svg>
+      <header ref="barRef" class="artifact-bar">
+        <button class="media-back" type="button" aria-label="Back to overview" title="Back" @click="back">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M13 8H3.4M7.4 3.4L3 8l4.4 4.6" />
+          </svg>
+        </button>
+        <div class="artifact-titles">
+          <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
+          <h1 :title="item.id">{{ item.name }}</h1>
+          <p class="artifact-meta">
+            <span>{{ item.mime || item.ext || 'file' }}</span>
+            <span aria-hidden="true">·</span>
+            <span>{{ sizeLabel(item.size) }}</span>
+            <span aria-hidden="true">·</span>
+            <span>Modified {{ when(item.modifiedAt) }}</span>
+            <span v-if="canEditText && dirty" class="artifact-unsaved">Unsaved changes</span>
+          </p>
+        </div>
+        <div class="artifact-actions">
+          <button
+            v-if="canEditText"
+            class="btn btn-sm"
+            :class="dirty || saving ? 'btn-ink' : 'btn-ghost'"
+            type="button"
+            :disabled="!dirty || saving"
+            :title="dirty ? `Save the document (${saveShortcut})` : 'No unsaved changes'"
+            @click="save"
+          >
+            {{ saving ? 'Saving…' : dirty ? 'Save' : 'Saved' }}
+            <kbd v-if="dirty && !saving" class="btn-kbd">{{ saveShortcut }}</kbd>
           </button>
-          <div class="media-titles">
-            <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
-            <h1 :title="item.id">{{ item.name }}</h1>
-            <p class="media-meta">
-              <span>{{ item.mime || item.ext || 'file' }}</span>
-              <span aria-hidden="true">·</span>
-              <span>{{ sizeLabel(item.size) }}</span>
-              <span aria-hidden="true">·</span>
-              <span>Modified {{ when(item.modifiedAt) }}</span>
-            </p>
-          </div>
-          <div class="media-actions">
-            <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="download">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
-              </svg>
-              {{ busy === 'download' ? 'Preparing…' : 'Download' }}
-            </button>
-            <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="reveal">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
-                <path d="M1.8 5.8v-2h4" />
-              </svg>
-              {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
-            </button>
-            <button
-              class="btn btn-sm ws-danger"
-              type="button"
-              :class="{ confirming: confirming === item.id }"
-              :disabled="Boolean(busy)"
-              @click="remove"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M3 4.6h10M6.4 4.6V3h3.2v1.6M4.4 4.6l.6 8.4h6l.6-8.4M6.8 7v4M9.2 7v4" />
-              </svg>
-              {{ confirming === item.id ? 'Confirm delete' : 'Delete' }}
-            </button>
-          </div>
-        </header>
-
-        <section
-          ref="stage"
-          class="media-canvas"
-          :data-kind="mediaKind"
-          :data-drag="dragging ? '1' : '0'"
-          @wheel="onWheel"
-          @pointerdown="startDrag"
-          @pointermove="drag"
-          @pointerup="endDrag"
-          @pointercancel="endDrag"
-          @dblclick="mediaKind === 'image' && (zoom > 1 ? resetView() : zoomBy(2, $event.clientX, $event.clientY))"
-        >
-          <aside v-if="mediaKind === 'image'" class="media-rail" @pointerdown.stop @dblclick.stop>
-            <button type="button" aria-label="Zoom in" title="Zoom in (+)" @click="zoomBy(1.15)">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M3.5 8h9M8 3.5v9" />
-              </svg>
-            </button>
-            <button type="button" class="media-zoom" title="Fit to the window" @click="resetView">
-              {{ Math.round(zoom * 100) }}%
-            </button>
-            <button type="button" aria-label="Zoom out" title="Zoom out (−)" @click="zoomBy(0.85)">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M3.5 8h9" />
-              </svg>
-            </button>
-            <span class="media-sep" aria-hidden="true"></span>
-            <button type="button" aria-label="Fit to the window" title="Fit" @click="resetView">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M6 2.8H2.8V6M10 2.8h3.2V6M6 13.2H2.8V10M10 13.2h3.2V10" />
-              </svg>
-            </button>
-          </aside>
-
-          <img
-            v-if="mediaKind === 'image' && previewData?.dataUrl"
-            class="media-img"
-            :src="previewData.dataUrl"
-            :alt="previewData.name"
-            draggable="false"
-            :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
-          />
-
-          <video
-            v-else-if="mediaKind === 'video' && previewData?.dataUrl"
-            :src="previewData.dataUrl"
-            controls
-            playsinline
-            preload="metadata"
-          ></video>
-
-          <div v-else-if="mediaKind === 'audio' && previewData?.dataUrl" class="media-sound">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" />
+          <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="download">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
             </svg>
-            <div>
-              <b>{{ previewData.name }}</b>
-              <audio :src="previewData.dataUrl" controls preload="metadata"></audio>
+            {{ busy === 'download' ? 'Preparing…' : 'Download' }}
+          </button>
+          <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="reveal">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+              <path d="M1.8 5.8v-2h4" />
+            </svg>
+            {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
+          </button>
+          <button
+            class="btn btn-sm ws-danger"
+            type="button"
+            :class="{ confirming: confirming === item.id }"
+            :disabled="Boolean(busy)"
+            @click="remove"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M3 4.6h10M6.4 4.6V3h3.2v1.6M4.4 4.6l.6 8.4h6l.6-8.4M6.8 7v4M9.2 7v4" />
+            </svg>
+            {{ confirming === item.id ? 'Confirm delete' : 'Delete' }}
+          </button>
+        </div>
+      </header>
+
+      <div
+        class="artifact-scroll"
+        :class="{ 'artifact-scroll--document': previewData?.kind === 'text' }"
+      >
+        <div v-if="mediaKind" class="media-view">
+          <section
+            ref="stage"
+            class="media-canvas"
+            :data-kind="mediaKind"
+            :data-drag="dragging ? '1' : '0'"
+            @wheel="onWheel"
+            @pointerdown="startDrag"
+            @pointermove="drag"
+            @pointerup="endDrag"
+            @pointercancel="endDrag"
+            @dblclick="mediaKind === 'image' && (zoom > 1 ? resetView() : zoomBy(2, $event.clientX, $event.clientY))"
+          >
+            <aside v-if="mediaKind === 'image'" class="media-rail" @pointerdown.stop @dblclick.stop>
+              <button type="button" aria-label="Zoom in" title="Zoom in (+)" @click="zoomBy(1.15)">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M3.5 8h9M8 3.5v9" />
+                </svg>
+              </button>
+              <button type="button" class="media-zoom" title="Fit to the window" @click="resetView">
+                {{ Math.round(zoom * 100) }}%
+              </button>
+              <button type="button" aria-label="Zoom out" title="Zoom out (−)" @click="zoomBy(0.85)">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M3.5 8h9" />
+                </svg>
+              </button>
+              <span class="media-sep" aria-hidden="true"></span>
+              <button type="button" aria-label="Fit to the window" title="Fit" @click="resetView">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M6 2.8H2.8V6M10 2.8h3.2V6M6 13.2H2.8V10M10 13.2h3.2V10" />
+                </svg>
+              </button>
+            </aside>
+
+            <img
+              v-if="mediaKind === 'image' && previewData?.dataUrl"
+              class="media-img"
+              :src="previewData.dataUrl"
+              :alt="previewData.name"
+              draggable="false"
+              :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }"
+            />
+
+            <video
+              v-else-if="mediaKind === 'video' && previewData?.dataUrl"
+              :src="previewData.dataUrl"
+              controls
+              playsinline
+              preload="metadata"
+            ></video>
+
+            <div v-else-if="mediaKind === 'audio' && previewData?.dataUrl" class="media-sound">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" />
+              </svg>
+              <div>
+                <b>{{ previewData.name }}</b>
+                <audio :src="previewData.dataUrl" controls preload="metadata"></audio>
+              </div>
             </div>
-          </div>
-        </section>
-      </div>
-
-      <template v-else>
-        <header class="page-head artifact-detail-head">
-          <div>
-            <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
-            <h1>{{ item.name }}</h1>
-            <p class="lede mono">{{ item.id }}</p>
-          </div>
-          <div class="head-actions">
-            <button class="btn" type="button" :disabled="Boolean(busy)" @click="download">
-              {{ busy === 'download' ? 'Preparing…' : 'Download' }}
-            </button>
-            <button class="btn" type="button" :disabled="Boolean(busy)" @click="reveal">
-              {{ busy === 'reveal' ? 'Revealing…' : 'Reveal' }}
-            </button>
-            <button
-              class="btn ws-danger"
-              type="button"
-              :class="{ confirming: confirming === item.id }"
-              :disabled="Boolean(busy)"
-              @click="remove"
-            >
-              {{ confirming === item.id ? 'Click again to delete' : 'Delete' }}
-            </button>
-          </div>
-        </header>
-
-        <div class="artifact-detail-meta">
-          <span><em>Type</em>{{ item.mime || item.ext || 'file' }}</span>
-          <span><em>Size</em>{{ sizeLabel(item.size) }}</span>
-          <span><em>Modified</em>{{ when(item.modifiedAt) }}</span>
+          </section>
         </div>
 
-        <section class="artifact-detail-preview">
-          <template v-if="previewData?.kind === 'text'">
+        <section v-else class="artifact-doc">
+          <MarkdownEditor
+            v-if="canEditText && isMarkdown"
+            :key="item.id"
+            v-model="draftText"
+            :rows="26"
+            placeholder="Write Markdown…"
+          />
+          <CodeEditor
+            v-else-if="canEditText"
+            :key="item.id"
+            v-model="draftText"
+            :language="codeLanguage"
+          />
+          <template v-else-if="previewData?.kind === 'text'">
             <pre class="artifact-text">{{ previewData.text }}</pre>
             <p v-if="previewData.truncated" class="mnote">
               Preview is truncated. Download for the full file.
@@ -408,7 +505,7 @@ onBeforeUnmount(() => {
             <button class="btn btn-sm" type="button" @click="download">Download</button>
           </div>
         </section>
-      </template>
+      </div>
     </template>
   </div>
 </template>

@@ -21,6 +21,8 @@
     "start": "electron .",
     "test": "npm run test:unit",
     "package": "npm run build && electron-builder",
+    "package:mac": "npm run build && electron-builder --mac --universal --publish never",
+    "package:win": "npm run build && electron-builder --win --x64 --publish never",
     "serve": "node server/index.cjs",
     "start:server": "npm run build && node server/index.cjs",
     "docker:up": "docker compose up -d --build",
@@ -35,8 +37,10 @@
     "test:gate": "npm run test:unit && npm run test:smoke"
   },
   "dependencies": {
+    "@codemirror/lang-python": "^6.2.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "codemirror": "^6.0.2",
     "dompurify": "^3.4.17",
     "echarts": "^5.6.0",
     "marked": "^18.2.0",

@@ -13,6 +13,7 @@ import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TerminalPanel from '@/components/TerminalPanel.vue'
 import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
+import ThreadTagsDialog from '@/components/ThreadTagsDialog.vue'
 import EntityDeleteDialog from '@/components/EntityDeleteDialog.vue'
 import TimelineDialog from '@/components/TimelineDialog.vue'
 import VoiceChatDialog from '@/components/VoiceChatDialog.vue'
@@ -38,10 +39,12 @@ import {
   hub,
   isSending,
   isStopping,
+  liveTags,
   machineById,
   renameThread,
   selectThread,
   setThreadContext,
+  setThreadTags,
   snippet,
   threadContext,
   threadStarted,
@@ -66,6 +69,8 @@ const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const metadataOpen = ref(false)
 const terminalOpen = ref(false)
+const tagOpen = ref(false)
+const tagBusy = ref(false)
 /* A copy a pinned run asked for, waiting in this workspace. */
 const pendingClone = ref(null)
 const cloneBusy = ref(false)
@@ -77,6 +82,7 @@ const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
 const attachments = ref([])
+const messageList = ref(null)
 const headRef = ref(null)
 const headSpace = ref(76)
 let headObserver = null
@@ -141,6 +147,81 @@ const baseDirName = computed(() => {
   return parts[parts.length - 1] || value
 })
 const followups = computed(() => followupsFor(hub.chat.active))
+
+/* The header's middle zone is the thread's own search and its two totals. A
+   long conversation is navigated by finding the line that said the thing, not
+   by scrolling until it appears. */
+const threadQuery = ref('')
+const hitAt = ref(0)
+
+const hitIndices = computed(() => {
+  const needle = threadQuery.value.trim().toLowerCase()
+  if (!needle) return []
+  const out = []
+  ;(thread.value?.messages || []).forEach((message, index) => {
+    if (message.who === 'sys' && !message.error) return
+    if (String(message.text || '').toLowerCase().includes(needle)) out.push(index)
+  })
+  return out
+})
+
+const activeHit = computed(() => {
+  const list = hitIndices.value
+  if (!list.length) return -1
+  return list[Math.min(hitAt.value, list.length - 1)]
+})
+
+const stats = computed(() => {
+  const list = thread.value?.messages || []
+  return {
+    queries: list.filter((message) => message.who === 'me').length,
+    responses: list.filter((message) => message.who === 'agent').length,
+  }
+})
+
+function jumpToHit() {
+  const index = activeHit.value
+  if (index < 0) return
+  messageList.value?.jumpTo(index)
+}
+
+function stepHit(delta) {
+  const count = hitIndices.value.length
+  if (!count) return
+  hitAt.value = (hitAt.value + delta + count) % count
+  jumpToHit()
+}
+
+watch(threadQuery, () => {
+  hitAt.value = 0
+  jumpToHit()
+})
+
+/* A shorter thread, or a different one, cannot keep a hit position that no
+   longer exists. */
+watch(
+  () => hitIndices.value.length,
+  (count) => {
+    if (hitAt.value >= count) hitAt.value = 0
+  },
+)
+
+const threadTags = computed(() => thread.value?.tags || [])
+const suggestedTags = computed(() => liveTags())
+
+async function saveThreadTags(tags) {
+  if (!thread.value || tagBusy.value) return
+  tagBusy.value = true
+  try {
+    await setThreadTags(thread.value.id, tags)
+    tagOpen.value = false
+    toast(tags.length ? 'Thread tags saved' : 'Thread tags cleared')
+  } catch (error) {
+    toast(error?.message || 'The tags could not be saved.')
+  } finally {
+    tagBusy.value = false
+  }
+}
 
 const lastMessageAt = computed(() => {
   const list = thread.value?.messages || []
@@ -362,7 +443,8 @@ function onChatKey(event) {
     helpOpen.value ||
     voiceOpen.value ||
     harnessOpen.value ||
-    mcpOpen.value
+    mcpOpen.value ||
+    tagOpen.value
   ) {
     return
   }
@@ -789,7 +871,13 @@ function watchHead() {
   if (!headRef.value || typeof ResizeObserver !== 'function') return
   headObserver?.disconnect()
   headObserver = new ResizeObserver((entries) => {
-    headSpace.value = Math.round(entries[0]?.contentRect?.height || 0)
+    const entry = entries[0]
+    /* contentRect excludes the bar's own padding, which made the reserve
+       shorter than the bar and pulled the first line under the glass. The
+       border box is what the transcript must clear. */
+    const box = entry?.borderBoxSize?.[0]?.blockSize
+    const height = Number.isFinite(box) ? box : entry?.target?.getBoundingClientRect().height
+    headSpace.value = Math.round(height || 0)
   })
   headObserver.observe(headRef.value)
 }
@@ -825,6 +913,7 @@ watch(
     harnessOpen.value = false
     mcpOpen.value = false
     metadataOpen.value = false
+    tagOpen.value = false
     pendingClone.value = null
     await openInitialThread()
     loadPendingClone()
@@ -877,6 +966,8 @@ watch(
     voiceOpen.value = false
     harnessOpen.value = false
     mcpOpen.value = false
+    tagOpen.value = false
+    threadQuery.value = ''
     titleEditing.value = false
     titleDraft.value = ''
   },
@@ -943,7 +1034,7 @@ watch(
                   @click="startTitleEdit"
                   @keydown="onTitleTitleKey"
                 >
-                  {{ threadTitle }}
+                  <span class="cp-title-text">{{ threadTitle }}</span>
                   <svg class="cp-title-pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                     <path d="M3 11.7l.5-2.6 6.7-6.7 2.4 2.4-6.7 6.7zM9.4 3.2l2.4 2.4" />
                   </svg>
@@ -952,7 +1043,48 @@ watch(
                   <span>Last message</span>
                   <time v-if="lastMessageAt" :datetime="lastMessageAt">{{ lastMessageWhen }}</time>
                   <span v-else>{{ lastMessageWhen }}</span>
+                  <button
+                    class="cp-tags"
+                    type="button"
+                    :title="threadTags.length ? `Edit tags (${threadTags.join(', ')})` : 'Tag this thread'"
+                    @click="tagOpen = true"
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                      <path d="M2.6 7.8V3.4a.8.8 0 01.8-.8h4.4l5.6 5.6-5.2 5.2z" />
+                      <circle cx="5.6" cy="5.6" r="0.9" fill="currentColor" stroke="none" />
+                    </svg>
+                    <span v-for="tag in threadTags" :key="tag" class="cp-tag">{{ tag }}</span>
+                    <span v-if="!threadTags.length" class="cp-tag cp-tag--empty">Add tags</span>
+                  </button>
                 </p>
+              </div>
+            </div>
+            <div class="cp-mid">
+              <div class="cp-search">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <circle cx="7" cy="7" r="4.4" />
+                  <path d="M10.4 10.4L14 14" />
+                </svg>
+                <input
+                  v-model="threadQuery"
+                  type="search"
+                  placeholder="Search this thread"
+                  aria-label="Search this thread"
+                  autocomplete="off"
+                  spellcheck="false"
+                  @keydown.enter.prevent="stepHit($event.shiftKey ? -1 : 1)"
+                />
+                <span v-if="threadQuery" class="cp-search-count" role="status">
+                  {{ hitIndices.length ? Math.min(hitAt + 1, hitIndices.length) : 0 }}/{{ hitIndices.length }}
+                </span>
+                <span v-if="threadQuery && hitIndices.length" class="cp-search-steps">
+                  <button type="button" aria-label="Previous match" title="Previous match (Shift+Enter)" @click="stepHit(-1)">
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 6.2L5 3.2l3 3" /></svg>
+                  </button>
+                  <button type="button" aria-label="Next match" title="Next match (Enter)" @click="stepHit(1)">
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.8L5 6.8l3-3" /></svg>
+                  </button>
+                </span>
               </div>
             </div>
             <div class="cp-right">
@@ -993,6 +1125,7 @@ watch(
           </header>
 
           <MessageList
+            ref="messageList"
             :messages="messages"
             :chips="chips"
             :live="live"
@@ -1000,6 +1133,8 @@ watch(
             :thread-id="hub.chat.active"
             :focus-index="focusMessage"
             :share-url="shareUrlFor"
+            :search-hits="hitIndices"
+            :search-active="activeHit"
             list-class="c-thread"
             :followups="followups.actions"
             :followups-busy="followups.busy"
@@ -1081,6 +1216,11 @@ watch(
                   </svg>
                   <span class="nm">{{ baseDirName }}</span>
                 </span>
+                <span class="cp-stats" aria-label="Thread totals">
+                  <span><b>{{ stats.queries }}</b> queries</span>
+                  <i aria-hidden="true"></i>
+                  <span><b>{{ stats.responses }}</b> responses</span>
+                </span>
                 <button
                   class="compose-voice"
                   type="button"
@@ -1119,6 +1259,7 @@ watch(
                   :machine="ctx.machine || 'local'"
                   :placeholder="`Message ${agent.name} — / skills · @ mentions`"
                   :focus-shortcut="focusShortcut"
+                  :terminal-shortcut="terminalShortcut"
                   :base-dir="ctx.dir || ''"
                   :disabled="sending"
                   :sending="sending"
@@ -1339,6 +1480,14 @@ watch(
       @close="harnessOpen = false"
     />
     <ChatMcpDialog :open="mcpOpen" @close="mcpOpen = false" />
+    <ThreadTagsDialog
+      :open="tagOpen"
+      :tags="threadTags"
+      :suggestions="suggestedTags"
+      :busy="tagBusy"
+      @close="tagOpen = false"
+      @save="saveThreadTags"
+    />
     <VoiceChatDialog
       :open="voiceOpen"
       :entity="agent.name"

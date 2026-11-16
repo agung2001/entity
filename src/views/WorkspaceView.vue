@@ -6,6 +6,7 @@ import SkillsView from '@/views/SkillsView.vue'
 import McpView from '@/views/McpView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import { ROLES, hub, roleById, toast } from '@/stores/hub'
+import { gravatarUrl } from '@/lib/gravatar'
 import { activeWorkspace, updateWorkspace } from '@/stores/workspaces'
 
 /**
@@ -82,6 +83,40 @@ function syncForm(record) {
 }
 
 watch(current, syncForm, { immediate: true })
+
+/** A Gravatar is keyed by the email, so an empty row shows initials instead. */
+const failedAvatars = ref([])
+const avatarKey = (member) => String(member?.email || '').trim().toLowerCase()
+
+function avatarFor(member) {
+  const key = avatarKey(member)
+  if (!key || failedAvatars.value.includes(key)) return ''
+  return gravatarUrl(key, 72)
+}
+
+/** Offline or a blocked Gravatar must fall back to initials, not a broken icon. */
+function onAvatarError(member) {
+  const key = avatarKey(member)
+  if (key && !failedAvatars.value.includes(key)) {
+    failedAvatars.value = [...failedAvatars.value, key]
+  }
+}
+
+function initialsOf(member) {
+  const source = String(member?.name || member?.email || '?').trim()
+  const parts = source.split(/[\s._@-]+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
+function roleHint(role) {
+  return ROLES.find((entry) => entry.id === role)?.desc || ''
+}
+
+function memberLabel(member) {
+  return String(member?.name || member?.email || 'this member')
+}
 
 function addMember() {
   form.members.push({ name: '', email: '', role: 'member' })
@@ -181,39 +216,73 @@ async function save() {
         <template v-else>
           <div class="acct-card-head">
             <h2>Members</h2>
-            <span class="mnote">at least one owner</span>
+            <span class="mnote">
+              {{ form.members.length }} {{ form.members.length === 1 ? 'member' : 'members' }} ·
+              at least one owner
+            </span>
           </div>
 
           <div class="member-list">
-            <div v-for="(member, index) in form.members" :key="index" class="member-row">
+            <div
+              v-for="(member, index) in form.members"
+              :key="index"
+              class="member-row"
+              :data-owner="member.role === 'owner' ? '1' : '0'"
+            >
+              <span
+                class="member-avatar"
+                :title="member.email ? `Gravatar for ${member.email}` : 'Add an email to show a Gravatar'"
+              >
+                <img
+                  v-if="avatarFor(member)"
+                  :src="avatarFor(member)"
+                  alt=""
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  @error="onAvatarError(member)"
+                />
+                <span v-else aria-hidden="true">{{ initialsOf(member) }}</span>
+              </span>
               <input
                 v-model="member.name"
-                class="acct-input"
+                class="acct-input member-name"
                 type="text"
                 placeholder="Name"
+                aria-label="Member name"
                 spellcheck="false"
                 :disabled="busy === 'members'"
               />
               <input
                 v-model="member.email"
-                class="acct-input"
+                class="acct-input member-email"
                 type="email"
                 placeholder="email@example.com"
+                aria-label="Member email (used for the Gravatar)"
                 spellcheck="false"
                 :disabled="busy === 'members'"
               />
-              <select v-model="member.role" class="acct-input" :disabled="busy === 'members'">
+              <select
+                v-model="member.role"
+                class="acct-input member-role"
+                :title="roleHint(member.role)"
+                :aria-label="`Role for ${memberLabel(member)}`"
+                :disabled="busy === 'members'"
+              >
                 <option v-for="entry in ROLES" :key="entry.id" :value="entry.id">
                   {{ entry.label }}
                 </option>
               </select>
               <button
-                class="btn btn-sm btn-ghost"
+                class="member-remove"
                 type="button"
                 :disabled="busy === 'members' || form.members.length <= 1"
+                :title="`Remove ${memberLabel(member)}`"
+                :aria-label="`Remove ${memberLabel(member)}`"
                 @click="removeMember(index)"
               >
-                Remove
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M3.2 4.4h9.6M6.1 4.4V2.8h3.8v1.6M4.4 4.4l.6 8.8h6l.6-8.8" />
+                </svg>
               </button>
             </div>
           </div>
@@ -221,9 +290,10 @@ async function save() {
           <button class="btn btn-sm" type="button" :disabled="busy === 'members'" @click="addMember">
             Add member
           </button>
-          <p class="mnote" style="margin-top: 8px">
-            This build signs in one account per machine. The roster is stored with the
-            workspace, so a later multi-account step has the roles already in place.
+          <p class="mnote member-note">
+            Avatars come from <b>Gravatar</b>, matched to the email you enter. This build signs
+            in one account per machine; the roster is stored with the workspace, so a later
+            multi-account step has the roles already in place.
           </p>
         </template>
 

@@ -945,6 +945,28 @@ export async function pinThread(id, pinned) {
   return updated
 }
 
+/** Tags are thread metadata, editable at any time like the title and the pin. */
+export async function setThreadTags(id, tags) {
+  const updated = await call('chat.tags', { workspace: hub.workspace, id, tags })
+  if (hub.chat.threads[id]) {
+    hub.chat.threads = { ...hub.chat.threads, [id]: updated }
+  }
+  await refreshChatList()
+  return updated
+}
+
+/** Every tag in the workspace, for suggestions and the rail filter. */
+export const liveTags = () => {
+  const seen = new Map()
+  for (const thread of liveSummaries()) {
+    for (const tag of thread.tags || []) {
+      const key = String(tag).toLowerCase()
+      if (!seen.has(key)) seen.set(key, tag)
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b))
+}
+
 export async function removeThread(id) {
   await call('chat.remove', { workspace: hub.workspace, id })
   const nextThreads = { ...hub.chat.threads }

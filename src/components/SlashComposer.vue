@@ -28,6 +28,7 @@ const props = defineProps({
   sending: { type: Boolean, default: false },
   stopping: { type: Boolean, default: false },
   focusShortcut: { type: String, default: '' },
+  terminalShortcut: { type: String, default: '' },
   attachments: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['send', 'stop', 'update:attachments'])
@@ -759,6 +760,10 @@ defineExpose({ focus, addFiles, addDrop, restore })
         <span class="slash-hint">
           <template v-if="sending">Working…</template>
           <template v-else><kbd>{{ sendShortcut }}</kbd> to send</template>
+          <template v-if="terminalShortcut && !sending">
+            <span class="slash-hint-sep" aria-hidden="true">·</span>
+            <span class="slash-hint-term"><kbd>{{ terminalShortcut }}</kbd> terminal</span>
+          </template>
         </span>
         <span class="slash-send">
           <span class="attach-picker">
