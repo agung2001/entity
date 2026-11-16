@@ -1,10 +1,12 @@
 /**
  * The MCP servers one harness process receives.
  *
- * The workspace has one pool (`<ws>/mcp.json`) and every entity gets it; an
- * entity may narrow it (`mcp: a, b`) or opt out (`mcp: none`). This module turns
- * that pool into whatever the harness under it can consume, and hands back the
- * argv/env to spawn with — nothing is written into the user's own config.
+ * The workspace has one pool (`<ws>/mcp.json`) and **every entity gets all of
+ * it**. There is no per-entity selection: a server is attached to the workspace
+ * or it is not, and nothing in an entity file can take one away from it or from
+ * its siblings. This module turns that pool into whatever the harness under it
+ * can consume, and hands back the argv/env to spawn with — nothing is written
+ * into the user's own config.
  *
  * Every strategy below was checked against the CLI installed on a real machine:
  *
@@ -103,25 +105,21 @@ function readPool(record) {
 }
 
 /**
- * Which servers a turn asks for. The pool applies to every entity; an entity
- * narrows it with `mcp:` and opts out with `mcp: none`.
+ * Which servers a turn asks for: the whole pool. `only` narrows one call to one
+ * server — a probe or a single-server tool — and is never driven by an entity
+ * file, which is why the entity is not an argument here at all.
  */
-function wantedNames(pool, entity, only = null) {
+function wantedNames(pool, only = null) {
   if (only) return [only]
-  const declared = (Array.isArray(entity?.mcp) ? entity.mcp : [])
-    .map((name) => String(name || '').trim())
-    .filter(Boolean)
-  if (declared.some((name) => name.toLowerCase() === 'none')) return []
-  if (declared.length) return declared
   return Object.keys(pool.servers || {})
 }
 
 /** The pool entries a turn will use, plus names it asked for and did not get. */
-function resolveServers(record, entity, only = null) {
+function resolveServers(record, only = null) {
   const pool = readPool(record)
   const servers = {}
   const missing = []
-  for (const name of wantedNames(pool, entity, only)) {
+  for (const name of wantedNames(pool, only)) {
     const entry = pool.servers[name]
     if (!entry) {
       missing.push(name)
@@ -431,7 +429,7 @@ function geminiSpec(record, built, result, home) {
 /* ── entry point ──────────────────────────────────────────────────── */
 
 /**
- * @param {{ record: object, entity: object, harness: string,
+ * @param {{ record: object, harness: string,
  *           only?: string|null, home?: string }} args
  * @returns {{
  *   servers: string[],
@@ -442,11 +440,11 @@ function geminiSpec(record, built, result, home) {
  *   cleanup: () => void,
  * }}
  */
-function materialise({ record, entity, harness, only = null, home = os.homedir(), piVersion = null } = {}) {
+function materialise({ record, harness, only = null, home = os.homedir(), piVersion = null } = {}) {
   const result = { servers: [], files: [], argv: [], env: {}, notes: [], cleanup: () => {} }
   if (!record) return result
 
-  const { servers, missing } = resolveServers(record, entity, only)
+  const { servers, missing } = resolveServers(record, only)
   if (!missing.length && !Object.keys(servers).length) return result
 
   for (const name of missing) {
@@ -469,7 +467,7 @@ function materialise({ record, entity, harness, only = null, home = os.homedir()
   if (!usable.length) {
     /* Fail soft: the turn still runs, and the note says why the tools it named
        are missing instead of pretending the pool was applied. */
-    if (!result.notes.length) result.notes.push('No MCP server from this entity could be started')
+    if (!result.notes.length) result.notes.push('No MCP server from this workspace could be started')
     return result
   }
 

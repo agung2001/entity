@@ -28,7 +28,7 @@ const USAGE = `entity — read and change the files that define the agents in a 
 
   entity entity list
   entity entity create <name> [--harness h] [--model m] [--dir d]
-                                  [--description <text>] [--skills a,b] [--mcp x,y]
+                                  [--description <text>]
                                   [--shape s] [--color c] [--mood m]
                                   [--body <text> | --body-stdin | --body-file <f>]
   entity entity clone <name> [--from <workspace>] [--to <workspace>] [--name <new>]
@@ -37,7 +37,6 @@ const USAGE = `entity — read and change the files that define the agents in a 
   entity entity set-instructions <name> (--body <text> | --body-stdin | --body-file <f>)
                                   [--if-unchanged '<stamp json from get>']
   entity entity set-fields <name> [--harness h] [--model m] [--dir d]
-                                  [--skills a,b] [--mcp x,y]
   entity entity audit [--limit n]
 
   entity mcp list
@@ -240,7 +239,7 @@ function runEntity(action, rest, flags, target, output) {
       if (!name) fail('entity create <name>')
       guardWrite(target, 'entity.create')
       const spec = {}
-      for (const key of ['harness', 'model', 'dir', 'description', 'skills', 'mcp', 'shape', 'color', 'mood']) {
+      for (const key of ['harness', 'model', 'dir', 'description', 'shape', 'color', 'mood']) {
         if (key in flags) spec[key] = String(flags[key])
       }
       if ('body-stdin' in flags) spec.body = readStdin()
@@ -315,11 +314,11 @@ function runEntity(action, rest, flags, target, output) {
       if (!name) fail('entity set-fields <name> --model <m>')
       guardWrite(target, 'entity.set-fields')
       const patch = {}
-      for (const key of ['harness', 'model', 'dir', 'skills', 'mcp']) {
+      for (const key of ['harness', 'model', 'dir']) {
         if (key in flags) patch[key] = flags[key] === true ? '' : String(flags[key])
       }
       if (!Object.keys(patch).length) {
-        fail('Nothing to set. Use --harness, --model, --dir, --skills or --mcp.')
+        fail('Nothing to set. Use --harness, --model or --dir.')
       }
       return emitJson(unwrap(core.call('entity.setFields', { workspace, name, patch })))
     }

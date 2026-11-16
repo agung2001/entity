@@ -3,9 +3,14 @@
  *
  *   <ws>/entities/<name>.md
  *
- * Frontmatter is the configuration (`harness`, `model`, `dir`, `skills`, `mcp`),
- * the body is the instructions the harness receives. Three things read that file
- * and they must not disagree: this app, a person with `$EDITOR`, and git.
+ * Frontmatter is the configuration (`harness`, `model`, `dir`), the body is the
+ * instructions the harness receives. Three things read that file and they must
+ * not disagree: this app, a person with `$EDITOR`, and git.
+ *
+ * There is no per-entity access list. Skills and MCP servers belong to the
+ * workspace, so every entity sees all of them — an entity file cannot take one
+ * away from itself or from its siblings. `skills:`/`mcp:` lines in older files
+ * are left alone by the reader and dropped by the next write.
  */
 const fs = require('node:fs')
 const path = require('node:path')
@@ -15,12 +20,10 @@ const {
   expandHome,
   parseFrontmatter,
   frontmatterBody,
-  splitList,
   mdRules,
   firstHeading,
   firstParagraph,
 } = require('./frontmatter.cjs')
-const localData = require('./local-data.cjs')
 const harnesses = require('./harness-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 
@@ -47,18 +50,8 @@ function entityPath(workspaceId, name) {
   return path.join(entityDir(workspaceId), `${safeName(name)}.md`)
 }
 
-/* A workspace created by `remote.connect` keeps `kind: 'remote'` until a
-   disconnect forgets it (which is when it becomes an ordinary local clone).
-   That flag is what changes who owns a missing skill. */
-function isRemote(record) {
-  return record.kind === 'remote'
-}
-
 function problemsFor(workspaceId, entity) {
   const problems = []
-  const record = workspaces.open(workspaceId)
-  const remote = isRemote(record)
-
   if (!HARNESSES.includes(entity.harness)) {
     problems.push(
       entity.harness
@@ -74,30 +67,10 @@ function problemsFor(workspaceId, entity) {
     if (!stat || !stat.isDirectory()) problems.push(`dir ${tilde(absolute)} does not exist`)
   }
 
-  const attached = new Set(
-    localData
-      .scanSkillDir(path.join(record.path, 'skills'), { detectHarness: true })
-      .map((skill) => skill.name.toLowerCase()),
-  )
-  for (const skill of entity.skills) {
-    if (attached.has(skill.toLowerCase())) continue
-    /* A connected workspace carries a skill by name only: the body stays on the
-       machine that owns it (see `remote-manifest.cjs`). The remote panel already
-       names every skill this machine does not have, once. Repeating that as a
-       problem on each entity that references it says "22 problems" for a sync
-       that worked, so leave it to the panel. */
-    if (remote) continue
-    problems.push(`skill "${skill}" is missing`)
-  }
-
-  /* A parked server is still in the workspace: it arrived from a remote sync, or
-     a person disabled it, and MCP shows it under `disabled`. Only a server with
-     no definition anywhere is actually missing. */
-  const pool = workspaces.mcp(workspaceId)
-  const knownMcp = new Set([...pool.names, ...pool.disabledNames])
-  for (const server of entity.mcp) {
-    if (!knownMcp.has(server)) problems.push(`mcp server "${server}" is not in this workspace`)
-  }
+  /* Skills and MCP servers are the workspace's, so there is nothing here to be
+     missing: a skill this machine cannot see is reported once on the skills
+     page, and a parked server is still in the pool (see `remote-manifest.cjs`).
+     An entity that cannot reference them has no way to be wrong about them. */
 
   return problems
 }
@@ -113,8 +86,6 @@ function readFile(workspaceId, file) {
     harness: String(fm.harness || '').trim(),
     model: String(fm.model || '').trim(),
     dir: String(fm.dir || '').trim(),
-    skills: splitList(fm.skills),
-    mcp: splitList(fm.mcp),
     mark: {
       shape: String(fm.shape || '').trim(),
       color: String(fm.color || '').trim(),
@@ -165,8 +136,6 @@ function list(workspaceId) {
         harness: '',
         model: '',
         dir: '',
-        skills: [],
-        mcp: [],
         mark: { shape: '', color: '', mood: '' },
         instructions: '',
         rules: [],
@@ -189,14 +158,15 @@ function read(workspaceId, name) {
   return readFile(workspaceId, path.basename(file))
 }
 
+/* Keys this writer owns. `skills` and `mcp` are here on purpose: they used to
+   name a subset of the workspace, nothing reads them now, and listing them keeps
+   a stale line from being copied forward forever with no effect. */
 const KNOWN_KEYS = new Set(['name', 'harness', 'model', 'dir', 'skills', 'mcp'])
 
 function serialize(entity) {
   const lines = ['---', `name: ${entity.name}`, `harness: ${entity.harness}`]
   if (entity.model) lines.push(`model: ${entity.model}`)
   lines.push(`dir: ${entity.dir}`)
-  if (entity.skills?.length) lines.push(`skills: ${entity.skills.join(', ')}`)
-  if (entity.mcp?.length) lines.push(`mcp: ${entity.mcp.join(', ')}`)
   /* anything else the file carried survives the round trip */
   for (const [key, value] of Object.entries(entity.frontmatter || {})) {
     if (KNOWN_KEYS.has(key) || !String(value || '').trim()) continue
@@ -228,8 +198,6 @@ function scaffold({
   color = '',
   mood = '',
   dir = '~',
-  skills = [],
-  mcp = [],
   body = '',
 }) {
   const safe = safeName(name)
@@ -246,8 +214,6 @@ function scaffold({
     harness: HARNESSES.includes(harness) ? harness : 'claude',
     model: String(model || '').trim(),
     dir: String(dir || '~').trim() || '~',
-    skills: Array.isArray(skills) ? skills : [],
-    mcp: Array.isArray(mcp) ? mcp : [],
     instructions,
     frontmatter: {
       ...(oneLine ? { description: oneLine } : {}),

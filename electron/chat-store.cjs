@@ -1094,14 +1094,14 @@ function runHarness(
       record = null
     }
     let spec
-    /* The workspace pool filtered to what this entity names. Resolved from the
-       files on disk on every turn, so an edit in $EDITOR lands on the next
-       message and a shared server is never a copy of a secret. */
+    /* The workspace's MCP pool — all of it, for every turn. Read from disk on
+       every turn, so an edit in $EDITOR lands on the next message and a shared
+       server is never a copy of a secret. `only` is an attachment the person
+       named in this prompt, not a restriction the entity carries. */
     let mcp = { servers: [], files: [], argv: [], env: {}, notes: [], cleanup() {} }
     try {
       mcp = mcpRuntime.materialise({
         record,
-        entity,
         harness: thread.harness,
         only: mcpOnly || null,
       })

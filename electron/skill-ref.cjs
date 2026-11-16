@@ -13,8 +13,9 @@
  *
  *   <the rest of what was typed>
  *
- * That is what makes `skills:` in an entity file more than a comment: the
- * harness is told where the skill is instead of being expected to discover it.
+ * The harness is told where the skill is instead of being expected to discover
+ * it — and the candidates are the workspace's skills and this machine's
+ * libraries, never a per-entity list (an entity has no skill of its own).
  * A reference that does not resolve is an error, not a silently ignored token —
  * a typo should not turn into an answer without the skill it named.
  *

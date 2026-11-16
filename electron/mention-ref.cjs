@@ -423,7 +423,7 @@ async function runEntity(record, mentioned, job) {
      points, and a load-time cycle would hand it an empty object */
   const { chatInvocation } = require('./runner-local.cjs')
   const dir = entities.resolveDir(mentioned)
-  const mcp = mcpRuntime.materialise({ record, entity: mentioned, harness: mentioned.harness })
+  const mcp = mcpRuntime.materialise({ record, harness: mentioned.harness })
   try {
     const instructions = platform.compose({
       record,

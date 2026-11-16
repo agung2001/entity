@@ -30,7 +30,8 @@ class PlatformError extends Error {
   }
 }
 
-const FIELDS = new Set(['harness', 'model', 'dir', 'skills', 'mcp'])
+/* the keys `entity set-fields` may write; skills and mcp are the workspace's */
+const FIELDS = new Set(['harness', 'model', 'dir'])
 
 /* ── containment ──────────────────────────────────────────────────── */
 
@@ -113,8 +114,6 @@ function describeEntity(record, name) {
     harness: entity.harness,
     model: entity.model,
     dir: entity.dir,
-    skills: entity.skills,
-    mcp: entity.mcp,
     description: String(entity.frontmatter?.description || entity.summary || '').trim(),
     mark: entity.mark,
     instructions: entity.instructions,
@@ -199,30 +198,8 @@ const verbs = {
       throw new PlatformError('invalid', String(error?.message || error))
     }
 
-    const skills = normaliseList(input.skills, 'skills')
-    if (skills.length) {
-      const available = workspaces.skills(record.id).map((skill) => skill.name)
-      const missing = skills.filter((skill) => !available.includes(skill))
-      if (missing.length) {
-        throw new PlatformError(
-          'invalid',
-          `Not attached to this workspace: ${missing.join(', ')}. Available: ${available.join(', ') || '(none)'}.`,
-        )
-      }
-    }
-
-    const mcp = normaliseList(input.mcp, 'mcp')
-    if (mcp.length) {
-      const pool = workspaces.mcp(record.id)
-      const missing = mcp.filter((server) => !pool.names.includes(server))
-      if (missing.length) {
-        throw new PlatformError(
-          'invalid',
-          `Not in this workspace's MCP pool: ${missing.join(', ')}. Available: ${pool.names.join(', ') || '(none)'}.`,
-        )
-      }
-    }
-
+    /* No skill or MCP list: those belong to the workspace and every entity gets
+       all of them, so there is nothing here to validate or to store. */
     const created = entities.scaffold({
       workspace: record.id,
       name: safe,
@@ -233,8 +210,6 @@ const verbs = {
       color: text(input.color ?? '', 'color'),
       mood: text(input.mood ?? '', 'mood'),
       dir,
-      skills,
-      mcp,
       body: text(input.body ?? '', 'body'),
     })
     const bytes = Buffer.byteLength(created.instructions)
@@ -390,7 +365,7 @@ const verbs = {
     return { name: entity.name, bytes: Buffer.byteLength(body), previousBytes, stamp: after }
   },
 
-  /** Config only: harness, model, dir, skills, mcp. The body has its own verb. */
+  /** Config only: harness, model, dir. The body has its own verb. */
   'entity.setFields': (record, name, patch) => {
     const file = entityFile(record, name)
     const entity = entities.read(record.id, name)
@@ -404,6 +379,16 @@ const verbs = {
     const next = { ...entity }
 
     for (const key of Object.keys(patch)) {
+      /* `skills`/`mcp` get their own sentence: they are not a typo, they are a
+         rule -- those belong to the workspace and every entity gets all of
+         them. Refused rather than ignored, so a script cannot believe it
+         narrowed something. */
+      if (key === 'skills' || key === 'mcp') {
+        throw new PlatformError(
+          'invalid',
+          `"${key}" is not per entity. Attach it to the workspace instead — every entity in this workspace gets all of them.`,
+        )
+      }
       if (!FIELDS.has(key)) {
         throw new PlatformError('invalid', `"${key}" is not a field you can set here (${[...FIELDS].join(', ')}).`)
       }
@@ -424,24 +409,6 @@ const verbs = {
       next.dir = text(patch.dir, 'dir').trim()
       changed.push('dir')
     }
-    if (patch.skills !== undefined) {
-      next.skills = normaliseList(patch.skills, 'skills')
-      changed.push('skills')
-    }
-    if (patch.mcp !== undefined) {
-      const pool = workspaces.mcp(record.id)
-      const wanted = normaliseList(patch.mcp, 'mcp')
-      const missing = wanted.filter((server) => !pool.names.includes(server))
-      if (missing.length) {
-        throw new PlatformError(
-          'invalid',
-          `Not in this workspace's MCP pool: ${missing.join(', ')}. Available: ${pool.names.join(', ') || '(none)'}.`,
-        )
-      }
-      next.mcp = wanted
-      changed.push('mcp')
-    }
-
     entities.write(next)
     audit.append(record, { verb: 'entity.setFields', target: entity.name, fields: changed })
     const saved = entities.read(record.id, entity.name)
@@ -482,14 +449,10 @@ const verbs = {
     const servers = { ...pool.servers }
     delete servers[wanted]
     workspaces.writeMcp({ id: record.id, servers })
-    /* the pool is a library: removing the entry does not unmount it from an
-       entity that still names it, and that entity now reports it as a problem */
-    const stillNamedBy = entities
-      .list(record.id)
-      .filter((entity) => entity.mcp.includes(wanted))
-      .map((entity) => entity.name)
+    /* The pool is the workspace: removing the entry removes it from every
+       entity at once, which is why there is no per-entity unmount to report. */
     audit.append(record, { verb: 'mcp.remove', target: wanted })
-    return { name: wanted, stillNamedBy }
+    return { name: wanted }
   },
 
   /* skills: attached to the workspace, resolved from this machine's libraries */

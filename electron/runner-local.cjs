@@ -328,10 +328,9 @@ function createRunner({ emit = () => {} } = {}) {
       startedAt: new Date().toISOString(),
     }
 
-    /* The workspace pool filtered to what this entity names. Same resolver the
-       chat composer uses, so a run and a chat turn cannot disagree about which
-       servers an entity gets. */
-    run.mcp = mcpRuntime.materialise({ record, entity, harness: entity.harness })
+    /* The workspace pool, whole. Same resolver the chat composer uses, so a run
+       and a chat turn cannot disagree about which servers exist. */
+    run.mcp = mcpRuntime.materialise({ record, harness: entity.harness })
 
     /* Two compositions, one source. `platform.compose` owns the precedence —
        platform brief, workspace context, then this entity's own body — so a

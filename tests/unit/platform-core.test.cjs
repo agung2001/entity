@@ -142,22 +142,27 @@ test('workspace context is prepended to the entity body', () => {
   assert.match(text, /ENTITY_CLI_PATH/)
 })
 
-test('set-fields refuses an mcp server that is not in the pool', () => {
+test('an entity cannot be given an exclusive skill or MCP list', () => {
   const workspace = freshWorkspace('fields')
   entities.scaffold({ workspace, name: 'a' })
-
-  const missing = core.call('entity.setFields', {
-    workspace,
-    name: 'a',
-    patch: { mcp: 'not-there' },
-  })
-  assert.equal(missing.ok, false)
-  assert.equal(missing.code, 'invalid')
-
   core.call('mcp.add', { workspace, name: 'github', spec: { url: 'https://example.com/mcp' } })
-  const ok = core.call('entity.setFields', { workspace, name: 'a', patch: { mcp: 'github' } })
+
+  /* The pool belongs to the workspace. Setting a list on one entity would be
+     deciding what its siblings may use, so the verb refuses rather than
+     pretending it stored something. */
+  for (const patch of [{ mcp: 'github' }, { skills: 'writing' }]) {
+    const refused = core.call('entity.setFields', { workspace, name: 'a', patch })
+    assert.equal(refused.ok, false, JSON.stringify(patch))
+    assert.equal(refused.code, 'invalid')
+    assert.match(refused.error, /not per entity/)
+  }
+
+  /* A config field it does own still works, and never writes a stale list. */
+  const ok = core.call('entity.setFields', { workspace, name: 'a', patch: { model: 'opus' } })
   assert.equal(ok.ok, true, ok.error)
-  assert.deepEqual(ok.data.changed, ['mcp'])
+  assert.deepEqual(ok.data.changed, ['model'])
+  const file = fs.readFileSync(path.join(PROFILE, 'workspaces', workspace, 'entities', 'a.md'), 'utf8')
+  assert.doesNotMatch(file, /^(skills|mcp):/m)
 })
 
 test('a described entity can be duplicated and deleted', () => {
@@ -243,13 +248,19 @@ test('an agent can create an entity without touching the filesystem', () => {
     assert.equal(badHarness.ok, false)
     assert.equal(badHarness.code, 'invalid')
 
-    const missingSkill = core.call('entity.create', {
+    /* `skills`/`mcp` are not entity create fields any more, so a script that
+       still sends them does not silently believe it narrowed anything. */
+    const created2 = core.call('entity.create', {
       workspace,
-      name: 'missing-skill',
-      spec: { skills: ['not-there'] },
+      name: 'plain',
+      spec: { skills: ['not-there'], mcp: ['ghost'] },
     })
-    assert.equal(missingSkill.ok, false)
-    assert.equal(missingSkill.code, 'invalid')
+    assert.equal(created2.ok, true, created2.error)
+    const body = fs.readFileSync(
+      path.join(PROFILE, 'workspaces', workspace, 'entities', 'plain.md'),
+      'utf8',
+    )
+    assert.doesNotMatch(body, /^(skills|mcp):/m)
   } finally {
     if (previous === undefined) delete process.env.ENTITY_ENTITY
     else process.env.ENTITY_ENTITY = previous

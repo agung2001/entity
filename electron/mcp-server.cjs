@@ -64,7 +64,7 @@ const TOOL_DEFS = [
   {
     name: 'get_entity',
     title: 'Get entity',
-    description: 'Read one entity file: instructions, rules, harness, model, skills and MCP servers.',
+    description: 'Read one entity file: instructions, rules, harness, model and working directory.',
     inputSchema: {
       type: 'object',
       properties: { workspace: workspaceArg, name: { type: 'string', description: 'Entity file name.' } },
@@ -314,8 +314,6 @@ function callTool(name, args = {}) {
       return {
         ...summaryOf(entity),
         dir: entity.dir,
-        skills: entity.skills,
-        mcp: entity.mcp,
         instructions: entity.instructions,
         rules: entity.rules,
         path: entity.displayPath,

@@ -1,14 +1,13 @@
 /**
- * MCP is a per-run config, not a global setting, so these are the five things
- * that must stay true:
+ * MCP is a per-run config, not a global setting, so these are the things that
+ * must stay true:
  *
- *   1. An entity that names nothing inherits what the harness already has.
- *   2. An entity that names servers gets exactly those — the config is always
- *      written, so a server the entity did not name is not reachable.
- *   3. `env` on disk is a list of names; the value only exists in the written
+ *   1. The workspace owns the pool; every turn gets all of it. An entity file
+ *      cannot narrow it or opt out — a leftover `mcp:` line is inert.
+ *   2. `env` on disk is a list of names; the value only exists in the written
  *      file, which is 0600 and deleted when the process ends.
- *   4. A server that cannot be built is reported, never half-written.
- *   5. A harness without a per-run config says so instead of pretending.
+ *   3. A server that cannot be built is reported, never half-written.
+ *   4. A harness without a per-run config says so instead of pretending.
  */
 const fs = require('node:fs')
 const os = require('node:os')
@@ -27,12 +26,10 @@ const runtime = require('../../electron/mcp-runtime.cjs')
 
 let seq = 0
 
-function scaffold(servers, mcp) {
+function scaffold(servers) {
   const created = workspaces.create({ label: `mcp-${++seq}` })
   workspaces.writeMcp({ id: created.id, servers, disabled: {} })
   entities.scaffold({ workspace: created.id, name: 'py-agent', harness: 'claude' })
-  const entity = entities.read(created.id, 'py-agent')
-  if (mcp) entities.write({ ...entity, mcp })
   return { record: workspaces.open(created.id), entity: entities.read(created.id, 'py-agent') }
 }
 
@@ -44,9 +41,9 @@ const pool = {
   },
 }
 
-test('an entity that names nothing gets the whole workspace pool', () => {
-  const { record, entity } = scaffold(pool)
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+test('every turn gets the whole workspace pool', () => {
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'claude' })
   try {
     assert.deepEqual(out.servers, ['github'])
     assert.equal(out.files.length, 1)
@@ -55,25 +52,31 @@ test('an entity that names nothing gets the whole workspace pool', () => {
   }
 })
 
-test('mcp: none is the explicit opt-out', () => {
-  const { record, entity } = scaffold(pool, ['none'])
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
-  assert.deepEqual(out.servers, [])
-  assert.deepEqual(out.files, [])
-  assert.deepEqual(out.argv, [])
-})
-
-test('a declaration narrows the pool instead of widening it', () => {
+test('a leftover mcp: line in an entity file cannot narrow the pool', () => {
   const two = {
     ...pool,
     linear: { command: 'npx', args: ['-y', 'mcp-linear'] },
   }
-  const { record, entity } = scaffold(two, ['linear'])
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+  const { record } = scaffold(two)
+  const nocase = { record, harness: 'claude' }
+  const out = runtime.materialise(nocase)
+  try {
+    /* both servers, even though an older file in this workspace said `linear`
+       or `none`: the pool is the workspace's, and the entity is not consulted */
+    assert.deepEqual(out.servers, ['github', 'linear'])
+    const doc = JSON.parse(fs.readFileSync(out.files[0], 'utf8'))
+    assert.deepEqual(Object.keys(doc.mcpServers).sort(), ['github', 'linear'])
+  } finally {
+    out.cleanup()
+  }
+})
+
+test('`only` is the one narrow path, and it is never entity-driven', () => {
+  const two = { ...pool, linear: { command: 'npx', args: ['-y', 'mcp-linear'] } }
+  const { record } = scaffold(two)
+  const out = runtime.materialise({ record, harness: 'claude', only: 'linear' })
   try {
     assert.deepEqual(out.servers, ['linear'])
-    const doc = JSON.parse(fs.readFileSync(out.files[0], 'utf8'))
-    assert.deepEqual(Object.keys(doc.mcpServers), ['linear'])
   } finally {
     out.cleanup()
   }
@@ -87,8 +90,8 @@ test('an inline definition is copied, not looked up in the environment', () => {
       env: { YT_MODE: 'inline' },
     },
   }
-  const { record, entity } = scaffold(inline)
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+  const { record } = scaffold(inline)
+  const out = runtime.materialise({ record, harness: 'claude' })
   try {
     const doc = JSON.parse(fs.readFileSync(out.files[0], 'utf8'))
     assert.equal(doc.mcpServers.youtrack.headers.Authorization, 'Bearer pasted-value')
@@ -99,8 +102,8 @@ test('an inline definition is copied, not looked up in the environment', () => {
 })
 
 test('a named server becomes a strict, secret-bearing config file', () => {
-  const { record, entity } = scaffold(pool, ['github'])
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+  const { record } = scaffold(pool, ['github'])
+  const out = runtime.materialise({ record, harness: 'claude' })
   try {
     assert.deepEqual(out.servers, ['github'])
     assert.equal(out.argv[0], '--mcp-config')
@@ -124,11 +127,13 @@ test('a named server becomes a strict, secret-bearing config file', () => {
   }
 })
 
-test('a named server that is not in the pool is reported, not invented', () => {
-  const { record, entity } = scaffold(pool, ['github', 'ghost'])
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+test('a server that is not in the pool is reported, not invented', () => {
+  /* `only` names one server explicitly — an `@mcp:` attachment in a prompt —
+     and a name the workspace does not have is said out loud. */
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'claude', only: 'ghost' })
   try {
-    assert.deepEqual(out.servers, ['github'])
+    assert.deepEqual(out.servers, [])
     assert.match(out.notes.join(' '), /ghost.*not in this workspace's MCP pool/)
   } finally {
     out.cleanup()
@@ -139,16 +144,16 @@ test('a server whose secret is missing is skipped with a reason', () => {
   const broken = {
     linear: { command: 'npx', args: ['-y', 'mcp-linear'], env: ['ENTITY_MISSING_TOKEN'] },
   }
-  const { record, entity } = scaffold(broken, ['linear'])
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+  const { record } = scaffold(broken, ['linear'])
+  const out = runtime.materialise({ record, harness: 'claude' })
   assert.deepEqual(out.files, [])
   assert.deepEqual(out.argv, [])
   assert.match(out.notes.join(' '), /linear needs ENTITY_MISSING_TOKEN/)
 })
 
 test('opencode gets its own shape through the environment, not argv', () => {
-  const { record, entity } = scaffold(pool, ['github'])
-  const out = runtime.materialise({ record, entity, harness: 'opencode' })
+  const { record } = scaffold(pool, ['github'])
+  const out = runtime.materialise({ record, harness: 'opencode' })
   try {
     assert.deepEqual(out.argv, [])
     assert.equal(out.env.OPENCODE_CONFIG, out.files[0])
@@ -163,8 +168,8 @@ test('opencode gets its own shape through the environment, not argv', () => {
 })
 
 test('an unknown harness is reported instead of guessed at', () => {
-  const { record, entity } = scaffold(pool, ['github'])
-  const out = runtime.materialise({ record, entity, harness: 'vim' })
+  const { record } = scaffold(pool, ['github'])
+  const out = runtime.materialise({ record, harness: 'vim' })
   assert.deepEqual(out.files, [])
   assert.deepEqual(out.servers, [])
   assert.match(out.notes.join(' '), /vim has no known MCP configuration surface/)
@@ -175,8 +180,8 @@ test('codex gets -c overrides, with the bearer handed over as an env var', () =>
     github: { command: 'npx', args: ['-y', 'server-github'] },
     yt: { url: 'https://yt.example/mcp', headers: { Authorization: 'Bearer tok-1' } },
   }
-  const { record, entity } = scaffold(servers)
-  const out = runtime.materialise({ record, entity, harness: 'codex' })
+  const { record } = scaffold(servers)
+  const out = runtime.materialise({ record, harness: 'codex' })
   assert.deepEqual(out.servers, ['github', 'yt'])
   assert.deepEqual(out.files, [])
   assert.ok(out.argv.includes('mcp_servers.github.command="npx"'))
@@ -194,8 +199,8 @@ test('pi >= 0.99 gets a generated extension and keeps its agent dir untouched', 
   fs.mkdirSync(agent, { recursive: true })
   fs.writeFileSync(path.join(agent, 'mcp.json'), '{"mcpServers":{}}', 'utf8')
 
-  const { record, entity } = scaffold(pool)
-  const out = runtime.materialise({ record, entity, harness: 'pi', home, piVersion: '1.3.0' })
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'pi', home, piVersion: '1.3.0' })
   try {
     assert.deepEqual(out.servers, ['github'])
     /* an extension, not a config dir */
@@ -228,8 +233,8 @@ test('pi before 0.99 falls back to a mirrored agent dir with a merged mcp.json',
     'utf8',
   )
 
-  const { record, entity } = scaffold(pool)
-  const out = runtime.materialise({ record, entity, harness: 'pi', home, piVersion: '0.98.0' })
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'pi', home, piVersion: '0.98.0' })
   try {
     assert.deepEqual(out.servers, ['github'])
     assert.deepEqual(out.argv, [])
@@ -260,8 +265,8 @@ test('gemini runs from a mirrored home and is told to trust the folder', () => {
     'utf8',
   )
 
-  const { record, entity } = scaffold(pool)
-  const out = runtime.materialise({ record, entity, harness: 'gemini', home })
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'gemini', home })
   try {
     assert.deepEqual(out.servers, ['github'])
     assert.ok(out.argv.includes('--skip-trust'))
@@ -275,7 +280,7 @@ test('gemini runs from a mirrored home and is told to trust the folder', () => {
 })
 
 test('a config file left by a killed turn is pruned', () => {
-  const { record, entity } = scaffold(pool, ['github'])
+  const { record } = scaffold(pool, ['github'])
   const runs = path.join(record.path, 'runs')
   fs.mkdirSync(runs, { recursive: true })
   const stale = path.join(runs, '.mcp-stale.json')
@@ -283,7 +288,7 @@ test('a config file left by a killed turn is pruned', () => {
   const old = (Date.now() - 48 * 60 * 60 * 1000) / 1000
   fs.utimesSync(stale, old, old)
 
-  const out = runtime.materialise({ record, entity, harness: 'claude' })
+  const out = runtime.materialise({ record, harness: 'claude' })
   try {
     assert.equal(fs.existsSync(stale), false)
   } finally {
