@@ -47,9 +47,17 @@ function entityPath(workspaceId, name) {
   return path.join(entityDir(workspaceId), `${safeName(name)}.md`)
 }
 
+/* A workspace created by `remote.connect` keeps `kind: 'remote'` until a
+   disconnect forgets it (which is when it becomes an ordinary local clone).
+   That flag is what changes who owns a missing skill. */
+function isRemote(record) {
+  return record.kind === 'remote'
+}
+
 function problemsFor(workspaceId, entity) {
   const problems = []
   const record = workspaces.open(workspaceId)
+  const remote = isRemote(record)
 
   if (!HARNESSES.includes(entity.harness)) {
     problems.push(
@@ -72,12 +80,23 @@ function problemsFor(workspaceId, entity) {
       .map((skill) => skill.name.toLowerCase()),
   )
   for (const skill of entity.skills) {
-    if (!attached.has(skill.toLowerCase())) problems.push(`skill "${skill}" is missing`)
+    if (attached.has(skill.toLowerCase())) continue
+    /* A connected workspace carries a skill by name only: the body stays on the
+       machine that owns it (see `remote-manifest.cjs`). The remote panel already
+       names every skill this machine does not have, once. Repeating that as a
+       problem on each entity that references it says "22 problems" for a sync
+       that worked, so leave it to the panel. */
+    if (remote) continue
+    problems.push(`skill "${skill}" is missing`)
   }
 
+  /* A parked server is still in the workspace: it arrived from a remote sync, or
+     a person disabled it, and MCP shows it under `disabled`. Only a server with
+     no definition anywhere is actually missing. */
   const pool = workspaces.mcp(workspaceId)
+  const knownMcp = new Set([...pool.names, ...pool.disabledNames])
   for (const server of entity.mcp) {
-    if (!pool.names.includes(server)) problems.push(`mcp server "${server}" is not in this workspace`)
+    if (!knownMcp.has(server)) problems.push(`mcp server "${server}" is not in this workspace`)
   }
 
   return problems

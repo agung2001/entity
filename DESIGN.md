@@ -196,6 +196,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | A drawer is only closable by its X button | Register it with `useDialogDismiss`, like a modal | `npm test` (drawer contract) |
 | Metadata repeats a second store that can disagree with the chat | Derive it from the transcript; do not persist a copy | Review |
 | A remote thread offers "Reveal in Finder" for a path on another machine | Mark the thread remote, keep copy, and hide local open actions | `ThreadMetadataPanel.vue` |
+| A successful remote connect reports "22 problems need a look" | A dependency the workspace owns — a parked MCP server, an unattached remote skill — is a workspace-level note in the remote panel, not a problem on every entity that names it. Only a definition missing everywhere is a problem. | `entity-store.cjs` (`problemsFor`), `RemoteSyncPanel.vue` |
 | A backup reuses the export bundle and loses the workspace context | Snapshot the workspace into a ZIP; keep `workspace.json` intact | `backup-store.cjs` |
 | A backup folder can be set inside the workspace | Reject any target whose workspace subfolder is inside the workspace | `backup-store.cjs` |
 | Changing the folder strands the old ZIPs | Move them to the new folder, roll back on a failed move | `backup-store.cjs` |
