@@ -39,18 +39,29 @@ function readdir(dir) {
 }
 
 function newestFirst(a, b) {
-  return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' })
+  return String(b).localeCompare(String(a), undefined, { numeric: true, sensitivity: 'base' })
+}
+
+/**
+ * The version directories, newest first, so the first `node` on PATH is the one
+ * a terminal would use. Takes plain names, not `Dirent` objects — sorting the
+ * objects themselves is what broke a packaged build in the first place.
+ */
+function newestNames(dir) {
+  return readdir(dir)
+    .map((entry) => entry.name)
+    .sort(newestFirst)
 }
 
 /** Version managers keep their bin directories under the home folder. */
 function versionManagerDirs(home) {
   const dirs = []
   const nvm = path.join(home, '.nvm', 'versions', 'node')
-  for (const entry of readdir(nvm).sort(newestFirst)) dirs.push(path.join(nvm, entry.name, 'bin'))
+  for (const name of newestNames(nvm)) dirs.push(path.join(nvm, name, 'bin'))
 
   const fnm = path.join(home, '.fnm', 'node-versions')
-  for (const entry of readdir(fnm).sort(newestFirst)) {
-    dirs.push(path.join(fnm, entry.name, 'installation', 'bin'))
+  for (const name of newestNames(fnm)) {
+    dirs.push(path.join(fnm, name, 'installation', 'bin'))
   }
   return dirs
 }
