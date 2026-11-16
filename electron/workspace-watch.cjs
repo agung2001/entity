@@ -15,6 +15,9 @@
  */
 const fs = require('node:fs')
 
+/* Every live watcher, so a directory move can detach them all first. */
+const running = new Set()
+
 const RELEVANT = [
   /^entities\/.+\.md$/,
   /^skills\//,
@@ -60,45 +63,91 @@ function watchWorkspaces({ root, emit = () => {}, debounceMs = 250 } = {}) {
     }
   }
 
-  try {
-    /* recursive is macOS/Windows only; elsewhere this throws and the window
-       falls back to re-reading on navigation, which it already does. */
-    watcher = fs.watch(root, { recursive: true }, (_event, file) => {
-      const { id, rest } = split(file)
-      if (!id || id.startsWith('.')) return
-      if (!relevant(rest)) return
-      if (!pending.has(id)) pending.set(id, new Set())
-      pending.get(id).add(rest)
-      if (timer) return
-      timer = setTimeout(flush, debounceMs)
-    })
-    watcher.on('error', () => {
-      /* a watcher that dies is not a reason to take the app down */
-      try {
-        watcher.close()
-      } catch {
-        /* already closed */
-      }
+  function attach() {
+    if (watcher) return
+    try {
+      /* recursive is macOS/Windows only; elsewhere this throws and the window
+         falls back to re-reading on navigation, which it already does. */
+      watcher = fs.watch(root, { recursive: true }, (_event, file) => {
+        const { id, rest } = split(file)
+        if (!id || id.startsWith('.')) return
+        if (!relevant(rest)) return
+        if (!pending.has(id)) pending.set(id, new Set())
+        pending.get(id).add(rest)
+        if (timer) return
+        timer = setTimeout(flush, debounceMs)
+      })
+      watcher.on('error', () => {
+        /* a watcher that dies is not a reason to take the app down */
+        try {
+          watcher.close()
+        } catch {
+          /* already closed */
+        }
+        watcher = null
+      })
+    } catch {
       watcher = null
-    })
-  } catch {
+    }
+  }
+
+  function detach() {
+    clearTimeout(timer)
+    timer = null
+    try {
+      watcher?.close()
+    } catch {
+      /* nothing to close */
+    }
     watcher = null
   }
 
-  return {
+  attach()
+
+  const api = {
     close() {
-      clearTimeout(timer)
-      timer = null
+      detach()
       pending.clear()
-      try {
-        watcher?.close()
-      } catch {
-        /* nothing to close */
-      }
-      watcher = null
+      running.delete(api)
     },
     watching: () => Boolean(watcher),
+    /* Detach the OS handle without forgetting the watcher. Windows refuses to
+       rename a directory that `fs.watch(..., { recursive: true })` has open,
+       so a workspace id change has to happen with nothing watching the tree. */
+    pause() {
+      if (!watcher) return false
+      detach()
+      return true
+    },
+    resume() {
+      attach()
+      if (pending.size && !timer) timer = setTimeout(flush, debounceMs)
+    },
+  }
+  running.add(api)
+  return api
+}
+
+/**
+ * Run `fn` with every watcher detached, then reattach.
+ *
+ * Windows refuses to rename a directory that `fs.watch(..., { recursive: true })`
+ * has open, so a workspace id change has to happen while nothing watches the
+ * tree. Other platforms rename fine with the watcher live, so this is a plain
+ * call there — the macOS FSEvents stream is never interrupted for a move it does
+ * not need.
+ */
+function withoutWatching(fn) {
+  if (process.platform !== 'win32') return fn()
+  const paused = []
+  for (const watcher of running) {
+    if (watcher.pause()) paused.push(watcher)
+  }
+  try {
+    return fn()
+  } finally {
+    for (const watcher of paused) watcher.resume()
   }
 }
 
-module.exports = { watchWorkspaces, split, relevant }
+module.exports = { watchWorkspaces, withoutWatching, split, relevant }
