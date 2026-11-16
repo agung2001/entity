@@ -116,6 +116,23 @@ test('an email address is not a mention, and an unknown kind is left alone', () 
   assert.equal(segment.kind, 'unknown')
 })
 
+test('a colon inside the job does not turn an entity into a namespace', () => {
+  const job =
+    'Desk /Users/me/repo (branch main, clean). One task: implement the plan. Do not commit.'
+  const [segment] = mention.parse(`@coder ${job}`).segments
+  assert.equal(segment.kind, 'entity')
+  assert.equal(segment.name, 'coder')
+  assert.equal(segment.job, job)
+})
+
+test('an unknown namespace is a hard error, not silently dropped', async () => {
+  const record = workspace()
+  await assert.rejects(
+    () => mention.rewrite(record, '@nonsense:value here', { deps: deps() }),
+    /is not a mention kind/,
+  )
+})
+
 test('an artifact is resolved to artifact:// plus its absolute path', async () => {
   const record = workspace()
   const out = await mention.rewrite(record, '@artifact:login shot', { deps: deps() })

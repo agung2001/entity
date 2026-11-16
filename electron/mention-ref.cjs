@@ -41,7 +41,12 @@ const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 8
 const ORCA_TIMEOUT_MS = 10_000
 const ORCA_CACHE_MS = 60_000
-const ENTITY_TIMEOUT_MS = 120_000
+/* A delegated job is real work — reading a brief, editing files, running the
+   test suite — not a search. Two minutes killed the very delegation this
+   feature exists for; half an hour is still bounded, and a person can cancel
+   the turn. */
+const MENTION_TIMEOUT_MS = Number(process.env.ENTITY_MENTION_TIMEOUT_MS)
+const ENTITY_TIMEOUT_MS = MENTION_TIMEOUT_MS > 0 ? MENTION_TIMEOUT_MS : 30 * 60_000
 const MAX_ENTITY_RUNS = 2
 const ARTIFACT_SCAN_CAP = 2000
 
@@ -70,7 +75,12 @@ function parse(text) {
 function parseMention(raw) {
   const local = raw.startsWith('@@')
   const body = raw.slice(local ? 2 : 1)
-  const colon = body.indexOf(':')
+  /* Only a colon in the *first word* makes this a namespaced mention.
+     `@coder Desk /repo. One task: fix it` is an entity called coder with a
+     job; looking at the first colon anywhere turned the job into a namespace
+     and silently dropped the mention. */
+  const firstWord = body.trim().split(/\s+/)[0] || ''
+  const colon = firstWord.indexOf(':')
   if (colon < 0) {
     const [word, ...rest] = body.trim().split(/\s+/)
     /* "ask @secretary." names the entity, not an entity called "secretary.". */
@@ -367,7 +377,8 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
     }
     const timer = setTimeout(() => {
       killTree(child, 'SIGTERM')
-      done('did not answer within 2 minutes')
+      const minutes = Math.round(ENTITY_TIMEOUT_MS / 60_000)
+      done(`did not answer within ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`)
     }, ENTITY_TIMEOUT_MS)
     if (typeof timer.unref === 'function') timer.unref()
 
@@ -419,7 +430,7 @@ async function runEntity(record, mentioned, job) {
       entity: mentioned,
       extra:
         'You were mentioned inside another entity\'s chat and are answering one job for it. ' +
-        'Answer only that job, in a short paragraph. Do not ask questions.',
+        'Complete only that job. Do not ask questions; report what you changed and what you verified.',
     })
     let spec
     try {
@@ -887,6 +898,13 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
   }
 
   const candidates = localOnly ? segments.filter((segment) => segment.local) : segments
+  for (const segment of candidates) {
+    if (segment.kind !== 'unknown') continue
+    ctx.errors.push(
+      `@${segment.name}: is not a mention kind. Use @orca:, @artifact:, @maka: or @youtrack:, ` +
+        'or write the entity name without a colon.',
+    )
+  }
   const entitiesToRun = candidates.filter((segment) => segment.kind === 'entity')
   const skipped = entitiesToRun.slice(MAX_ENTITY_RUNS)
   for (const segment of skipped) ctx.notes.push(`${segment.raw} skipped: at most ${MAX_ENTITY_RUNS} entity mentions per message`)
