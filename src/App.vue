@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { onRunEvent } from '@/composables/localBridge'
 import { notify, onNotificationActivate, prepareNotifications } from '@/lib/notifications'
@@ -17,6 +17,16 @@ let offNotice = null
 let offAccount = null
 let offDeepLink = null
 
+function syncViewState() {
+  const route = router.currentRoute.value
+  globalThis.desktop?.syncViewState?.({
+    workspace: String(route.params.workspace || ''),
+    thread: typeof route.query.thread === 'string' ? route.query.thread : '',
+  })
+}
+
+watch(() => router.currentRoute.value.fullPath, syncViewState)
+
 function notificationFor(event) {
   if (!event || event.kind !== 'chat.turn' || event.phase !== 'done') return
   const message = event.data?.message
@@ -26,12 +36,16 @@ function notificationFor(event) {
   const text = String(message.text || message.error || '').replace(/\s+/g, ' ').trim()
   const body = text.length > 160 ? `${text.slice(0, 159)}…` : text
   const route = `/${event.workspace}/chat?thread=${encodeURIComponent(event.threadId)}`
+  const current = router.currentRoute.value
+  const active =
+    current.params.workspace === event.workspace && current.query.thread === event.threadId
   notify({
     title: message.error ? `${entity} needs attention` : `${entity} replied`,
     body: body || (message.error ? 'The turn failed.' : 'A new reply is ready.'),
     route,
     tag: `chat:${event.threadId}`,
     kind: message.error ? 'error' : 'reply',
+    active,
   }).catch(() => {})
 }
 
@@ -41,6 +55,7 @@ onMounted(async () => {
     const info = await globalThis.desktop.getAppInfo()
     document.body.classList.toggle('is-mac', info.platform === 'darwin')
   }
+  syncViewState()
   offRun = globalThis.desktop?.isElectron ? null : onRunEvent(notificationFor)
   offNotice = onNotificationActivate((route) => {
     if (route && router.currentRoute.value.fullPath !== route) router.push(route)

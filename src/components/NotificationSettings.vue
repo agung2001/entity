@@ -173,7 +173,7 @@ async function test() {
 
       <div class="acct-sep">
         <span>When to call</span>
-        <small>quiet by default</small>
+        <small>banners on</small>
       </div>
 
       <div class="notif-options">
@@ -215,15 +215,15 @@ async function test() {
         </div>
         <div class="notif-option">
           <div class="sfx-copy">
-            <b>Only when I am away</b>
-            <span>Stay quiet while the window is focused; post a banner otherwise.</span>
+            <b>Only when the thread is not in front</b>
+            <span>Stay quiet while the finished thread is the one you are reading; post a banner otherwise.</span>
           </div>
           <button
             class="sfx-switch"
             type="button"
             role="switch"
             :aria-checked="notificationSettings.backgroundOnly ? 'true' : 'false'"
-            aria-label="Only notify when the window is not focused"
+            aria-label="Only notify when the finished thread is not in front"
             :disabled="!notificationSettings.enabled"
             data-sfx="off"
             @click="toggleOption('backgroundOnly')"

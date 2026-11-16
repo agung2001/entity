@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('desktop', {
   notify: (payload) => ipcRenderer.invoke('app:notify', payload),
   syncNotificationSettings: (payload) =>
     ipcRenderer.invoke('app:notification-settings', payload),
+  /* Which thread is on screen, so a reply in another thread can still notify
+     while the window is focused. */
+  syncViewState: (payload) => ipcRenderer.invoke('app:view-state', payload),
   onNotificationClick: (cb) => {
     const listener = (_event, payload) => cb(payload)
     ipcRenderer.on('app:notification-click', listener)

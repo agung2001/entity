@@ -10,7 +10,7 @@ import { playSfx } from './sfx'
  * The default is deliberately quiet: only when the window is not focused.
  */
 const KEY = 'entity.notifications'
-const defaults = { enabled: true, replies: true, errors: true, backgroundOnly: true }
+const defaults = { enabled: true, replies: true, errors: true, backgroundOnly: false }
 const desktop = () => globalThis.desktop
 
 function permissionAvailable() {
@@ -27,7 +27,9 @@ function stored() {
           enabled: value.enabled !== false,
           replies: value.replies !== false,
           errors: value.errors !== false,
-          backgroundOnly: value.backgroundOnly !== false,
+          /* New: a finished turn is announced while you are reading it too.
+             Quiet is opt-in, and an old stored `true` is still honoured. */
+          backgroundOnly: value.backgroundOnly === true,
         }
       : { ...defaults }
     /* A browser that has not been asked yet should show the switch off, not
@@ -233,11 +235,13 @@ function focused() {
   return document.visibilityState === 'visible' && document.hasFocus()
 }
 
-function allowed(kind) {
+function allowed(kind, payload = {}) {
   if (!notificationSettings.enabled) return false
   if (kind === 'error' && !notificationSettings.errors) return false
   if (kind === 'reply' && !notificationSettings.replies) return false
-  if (notificationSettings.backgroundOnly && focused()) return false
+  /* Quiet only when the thread that finished is the one on screen. Another
+     thread in the same focused window still deserves a banner. */
+  if (notificationSettings.backgroundOnly && focused() && payload.active) return false
   return true
 }
 
@@ -254,7 +258,7 @@ function bodyOf(payload) {
  * rules, but still obeys the browser's permission decision.
  */
 export async function notify(payload = {}) {
-  if (!payload.force && !allowed(payload.kind || 'reply')) {
+  if (!payload.force && !allowed(payload.kind || 'reply', payload)) {
     return { shown: false, reason: 'Notifications are quiet right now.' }
   }
   refreshNotificationPermission()
