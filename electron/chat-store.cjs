@@ -298,6 +298,9 @@ function normaliseThread(raw, record) {
     /* chat history is private to the account that started it */
     user: threadOwner(raw, record),
     title: String(raw.title || ''),
+    /* Who set the title: the person or the first message. A title the person
+       wrote (or cleared) is never re-derived by a later turn. */
+    titleSource: raw.titleSource === 'user' || raw.titleSource === 'auto' ? raw.titleSource : '',
     pinned: Boolean(raw.pinned),
     tags: normaliseTags(raw.tags),
     createdAt: raw.createdAt || now(),
@@ -306,7 +309,46 @@ function normaliseThread(raw, record) {
   }
 }
 
+/** The fields a turn must never overwrite on its own. */
+function metadataOf(thread) {
+  return {
+    title: thread.title,
+    titleSource: thread.titleSource,
+    pinned: thread.pinned,
+    tags: thread.tags,
+    dir: thread.dir,
+    attachmentsEnabled: thread.attachmentsEnabled,
+  }
+}
+
+/**
+ * Save a turn without taking the person's metadata with it.
+ *
+ * The thread this turn holds was read before the harness started; `baseline` is
+ * what those fields said then. Anything the file has changed since — a rename,
+ * a pin, a tag, a base directory, the attachment switch — is newer than this
+ * copy and wins. Nothing that merely differs from the turn's own edits is
+ * adopted, so the automatic title the turn just derived survives.
+ */
+function saveTurn(record, thread, baseline) {
+  const current = readThread(record, thread.id)
+  if (current && baseline) {
+    if (current.title !== baseline.title || current.titleSource !== baseline.titleSource) {
+      thread.title = current.title
+      thread.titleSource = current.titleSource
+    }
+    if (current.pinned !== baseline.pinned) thread.pinned = current.pinned
+    if (JSON.stringify(current.tags) !== JSON.stringify(baseline.tags)) thread.tags = current.tags
+    if (current.dir !== baseline.dir) thread.dir = current.dir
+    if (current.attachmentsEnabled !== baseline.attachmentsEnabled) {
+      thread.attachmentsEnabled = current.attachmentsEnabled
+    }
+  }
+  return writeThread(record, thread)
+}
+
 function writeThread(record, thread) {
+  windowCache.delete(record.id)
   const file = threadFile(record, thread.id)
   const tmp = `${file}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -565,6 +607,8 @@ function rename({ workspace, id, title }) {
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   thread.title = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+  /* Even an empty title is a decision: a later turn must not fill it in. */
+  thread.titleSource = 'user'
   thread.updatedAt = now()
   writeThread(record, thread)
   return thread
@@ -639,12 +683,40 @@ function artifactSummary(item) {
 }
 
 /** A screenshot is part of the answer even when the harness never names it. */
-function turnArtifacts(workspace, sinceMs, answer) {
+/**
+ * The files the *running* turn wrote, computed once when it ends.
+ *
+ * Same rule as the read-time rebuild (`ownsFile`): a file that another turn in
+ * this workspace could also have written is attached only when the transcript
+ * names it. The old version took everything on the shelf modified since the
+ * question, which is how four conversations came to claim the same thirteen
+ * files.
+ */
+function turnArtifacts(thread, turnStartedMs, answer, steps = []) {
   const linked = artifactRefs(answer)
-  return artifacts
-    .recent({ workspace, since: sinceMs, limit: 16 })
-    .filter((item) => !linked.has(item.id))
-    .map(artifactSummary)
+  let shelf = []
+  try {
+    shelf = artifacts.list({ workspace: thread.workspace }).items || []
+  } catch {
+    return []
+  }
+  const self = {
+    threadId: thread.id,
+    seq: -1,
+    start: turnStartedMs,
+    end: Infinity,
+    turn: { text: answer, steps },
+  }
+  const windows = [self, ...otherWindows(thread)]
+  const remote = Boolean(thread.machine && thread.machine !== 'local')
+  const evidence = new Map()
+  return shelf
+    .map((item) => ({ ...item, ms: timeOf(item.modifiedAt) }))
+    .filter((item) => item.ms > 0 && item.ms >= turnStartedMs && !linked.has(item.id))
+    .filter((item) => ownsFile(self, windows, item, { remote, cache: evidence }))
+    .sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt)))
+    .slice(0, 16)
+    .map(({ ms, ...item }) => artifactSummary(item))
 }
 
 function timeOf(value) {
@@ -663,16 +735,51 @@ function timeOf(value) {
  * harness may have saved the file before it failed or while the person retried.
  */
 /**
- * A remote turn stages the whole workspace on the host and copies `artifacts/`
- * back afterwards, so every shelf file gets a fresh mtime during every remote
- * turn. Time is not evidence there. Attach only what the answer actually names;
- * an explicit `artifact://` still renders inline regardless.
+ * A mention is not a claim.
+ *
+ * A turn that *read* a file mentions it exactly as much as the turn that wrote
+ * it, so attribution cannot look at names alone. Evidence is:
+ *
+ *  - the answer saying `artifact://<id>` (or the full relative id) — the agent
+ *    telling the person what it saved;
+ *  - a write-shaped step: a `write`/`edit` tool with a path, or a shell command
+ *    whose write operator (`>`, `tee`, `cp`, `--out`, …) sits next to the file.
+ *
+ * Remote turns keep the looser rule: staging rewrites every mtime there, so a
+ * named file is all the evidence that exists.
  */
-function namesArtifact(turn, item) {
-  const text = [
+const WRITE_TOOLS = new Set([
+  'write',
+  'edit',
+  'create',
+  'str_replace',
+  'str_replace_editor',
+  'apply_patch',
+  'multi_edit',
+  'notebook_edit',
+])
+const WRITE_OPERATOR = /(?:^|[^>])>>?(?!>)|\btee\b|\bcp\b|\bmv\b|\brsync\b|\bsips\b|\bconvert\b|--out(?:put)?\b|(?:^|\s)-o\s/
+const GLOBAL_WRITE_OPERATOR = new RegExp(WRITE_OPERATOR.source, 'g')
+const WRITE_PATH_KEYS = ['path', 'file_path', 'file', 'target', 'notebook_path', 'to']
+
+/** Everything a turn says, for the looser naming rule. */
+function turnText(turn) {
+  return [
     turn?.text || '',
-    ...(turn?.steps || []).map((step) => `${step.content || ''}\n${step.output || ''}`),
+    ...(turn?.steps || []).map((step) =>
+      [
+        step.content || '',
+        step.output || '',
+        step.input && typeof step.input === 'object' ? JSON.stringify(step.input) : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ),
   ].join('\n')
+}
+
+function mentionsArtifact(turn, item) {
+  const text = turnText(turn)
   return (
     text.includes(`artifact://${item.id}`) ||
     text.includes(`artifact://${item.name}`) ||
@@ -680,43 +787,60 @@ function namesArtifact(turn, item) {
   )
 }
 
-function attachArtifactsByTurn(thread) {
+/** The snippets of a turn that look like they write a file. Cached per turn. */
+function writeEvidence(window, cache) {
+  const key = `${window.threadId}:${window.seq}`
+  if (cache.has(key)) return cache.get(key)
+  const turn = window.turn || {}
+  const writes = []
+  for (const step of turn.steps || []) {
+    const tool = String(step.tool || '').toLowerCase()
+    const input = step.input && typeof step.input === 'object' ? step.input : null
+    if (WRITE_TOOLS.has(tool) && input) {
+      for (const field of WRITE_PATH_KEYS) {
+        if (typeof input[field] === 'string' && input[field]) writes.push(input[field])
+      }
+    }
+    const command = typeof input?.command === 'string' ? input.command : ''
+    if (!command) continue
+    for (const match of command.matchAll(GLOBAL_WRITE_OPERATOR)) {
+      writes.push(command.slice(Math.max(0, match.index - 80), match.index + 240))
+    }
+  }
+  const evidence = { answer: String(turn.text || ''), writes }
+  cache.set(key, evidence)
+  return evidence
+}
+
+function wroteArtifact(window, item, cache) {
+  const evidence = writeEvidence(window, cache)
+  if (
+    evidence.answer.includes(`artifact://${item.id}`) ||
+    evidence.answer.includes(`artifact://${item.name}`) ||
+    evidence.answer.includes(item.id)
+  ) {
+    return true
+  }
+  /* A bare basename is too weak for a name like `spec.md`: three folders hold
+     one. Match the path when there is one, and the basename only for a file at
+     the shelf root. */
+  const needle = item.id.includes('/') ? item.id : item.name
+  return evidence.writes.some(
+    (snippet) => snippet.includes(needle) || snippet.includes(`artifacts/${needle}`),
+  )
+}
+
+function threadWindows(thread) {
+  const updated = timeOf(thread.updatedAt)
   const requests = thread.messages
     .map((message, index) => ({ message, index }))
     .filter((entry) => entry.message.who === 'me')
-  if (!requests.length) return thread
-
-  let shelf = []
-  try {
-    shelf = artifacts.list({ workspace: thread.workspace }).items || []
-  } catch {
-    return thread
-  }
-  if (!shelf.length) return thread
-
-  const remote = Boolean(thread.machine && thread.machine !== 'local')
-  if (remote) {
-    /* Drop rows a previous, time-based read attached to agent messages; they
-       were guesses. The loop below re-adds only the named ones. */
-    for (const message of thread.messages) {
-      if (message.who !== 'me') delete message.artifacts
-    }
-  }
-
-  const claimed = new Set()
-  for (const message of thread.messages) {
-    for (const artifact of message.artifacts || []) claimed.add(artifact.id)
-  }
-  const available = shelf
-    .map((item) => ({ ...artifactSummary(item), ms: timeOf(item.modifiedAt) }))
-    .filter((item) => item.ms > 0 && !claimed.has(item.id))
-
+  const windows = []
   for (let r = 0; r < requests.length; r += 1) {
     const { message: request, index } = requests[r]
     const next = requests[r + 1] || null
     const start = timeOf(request.at)
     const nextStart = next ? timeOf(next.message.at) : Infinity
-
     let turn = null
     for (let i = index + 1; i < (next ? next.index : thread.messages.length); i += 1) {
       const candidate = thread.messages[i]
@@ -725,25 +849,120 @@ function attachArtifactsByTurn(thread) {
         break
       }
     }
-
     let end = nextStart
     if (turn?.who === 'agent') {
       const ended = timeOf(turn.execution?.endedAt)
       if (ended >= start) end = Math.min(end, ended + 5000)
     }
+    if (!Number.isFinite(end)) end = updated ? Math.max(start, updated + 5000) : start
+    windows.push({ threadId: thread.id, seq: index, start, end, request, turn })
+  }
+  return windows
+}
 
-    const found = remote
-      ? available.filter((item) => namesArtifact(turn, item))
-      : available.filter((item) => item.ms >= start && item.ms < end)
-    if (!found.length) continue
+/**
+ * The windows of every *other* thread in the workspace.
+ *
+ * The shelf belongs to the workspace, not to a conversation: while one turn
+ * runs, another thread in the same room may be writing files too. Splitting a
+ * shared shelf needs to know about those, so attribution reads the siblings.
+ */
+const windowCache = new Map()
+const WINDOW_CACHE_MS = 1000
 
-    const target = turn || request
-    target.artifacts = [...(target.artifacts || []), ...found.map(({ ms, ...item }) => item)]
-    for (const item of found) {
-      claimed.add(item.id)
-      const at = available.findIndex((entry) => entry.id === item.id)
-      if (at >= 0) available.splice(at, 1)
+function workspaceWindows(thread) {
+  const key = thread.workspace
+  const hit = windowCache.get(key)
+  const now = Date.now()
+  if (hit && now - hit.at < WINDOW_CACHE_MS) return hit.windows
+
+  const windows = []
+  let record
+  let files = []
+  try {
+    record = workspaces.open(thread.workspace)
+    files = fs
+      .readdirSync(chatsDir(record))
+      .filter((file) => file.endsWith('.json') && !file.startsWith('.'))
+  } catch {
+    return []
+  }
+  for (const file of files) {
+    try {
+      const other = normaliseThread(
+        JSON.parse(fs.readFileSync(path.join(chatsDir(record), file), 'utf8')),
+        record,
+      )
+      if (!other) continue
+      windows.push(...threadWindows(other))
+    } catch {
+      /* a thread that cannot be read cannot claim a file */
     }
+  }
+  /* Attribution runs on every read; a second of staleness costs nothing and
+     saves parsing every thread file on each message. */
+  windowCache.set(key, { at: now, windows })
+  return windows
+}
+
+function otherWindows(thread) {
+  return workspaceWindows(thread).filter((window) => window.threadId !== thread.id)
+}
+
+/**
+ * Does this turn own that file?
+ *
+ *  - a remote turn keeps only what it names — staging rewrites every mtime, so
+ *    time is not evidence there;
+ *  - a file that falls in exactly one turn's window belongs to that turn;
+ *  - a file several turns could have written is attached only when the
+ *    transcript names it. Two conversations never claim the same file by
+ *    accident, and nothing is invented for a file nobody mentions.
+ */
+function ownsFile(window, windows, item, { remote = false, cache } = {}) {
+  if (remote) return mentionsArtifact(window.turn, item)
+  const owners = windows.filter(
+    (candidate) => item.ms >= candidate.start && item.ms < candidate.end,
+  )
+  if (!owners.length) return false
+  if (owners.length === 1) {
+    return owners[0].threadId === window.threadId && owners[0].seq === window.seq
+  }
+  return wroteArtifact(window, item, cache || new Map())
+}
+
+function attachArtifactsByTurn(thread) {
+  let shelf = []
+  try {
+    shelf = artifacts.list({ workspace: thread.workspace }).items || []
+  } catch {
+    /* an unreadable shelf must not erase what the transcript already says */
+    return thread
+  }
+
+  /* Rebuild rather than top up. A chip written by an older, purely time-based
+     read is a guess, and keeping it would block the turn that really wrote the
+     file forever. */
+  for (const message of thread.messages) delete message.artifacts
+  if (!shelf.length) return thread
+
+  const remote = Boolean(thread.machine && thread.machine !== 'local')
+  const windows = [...threadWindows(thread), ...otherWindows(thread)]
+  const evidence = new Map()
+  const available = shelf
+    .map((item) => ({ ...artifactSummary(item), ms: timeOf(item.modifiedAt) }))
+    .filter((item) => item.ms > 0)
+  const claimed = new Set()
+
+  for (const window of windows) {
+    if (window.threadId !== thread.id) continue
+    const found = available.filter(
+      (item) => !claimed.has(item.id) && ownsFile(window, windows, item, { remote, cache: evidence }),
+    )
+    if (!found.length) continue
+    const target = window.turn || window.request
+    target.artifacts = [...(target.artifacts || []), ...found.map(({ ms, ...item }) => item)]
+    for (const item of found) claimed.add(item.id)
   }
   return thread
 }
@@ -1142,6 +1361,8 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  /* What the person's metadata looked like before this turn touched anything. */
+  const baseline = metadataOf(thread)
 
   const retryTurn = Boolean(retry)
   let turnMentions = []
@@ -1179,7 +1400,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
        transcript claim two answers to one question. */
     thread.messages.pop()
   } else {
-    if (!thread.title) thread.title = titleOf({ messages: [{ who: 'me', text: message }] })
+    if (!thread.title && thread.titleSource !== 'user') {
+      thread.title = titleOf({ messages: [{ who: 'me', text: message }] })
+      thread.titleSource = 'auto'
+    }
     /* `/workspace:<skill>`, `/<harness>:<skill>` or a bare `/<skill>` becomes
        `use this skill <path>` — resolved on the machine this thread is pinned to,
        before anything is written, so a typo leaves no half-turn in the
@@ -1216,7 +1440,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     })
   }
   thread.updatedAt = now()
-  writeThread(record, thread)
+  saveTurn(record, thread, baseline)
 
   const messageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const emitTurn = (phase, data) => {
@@ -1313,7 +1537,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     flushStep()
 
     const at = now()
-    const createdArtifacts = turnArtifacts(record.id, turnStartedMs, run.answer)
+    const createdArtifacts = turnArtifacts(thread, turnStartedMs, run.answer, run.steps)
     const execution = { ...run.execution, id: messageId, harness: thread.harness }
     turnMessage = run.canceled
       ? {
@@ -1368,7 +1592,7 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
     }
     sending.delete(thread.id)
     thread.updatedAt = now()
-    writeThread(record, thread)
+    saveTurn(record, thread, baseline)
     if (turnMessage) emitTurn('done', { message: turnMessage })
   }
 

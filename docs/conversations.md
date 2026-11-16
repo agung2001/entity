@@ -52,6 +52,9 @@ and spend sit beside the steps, from the same records the charts use.
   never sees the request.
 - A thread records the account that created it. List, read, rename, send, cancel and
   remove only see that account's threads, even in a shared workspace.
+- The first message names a thread — until you rename it. A title you typed (or cleared)
+  is never replaced by a later turn; the rail falls back to the first message only while
+  the thread has no title of its own.
 - The right-edge outline draws one tick per message and opens a jump card.
 
 ## The links and paths are a second view

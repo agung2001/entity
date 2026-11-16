@@ -31,6 +31,13 @@ test('an artifact written during a turn is recent output, not shelf history', ()
 test('a thread keeps attached artifacts through a read', () => {
   const chatsDir = path.join(record.path, 'chats')
   fs.mkdirSync(chatsDir, { recursive: true })
+  /* The file was saved *during* the turn, which is the only way a chip is
+     earned: the shelf is re-read on every open, so a chip whose file predates
+     its own turn would be a guess and is dropped (see chat-artifacts.test). */
+  const askedAt = new Date(Date.now() - 90_000)
+  const savedAt = new Date(Date.now() - 60_000)
+  const answeredAt = new Date(Date.now() - 30_000)
+  fs.utimesSync(file, savedAt, savedAt)
   fs.writeFileSync(
     path.join(chatsDir, 't_artifact.json'),
     JSON.stringify({
@@ -39,14 +46,15 @@ test('a thread keeps attached artifacts through a read', () => {
       entity: 'inbox-triage',
       machine: 'local',
       harness: 'pi',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: askedAt.toISOString(),
+      updatedAt: answeredAt.toISOString(),
       messages: [
-        { who: 'me', text: 'take a screenshot', at: new Date().toISOString() },
+        { who: 'me', text: 'take a screenshot', at: askedAt.toISOString() },
         {
           who: 'agent',
           text: 'Here it is.',
-          at: new Date().toISOString(),
+          at: answeredAt.toISOString(),
+          execution: { harness: 'pi', endedAt: answeredAt.toISOString(), status: 'ok' },
           artifacts: [
             {
               id: 'shots/login.png',
