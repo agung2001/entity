@@ -1,0 +1,82 @@
+[← README](../README.md)
+
+# Quickstart
+
+## Requirements
+
+**Node.js `^20.19` or `>=22.12`** (Vite 8). Any one of the five assistant CLIs on
+`PATH` — `claude`, `codex`, `gemini`, `opencode`, `pi`. They are installed from a
+terminal once; after that you never need one to use the app.
+
+```bash
+git clone https://github.com/agung2001/entity.git
+cd entity
+npm install
+npm run dev:desktop      # Vite + Electron, HMR included
+```
+
+On a fresh profile the app lands on **Create a workspace**. An empty account owns
+the hub; until one is registered, the first sign-in with the workspace owner's email
+and the documented default password `123456` bootstraps it.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Renderer only, in a browser at http://localhost:5183 |
+| `npm run dev:desktop` | Vite **and** Electron, pointed at the dev server |
+| `npm run build` | Builds the renderer into `dist/` |
+| `npm run start` | Runs Electron against the existing `dist/` build |
+| `npm run test` | Unit tests + the static UI contract (`tests/unit/`) |
+| `npm run test:smoke` | The release-blocking Playwright pack, including real `opencode` and `pi` turns |
+| `npm run test:regression` | The deterministic Playwright regression pack |
+| `npm run test:e2e` | Both Playwright packs |
+| `npm run test:gate` | Unit + smoke — the release gate |
+| `npm run package` | Builds a distributable for the current platform → `release/` |
+| `npm run package:mac` | Universal macOS DMG → `release/` (macOS only) |
+| `npm run package:win` | x64 Windows installer → `release/` (run on Windows; needs Wine on macOS) |
+| `npm run serve` | The shared server against the built renderer |
+| `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
+
+## Ports and profiles
+
+- The dev server uses **5183** so it does not collide with projects that grab Vite's
+  default 5173. Override with `VITE_DEV_PORT=6000`.
+- `ENTITY_HOME` moves the whole profile — account, workspaces, run logs — which is
+  handy for a scratch hub:
+
+```bash
+ENTITY_HOME=/tmp/entity-scratch npm run dev:desktop
+```
+
+## Tests
+
+The default E2E packs start their own server on port **5199** and seed a throwaway
+profile under `.tmp/` — no real account, workspace, SSH host or MCP secret is used.
+The opt-in remote and MCP cases read an alias or your existing harness config from
+the environment at run time; no value is committed. Install the browser once:
+
+```bash
+npx playwright install chromium
+```
+
+See [`tests/README.md`](../tests/README.md) for the smoke/regression split.
+
+## Release builds
+
+```bash
+git tag v0.0.1 && git push origin v0.0.1
+```
+
+That builds macOS and Windows installers, publishes a GitHub Release and pushes the
+container image to GHCR. Tag builds are unsigned: macOS may ask you to open the app
+from **System Settings → Privacy & Security**, and Windows SmartScreen may warn
+before running the installer. The workflow uses the tag as the app version, so
+`v0.0.1` produces installers named `0.0.1` and the image tag
+`ghcr.io/agung2001/entity:0.0.1` (also `:v0.0.1`, `:0.0`, `:latest`).
+
+## Related
+
+- [Workspaces and entities](workspaces.md) — what a workspace actually is
+- [Deploy the server](deploy.md) — the shared build
+- [Status](status.md)

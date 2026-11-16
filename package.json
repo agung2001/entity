@@ -34,7 +34,12 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:all": "npm run test:unit && npm run test:e2e",
-    "test:gate": "npm run test:unit && npm run test:smoke"
+    "test:gate": "npm run test:unit && npm run test:smoke",
+    "media:posters": "node scripts/readme-media.mjs posters",
+    "media:encode": "node scripts/readme-media.mjs encode",
+    "media:check": "node scripts/readme-media.mjs check",
+    "media:demo": "node scripts/demo-profile.mjs",
+    "media:record": "node scripts/record-demos.mjs"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.2.1",
