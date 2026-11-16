@@ -9,6 +9,8 @@
  * Every call and every streamed run event carries `workspace`, so a run from the
  * workspace you just switched away from cannot be painted into the new one.
  */
+const crypto = require('node:crypto')
+const fs = require('node:fs')
 const localData = require('./local-data.cjs')
 const mentionRef = require('./mention-ref.cjs')
 const workspaces = require('./workspace-store.cjs')
@@ -24,6 +26,8 @@ const harnesses = require('./harness-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
+const pendingClones = require('./pending-clone.cjs')
+const audit = require('./platform-audit.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
 const usage = require('./usage.cjs')
@@ -210,6 +214,53 @@ function createRpc({
     'entity.duplicate': (args) => entities.duplicate(args),
     'entity.clone': (args) => entities.cloneTo(args),
     'entity.remove': (args) => entities.remove(args),
+    /* A cross-workspace copy proposed by a pinned run waits in the run's own
+       workspace. The window is the person's own process, so approval can read
+       the source again and compare the hash the run recorded. */
+    'clone.pending': ({ workspace }) => pendingClones.read(workspaces.open(workspace)),
+    'clone.approve': ({ workspace, id } = {}) => {
+      const record = workspaces.open(workspace)
+      const request = pendingClones.read(record)
+      if (!request) throw new Error('There is no pending copy in this workspace.')
+      if (id && request.id !== id) {
+        throw new Error('That copy request is no longer current. Ask again.')
+      }
+      const sourceRecord = workspaces.open(request.from)
+      const targetRecord = workspaces.open(request.to)
+      const sourceFile = entities.locate({ workspace: request.from, name: request.name })
+      platform.within(sourceRecord, sourceFile)
+      const sha256 = crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(sourceFile))
+        .digest('hex')
+      if (sha256 !== request.sha256) {
+        pendingClones.clear(record, request.id)
+        throw new Error('The source entity changed since the request. Ask the run to prepare it again.')
+      }
+      const copy = entities.cloneTo({
+        from: request.from,
+        to: request.to,
+        name: request.name,
+        nextName: request.nextName || '',
+        shape: request.mark?.shape || '',
+        color: request.mark?.color || '',
+        mood: request.mark?.mood || '',
+      })
+      pendingClones.clear(record, request.id)
+      audit.append(targetRecord, {
+        actor: 'user',
+        verb: 'entity.clone',
+        target: copy.name,
+        from: request.from,
+        bytes: Buffer.byteLength(copy.instructions || ''),
+      })
+      return copy
+    },
+    'clone.dismiss': ({ workspace, id } = {}) => {
+      const record = workspaces.open(workspace)
+      return { dismissed: pendingClones.clear(record, id) }
+    },
+
     'entity.learn': (args) => learning.review(args),
     'entity.learnApply': (args) => learning.apply(args),
     'entity.reveal': ({ workspace, name }) => {

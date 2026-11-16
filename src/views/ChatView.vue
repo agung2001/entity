@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChatHarnessDialog from '@/components/ChatHarnessDialog.vue'
 import ChatMcpDialog from '@/components/ChatMcpDialog.vue'
+import CloneConsentCard from '@/components/CloneConsentCard.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MessageList from '@/components/MessageList.vue'
@@ -24,6 +25,7 @@ import { clearFollowups, ensureFollowups, followupsFor } from '@/lib/followups'
 import { deletionTarget } from '@/lib/delete-intent'
 import { shareHref } from '@/lib/share-url'
 import { loadArtifacts } from '@/stores/artifacts'
+import { approveCloneRequest, dismissCloneRequest, pendingCloneRequest } from '@/stores/entities'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
 import { loadRemote } from '@/stores/remote'
 import {
@@ -64,6 +66,10 @@ const harnessOpen = ref(false)
 const mcpOpen = ref(false)
 const metadataOpen = ref(false)
 const terminalOpen = ref(false)
+/* A copy a pinned run asked for, waiting in this workspace. */
+const pendingClone = ref(null)
+const cloneBusy = ref(false)
+let pendingCloneToken = 0
 const composer = ref(null)
 const dragDepth = ref(0)
 const focusMessage = ref(-1)
@@ -561,6 +567,56 @@ async function saveThreadModel(value) {
   if (await setThreadContext('model', value)) harnessOpen.value = false
 }
 
+const pendingCloneTarget = computed(() => {
+  const id = pendingClone.value?.to || ''
+  return workspaces.items.find((item) => item.id === id)?.label || id
+})
+
+async function loadPendingClone() {
+  const workspace = hub.workspace
+  if (!workspace) {
+    pendingClone.value = null
+    return
+  }
+  const token = ++pendingCloneToken
+  try {
+    const request = await pendingCloneRequest(workspace)
+    if (token === pendingCloneToken) pendingClone.value = request || null
+  } catch {
+    if (token === pendingCloneToken) pendingClone.value = null
+  }
+}
+
+async function approvePendingClone() {
+  const request = pendingClone.value
+  if (!request || cloneBusy.value) return
+  cloneBusy.value = true
+  try {
+    const copy = await approveCloneRequest(request.id)
+    toast(`${copy.name}.md copied to ${pendingCloneTarget.value || request.to}`)
+    pendingClone.value = null
+  } catch (error) {
+    toast(error?.message || 'The copy could not be approved.')
+    await loadPendingClone()
+  } finally {
+    cloneBusy.value = false
+  }
+}
+
+async function dismissPendingClone() {
+  const request = pendingClone.value
+  if (!request || cloneBusy.value) return
+  cloneBusy.value = true
+  try {
+    await dismissCloneRequest(request.id)
+    pendingClone.value = null
+  } catch (error) {
+    toast(error?.message || 'The copy request could not be dismissed.')
+  } finally {
+    cloneBusy.value = false
+  }
+}
+
 /* Voice mode shares the composer's path for a normal turn, so attachments,
    receipts and the rail all update the same way it does for typed text. The
    composer already toasts a failed send; swallowing it here keeps an emitted
@@ -594,7 +650,12 @@ async function voiceInterrupt(text) {
 }
 
 function onLiveEvent(event) {
-  if (!event || event.kind !== 'chat.turn') return
+  if (!event) return
+  if (event.kind === 'workspace-changed') {
+    if (event.workspace === hub.workspace) loadPendingClone()
+    return
+  }
+  if (event.kind !== 'chat.turn') return
   if (event.workspace !== hub.workspace) return
   const id = event.threadId
   if (!id) return
@@ -673,6 +734,8 @@ function onLiveEvent(event) {
     playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})
+    /* and a pinned run may have parked a cross-workspace copy for approval */
+    loadPendingClone()
   }
 }
 
@@ -699,6 +762,7 @@ onMounted(async () => {
      /chat could stay in the address bar without ?thread. */
   syncThreadUrl()
   consumeNewQuery()
+  loadPendingClone()
 })
 
 onBeforeUnmount(() => {
@@ -761,7 +825,9 @@ watch(
     harnessOpen.value = false
     mcpOpen.value = false
     metadataOpen.value = false
+    pendingClone.value = null
     await openInitialThread()
+    loadPendingClone()
   },
 )
 
@@ -960,6 +1026,14 @@ watch(
               @dragleave.prevent="onDockDragLeave"
               @drop.prevent="onDockDrop"
             >
+              <CloneConsentCard
+                v-if="pendingClone"
+                :request="pendingClone"
+                :target-label="pendingCloneTarget"
+                :busy="cloneBusy"
+                @allow="approvePendingClone"
+                @dismiss="dismissPendingClone"
+              />
               <div v-if="dragDepth > 0" class="cp-dropzone">
                 <span>Drop files or folders to attach</span>
               </div>

@@ -124,6 +124,21 @@ export async function duplicateEntity(name, mark = null) {
   return copy
 }
 
+/** A copy proposed by a pinned run, waiting for this workspace's person. */
+export async function pendingCloneRequest(workspace = hub.workspace) {
+  return call('clone.pending', { workspace })
+}
+
+export async function approveCloneRequest(id) {
+  const copy = await call('clone.approve', { workspace: hub.workspace, id })
+  if (copy?.workspace === hub.workspace) await loadEntities(hub.workspace)
+  return copy
+}
+
+export async function dismissCloneRequest(id) {
+  return call('clone.dismiss', { workspace: hub.workspace, id })
+}
+
 export async function cloneEntity({ from, to, name, nextName = '', mark = null }) {
   const copy = await call('entity.clone', {
     from,

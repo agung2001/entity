@@ -29,6 +29,9 @@ const RELEVANT = [
      frequent, so the renderer debounces the list reload and skips it while a
      turn of its own is running. */
   /^chats\//,
+  /* A pinned run asking to copy into another workspace. Without this the
+     request lands on disk and the window never shows the consent card. */
+  /^pending-clone\.json$/,
 ]
 
 /** `<id>/entities/foo.md` → `{ id, rest }` */

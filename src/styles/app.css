@@ -18637,3 +18637,63 @@ button.empty-link {
 .clone-conflict b {
   color: inherit;
 }
+
+/* A pending cross-workspace copy sits on the composer, not in a dialog: it is
+   one decision about one file, and it must not stop the person typing. */
+.clone-consent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 2px 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel, var(--bg));
+}
+.clone-consent .cc-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+.clone-consent .cc-copy {
+  flex: 1;
+  min-width: 0;
+}
+.clone-consent .cc-copy b {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+.clone-consent .cc-copy p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clone-consent .cc-copy p span + span::before {
+  content: ' ';
+}
+.clone-consent .cc-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.clone-consent .cc-dismiss {
+  color: var(--muted);
+}
+@media (max-width: 720px) {
+  .clone-consent {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .clone-consent .cc-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

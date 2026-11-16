@@ -11,19 +11,22 @@
  * own instructions is a real event; without the row, nobody can explain why a
  * run behaved differently last Tuesday.
  */
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 const workspaces = require('./workspace-store.cjs')
 const entities = require('./entity-store.cjs')
 const localData = require('./local-data.cjs')
 const audit = require('./platform-audit.cjs')
+const pendingClones = require('./pending-clone.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
 /** An error with a machine-readable code, so the CLI can exit the right way. */
 class PlatformError extends Error {
-  constructor(code, message) {
+  constructor(code, message, data = null) {
     super(message)
     this.code = code
+    if (data) this.data = data
   }
 }
 
@@ -237,6 +240,114 @@ const verbs = {
     const bytes = Buffer.byteLength(created.instructions)
     audit.append(record, { verb: 'entity.create', target: created.name, harness, bytes })
     return describeEntity(record, created.name)
+  },
+
+  /**
+   * Copy an entity into a workspace.
+   *
+   * The window already does this with `entity.clone`; the CLI is the half a
+   * pinned run reaches. A write into the run's own workspace is an ordinary
+   * duplicate. A write into another workspace is the C07 boundary, so a pinned
+   * run records the exact source hash and asks the person to allow it in the
+   * window. Nothing touches the target until that approval arrives.
+   */
+  'entity.clone': (record, spec) => {
+    const input = spec === undefined ? {} : spec
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new PlatformError('invalid', 'The clone definition must be an object.')
+    }
+    const name = entityName(input.name)
+    const from = String(input.from || record.id).trim()
+    const to = String(input.to || record.id).trim()
+    const nextName = input.nextName ? entityName(input.nextName) : ''
+    if (!from || !to) {
+      throw new PlatformError('invalid', 'Both the source and target workspace are required.')
+    }
+
+    let sourceRecord
+    let targetRecord
+    try {
+      sourceRecord = workspaces.open(from)
+    } catch {
+      throw new PlatformError('not_found', `No workspace called "${from}".`)
+    }
+    try {
+      targetRecord = workspaces.open(to)
+    } catch {
+      throw new PlatformError('not_found', `No workspace called "${to}".`)
+    }
+
+    const source = entities.read(from, name)
+    if (!source) {
+      throw new PlatformError('not_found', `No entity called "${name}" in ${from}.`)
+    }
+
+    const targetName = nextName || name
+    const targetFile = entities.locate({ workspace: to, name: targetName })
+    within(targetRecord, targetFile)
+    if (fs.existsSync(targetFile)) {
+      throw new PlatformError(
+        'conflict',
+        `${targetName}.md already exists in ${to}. Rename the entity or pick another name.`,
+      )
+    }
+
+    const bytes = fs.statSync(entities.locate({ workspace: from, name })).size
+    const copy = () =>
+      entities.cloneTo({
+        from,
+        to,
+        name,
+        nextName,
+        shape: text(input.shape ?? '', 'shape'),
+        color: text(input.color ?? '', 'color'),
+        mood: text(input.mood ?? '', 'mood'),
+      })
+
+    const pinned = String(process.env.ENTITY_WORKSPACE || '').trim()
+    if (to !== record.id && pinned) {
+      const sourceFile = entities.locate({ workspace: from, name })
+      within(sourceRecord, sourceFile)
+      const sha256 = crypto.createHash('sha256').update(fs.readFileSync(sourceFile)).digest('hex')
+      const request = pendingClones.write(record, {
+        at: new Date().toISOString(),
+        from,
+        to,
+        name,
+        nextName,
+        sha256,
+        bytes,
+        summary: String(source.summary || source.title || '').replace(/\s+/g, ' ').slice(0, 240),
+        mark: source.mark || null,
+        requestedBy: String(process.env.ENTITY_ENTITY || ''),
+      })
+      const flags = [`--from ${from}`, `--to ${to}`]
+      if (nextName) flags.push(`--name ${nextName}`)
+      throw new PlatformError(
+        'needs_consent',
+        `Copying ${name} into ${to} needs the person's approval. ` +
+          'Ask them to allow it in the window, then run the same command again.',
+        { request, command: `entity clone ${name} ${flags.join(' ')}` },
+      )
+    }
+
+    const created = copy()
+    audit.append(record, {
+      verb: 'entity.clone',
+      target: created.name,
+      from,
+      to,
+      bytes: Buffer.byteLength(created.instructions),
+    })
+    if (to !== record.id) {
+      audit.append(targetRecord, {
+        verb: 'entity.clone',
+        target: created.name,
+        from,
+        bytes: Buffer.byteLength(created.instructions),
+      })
+    }
+    return describeEntity(to === record.id ? record : targetRecord, created.name)
   },
 
   /**
@@ -574,12 +685,18 @@ function call(fn, args = {}) {
     return { ok: true, data: handler(record, ...values) }
   } catch (error) {
     const code = error instanceof PlatformError ? error.code : 'error'
-    return { ok: false, code, error: String(error?.message || error) }
+    return {
+      ok: false,
+      code,
+      error: String(error?.message || error),
+      ...(error?.data ? { data: error.data } : {}),
+    }
   }
 }
 
 /** Named arguments in the order each verb expects them after `record`. */
 const POSITIONAL = {
+  'entity.clone': ['spec'],
   'entity.create': ['name', 'spec'],
   'entity.get': ['name'],
   'entity.setInstructions': ['name', 'body', 'expect'],

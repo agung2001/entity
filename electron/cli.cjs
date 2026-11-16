@@ -31,6 +31,8 @@ const USAGE = `entity — read and change the files that define the agents in a 
                                   [--description <text>] [--skills a,b] [--mcp x,y]
                                   [--shape s] [--color c] [--mood m]
                                   [--body <text> | --body-stdin | --body-file <f>]
+  entity entity clone <name> [--from <workspace>] [--to <workspace>] [--name <new>]
+                                  [--shape s] [--color c] [--mood m]
   entity entity get <name>
   entity entity set-instructions <name> (--body <text> | --body-stdin | --body-file <f>)
                                   [--if-unchanged '<stamp json from get>']
@@ -68,6 +70,9 @@ Notes
     workspace with --workspace (logged in its own audit.jsonl) and may not write
     to one. From a shell outside the app — including the in-app terminal — nothing
     is pinned, so --workspace <id> works for reads and writes alike.
+  - Clone is the one write with a consent path: a pinned run copying into
+    another workspace gets code "needs_consent" and writes nothing there until
+    the person allows that exact content in the window.
 `
 
 /* ── argument parsing ─────────────────────────────────────────────── */
@@ -117,8 +122,14 @@ function writeErr(text) {
   process.stderr.write(text.endsWith('\n') ? text : `${text}\n`)
 }
 
-function fail(message, code = 'invalid') {
-  write(JSON.stringify({ ok: false, code, error: String(message) }, null, 2))
+function fail(message, code = 'invalid', data = null) {
+  write(
+    JSON.stringify(
+      { ok: false, code, error: String(message), ...(data ? { data } : {}) },
+      null,
+      2,
+    ),
+  )
   process.exit(1)
 }
 
@@ -140,7 +151,9 @@ function table(rows, columns) {
 /* ── result handling ──────────────────────────────────────────────── */
 
 function unwrap(result) {
-  if (!result?.ok) fail(result?.error || 'The call failed.', result?.code || 'error')
+  if (!result?.ok) {
+    fail(result?.error || 'The call failed.', result?.code || 'error', result?.data || null)
+  }
   return result.data
 }
 
@@ -235,6 +248,34 @@ function runEntity(action, rest, flags, target, output) {
         spec.body = fs.readFileSync(path.resolve(flags['body-file']), 'utf8')
       } else if (typeof flags.body === 'string') spec.body = flags.body
       return emitJson(unwrap(core.call('entity.create', { workspace, name, spec })))
+    }
+
+    case 'clone': {
+      if (!name) fail('entity clone <name> [--from <workspace>] [--to <workspace>]')
+      /* A cross-workspace `--workspace` is a read of that room, not permission
+         to write it. Run the verb against the pinned record so the core sees
+         the cross-write and asks for consent instead of treating the target as
+         the caller's own workspace. */
+      const from =
+        typeof flags.from === 'string' && flags.from.trim()
+          ? flags.from.trim()
+          : target.cross
+            ? target.pinned
+            : workspace
+      const to =
+        typeof flags.to === 'string' && flags.to.trim()
+          ? flags.to.trim()
+          : target.cross
+            ? target.workspace
+            : workspace
+      const spec = { name, from, to }
+      if (typeof flags.name === 'string' && flags.name.trim()) spec.nextName = flags.name.trim()
+      for (const key of ['shape', 'color', 'mood']) {
+        if (typeof flags[key] === 'string') spec[key] = flags[key]
+      }
+      return emitJson(
+        unwrap(core.call('entity.clone', { workspace: target.cross ? target.pinned : workspace, spec })),
+      )
     }
 
     case 'get': {

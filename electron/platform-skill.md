@@ -8,6 +8,7 @@ through the `entity` CLI:
 ```
 "$ENTITY_CLI_PATH" entity list
 "$ENTITY_CLI_PATH" entity create <name> [--harness h] [--description <one line>] [--body-stdin]
+"$ENTITY_CLI_PATH" entity clone <name> [--from <workspace>] [--to <workspace>] [--name <new>]
 "$ENTITY_CLI_PATH" entity get <name> --output json
 "$ENTITY_CLI_PATH" entity set-instructions <name> --body-stdin
 "$ENTITY_CLI_PATH" entity set-fields <name> --model <m> --mcp <a,b>
@@ -18,7 +19,12 @@ through the `entity` CLI:
 ```
 
 `--workspace` defaults to `$ENTITY_WORKSPACE` (this one), so you rarely pass it.
-Other workspaces are not reachable from here, by design.
+Other workspaces are read-only from here, by design. Copying an entity into one
+is the exception: `entity clone <name> --to <workspace>` returns
+`needs_consent` and writes nothing there until the person allows that exact
+content in the window. Tell them what is waiting, then retry after they allow
+it. The same command from a person's shell (including the in-app terminal)
+performs the copy without asking.
 
 If someone asks you to create a new entity, propose its name and one-line
 purpose, then write it with `entity create`. Add `--body-stdin` for a custom

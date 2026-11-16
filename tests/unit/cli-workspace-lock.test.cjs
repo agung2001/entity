@@ -146,3 +146,63 @@ test('an agent can create an entity with the CLI and no direct file write', () =
   assert.equal(duplicate.status, 1)
   assert.equal(duplicate.json?.code, 'conflict')
 })
+
+test('a pinned clone into another workspace parks until a person allows it', () => {
+  const first = workspaces.create({ label: 'clone-source' })
+  const second = workspaces.create({ label: 'clone-target' })
+  entities.scaffold({ workspace: first.id, name: 'clone-agent', harness: 'pi' })
+
+  const pinned = run(['entity', 'clone', 'clone-agent', '--to', second.id], {
+    workspace: first.id,
+    entity: 'lead',
+  })
+  assert.equal(pinned.status, 1, pinned.stderr || pinned.stdout)
+  assert.equal(pinned.json?.code, 'needs_consent')
+  assert.match(String(pinned.json?.data?.command), /entity clone clone-agent/)
+  assert.equal(fs.readdirSync(path.join(PROFILE, 'workspaces', second.id, 'entities')).length, 0)
+
+  const pending = JSON.parse(
+    fs.readFileSync(path.join(PROFILE, 'workspaces', first.id, 'pending-clone.json'), 'utf8'),
+  )
+  assert.equal(pending.to, second.id)
+  assert.equal(pending.from, first.id)
+  assert.equal(pending.requestedBy, 'lead')
+
+  /* Nothing was written where the run is not looking, not even on retry. */
+  const retry = run(['entity', 'clone', 'clone-agent', '--to', second.id], {
+    workspace: first.id,
+  })
+  assert.equal(retry.json?.code, 'needs_consent')
+
+  /* The same workspace still duplicates without asking. */
+  const local = run(['entity', 'clone', 'clone-agent', '--name', 'clone-copy'], {
+    workspace: first.id,
+  })
+  assert.equal(local.status, 0, local.stderr || local.stdout)
+  assert.equal(local.json?.data?.name, 'clone-copy')
+
+  /* Naming the target with --workspace must not turn it into the caller's own
+     workspace and slip past the gate. */
+  const disguised = run(
+    ['entity', 'clone', 'clone-agent', '--workspace', second.id, '--to', second.id],
+    { workspace: first.id },
+  )
+  assert.equal(disguised.json?.code, 'needs_consent')
+  assert.equal(fs.readdirSync(path.join(PROFILE, 'workspaces', second.id, 'entities')).length, 0)
+
+  /* A person at a shell is not pinned: the same copy performs. */
+  const human = run([
+    'entity',
+    'clone',
+    'clone-agent',
+    '--workspace',
+    first.id,
+    '--to',
+    second.id,
+  ])
+  assert.equal(human.status, 0, human.stderr || human.stdout)
+  assert.equal(
+    fs.existsSync(path.join(PROFILE, 'workspaces', second.id, 'entities', 'clone-agent.md')),
+    true,
+  )
+})
