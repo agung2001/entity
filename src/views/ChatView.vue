@@ -34,6 +34,7 @@ import {
   activeThread,
   agentById,
   cancelChat,
+  chatDraft,
   chatSend,
   ensureChats,
   harnessById,
@@ -44,6 +45,7 @@ import {
   machineById,
   renameThread,
   selectThread,
+  setChatDraft,
   setThreadContext,
   setThreadTags,
   snippet,
@@ -126,6 +128,12 @@ const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
 const attachments = ref([])
+/* The composer's text is the thread's, not the view's: switching threads swaps
+   it, and the one you left keeps what you had typed. */
+const draft = computed({
+  get: () => chatDraft(),
+  set: (value) => setChatDraft(value),
+})
 const messageList = ref(null)
 const headRef = ref(null)
 const headSpace = ref(76)
@@ -671,6 +679,8 @@ async function send(text) {
       attachments: attachments.value,
       attachmentsEnabled: true,
     })
+    /* A failed turn keeps the question in the transcript with Retry, so the box
+       is not restored: a second copy of the same words would read as a draft. */
     if (updated) attachments.value = []
   } catch (error) {
     playSfx('error')
@@ -1310,6 +1320,7 @@ watch(
                   :sending="sending"
                   :stopping="stopping"
                   v-model:attachments="attachments"
+                  v-model:draft="draft"
                   @send="send"
                   @stop="stopTurn"
                 />

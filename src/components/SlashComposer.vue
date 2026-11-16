@@ -30,10 +30,35 @@ const props = defineProps({
   focusShortcut: { type: String, default: '' },
   terminalShortcut: { type: String, default: '' },
   attachments: { type: Array, default: () => [] },
+  /* The text still sitting in this thread's box. The store owns it, because a
+     draft belongs to a thread and this component only exists for the one on
+     screen — switching threads would otherwise take the words with it. */
+  draft: { type: String, default: '' },
 })
-const emit = defineEmits(['send', 'stop', 'update:attachments'])
+const emit = defineEmits(['send', 'stop', 'update:attachments', 'update:draft'])
 
-const draft = ref('')
+/* Local while you type (the caret, the menu and the growth all need it now);
+   the store is told on every change and answers on every thread switch. */
+const draft = ref(String(props.draft || ''))
+
+watch(
+  () => props.draft,
+  (value) => {
+    const next = String(value || '')
+    if (next === draft.value) return
+    draft.value = next
+    /* A different thread's text: the `/` or `@` menu belonged to the box we
+       just left, so it must not stay open over the wrong conversation. */
+    settle()
+    nextTick(grow)
+  },
+  { immediate: true },
+)
+
+watch(draft, (value) => {
+  if (String(props.draft || '') === value) return
+  emit('update:draft', value)
+})
 const menu = ref([])
 const active = ref(0)
 const input = ref(null)

@@ -44,6 +44,10 @@ and spend sit beside the steps, from the same records the charts use.
 - A turn finishing somewhere else does not move you: the rail row turns from
   *working* to *done* and the reply waits where it belongs. Nothing switches the
   conversation you are reading — not a completion, not a retry, not a failure.
+- Unsent text belongs to its thread. Type half a question, go read another
+  conversation, come back: it is still in the box. It also survives a reload —
+  drafts are kept in this window, never in the workspace files — and sending in
+  one thread empties only that one.
 - Every message has copy and share; share is a deep link (`?thread=…&msg=…`) that
   opens the thread and scrolls to the row.
 - The newest reply offers three **follow-ups** — short actions with a full prompt

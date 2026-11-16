@@ -13,6 +13,7 @@
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'
 import { harnesses } from '@/stores/harnesses'
+import { createDraftBook, normaliseDraft } from '@/lib/drafts'
 
 const SESSION_KEY = 'entity.session'
 const WORKSPACE_KEY = 'entity.workspace'
@@ -328,6 +329,9 @@ export const hub = reactive({
     /* A message another page prepared (artifact annotations) and the chat
        consumes once the composer exists. Empty means nothing is waiting. */
     draft: '',
+    /* threadId → the text still sitting in that thread's composer. Unsent text
+       is the thread's, not the one box's: switching away used to drop it. */
+    drafts: {},
     summaries: [],
     threads: {},
     active: '',
@@ -340,6 +344,42 @@ export const hub = reactive({
     last: { entity: '', machine: 'local', harness: 'claude', model: '' },
   },
 })
+
+/* ── unsent text, per thread ──────────────────────────────────────── */
+
+/**
+ * The composer is one box for every conversation, and text typed into it used
+ * to live exactly as long as that conversation stayed open. A draft belongs to
+ * the thread it was typed in, so it is keyed that way and persisted (unsent
+ * text has to survive a reload) without ever touching the workspace files.
+ */
+const draftBook = createDraftBook({
+  storage: typeof window !== 'undefined' ? window.localStorage : null,
+})
+hub.chat.drafts = draftBook.all()
+
+/* A quit happens between two debounced writes as easily as between two turns. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => draftBook.flush())
+}
+
+/** The text waiting in `id`'s composer — the active thread unless told otherwise. */
+export const chatDraft = (id = hub.chat.active) => (id ? hub.chat.drafts[id] || '' : '')
+
+/* `id` is explicit because a failed send restores text to the thread that was
+   sent from, which the reader may have left while it ran. */
+export function setChatDraft(text, id = hub.chat.active) {
+  if (!id) return ''
+  draftBook.set(id, text)
+  hub.chat.drafts = draftBook.all()
+  return normaliseDraft(text)
+}
+
+/** A thread that no longer exists cannot hold text. */
+export function dropChatDraft(id) {
+  draftBook.drop(id)
+  hub.chat.drafts = draftBook.all()
+}
 
 /* ── scope: what one workspace owns ───────────────────────────────── */
 
@@ -992,6 +1032,7 @@ export async function removeThread(id) {
   const nextThreads = { ...hub.chat.threads }
   delete nextThreads[id]
   hub.chat.threads = nextThreads
+  dropChatDraft(id)
   if (hub.chat.active === id) hub.chat.active = ''
   await refreshChatList()
   if (!hub.chat.active && hub.chat.summaries.length) {
