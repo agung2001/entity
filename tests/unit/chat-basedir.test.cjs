@@ -129,7 +129,7 @@ test('the @file: menu lists files under the base directory', async () => {
   })
   assert.equal(page.items.length, 1)
   assert.equal(page.items[0].insert, '@file:src/app.ts')
-  assert.match(page.items[0].detail, /src\/app\.ts$/)
+  assert.ok(page.items[0].detail.endsWith(path.join('src', 'app.ts')))
 
   const none = await mention.search({ record, kind: 'file', fields: ['app'], limit: 10, offset: 0 })
   assert.deepEqual(none.items, [], 'without a base directory the menu stays empty')
@@ -161,7 +161,9 @@ test('@file: resolves from the base directory when the turn is sent', async (t) 
   assert.equal(asked.attachments[0].path, path.join(dir, 'README.md'))
 })
 
-test('a file written during a turn is attached in the returned thread', async (t) => {
+/* The stand-in harness is a POSIX shell script, and a run is spawned with an
+   argv array (never through a shell), so it cannot execute on Windows. */
+test('a file written during a turn is attached in the returned thread', { skip: process.platform === 'win32' }, async (t) => {
   const harnesses = require('../../electron/harness-store.cjs')
   const record = workspace()
   const fake = path.join(PROFILE, 'fake-pi-artifact')

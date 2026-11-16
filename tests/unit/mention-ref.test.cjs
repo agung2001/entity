@@ -16,6 +16,11 @@ const assert = require('node:assert/strict')
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-mention-'))
 process.env.ENTITY_HOME = PROFILE
 
+/* The Orca fixture is resolved with `path.resolve`, so it must be an absolute
+   path that survives the round trip on every platform. */
+const ORCA_ROOT = path.join(os.tmpdir(), 'orca')
+const ORCA_ONE = path.join(ORCA_ROOT, 'One')
+
 const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')
 const mention = require('../../electron/mention-ref.cjs')
@@ -36,8 +41,8 @@ function workspace() {
 function deps(overrides = {}) {
   return {
     orcaRepos: async () => [
-      { displayName: 'One', path: '/tmp/orca/One' },
-      { displayName: 'Maka', path: '/tmp/orca/maka-repo' },
+      { displayName: 'One', path: ORCA_ONE },
+      { displayName: 'Maka', path: path.join(ORCA_ROOT, 'maka-repo') },
     ],
     mcpCall: async ({ server, tool, arguments: args }) => {
       if (server === 'youtrack' && tool === 'search_issues') {
@@ -107,7 +112,7 @@ test('the block names the mention, not the sentence around it', async () => {
   const record = workspace()
   const out = await mention.rewrite(record, '@orca:One tell me about it', { deps: deps() })
   assert.equal(out.mentions[0].token, '@orca:One')
-  assert.match(out.text, /^- @orca:One → \/tmp\/orca\/One/m)
+  assert.ok(out.text.includes(`- @orca:One → ${ORCA_ONE} — One`))
 })
 
 test('an email address is not a mention, and an unknown kind is left alone', () => {
@@ -147,7 +152,7 @@ test('an artifact is resolved to artifact:// plus its absolute path', async () =
 test('an orca project becomes a path, and a path cannot escape it', async () => {
   const record = workspace()
   const ok = await mention.rewrite(record, '@orca:One:src/app.ts', { deps: deps() })
-  assert.match(ok.text, /\/tmp\/orca\/One\/src\/app\.ts/)
+  assert.ok(ok.text.includes(path.join(ORCA_ONE, 'src', 'app.ts')))
 
   /* a path that leaves the project it named is refused, not quietly resolved */
   await assert.rejects(

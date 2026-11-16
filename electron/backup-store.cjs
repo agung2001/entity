@@ -1036,7 +1036,9 @@ async function restore({ id, name } = {}) {
   const label = uniqueRestoreLabel(snapshot.manifest.label || record.label)
   const newId = workspaces.uniqueWorkspaceId(label)
   const final = path.join(workspaces.WORKSPACES_DIR, newId)
-  const staging = path.join(workspaces.WORKSPACES_DIR, `.tmp-restore-${newId}-${process.pid}`)
+  /* Outside the watched `workspaces/` tree on Windows: a recursive `fs.watch`
+     holds a subdirectory open and Windows refuses to rename it (EPERM). */
+  const staging = workspaces.stagingPath('restore', newId)
   fs.rmSync(staging, { recursive: true, force: true })
   fs.mkdirSync(staging, { recursive: true })
 
@@ -1097,7 +1099,7 @@ async function restore({ id, name } = {}) {
       writeJson(membersFile, { ...members, schema: 1, workspace: newId, updatedAt: now }, 0o644)
     }
 
-    fs.renameSync(staging, final)
+    workspaces.moveIntoPlace(staging, final)
     return {
       record: workspaces.open(newId),
       warnings,

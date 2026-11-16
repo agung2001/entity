@@ -36,7 +36,7 @@ function write(entities, workspace, name, harness, dir, instructions, descriptio
   })
 }
 
-export function seedProfile({ root, profile, stateDir, external, stubLog }) {
+export async function seedProfile({ root, profile, stateDir, external, stubLog }) {
   process.env.ENTITY_HOME = profile
 
   resetDir(profile)
@@ -55,7 +55,7 @@ export function seedProfile({ root, profile, stateDir, external, stubLog }) {
   const email = `e2e-${nonce}@example.test`
   const username = `e2e-${nonce}`
   const password = crypto.randomBytes(24).toString('base64url')
-  auth.register({ email, name: username, password })
+  await auth.register({ email, name: username, password })
 
   const record = workspaces.create({
     label: 'chat-uat',

@@ -49,10 +49,13 @@ test('attaching a library skill copies its files instead of linking', () => {
   assert.equal(result.copied, true)
   assert.equal(fs.lstatSync(target).isSymbolicLink(), false)
   assert.match(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8'), /Copy me/)
-  assert.ok(fs.statSync(path.join(target, 'bin', 'run.sh')).mode & 0o100)
+  /* Windows does not carry an execute bit; the copy is checked by content. */
+  if (process.platform !== 'win32') {
+    assert.ok(fs.statSync(path.join(target, 'bin', 'run.sh')).mode & 0o100)
+  }
 })
 
-test('the migration turns an old workspace link into a real copy', () => {
+test('the migration turns an old workspace link into a real copy', { skip: process.platform === 'win32' }, () => {
   const source = writeSkill(
     fs.mkdtempSync(path.join(os.tmpdir(), 'entity-skill-old-')),
     '# old\n\nOriginal bytes.\n',

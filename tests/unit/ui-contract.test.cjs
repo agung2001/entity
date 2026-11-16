@@ -13,6 +13,10 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..', '..')
 const SRC = path.join(ROOT, 'src')
 
+/* Repo-relative paths are compared as POSIX strings, so the suite reads the
+   same on Windows as it does on macOS and Linux. */
+const relPosix = (full) => path.relative(ROOT, full).split(path.sep).join('/')
+
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
@@ -24,7 +28,7 @@ function walk(dir, out = []) {
 
 const FILES = walk(SRC).map((file) => ({
   file,
-  rel: path.relative(ROOT, file),
+  rel: relPosix(file),
   text: fs.readFileSync(file, 'utf8'),
 }))
 
@@ -348,7 +352,7 @@ function walkModules(dir) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) walkModules(full)
     else if (entry.name.endsWith('.js')) {
-      MODULES.push({ file: full, rel: path.relative(ROOT, full), text: fs.readFileSync(full, 'utf8') })
+      MODULES.push({ file: full, rel: relPosix(full), text: fs.readFileSync(full, 'utf8') })
     }
   }
 }

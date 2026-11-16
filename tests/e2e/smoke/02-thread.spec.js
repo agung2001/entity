@@ -61,7 +61,7 @@ test('@smoke attachments: a local file reaches the harness prompt', async ({ pag
 
   const prompt = newestPrompt(profile)
   expect(prompt).toContain('Attached files')
-  expect(prompt).toMatch(/runs\/\.attach-[^/]+\/0-brief\.md/)
+  expect(prompt).toMatch(/runs[\\/]\.attach-[^\\/]+[\\/]0-brief\.md/)
   expect(newestAttachment(profile)).toContain('E2E-EXTERNAL-CANARY-42')
   await expect(page.locator('.attach-chip')).toHaveCount(0)
 })

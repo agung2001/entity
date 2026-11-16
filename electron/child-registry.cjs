@@ -24,6 +24,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn, spawnSync } = require('node:child_process')
+const { planSpawn } = require('./exec-plan.cjs')
 
 const IS_WINDOWS = process.platform === 'win32'
 const POSIX = !IS_WINDOWS
@@ -161,6 +162,27 @@ function groupScan(pgid) {
 }
 
 /**
+ * Drop our end of a killed child's pipes.
+ *
+ * A Windows force kill (`taskkill /F`) closes the child's handles without Node
+ * ever draining them. Worse, a shim (`sh`/`cmd`) can re-parent a grandchild,
+ * which keeps the inherited stdout/stderr handle open — so the ChildProcess
+ * never emits `close`, and a cancelled turn or run hangs forever waiting for
+ * one. Destroying the streams ourselves settles it regardless of who still
+ * holds a copy of the pipe. The orphan is bounded by the harness itself; the
+ * pid journal is what reaps it on the next boot.
+ */
+function closeStreams(child) {
+  for (const stream of [child?.stdin, child?.stdout, child?.stderr]) {
+    try {
+      stream?.destroy()
+    } catch {
+      /* already closed */
+    }
+  }
+}
+
+/**
  * Kill a child and everything it spawned.
  *
  * `target` is a ChildProcess or a bare pid. On POSIX the negative pid is the
@@ -175,6 +197,7 @@ function killTree(target, signal = 'SIGTERM') {
     /* `/T` is the tree, `/F` is the force. A graceful Windows shutdown of a
        console tree is not something we can ask for, so any stop is a force. */
     const out = spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
+    if (target && typeof target === 'object') closeStreams(target)
     return out.status === 0
   }
 
@@ -223,9 +246,13 @@ function forget(pid) {
  */
 function spawnTracked(cmd, argv, options = {}) {
   const { kind = 'child', label = '', ...spawnOptions } = options
-  const child = spawn(cmd, argv, {
+  /* On Windows a `.cmd`/`.bat` has to be unwrapped before `spawn` can run it;
+     `exec-plan` does that and is a no-op everywhere else. */
+  const plan = planSpawn(cmd, argv, spawnOptions)
+  const child = spawn(plan.command, plan.args, {
     windowsHide: true,
     ...spawnOptions,
+    ...plan.options,
     shell: false,
     /* Own process group so the tree can be signalled as one. Not on Windows:
        there `detached` only detaches the console, and `taskkill /T` is the tree. */
@@ -374,6 +401,7 @@ function reapOrphans({ log = () => {} } = {}) {
 module.exports = {
   spawnTracked,
   killTree,
+  closeStreams,
   stopAll,
   stopAllSync,
   reapOrphans,

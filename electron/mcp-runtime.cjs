@@ -35,6 +35,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
+const { planSpawn } = require('./exec-plan.cjs')
 const workspaces = require('./workspace-store.cjs')
 const harnesses = require('./harness-store.cjs')
 
@@ -334,10 +335,13 @@ let piVersionCache = null
 function probePiVersion() {
   if (piVersionCache === null) {
     try {
-      const out = execFileSync(harnesses.binary('pi') || 'pi', ['--version'], {
+      /* pi is a `.cmd` on Windows; `exec-plan` resolves it to the node script. */
+      const plan = planSpawn(harnesses.binary('pi') || 'pi', ['--version'])
+      const out = execFileSync(plan.command, plan.args, {
         encoding: 'utf8',
         timeout: 5000,
         stdio: ['ignore', 'pipe', 'ignore'],
+        ...plan.options,
       })
       piVersionCache = String(out).match(/(\d+\.\d+\.\d+)/)?.[1] || ''
     } catch {

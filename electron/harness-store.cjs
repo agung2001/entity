@@ -11,6 +11,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { planSpawn } = require('./exec-plan.cjs')
 const workspaces = require('./workspace-store.cjs')
 const { expandHome, tilde } = require('./frontmatter.cjs')
 
@@ -189,11 +190,15 @@ function configuredModel(id) {
 }
 
 function runModels(binaryPath, args) {
-  const result = spawnSync(binaryPath, args, {
+  /* A Windows harness is a `.cmd` shim; `exec-plan` names the program it runs
+     so the model list is not empty just because the CLI is not an `.exe`. */
+  const plan = planSpawn(binaryPath, args)
+  const result = spawnSync(plan.command, plan.args, {
     encoding: 'utf8',
     timeout: 6000,
     maxBuffer: 4 * 1024 * 1024,
     env: process.env,
+    ...plan.options,
   })
   if (result.error || result.status !== 0) return ''
   return String(result.stdout || '')

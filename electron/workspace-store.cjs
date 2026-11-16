@@ -24,6 +24,7 @@ const localData = require('./local-data.cjs')
 const { HARNESSES } = localData
 const { tilde } = require('./frontmatter.cjs')
 const { SAMPLES, sampleList } = require('./seed.cjs')
+const { withoutWatching } = require('./workspace-watch.cjs')
 
 const HOME = os.homedir()
 /* Tests and dev sandboxes point ENTITY_HOME at a scratch directory; everything
@@ -290,7 +291,7 @@ function update({ id, label, nextId, members } = {}) {
   let moved = false
   try {
     if (targetId !== current.id) {
-      fs.renameSync(current.path, targetPath)
+      withoutWatching(() => fs.renameSync(current.path, targetPath))
       moved = true
     }
     const raw = readJson(path.join(targetPath, 'workspace.json'), {}) || {}
@@ -311,7 +312,7 @@ function update({ id, label, nextId, members } = {}) {
   } catch (error) {
     if (moved) {
       try {
-        fs.renameSync(targetPath, current.path)
+        withoutWatching(() => fs.renameSync(targetPath, current.path))
       } catch {
         /* the error below is the one worth reporting */
       }
@@ -937,6 +938,41 @@ function uniqueWorkspaceId(label) {
   throw new Error('Could not find a free workspace id for the import or restore.')
 }
 
+/**
+ * A directory still being written, parked *outside* the watched `workspaces/`
+ * tree and moved in only when it is complete.
+ *
+ * Why not stage inside `workspaces/` and rename: on Windows the window watches
+ * that directory with a recursive `fs.watch`, and renaming a subdirectory the
+ * watcher has opened fails with `EPERM`. Multi-second work — extracting a ZIP,
+ * importing a bundle — always loses that race, so restore and import would fail
+ * on every Windows machine. Windows therefore stages in the temp directory and
+ * moves the finished tree in; POSIX is untouched and keeps the same-volume
+ * staging, so a link-carrying tree still moves without a copy.
+ */
+function stagingPath(kind, id) {
+  fs.mkdirSync(ROOT, { recursive: true })
+  fs.mkdirSync(WORKSPACES_DIR, { recursive: true })
+  const safe = String(id || 'workspace').replace(/[^A-Za-z0-9._-]+/g, '-')
+  const name = `.tmp-${kind}-${safe}-${process.pid}`
+  return process.platform === 'win32'
+    ? path.join(os.tmpdir(), `entity-${name}`)
+    : path.join(WORKSPACES_DIR, name)
+}
+
+/** Move a completed staging directory into `workspaces/`. */
+function moveIntoPlace(staging, final) {
+  try {
+    fs.renameSync(staging, final)
+  } catch (error) {
+    /* Only a cross-volume staging dir (temp on another drive) needs the copy;
+       anything else is the caller's error. */
+    if (error?.code !== 'EXDEV') throw error
+    fs.cpSync(staging, final, { recursive: true, force: true })
+    fs.rmSync(staging, { recursive: true, force: true })
+  }
+}
+
 function importWorkspace({ bundle } = {}) {
   if (!bundle || typeof bundle !== 'object') throw new Error('That is not a workspace bundle.')
   if (bundle.schema !== BUNDLE_SCHEMA || bundle.kind !== BUNDLE_KIND) {
@@ -946,7 +982,7 @@ function importWorkspace({ bundle } = {}) {
   const id = uniqueWorkspaceId(label)
   const final = path.join(WORKSPACES_DIR, id)
   fs.mkdirSync(WORKSPACES_DIR, { recursive: true })
-  const staging = path.join(WORKSPACES_DIR, `.tmp-import-${id}-${process.pid}`)
+  const staging = stagingPath('import', id)
   fs.rmSync(staging, { recursive: true, force: true })
   fs.mkdirSync(staging, { recursive: true })
 
@@ -1014,7 +1050,7 @@ function importWorkspace({ bundle } = {}) {
       }
     }
 
-    fs.renameSync(staging, final)
+    moveIntoPlace(staging, final)
   } catch (error) {
     fs.rmSync(staging, { recursive: true, force: true })
     throw error
@@ -1067,7 +1103,7 @@ function create({
   }
 
   fs.mkdirSync(WORKSPACES_DIR, { recursive: true })
-  const staging = path.join(WORKSPACES_DIR, `.tmp-${id}-${process.pid}`)
+  const staging = stagingPath('create', id)
   fs.rmSync(staging, { recursive: true, force: true })
   fs.mkdirSync(staging, { recursive: true })
 
@@ -1119,7 +1155,7 @@ function create({
 
     if (seed) seedEntities(staging, linked, selectedSamples)
 
-    fs.renameSync(staging, final)
+    moveIntoPlace(staging, final)
   } catch (error) {
     fs.rmSync(staging, { recursive: true, force: true })
     throw error
@@ -1163,6 +1199,8 @@ module.exports = {
   exportWorkspace,
   importWorkspace,
   uniqueWorkspaceId,
+  stagingPath,
+  moveIntoPlace,
   remove,
   writeFileAtomic,
   writeJson,
