@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, watch } from 'vue'
 import { downloadArtifact, readArtifact } from '@/stores/artifacts'
+import { openArtifactPreview } from '@/stores/hub'
 import { hub } from '@/stores/hub'
 import { loadProse, proseReady, renderProse } from '@/lib/prose'
 
@@ -30,8 +31,21 @@ function renderMarkdown(text) {
 const TOKEN =
   /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|artifact:\/\/([^\s<>()]+)|(https?:\/\/[^\s<>()]+\.(?:png|jpe?g|gif|webp|avif|bmp|ico|svg)(?:\?[^\s<>()]*)?)/gi
 
+/* An `artifact://` reference often sits inside a code span, so the token the
+   regex finds ends with the closing backtick — and a quoted path ends with a
+   quote. Strip the wrapper, or the id names a file that does not exist. */
+function stripWrapper(value) {
+  return String(value || '')
+    .replace(/^[`'"<]+/, '')
+    .replace(/[`'">]+$/, '')
+    .replace(/[.,;:!?]+$/, '')
+}
+
 function decodeId(value) {
-  let id = String(value).split(/[?#]/)[0]
+  let id = stripWrapper(value)
+    /* `![alt](artifact://x)` hands us the whole reference, scheme included. */
+    .replace(/^artifact:\/\//i, '')
+    .split(/[?#]/)[0]
   try {
     id = decodeURIComponent(id)
   } catch {
@@ -67,7 +81,13 @@ const segments = computed(() => {
         id: artifact ? decodeId(src) : '',
       })
     } else if (match[3]) {
-      const token = match[3].replace(/[.,;:!?]+$/, '')
+      const token = stripWrapper(match[3])
+      /* A reference ending in `/` names a folder: there is nothing to preview,
+         and asking the reader for it would only fail. Keep the words. */
+      if (token.endsWith('/')) {
+        out.push({ type: 'text', text: match[0] })
+        continue
+      }
       const id = decodeId(token)
       out.push({ type: 'image', src: `artifact://${token}`, alt: id, artifact: true, id })
     } else if (match[4]) {
@@ -150,8 +170,25 @@ watch(() => props.text, resolve)
     <template v-for="(segment, index) in segments" :key="index">
       <div v-if="segment.type === 'text'" class="msg-md" v-html="renderMarkdown(segment.text)"></div>
       <template v-else>
+        <!-- An image an answer points at opens the artifact page: preview,
+             actions and the annotator, instead of a dead picture. -->
+        <button
+          v-if="segment.artifact && resolved[segment.id]?.kind === 'image' && imageSource(segment)"
+          class="msg-image-button"
+          type="button"
+          :title="`Open ${segment.alt}`"
+          @click="openArtifactPreview(segment.id)"
+        >
+          <img
+            class="msg-image"
+            :src="imageSource(segment)"
+            :alt="segment.alt"
+            loading="lazy"
+            decoding="async"
+          />
+        </button>
         <img
-          v-if="segment.artifact ? resolved[segment.id]?.kind === 'image' && imageSource(segment) : true"
+          v-else-if="!segment.artifact"
           class="msg-image"
           :src="imageSource(segment) || segment.src"
           :alt="segment.alt"
