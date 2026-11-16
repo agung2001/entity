@@ -117,7 +117,40 @@ const RULES = [
   },
 ]
 
-const invisible = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/
+/* Zero-width space, the bidi marks and overrides, invisible operators and the
+   BOM exist only to hide or reorder text; ordinary prose has no use for them. */
+const invisible = /[\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/
+/* U+200C (ZWNJ) and U+200D (ZWJ) are *not* in that set. They build a compound
+   emoji (🧑‍🏫, 👨‍💻, 🏳️‍🌈) and join letters in Persian, Arabic and Indic scripts.
+   A joiner is only suspicious when it sits inside a word — between characters
+   that are not part of an emoji sequence — where it hides a payload. */
+const joiner = /[\u200C\u200D]/g
+
+function emojiish(char) {
+  return (
+    char === '\uFE0E' ||
+    char === '\uFE0F' ||
+    char === '\u20E3' ||
+    /\p{Extended_Pictographic}/u.test(char)
+  )
+}
+
+/** The first character that genuinely hides content, or null. */
+function firstHidden(source) {
+  const hard = invisible.exec(source)
+  let soft = null
+  joiner.lastIndex = 0
+  for (let match = joiner.exec(source); match; match = joiner.exec(source)) {
+    const before = Array.from(source.slice(0, match.index)).pop() || ''
+    const after = Array.from(source.slice(match.index + 1))[0] || ''
+    if (!emojiish(before) || !emojiish(after)) {
+      soft = match
+      break
+    }
+  }
+  if (hard && soft) return hard.index <= soft.index ? hard : soft
+  return hard || soft
+}
 
 function redact(text) {
   return String(text || '')
@@ -160,7 +193,7 @@ function scanText(rel, text) {
       excerpt: excerpt(source, match.index, match[0].length),
     })
   }
-  const hidden = invisible.exec(source)
+  const hidden = firstHidden(source)
   if (hidden) {
     findings.push({
       path: rel,
