@@ -33,7 +33,7 @@ if (process.env.E2E_REUSE_PROFILE === '1' && fs.existsSync(STATE_FILE)) {
   state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))
   console.log(`[e2e] reusing profile ${PROFILE}`)
 } else {
-  const seeded = seedProfile({
+  const seeded = await seedProfile({
     root: ROOT,
     profile: PROFILE,
     stateDir: STATE_DIR,

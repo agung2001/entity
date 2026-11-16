@@ -13,7 +13,12 @@ const localData = require('./local-data.cjs')
 const harnesses = require('./harness-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 
-const SCRIPT = fs.readFileSync(path.join(__dirname, 'fleet-scan.sh'), 'utf8')
+const SCRIPT = fs
+  .readFileSync(path.join(__dirname, 'fleet-scan.sh'), 'utf8')
+  /* The script is piped to a POSIX shell on the other end. A Windows checkout
+     (`core.autocrlf=true`) reads it with CRLF, and dash sees `set -u\r` as an
+     illegal option and aborts before printing any capability line. Send LF. */
+  .replace(/\r\n?/g, '\n')
 const SSH_TIMEOUT_MS = 25_000
 const MAX_OUTPUT = 4 * 1024 * 1024
 const MAX_MODELS = 2_000

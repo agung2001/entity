@@ -495,7 +495,10 @@ test('a server cannot repoint an already-enabled MCP server', async () => {
   }
 })
 
-test('the configured local harness reviews pulled files, and can stop the sync', async () => {
+/* The stand-in `claude` is a POSIX shell script, and the guard spawns the
+   resolved binary with an argv array (never through a shell), so it cannot run
+   on Windows. */
+test('the configured local harness reviews pulled files, and can stop the sync', { skip: process.platform === 'win32' }, async () => {
   const remote = writeRemoteWorkspace()
   const { server, url } = await startServer(remote)
 
@@ -643,7 +646,7 @@ test('an older clone promotes auto-parked servers on the next sync', async () =>
   }
 })
 
-test('a symlinked library skill is dereferenced into real files for the team', async () => {
+test('a symlinked library skill is dereferenced into real files for the team', { skip: process.platform === 'win32' }, async () => {
   const remote = writeRemoteWorkspace()
   const library = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-skill-src-'))
   fs.mkdirSync(path.join(library, 'references'), { recursive: true })
@@ -678,7 +681,7 @@ test('a symlinked library skill is dereferenced into real files for the team', a
   }
 })
 
-test("a remote skill edit never writes through the author's library symlink", async () => {
+test("a remote skill edit never writes through the author's library symlink", { skip: process.platform === 'win32' }, async () => {
   const remote = writeRemoteWorkspace()
   const remoteSkill = path.join(remote.path, 'skills', 'review')
   fs.mkdirSync(remoteSkill, { recursive: true })
@@ -714,7 +717,7 @@ test("a remote skill edit never writes through the author's library symlink", as
   }
 })
 
-test('an old server never causes local skill files to be deleted', async () => {
+test('an old server never causes local skill files to be deleted', { skip: process.platform === 'win32' }, async () => {
   const remote = writeRemoteWorkspace()
   const { server, url } = await startServer(remote, { legacy: true })
 
@@ -765,7 +768,10 @@ test('a workspace-owned skill ships its body and its execute bit', async () => {
     const localSkill = path.join(record.path, 'skills', 'opendesign')
     assert.match(fs.readFileSync(path.join(localSkill, 'SKILL.md'), 'utf8'), /Use the studio/)
     assert.equal(fs.existsSync(path.join(localSkill, 'bin', 'start.sh')), true)
-    assert.ok(fs.statSync(path.join(localSkill, 'bin', 'start.sh')).mode & 0o100)
+    /* Windows has no execute bit to carry, so the copy is checked by content. */
+    if (process.platform !== 'win32') {
+      assert.ok(fs.statSync(path.join(localSkill, 'bin', 'start.sh')).mode & 0o100)
+    }
 
     const state = remoteSync.status({ id: record.id })
     assert.deepEqual(state.missingSkills, [], 'a skill whose body arrived is attached')
@@ -781,7 +787,9 @@ test('a workspace-owned skill ships its body and its execute bit', async () => {
     await remoteSync.sync({ id: record.id, reason: 'test' })
     const pushedScript = path.join(remote.path, 'skills', 'local-tool', 'run.sh')
     assert.equal(fs.existsSync(pushedScript), true)
-    assert.ok(fs.statSync(pushedScript).mode & 0o100)
+    if (process.platform !== 'win32') {
+      assert.ok(fs.statSync(pushedScript).mode & 0o100)
+    }
 
     /* The roster now matches the server; a quiet pass must not push it back. */
     const quiet = await remoteSync.sync({ id: record.id, reason: 'test' })
@@ -791,7 +799,7 @@ test('a workspace-owned skill ships its body and its execute bit', async () => {
   }
 })
 
-test('a remote-only skill is reported missing on every pass, not just the first', async () => {
+test('a remote-only skill is reported missing on every pass, not just the first', { skip: process.platform === 'win32' }, async () => {
   const remote = writeRemoteWorkspace()
   const library = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-skill-lib-'))
   fs.mkdirSync(path.join(remote.path, 'skills'), { recursive: true })

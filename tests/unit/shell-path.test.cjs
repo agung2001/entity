@@ -10,7 +10,9 @@ const test = require('node:test')
 
 const { ensureGuiPath } = require('../../electron/shell-path.cjs')
 
-test('the GUI PATH gains the home and version-manager bins, once each', () => {
+/* The check keeps POSIX-system directories (`/usr/bin`) that do not exist on a
+   Windows host, so it can only run where such a PATH is real. */
+test('the GUI PATH gains the home and version-manager bins, once each', { skip: process.platform === 'win32' }, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-path-'))
   const local = path.join(home, '.local', 'bin')
   const node = path.join(home, '.nvm', 'versions', 'node', 'v22.12.0', 'bin')
@@ -39,7 +41,7 @@ test('pnpm global bins are found in both layouts', () => {
   fs.mkdirSync(flat, { recursive: true })
   fs.mkdirSync(nested, { recursive: true })
 
-  const dirs = ensureGuiPath({ platform: 'darwin', home, env: { PATH: '/usr/bin:/bin' } }).split(':')
+  const dirs = ensureGuiPath({ platform: 'darwin', home, env: { PATH: '/usr/bin:/bin' } }).split(path.delimiter)
   assert.ok(dirs.includes(flat))
   assert.ok(dirs.includes(nested))
 })
@@ -53,7 +55,7 @@ test('a custom PNPM_HOME is added, with and without its bin directory', () => {
     platform: 'darwin',
     home,
     env: { PATH: '/usr/bin:/bin', PNPM_HOME: pnpmHome },
-  }).split(':')
+  }).split(path.delimiter)
   assert.ok(dirs.includes(pnpmHome))
   assert.ok(dirs.includes(path.join(pnpmHome, 'bin')))
 })
@@ -69,7 +71,7 @@ test('version-manager bins are ordered newest first', () => {
   }
 
   /* A packaged build once crashed here: the sort compared `Dirent`, not names. */
-  const dirs = ensureGuiPath({ platform: 'linux', home, env: { PATH: '/bin' } }).split(':')
+  const dirs = ensureGuiPath({ platform: 'linux', home, env: { PATH: '/bin' } }).split(path.delimiter)
   const nvmBins = dirs.filter((dir) => dir.startsWith(nvm))
   const fnmBins = dirs.filter((dir) => dir.startsWith(fnm))
 

@@ -30,7 +30,10 @@ test('the MCP server authenticates and serves workspace tools', async (t) => {
 
   assert.equal(started.running, true)
   assert.equal(started.port, port)
-  assert.equal(fs.statSync(server.CONFIG_FILE).mode & 0o777, 0o600)
+  /* 0600 is a POSIX permission bit; Windows has no equivalent. */
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(server.CONFIG_FILE).mode & 0o777, 0o600)
+  }
 
   const headers = {
     authorization: `Bearer ${started.token}`,

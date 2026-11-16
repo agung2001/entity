@@ -9,7 +9,9 @@
  * text. Verification uses scrypt; the encrypted copy exists so the credential
  * file can carry the credential itself without a second secret store, and it
  * is written with the same atomic-write discipline as every other workspace
- * file. `safeStorage` is preferred in Electron because it rides the OS keychain.
+ * file. `safeStorage` is preferred in Electron because it rides the OS keychain
+ * (through its async API, so no deprecated sync calls are made); the writers
+ * that touch the credential are therefore async.
  */
 const fs = require('node:fs')
 const os = require('node:os')
@@ -55,22 +57,22 @@ function writeJson(file, value) {
   return value
 }
 
-function safeStorage() {
+async function safeStorage() {
   try {
     /* In Electron this is the keychain-backed implementation. In the Vite
        server (plain Node) the module is not the Electron API, so this falls
        through to the local AES key. */
     const electron = require('electron')
+    const api = electron && electron.safeStorage
     if (
-      electron &&
-      electron.safeStorage &&
-      typeof electron.safeStorage.isEncryptionAvailable === 'function' &&
-      electron.safeStorage.isEncryptionAvailable()
+      api &&
+      typeof api.isAsyncEncryptionAvailable === 'function' &&
+      typeof api.encryptStringAsync === 'function'
     ) {
-      return electron.safeStorage
+      return (await api.isAsyncEncryptionAvailable()) ? api : null
     }
   } catch {
-    /* no Electron shell */
+    /* no Electron shell, or the keychain refused to answer */
   }
   return null
 }
@@ -89,14 +91,15 @@ function aesKey() {
   return key
 }
 
-function encryptPassword(password) {
+async function encryptPassword(password) {
   const text = String(password)
-  const safe = safeStorage()
+  const safe = await safeStorage()
   if (safe) {
     try {
+      const data = await safe.encryptStringAsync(text)
       return {
         scheme: 'safeStorage',
-        data: safe.encryptString(text).toString('base64'),
+        data: Buffer.from(data).toString('base64'),
       }
     } catch {
       /* keychain unavailable at this moment — use the local key */
@@ -200,7 +203,7 @@ function exists() {
   return Boolean(readAuth())
 }
 
-function register({ email, name = '', password, role = 'owner' } = {}) {
+async function register({ email, name = '', password, role = 'owner' } = {}) {
   if (exists()) throw new Error('An account already exists on this machine.')
   const mail = String(email || '').trim()
   if (!validEmail(mail)) throw new Error('Enter a valid email address.')
@@ -216,7 +219,7 @@ function register({ email, name = '', password, role = 'owner' } = {}) {
     role: ROLES.has(role) ? role : 'owner',
     passwordHash: hash,
     passwordSalt: salt,
-    passwordCipher: encryptPassword(pass),
+    passwordCipher: await encryptPassword(pass),
     registered: true,
     createdAt: now,
     updatedAt: now,
@@ -225,7 +228,7 @@ function register({ email, name = '', password, role = 'owner' } = {}) {
 }
 
 /** A workspace owner read from disk can seed the first account. */
-function adopt({ email, name = '', password = '123456', role = 'owner' } = {}) {
+async function adopt({ email, name = '', password = '123456', role = 'owner' } = {}) {
   if (exists()) return get()
   return register({ email, name, password, role })
 }
@@ -250,7 +253,7 @@ function importLegacy({ username, email, role = 'owner', hash, registered = true
   })
 }
 
-function verify({ ident, password } = {}) {
+async function verify({ ident, password } = {}) {
   const raw = readAuth()
   if (!raw) return { ok: false, message: 'No account exists on this machine yet.' }
   const user = raw.user
@@ -277,7 +280,7 @@ function verify({ ident, password } = {}) {
       ...user,
       passwordHash: hash,
       passwordSalt: salt,
-      passwordCipher: encryptPassword(password),
+      passwordCipher: await encryptPassword(password),
       legacyHash: undefined,
       registered: true,
       updatedAt: new Date().toISOString(),
@@ -308,7 +311,7 @@ function update({ username, email } = {}) {
 }
 
 /** Used after a verified sign-in (the old forced-change flow). */
-function setPassword({ password } = {}) {
+async function setPassword({ password } = {}) {
   const raw = readAuth()
   if (!raw) throw new Error('No account exists on this machine yet.')
   const pass = String(password || '')
@@ -318,7 +321,7 @@ function setPassword({ password } = {}) {
     ...raw.user,
     passwordHash: hash,
     passwordSalt: salt,
-    passwordCipher: encryptPassword(pass),
+    passwordCipher: await encryptPassword(pass),
     legacyHash: undefined,
     mustChange: false,
     registered: true,
@@ -328,7 +331,7 @@ function setPassword({ password } = {}) {
   return writeUser(next)
 }
 
-function changePassword({ current, next: nextPassword } = {}) {
+async function changePassword({ current, next: nextPassword } = {}) {
   const raw = readAuth()
   if (!raw) return { ok: false, message: 'No account exists on this machine yet.' }
   const user = raw.user
@@ -344,7 +347,7 @@ function changePassword({ current, next: nextPassword } = {}) {
     ...user,
     passwordHash: hash,
     passwordSalt: salt,
-    passwordCipher: encryptPassword(nextPassword),
+    passwordCipher: await encryptPassword(nextPassword),
     legacyHash: undefined,
     mustChange: false,
     registered: true,
