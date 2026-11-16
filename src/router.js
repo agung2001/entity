@@ -201,13 +201,13 @@ const router = createRouter({
           path: ':workspace/machines',
           name: 'machines',
           component: MachinesView,
-          meta: { crumb: 'fleet', title: 'Fleet · entity' },
+          meta: { crumb: 'machines', title: 'Machines · entity' },
         },
         {
           path: ':workspace/machines/:id',
           name: 'machine',
           component: MachineDetailView,
-          meta: { crumb: 'fleet', title: 'Host · entity' },
+          meta: { crumb: 'machines', title: 'Machine · entity' },
         },
         {
           path: ':workspace/activity',

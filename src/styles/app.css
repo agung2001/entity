@@ -9502,19 +9502,52 @@ label.pick:has(input:focus-visible) {
   flex: none;
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
+  width: 46px;
+  height: 46px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 13px;
   background: var(--surface);
-  font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
   color: var(--muted);
+}
+.mcpp-mark svg {
+  width: 20px;
+  height: 20px;
 }
 .mcpp-mark[data-t='http'] {
   border-color: color-mix(in oklab, var(--accent, #d6a300) 40%, var(--border));
   color: var(--ink-2);
+}
+/* The command is the identity of a stdio server; give it a line of its own
+   instead of the description slot, which is sized for prose. */
+.mcpp-cmd {
+  display: block;
+  margin-top: 9px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+/* The definition was a bare <pre>: no border, no padding, browser monospace. */
+.codebox {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  tab-size: 2;
 }
 .mcpp-chip {
   display: inline-flex;
@@ -11691,12 +11724,12 @@ label.pick:has(input:focus-visible) {
 }
 .mcp-tool-list {
   margin: 0;
-  padding: 0;
+  padding: 2px 2px 2px 0;
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  max-height: 220px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 7px 14px;
+  max-height: 260px;
   overflow: auto;
 }
 .mcp-tool-list li {
@@ -11705,6 +11738,7 @@ label.pick:has(input:focus-visible) {
   gap: 1px;
   padding-left: 9px;
   border-left: 1px solid var(--border);
+  min-width: 0;
 }
 .mcp-tool-list b {
   font-family: var(--mono);
@@ -11716,6 +11750,7 @@ label.pick:has(input:focus-visible) {
   font-size: 10.5px;
   line-height: 1.45;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .btn-danger {
   color: var(--danger);
@@ -14027,6 +14062,10 @@ button.empty-link {
   align-items: flex-start;
   gap: 1px;
   padding: 9px 7px;
+  /* The list is a scrolling flex column: without `flex: none` a rail holding
+     more threads than fit shrinks every row toward the min height, and a
+     two-line title then paints over the row below it. */
+  flex: none;
   border: 1px solid transparent;
   border-radius: 9px;
   background: none;

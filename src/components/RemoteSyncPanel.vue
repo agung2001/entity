@@ -342,8 +342,8 @@ async function disconnect() {
         </div>
 
         <div v-if="summary?.quarantined?.length" class="rmt-note">
-          <b>MCP servers parked.</b> These arrived from the server and are disabled
-          locally until you review them in MCP:
+          <b>MCP servers parked.</b> These arrived from the server and stay parked
+          until you review them in MCP:
           <span class="mono">{{ summary.quarantined.join(', ') }}</span>.
           A definition that points at the machine that shared it — a loopback address,
           or a command inside a home directory — cannot work here at all; enable it only

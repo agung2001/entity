@@ -77,7 +77,7 @@ const navigationItems = computed(() => [
   {
     id: 'nav:workspace',
     label: 'Configurations',
-    meta: 'General, members, skills, MCP, fleet',
+    meta: 'General, members, skills, MCP, machines',
     act: () => router.push({ name: 'workspace', params: { workspace: hub.workspace } }),
   },
   {
@@ -137,12 +137,12 @@ const navigationItems = computed(() => [
   {
     id: 'nav:mcp',
     label: 'MCP',
-    meta: 'Workspace pool and global configs',
+    meta: 'Workspace servers and global configs',
     act: () => router.push({ name: 'mcp', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:machines',
-    label: 'Fleet',
+    label: 'Machines',
     meta: 'Ssh hosts and their harness inventory',
     act: () => router.push({ name: 'machines', params: { workspace: hub.workspace } }),
   },
@@ -226,7 +226,7 @@ const machineItems = computed(() => {
     seen.set(machine.id, {
       id: `machine:${machine.id}`,
       label: machine.label || machine.id,
-      meta: machine.thisMachine ? 'local' : 'in the fleet',
+      meta: machine.thisMachine ? 'local' : 'ssh host',
       act: () => router.push({ name: 'machine', params: { workspace: hub.workspace, id: machine.id } }),
     })
   }
@@ -236,7 +236,7 @@ const machineItems = computed(() => {
     seen.set(id, {
       id: `machine:${id}`,
       label: host.label || host.alias || id,
-      meta: `${host.spec || host.hostName || 'ssh'} · fleet`,
+      meta: `${host.spec || host.hostName || 'ssh'} · machine`,
       act: () => router.push({ name: 'machine', params: { workspace: hub.workspace, id } }),
     })
   }
@@ -292,7 +292,7 @@ const groups = computed(() => {
     make('chat', 'Chat', chatItems.value),
     make('entity', 'Entities', entityItems.value),
     make('skill', 'Skills', skillItems.value),
-    make('machine', 'Fleet', machineItems.value),
+    make('machine', 'Machines', machineItems.value),
     make('activity', 'Activity', activityItems.value),
   ].filter((group) => group.items.length || (q && group.total))
 })
@@ -358,7 +358,7 @@ function onKey(event) {
       <input
         ref="input"
         :value="hub.palette.query"
-        placeholder="Search pages, workspaces, chats, entities, skills, fleet…"
+        placeholder="Search pages, workspaces, chats, entities, skills, machines…"
         autocomplete="off"
         spellcheck="false"
         @input="onInput"

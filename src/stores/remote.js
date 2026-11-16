@@ -117,7 +117,7 @@ function onRemoteEvent(event) {
     if (line && event.reason !== 'poll') toast(`Remote synced · ${line}`)
     if (event.quarantined?.length) {
       toast(
-        `${event.quarantined.length} MCP server${event.quarantined.length === 1 ? '' : 's'} from the server parked in the pool.`,
+        `${event.quarantined.length} MCP server${event.quarantined.length === 1 ? '' : 's'} from the server parked in this workspace.`,
       )
     }
     if (event.mcpDiverged?.length) {

@@ -133,7 +133,7 @@ const sourceLabel = (entry) => {
     <template v-if="!missing">
       <div class="page-head">
         <div>
-          <p class="eyebrow">Fleet · {{ workspaces.active }}</p>
+          <p class="eyebrow">Machines · {{ workspaces.active }}</p>
           <h1 class="machine-title"><MachineIcon :size="20" />{{ label }}</h1>
           <p class="lede">
             {{

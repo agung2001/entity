@@ -222,14 +222,14 @@ async function saveServer() {
   }
   const next = { ...(workspaces.mcp?.servers || {}) }
   if (next[name]) {
-    addError.value = `${name} is already in the workspace pool.`
+    addError.value = `${name} is already attached to this workspace.`
     return
   }
   next[name] = definition
   addBusy.value = true
   try {
     await writeMcp(next)
-    toast(`${name} added to the workspace pool`)
+    toast(`${name} attached to this workspace`)
     addOpen.value = false
   } catch (error) {
     addError.value = error?.message || 'The server could not be saved.'
@@ -255,16 +255,16 @@ async function saveJson() {
     return
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    jsonError.value = 'The pool must be an object of server name → definition.'
+    jsonError.value = 'This must be an object of server name → definition.'
     return
   }
   jsonBusy.value = true
   try {
     await writeMcp(parsed)
-    toast('MCP pool saved')
+    toast('MCP servers saved')
     jsonOpen.value = false
   } catch (error) {
-    jsonError.value = error?.message || 'The MCP pool could not be saved.'
+    jsonError.value = error?.message || 'The MCP servers could not be saved.'
   } finally {
     jsonBusy.value = false
   }
@@ -283,7 +283,7 @@ onMounted(() => {
         <h1>MCP</h1>
         <p class="lede">
           Every server the workspace carries, and every server the harnesses already know.
-          Every entity gets this pool; an entity can narrow it with <code class="mono">mcp: name</code>.
+          Every entity gets these servers; an entity can narrow it with <code class="mono">mcp: name</code>.
         </p>
       </div>
       <div class="head-actions">
@@ -302,8 +302,8 @@ onMounted(() => {
         <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
         <h2>MCP inventory</h2>
         <p class="lede">
-          The workspace pool and the harness configs on this machine, in one comparison table.
-          Every entity gets the pool; an entity can narrow it with <code class="mono">mcp: name</code>.
+          The servers attached to this workspace and the harness configs on this machine, one table.
+          Every entity gets them; an entity can narrow it with <code class="mono">mcp: name</code>.
         </p>
       </div>
       <div class="mcp-inv-actions">
@@ -433,7 +433,7 @@ onMounted(() => {
             <span v-else class="mcp-inv-s">only here</span>
           </span>
           <span v-else class="mcp-inv-flag" :data-on="inPool(row.name) ? '1' : '0'">
-            {{ inPool(row.name) ? 'in pool' : '—' }}
+            {{ inPool(row.name) ? 'attached' : '—' }}
           </span>
           <span class="mcp-inv-end">
             <button
@@ -452,9 +452,9 @@ onMounted(() => {
     </div>
 
     <div v-else-if="!globals.loading" class="empty-note mcp-inv-empty">
-      <b>{{ scope === 'workspace' && !pool.length ? 'No MCP servers in this pool yet.' : 'Nothing matches.' }}</b>
+      <b>{{ scope === 'workspace' && !pool.length ? 'Nothing attached to this workspace yet.' : 'Nothing matches.' }}</b>
       <span>
-        {{ scope === 'workspace' && !pool.length ? 'Add one, or attach a server the harnesses already know.' : 'Search covers names, commands, env keys, entities and harnesses.' }}
+        {{ scope === 'workspace' && !pool.length ? 'Add a definition, or attach one the harnesses already know.' : 'Search covers names, commands, env keys, entities and harnesses.' }}
       </span>
       <button v-if="scope === 'workspace' && !pool.length" class="btn btn-ink" type="button" @click="beginAdd">
         Add server
@@ -476,7 +476,7 @@ onMounted(() => {
       <div class="modal mcp-modal" :data-open="addOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP server">
         <div class="mo-head">
           <h2>Add MCP server</h2>
-          <p>Write the definition into this workspace's pool. Env holds variable names only.</p>
+          <p>Write the definition into this workspace. Env holds variable names only.</p>
           <button class="x mo-x" type="button" aria-label="Close" @click="closeAdd">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2 2l8 8M10 2l-8 8" /></svg>
           </button>
@@ -520,7 +520,7 @@ onMounted(() => {
         </form>
       </div>
 
-      <div class="modal modal-narrow mcp-modal" :data-open="jsonOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP pool JSON">
+      <div class="modal modal-narrow mcp-modal" :data-open="jsonOpen ? '1' : '0'" role="dialog" aria-modal="true" aria-label="MCP servers JSON">
         <div class="mo-head">
           <h2>Pool JSON</h2>
           <p>{{ workspaces.mcp?.path || 'mcp.json' }}</p>
@@ -533,7 +533,7 @@ onMounted(() => {
           <p v-if="jsonError" class="acct-error" role="alert">{{ jsonError }}</p>
           <div class="mo-foot" style="padding: 8px 0 0; border: 0">
             <button class="btn" type="button" @click="closeJson">Cancel</button>
-            <button class="btn btn-ink" type="button" :disabled="jsonBusy" @click="saveJson">{{ jsonBusy ? 'Saving…' : 'Save pool' }}</button>
+            <button class="btn btn-ink" type="button" :disabled="jsonBusy" @click="saveJson">{{ jsonBusy ? 'Saving…' : 'Save servers' }}</button>
           </div>
         </div>
       </div>

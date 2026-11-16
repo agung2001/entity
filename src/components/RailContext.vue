@@ -14,7 +14,7 @@ import { workspaces } from '@/stores/workspaces'
 
 /**
  * The second tier. It belongs to the section in the URL, not to the whole app:
- * Overview lists the fleet, Entities lists entity files, Artifacts lists the
+ * Overview lists the machines, Entities lists entity files, Artifacts lists the
  * shelf, Chat brings back the working/done history, and Configurations lists
  * the workspace settings tabs.
  */
@@ -32,7 +32,7 @@ const WORKSPACE_TABS = [
   { id: 'members', label: 'Members', hint: 'who belongs to this scope' },
   { id: 'skills', label: 'Skills', hint: 'attached to the workspace' },
   { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
-  { id: 'machines', label: 'Fleet', hint: 'ssh hosts and their harnesses' },
+  { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
   { id: 'activity', label: 'Activity', hint: 'recent workspace events' },
 ]
 
@@ -68,8 +68,14 @@ const section = computed(() => {
   if (name === 'entity') return { id: 'entities', title: 'Entities', count: hub.agents.length }
   if (name === 'artifact') return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
   if (name === 'chat') return { id: 'chat', title: 'Chats', count: hub.chat.summaries.length }
-  if (name === 'machines' || name === 'machine') {
-    return { id: 'machines', title: 'Fleet', count: railHosts.value.length }
+  /* Machines is a sub-page of the workspace, so it carries the same way back
+     the settings page does; the host detail goes one step further up, to the
+     list it came from. */
+  if (name === 'machines') {
+    return { id: 'machines', title: 'Machines', count: railHosts.value.length, back: 'workspace' }
+  }
+  if (name === 'machine') {
+    return { id: 'machines', title: 'Machines', count: railHosts.value.length, back: 'machines' }
   }
   if (name === 'skills' || name === 'skill') {
     return { id: 'skills', title: 'Skills', count: hub.skills.length }
@@ -105,9 +111,25 @@ function newChat() {
   history.value?.newThread()
 }
 
-function backToWorkspaces() {
+function goBack() {
+  const to = section.value.back
+  if (to === 'machines') {
+    router.push({ name: 'machines', params: { workspace: hub.workspace } })
+    return
+  }
+  if (to === 'workspace') {
+    router.push({ name: 'workspace', params: { workspace: hub.workspace } })
+    return
+  }
+  /* Leaving the workspace entirely: back to the picker. */
   router.push('/workspaces')
 }
+
+const backLabel = computed(() => {
+  if (section.value.back === 'machines') return 'Back to machines'
+  if (section.value.back === 'workspace') return 'Back to workspace settings'
+  return 'Back to workspaces'
+})
 </script>
 
 <template>
@@ -117,9 +139,9 @@ function backToWorkspaces() {
         v-if="section.back"
         class="rail-t2-back"
         type="button"
-        title="Back to workspaces"
-        aria-label="Back to workspaces"
-        @click="backToWorkspaces"
+        :title="backLabel"
+        :aria-label="backLabel"
+        @click="goBack"
       >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
           <path d="M10 3L5 8l5 5" />
@@ -255,7 +277,7 @@ function backToWorkspaces() {
 
     <div v-else-if="section.id === 'mcp'" class="rail-t2-body">
       <p v-if="!Object.keys(workspaces.mcp?.servers || {}).length" class="rail-t2-empty">
-        No MCP servers in this workspace pool.
+        No MCP servers attached to this workspace.
       </p>
       <button
         v-for="(server, name) in workspaces.mcp?.servers || {}"

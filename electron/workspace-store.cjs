@@ -249,6 +249,7 @@ function withCounts(record) {
       entities: countEntities(record.path),
       skills: countSkills(record.path),
       machines: countMachineFacts(record.path),
+      mcp: countMcp(record.path),
     },
   }
 }
@@ -442,6 +443,20 @@ function readMachineFacts(dir) {
 
 function countMachineFacts(dir) {
   return Object.keys(readMachineFacts(dir).hosts).length
+}
+
+/** MCP servers this workspace carries, parked ones included: a server that is
+ *  there but switched off is still a server, not a missing one. */
+function countMcp(dir) {
+  const raw = readJson(path.join(dir, 'mcp.json'), null)
+  if (!raw || typeof raw !== 'object') return 0
+  const names = new Set()
+  for (const key of ['servers', 'disabled']) {
+    const pool = raw[key]
+    if (!pool || typeof pool !== 'object') continue
+    for (const name of Object.keys(pool)) names.add(name)
+  }
+  return names.size
 }
 
 /** The only machine every workspace has: the one running this process. */

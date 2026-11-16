@@ -8,7 +8,7 @@ import { createWorkspace, loadSamples, workspaces } from '@/stores/workspaces'
  *
  * It is one screen on purpose: a name, and — optionally — which sample entities
  * to start with. A workspace is data, not a machine: any entity can be sent to a
- * host from the Fleet view later, without copying credentials into the folder.
+ * host from the Machines page later, without copying credentials into the folder.
  */
 const props = defineProps({
   open: { type: Boolean, default: true },

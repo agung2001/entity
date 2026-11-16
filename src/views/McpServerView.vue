@@ -32,7 +32,7 @@ const parkedReason = computed(() =>
 )
 
 /* A server the harnesses already know is readable here too, with one action:
-   copy it into the pool. */
+   attach it to this workspace. */
 const globalRow = ref(null)
 const globalLoading = ref(false)
 
@@ -53,8 +53,8 @@ const confirming = ref(false)
 const redactedDefinition = computed(() => {
   if (!definition.value) return ''
   const copy = JSON.parse(JSON.stringify(definition.value))
-  /* `__remote` / `__pinned` / `__unavailable` are pool bookkeeping, not part of
-     the definition; the page states the parked reason in prose instead. */
+  /* `__remote` / `__pinned` / `__unavailable` are workspace bookkeeping, not part
+     of the definition; the page states the parked reason in prose instead. */
   for (const key of Object.keys(copy)) {
     if (key.startsWith('__')) delete copy[key]
   }
@@ -142,7 +142,7 @@ async function attach() {
   }
   try {
     await writeMcp({ ...poolServers.value, [name.value]: globalRow.value.definition })
-    toast(`${name.value} added to the workspace pool`)
+    toast(`${name.value} attached to this workspace`)
   } catch (error) {
     toast(error?.message || `${name.value} could not be attached.`)
   }
@@ -217,7 +217,7 @@ watch(name, async () => {
           Copy definition
         </button>
         <button v-if="!inPool" class="btn btn-ink" type="button" :disabled="!globalRow" @click="attach">
-          Add to pool
+          Attach
         </button>
         <button v-else class="btn btn-sm" type="button" @click="toggleEnabled">
           {{ enabled ? 'Park' : 'Enable' }}
@@ -227,16 +227,24 @@ watch(name, async () => {
 
     <template v-if="definition">
       <header class="entp-idhead">
-        <div class="mcpp-mark" :data-t="transport">
-          <span>{{ transport === 'http' ? 'HTTP' : 'STDIO' }}</span>
+        <div class="mcpp-mark" :data-t="transport" aria-hidden="true">
+          <svg v-if="transport === 'http'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z" />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="4" width="18" height="6" rx="1.6" />
+            <rect x="3" y="14" width="18" height="6" rx="1.6" />
+            <path d="M7 7h.01M7 17h.01" stroke-linecap="round" />
+          </svg>
         </div>
         <div class="entp-title">
           <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
           <h1>{{ name }}</h1>
-          <p class="entp-desc mono">{{ command }}</p>
+          <code class="mcpp-cmd" :title="command">{{ command }}</code>
           <div class="entp-chips">
             <span class="mcpp-chip" :data-on="inPool && enabled ? '1' : '0'">
-              <i></i>{{ !inPool ? 'harness config' : enabled ? 'in the pool' : 'parked' }}
+              <i></i>{{ !inPool ? 'not attached' : enabled ? 'attached' : 'parked' }}
             </span>
             <span class="entp-chip">{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</span>
             <span class="entp-chip">{{ tools.list.length }} tools</span>
@@ -291,7 +299,8 @@ watch(name, async () => {
             <template v-if="editing">
               <textarea v-model="draft" class="mcp-editor mono" rows="14" spellcheck="false"></textarea>
               <p class="mcpp-note">
-                This is what the pool stores, values included. It is only rewritten when you save.
+                This is what this workspace stores, values included. It is only rewritten when
+                you save.
               </p>
               <p v-if="draftError" class="acct-error" role="alert">{{ draftError }}</p>
               <div class="mcpp-actions">
@@ -313,8 +322,8 @@ watch(name, async () => {
               <span v-if="!envKeys.length" class="entp-skchip"><i></i>no variables required</span>
             </div>
             <p class="mcpp-note">
-              Values live in the pool, are handed to the harness when the turn starts, and are
-              never returned by any read here.
+              Values live in this workspace, are handed to the harness when the turn starts,
+              and are never returned by any read here.
             </p>
           </section>
 
@@ -345,7 +354,7 @@ watch(name, async () => {
             </div>
             <div class="mcpp-actions">
               <button class="btn btn-sm" type="button" data-danger="1" @click="remove">
-                {{ confirming ? 'Click again to remove' : 'Remove from the pool' }}
+                {{ confirming ? 'Click again to detach' : 'Detach' }}
               </button>
               <button v-if="confirming" class="btn btn-sm" type="button" @click="confirming = false">
                 Keep it
@@ -362,8 +371,8 @@ watch(name, async () => {
             <div v-if="definition?.command"><dt>Command</dt><dd class="mono">{{ definition.command }}</dd></div>
             <div v-if="definition?.args?.length"><dt>Args</dt><dd class="mono" :title="definition.args.join(' ')">{{ definition.args.join(' ') }}</dd></div>
             <div><dt>Headers</dt><dd class="mono">{{ definition?.headers ? Object.keys(definition.headers).join(', ') : 'none' }}</dd></div>
-            <div><dt>Source</dt><dd>{{ inPool ? 'workspace pool' : globalRow?.harnessLabel || 'harness config' }}</dd></div>
-            <div><dt>Status</dt><dd>{{ !inPool ? 'not in the pool' : enabled ? 'enabled' : 'parked' }}</dd></div>
+            <div><dt>Source</dt><dd>{{ inPool ? 'this workspace' : globalRow?.harnessLabel || 'harness config' }}</dd></div>
+            <div><dt>Status</dt><dd>{{ !inPool ? 'not attached' : enabled ? 'attached' : 'parked' }}</dd></div>
             <div><dt>Tools</dt><dd>{{ tools.loading ? 'asking…' : tools.list.length }}</dd></div>
             <div><dt>Pool file</dt><dd class="mono" :title="workspaces.mcp?.path">{{ workspaces.mcp?.path || 'mcp.json' }}</dd></div>
             <div v-if="globalRow?.configPath"><dt>Config file</dt><dd class="mono" :title="globalRow.configPath">{{ globalRow.configPath }}</dd></div>
@@ -376,7 +385,7 @@ watch(name, async () => {
       <div class="empty-note">
         <b>{{ globalLoading ? 'Looking for that server…' : 'No MCP server called that.' }}</b>
         <span>
-          It is not in this workspace's pool, and no harness on this machine declares it.
+          It is not attached to this workspace, and no harness on this machine declares it.
           Add it on the MCP page.
         </span>
         <button class="btn btn-sm" type="button" @click="back">Back to MCP</button>

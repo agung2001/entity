@@ -64,7 +64,7 @@ const crumbs = computed(() => {
   }
   if (isMachine.value) {
     return [
-      { label: 'fleet', to: { name: 'machines', params: { workspace: route.params.workspace } } },
+      { label: 'machines', to: { name: 'machines', params: { workspace: route.params.workspace } } },
       { label: route.params.id },
     ]
   }

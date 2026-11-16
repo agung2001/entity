@@ -139,9 +139,9 @@ const totals = computed(() =>
     (sum, record) => ({
       entities: sum.entities + (record.counts?.entities || 0),
       skills: sum.skills + (record.counts?.skills || 0),
-      machines: sum.machines + (record.counts?.machines || 0),
+      mcp: sum.mcp + (record.counts?.mcp || 0),
     }),
-    { entities: 0, skills: 0, machines: 0 },
+    { entities: 0, skills: 0, mcp: 0 },
   ),
 )
 
@@ -392,7 +392,7 @@ async function deleteOne(record) {
           <div class="wsl-counts">
             <span><b>{{ record.counts.entities }}</b><span>entities</span></span>
             <span><b>{{ record.counts.skills }}</b><span>skills</span></span>
-            <span><b>{{ record.counts.machines }}</b><span>scanned</span></span>
+            <span><b>{{ record.counts.mcp || 0 }}</b><span>MCP</span></span>
           </div>
           <div class="wsl-foot">
             <span class="wsl-lf">
@@ -410,7 +410,7 @@ async function deleteOne(record) {
 
       <div v-else class="wsl-table">
         <div class="wsl-thead">
-          <span>Workspace</span><span>Entities</span><span>Skills</span><span>Scanned</span><span>Kind</span><span>Created</span><span></span>
+          <span>Workspace</span><span>Entities</span><span>Skills</span><span>MCP</span><span>Kind</span><span>Created</span><span></span>
         </div>
         <div v-for="record in filtered" :key="record.id" class="wsl-row" :data-active="record.id === workspaces.active ? '1' : '0'">
           <button class="wsl-row-name" type="button" data-sfx="workspace" @click="openOne(record)">
@@ -418,7 +418,7 @@ async function deleteOne(record) {
           </button>
           <span class="num">{{ record.counts.entities }}</span>
           <span class="num">{{ record.counts.skills }}</span>
-          <span class="num">{{ record.counts.machines }}</span>
+          <span class="num">{{ record.counts.mcp || 0 }}</span>
           <span><span class="wsl-kt">{{ record.kind }}</span></span>
           <span class="wsl-date">{{ createdLabel(record) }}</span>
           <details class="wsl-menu" data-sfx="tap" @click.stop>
@@ -445,7 +445,7 @@ async function deleteOne(record) {
     </div>
 
     <p class="wsl-footer">
-      <span><b>{{ workspaces.items.length }}</b> workspaces · <b>{{ totals.entities }}</b> entities · <b>{{ totals.skills }}</b> skills · <b>{{ totals.machines }}</b> scanned</span>
+      <span><b>{{ workspaces.items.length }}</b> workspaces · <b>{{ totals.entities }}</b> entities · <b>{{ totals.skills }}</b> skills · <b>{{ totals.mcp }}</b> MCP</span>
       <span class="r">Copyright by Agung Sundoro</span>
     </p>
 

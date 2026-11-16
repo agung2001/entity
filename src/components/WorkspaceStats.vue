@@ -50,7 +50,7 @@ function focusAttention() {
 
     <router-link class="ovd-stat" :to="{ name: 'machines', params: { workspace: hub.workspace } }">
       <b>{{ machineCount }}</b>
-      <span>fleet</span>
+      <span>machines</span>
       <em>{{ localMachines }} local · {{ remoteMachines }} ssh</em>
     </router-link>
 

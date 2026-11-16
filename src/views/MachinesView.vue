@@ -7,7 +7,7 @@ import { hub, toast } from '@/stores/hub'
 import { forgetMachineFacts, machineFactsFor, workspaces } from '@/stores/workspaces'
 
 const props = defineProps({
-  /* Rendered inside Workspace → Fleet; the parent owns the page head. */
+  /* Rendered inside Workspace → Machines; the parent owns the page head. */
   embedded: { type: Boolean, default: false },
 })
 
@@ -104,8 +104,8 @@ async function forget(alias) {
   <div :class="props.embedded ? 'ws-embed' : 'view'">
     <div v-if="!props.embedded" class="page-head">
       <div>
-        <p class="eyebrow">Fleet · {{ workspaces.active }}</p>
-        <h1>Fleet</h1>
+        <p class="eyebrow">Machines · {{ workspaces.active }}</p>
+        <h1>Machines</h1>
         <p class="lede">
           Every host in <code class="mono">{{ fleet.displayPath }}</code>, plus this
           machine. Testing a host stores its harness and model inventory in this
