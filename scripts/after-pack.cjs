@@ -30,6 +30,11 @@ function identitySigned(appPath) {
 
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return
+  /* Universal builds pack each thin arch into a `*-temp` app, merge them, and
+     then emit afterPack again for the combined bundle. Signing the thin halves
+     changes their CodeResources hashes and makes @electron/universal refuse the
+     merge; only the final universal app is signed. */
+  if (context.appOutDir.endsWith('-temp')) return
   if (process.env.CSC_LINK || process.env.CSC_NAME) return
   const appPath = path.join(
     context.appOutDir,
