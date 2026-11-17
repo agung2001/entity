@@ -9605,11 +9605,22 @@ button.msg-attach-copy:hover b {
   top: 20px;
 }
 .entp-rail-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin: 0 0 8px;
   font-family: var(--mono);
   font-size: 8.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  color: var(--muted);
+}
+/* the count closes the head, so the label keeps the left edge */
+.entp-rail-h .n {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 9px;
   color: var(--muted);
 }
 .entp-facts {
@@ -9786,6 +9797,161 @@ button.msg-attach-copy:hover b {
   color: var(--danger);
   border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
 }
+/* The hero chip row carries one verb: park/enable is the same action the top
+   bar used to hold, and it stays a real button. */
+.mcpp-chip-btn {
+  cursor: pointer;
+}
+.mcpp-chip-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink-2);
+}
+/* The rail on this page is a stack of three blocks; the entity rail is one. */
+.mcpp-rail > * + * {
+  margin-top: 16px;
+}
+/* the Manage head already separates the verbs from the places above them */
+.mcpp-rail .entp-rail-actions {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Tools: the inventory the server reported, searched and filtered in place.
+   The bar is the skills roster's (`.skbar`); only the kind switch is new. */
+.mcpp-seg {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.mcpp-seg button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mcpp-seg button span {
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.mcpp-seg button[aria-pressed='true'] {
+  background: var(--bg);
+  color: var(--ink-2);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 4%);
+}
+
+/* Where this name is defined: the workspace pool first, then one row per
+   harness config that declares anything at all. */
+.mcpp-places {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.mcpp-places > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+}
+.mcpp-places > div:first-child {
+  border-top: 0;
+}
+.mcpp-places .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.mcpp-places > div[data-off='1'] .dot {
+  border: 1px solid var(--border-strong);
+  background: none;
+}
+.mcpp-places .pn {
+  flex: none;
+  color: var(--ink-2);
+}
+.mcpp-places .pp {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--muted);
+}
+.mcpp-places > div[data-off='1'] .pp {
+  font-style: italic;
+}
+/* the editor the workspace row's Edit control reveals, on that row */
+.mcpp-places .edit {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.mcpp-places .edit:hover,
+.mcpp-places .edit[aria-expanded='true'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.mcpp-places .editbox {
+  display: block;
+  padding: 9px 10px;
+  background: var(--surface);
+}
+.mcpp-places .editbox .codebox {
+  margin-top: 0;
+  max-height: 150px;
+  font-size: 10px;
+}
+.mcpp-places .editbox .mcp-editor {
+  min-height: 120px;
+  margin: 8px 0 0;
+  font-size: 10px;
+}
+.mcpp-places .warn {
+  display: flex;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--accent-soft);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--accent-ink);
+}
+.mcpp-places .warn svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+}
 .entp-mcp-env {
   display: flex;
   flex-wrap: wrap;
@@ -9821,6 +9987,10 @@ button.msg-attach-copy:hover b {
   font-size: 9.5px;
   color: var(--ink-2);
   cursor: pointer;
+}
+.entp-sec-head .r[disabled] {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 .entp-path {
   margin-left: auto;
@@ -11915,35 +12085,68 @@ button.msg-attach-copy:hover b {
   color: var(--ink-2);
   font-size: 8.5px;
 }
+/* One row per tool, in the server's order: index, name, what it does, the
+   group derived from its name, and whether a turn writes through it. */
 .mcp-tool-list {
   margin: 0;
-  padding: 2px 2px 2px 0;
+  padding: 0;
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 7px 14px;
-  max-height: 260px;
+  max-height: 460px;
   overflow: auto;
+  border-top: 1px solid var(--border);
 }
 .mcp-tool-list li {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-left: 9px;
-  border-left: 1px solid var(--border);
-  min-width: 0;
-}
-.mcp-tool-list b {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 200px) minmax(0, 1fr) 64px 44px;
+  align-items: baseline;
+  gap: 9px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 10.5px;
-  font-weight: 500;
-  color: var(--ink);
+  color: var(--ink-2);
 }
-.mcp-tool-list span {
-  font-size: 10.5px;
+.mcp-tool-list .ix {
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.mcp-tool-list b {
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-tool-list .about {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: 11px;
   line-height: 1.45;
   color: var(--muted);
-  overflow-wrap: anywhere;
+}
+.mcp-tool-list .grp {
+  overflow: hidden;
+  font-size: 8.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.mcp-tool-list .kind {
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-align: right;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* `write` is the only place on this page that says a turn can change data. */
+.mcp-tool-list .kind[data-w='1'] {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 .btn-danger {
   color: var(--danger);
@@ -19872,6 +20075,44 @@ button.empty-link {
   font-family: var(--mono);
   font-size: 8.5px;
   color: var(--muted);
+}
+/* One verb needs two lines: Attach finds another definition of the same name
+   before it copies anything in, and that is worth saying where it is used. */
+.entp-rail-actions button.tall {
+  height: auto;
+  min-height: 34px;
+  align-items: flex-start;
+  padding: 6px 10px;
+}
+.entp-rail-actions .row2 {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.entp-rail-actions .row2 i {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.entp-rail-actions .sep {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--border);
+}
+.entp-rail-actions button[data-danger='1'] {
+  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.entp-rail-actions button[data-danger='1'] svg {
+  color: currentColor;
+}
+.entp-rail-actions button[data-danger='1'] .hint {
+  color: color-mix(in oklab, var(--danger) 68%, var(--muted));
 }
 
 .clone-conflict {

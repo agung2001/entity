@@ -381,6 +381,7 @@ the composer already does: mention another entity.
 | A restore overwrites the workspace in use | Restore into a new workspace id and label | `backup-store.cjs` |
 | A snapshot carries `.remote.token` or harness logs | Exclude secrets and `runs/`; document it on the page | `backup-store.cjs` |
 | The backup timer only runs when the settings page is open | Start one unref'd timer with the call table | `electron/rpc.cjs` |
+| One MCP server page states the same definition three times (hero chips, a key/value table, its JSON) and then dumps 23 tool names as an unsearchable list | A fact is stated once, in the block that owns it — the rail holds the definition, the paths and the verbs; the column holds what it can do. A tool inventory is rows the server reported (name, description, a derived group, `read`/`write`) behind a search and a filter, with the reason drawn when there are none | `McpServerView` |
 
 ## Surfaces and where they live
 
