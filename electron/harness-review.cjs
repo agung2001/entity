@@ -25,17 +25,12 @@ const MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 const TIMEOUT_MS = Number(process.env.ENTITY_GUARD_TIMEOUT_MS) || 120_000
 
 /**
- * pi's ambiguity error names the providers it would accept. Model ids contain
- * dots (`deepseek-v4.1-flash`), so this stops at the sentence end, not the
- * first dot. Anything that is not that error has no choices.
+ * The provider-qualified names pi's resolver offered. Since its resolver knows
+ * providers `--list-models` omits, this list — not the listing — is what a
+ * chooser must offer. Anything that is not that error has no choices.
  */
 function guardModelChoices(text) {
-  const match = String(text || '').match(/is ambiguous across providers:\s*(.+?)\.(?:\s|$)/s)
-  if (!match) return []
-  return match[1]
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
+  return harnesses.piModelChoices(text)
 }
 
 const INSTRUCTIONS = [

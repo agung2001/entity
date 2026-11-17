@@ -165,7 +165,6 @@ function createRpc({
     'harness.resolvePiModel': (args) =>
       harnesses.resolvePiModel(String(args?.model || ''), {
         binaryPath: harnesses.resolvedPath('pi'),
-        provider: harnesses.configuredProvider('pi'),
       }),
     'harness.setPath': (args) => harnesses.setPath(args),
 

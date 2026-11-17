@@ -1233,9 +1233,7 @@ function normaliseGuard(value, { validate = false } = {}) {
       /* An ambiguous name only fails later, inside the evaluator, where the
          remedy is buried in CLI stderr. Refuse it here instead. */
       if (harness === 'pi' && model) {
-        const resolved = harnessStore.resolvePiModel(model, {
-          provider: harnessStore.configuredProvider('pi'),
-        })
+        const resolved = harnessStore.resolvePiModel(model)
         if (resolved.status === 'ambiguous') {
           const error = new Error(
             `The evaluator model "${model}" matches more than one provider: ${resolved.providers.join(', ')}. Save it as provider/model, e.g. ${resolved.providers[0]}/${model}.`,

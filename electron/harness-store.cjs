@@ -226,11 +226,55 @@ function resolvePiModel(model, { binaryPath = '', provider = '', models: list = 
   if (candidates.length === 1) {
     return { model: `${candidates[0]}/${text}`, providers: candidates, status: 'resolved' }
   }
-  if (candidates.length > 1) return { model: text, providers: candidates, status: 'ambiguous' }
+  if (candidates.length > 1) {
+    /* A listing-only answer hides providers pi would accept, so let pi name
+       them. Never used to choose a value — the input comes back unchanged. */
+    const reported = list === null ? resolverPiChoices(text, binaryPath || resolvedPath('pi')) : []
+    const providers = reported.length ? [...new Set(reported.map(providerId))].sort() : candidates
+    return { model: text, providers, status: 'ambiguous' }
+  }
   /* A configured provider only adopts a bare id. Something already shaped as
      `provider/model` is left alone even when the listing omits that provider. */
   if (provider && cut < 0) return { model: `${provider}/${text}`, providers: [], status: 'resolved' }
   return { model: text, providers: [], status: 'unknown' }
+}
+
+/** The `provider/model` names pi lists in its ambiguity error, if it is one. */
+function piModelChoices(text) {
+  /* Model ids contain dots (`deepseek-v4.1-flash`), so this stops at the
+     sentence end, not the first dot. */
+  const match = String(text || '').match(/is ambiguous across providers:\s*(.+?)\.(?:\s|$)/s)
+  if (!match) return []
+  return match[1]
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+}
+
+function providerId(qualified) {
+  const value = String(qualified || '')
+  const cut = value.indexOf('/')
+  return cut > 0 ? value.slice(0, cut) : value
+}
+
+/**
+ * pi's resolver knows providers `--list-models` omits, so the list it prints is
+ * the one a chooser has to offer. Asked only when the listing already says
+ * ambiguous: every listed provider is authenticated, so pi stops in its
+ * resolver and no turn runs.
+ */
+function resolverPiChoices(model, binaryPath) {
+  if (!binaryPath) return []
+  const plan = planSpawn(binaryPath, ['--no-session', '--model', String(model || ''), '-p', ''])
+  const result = spawnSync(plan.command, plan.args, {
+    encoding: 'utf8',
+    timeout: 8000,
+    maxBuffer: 1024 * 1024,
+    env: process.env,
+    ...plan.options,
+  })
+  if (result.error) return []
+  return piModelChoices(`${result.stderr || ''}\n${result.stdout || ''}`)
 }
 
 /** The spawn path's version: uses the cached listing, so it never spawns pi. */
@@ -360,6 +404,7 @@ module.exports = {
   configuredProvider,
   resolvePiModel,
   qualifyPiModel,
+  piModelChoices,
   snapshot,
   which,
 }
