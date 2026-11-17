@@ -100,7 +100,9 @@ const section = computed(() => {
   ) {
     return { id: 'account', title: 'Account', count: null }
   }
-  if (name === 'mcp') {
+  /* The server page is the same list with one row current: the panel must not
+     lose the inventory when the address gains a name. */
+  if (name === 'mcp' || name === 'mcp-server') {
     return { id: 'mcp', title: 'MCP', count: Object.keys(workspaces.mcp?.servers || {}).length }
   }
   return { id: 'overview', title: 'Overview', count: hub.machines.length }

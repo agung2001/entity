@@ -235,7 +235,16 @@ const NAV = [
   },
 ]
 
-const CONFIG_ROUTES = new Set(['workspace', 'skills', 'skill', 'mcp', 'machines', 'machine', 'activity'])
+const CONFIG_ROUTES = new Set([
+  'workspace',
+  'skills',
+  'skill',
+  'mcp',
+  'mcp-server',
+  'machines',
+  'machine',
+  'activity',
+])
 
 /** The chat icon is "the conversation", so it carries the one to open. Without
     the id the address landed on /chat and only sometimes gained ?thread. */
