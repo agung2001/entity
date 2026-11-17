@@ -528,7 +528,17 @@ function skills(id) {
   /* Opening the inventory is the natural moment to finish the old symlink
      migration: a link is not portable to a backup or another machine. */
   materialiseSkillLinks(record)
-  return localData.scanSkillDir(skillsDir(record), {
+  const dir = skillsDir(record)
+  /* The scanner reports nothing for a directory it cannot read, which reads as
+     "no skills" — a lie. An unreadable directory is an error, and no directory at
+     all is simply an empty inventory. */
+  try {
+    fs.readdirSync(dir)
+  } catch (error) {
+    if (error.code === 'ENOENT') return []
+    throw new Error(`Could not read ${tilde(dir)}: ${error.message}`)
+  }
+  return localData.scanSkillDir(dir, {
     harness: 'workspace',
     harnessLabel: 'Workspace',
     detectHarness: true,
@@ -581,6 +591,8 @@ function attachSkillTo(dir, name, harness, sources = null) {
     real = source.absolutePath
   }
 
+  assertReadableTree(real)
+
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
   try {
     /* `dereference` also turns links inside a skill directory into real bytes. */
@@ -627,6 +639,7 @@ function materialiseSkillLinks(record) {
     }
     const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
     try {
+      assertReadableTree(real)
       fs.cpSync(real, tmp, { recursive: true, dereference: true })
       fs.unlinkSync(target)
       fs.renameSync(tmp, target)
@@ -680,6 +693,190 @@ function detachSkill({ id, name }) {
   if (stat.isDirectory() && !stat.isSymbolicLink()) fs.rmSync(full, { recursive: true, force: true })
   else fs.unlinkSync(full)
   return { removed: true }
+}
+
+/**
+ * Copy a workspace's **own** skill into another workspace.
+ *
+ * `attachSkill` only ever reads a harness library, so a second workspace was
+ * re-attached by hand and got the library's version instead of the edits the
+ * first workspace carries. This moves the bytes between workspaces and leaves
+ * the source untouched.
+ *
+ * The name is settled **before** anything is written: `error` refuses, `replace`
+ * stages the copy and only then deletes the target, `keep` lands beside it as
+ * `name-2`. A staged copy that fails is removed, so a half-written skill is never
+ * left in the target's `skills/`.
+ */
+function copySkill({ from, to, name, onConflict = 'error' } = {}) {
+  const source = open(from)
+  const target = open(to)
+  const wanted = String(name || '').trim()
+  if (!wanted) throw new Error('No skill named to copy.')
+  if (wanted.includes('/') || wanted.includes('\\') || wanted === '.' || wanted === '..') {
+    throw new Error(`"${wanted}" is not a skill name.`)
+  }
+  if (source.id === target.id) {
+    throw new Error(
+      `Choose a different workspace: "${wanted}" already lives in ${source.label || source.id}.`,
+    )
+  }
+  const mode = ['error', 'replace', 'keep'].includes(onConflict) ? onConflict : 'error'
+
+  const src = path.join(skillsDir(source), wanted)
+  let stat = null
+  try {
+    stat = fs.lstatSync(src)
+  } catch {
+    throw new Error(`No skill called "${wanted}" in ${source.label || source.id}.`)
+  }
+  /* A legacy link that points nowhere has nothing to copy. */
+  try {
+    fs.statSync(src)
+  } catch {
+    if (stat.isSymbolicLink()) {
+      throw new Error(`"${wanted}" has no files to copy — its directory is gone.`)
+    }
+  }
+  if (!stat.isDirectory() && !stat.isSymbolicLink()) {
+    throw new Error(`"${wanted}" is not a directory, so there is nothing to copy.`)
+  }
+
+  const dir = skillsDir(target)
+  fs.mkdirSync(dir, { recursive: true })
+
+  const clash = fs.existsSync(path.join(dir, wanted))
+  if (clash && mode === 'error') {
+    throw new Error(
+      `${target.label || target.id} already has a skill called "${wanted}". Choose Replace or Keep both.`,
+    )
+  }
+  const landing = clash && mode === 'keep' ? nextFreeSkillName(dir, wanted) : wanted
+  const dest = path.join(dir, landing)
+
+  assertReadableTree(src)
+
+  const tmp = `${dest}.${process.pid}.${Date.now()}.tmp`
+  try {
+    /* `dereference` turns a legacy link (and links inside it) into real bytes. */
+    fs.cpSync(src, tmp, { recursive: true, dereference: true })
+    if (clash) fs.rmSync(dest, { recursive: true, force: true })
+    fs.renameSync(tmp, dest)
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    } catch {
+      /* nothing staged */
+    }
+    throw new Error(`Could not copy ${wanted} to ${target.label || target.id}: ${error.message}`)
+  }
+
+  /* A renamed copy must rename what the skill calls itself, or the roster shows
+     two rows with the same name and `/workspace:<name>` points at neither. Only
+     the source's own declaration is touched: a skill that declares something
+     else keeps its author's word. */
+  if (landing !== wanted) renameDeclaredSkill(dest, wanted, landing)
+
+  const files = walkCount(dest)
+  return {
+    name: landing,
+    source: wanted,
+    replaced: Boolean(clash),
+    target: target.id,
+    targetLabel: target.label || target.id,
+    path: tilde(dest),
+    files,
+  }
+}
+
+/**
+ * Rewrite `name:` in a copied skill's entry file.
+ *
+ * The name a skill answers to is the one in its frontmatter; the slash reference
+ * and the roster both read it. A copy that landed as `x-2` while still declaring
+ * `x` is a second skill nobody can address.
+ */
+function renameDeclaredSkill(dir, from, to) {
+  const entry = ['SKILL.md', 'skill.md', 'SKILL.MD']
+    .map((name) => path.join(dir, name))
+    .find((file) => fs.existsSync(file))
+  if (!entry) return
+  let text = ''
+  try {
+    text = fs.readFileSync(entry, 'utf8')
+  } catch {
+    return
+  }
+  if (!text.startsWith('---')) return
+  const end = text.indexOf('\n---', 3)
+  if (end < 0) return
+  const head = text.slice(0, end)
+  const line = /^name:\s*(.+)$/m
+  const match = head.match(line)
+  if (!match) return
+  const declared = match[1].trim().replace(/^['"]|['"]$/g, '')
+  if (declared.toLowerCase() !== String(from).toLowerCase()) return
+  try {
+    fs.writeFileSync(entry, head.replace(line, `name: ${to}`) + text.slice(end))
+  } catch {
+    /* a read-only copy keeps its old name; the copy itself is still valid */
+  }
+}
+
+/** `name-2`, `name-3` … the first directory the target does not have. */
+function nextFreeSkillName(dir, base) {
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${base}-${n}`
+    if (!fs.existsSync(path.join(dir, candidate))) return candidate
+  }
+  throw new Error(`Could not find a free name for ${base}.`)
+}
+
+/**
+ * Fail *before* a recursive copy walks a directory nobody may read.
+ *
+ * `fs.cpSync({ recursive: true })` does not throw on a permission error: the
+ * C++ directory iterator raises `std::filesystem_error` and the process aborts
+ * (measured on Node 25/macOS — SIGABRT, no catchable JS error). A skill with one
+ * unreadable subdirectory was therefore enough to kill the main process. Walking
+ * with `readdirSync` first turns that into an ordinary error message.
+ */
+function assertReadableTree(dir, depth = 0) {
+  if (depth > 10) return
+  let entries = []
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    throw new Error(`Cannot read ${tilde(dir)}: ${error.message}`)
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      assertReadableTree(full, depth + 1)
+      continue
+    }
+    try {
+      fs.accessSync(full, fs.constants.R_OK)
+    } catch (error) {
+      throw new Error(`Cannot read ${tilde(full)}: ${error.message}`)
+    }
+  }
+}
+
+/** Files under a directory, for the hand-off line in the copy sheet. */
+function walkCount(dir, depth = 0) {
+  let total = 0
+  let entries = []
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && depth < 4) total += walkCount(path.join(dir, entry.name), depth + 1)
+    else if (entry.isFile()) total += 1
+  }
+  return total
 }
 
 function skillRead({ id, name }) {
@@ -1231,6 +1428,7 @@ module.exports = {
   materialiseSkillLinks,
   attachSkill,
   skillSourceIndex,
+  copySkill,
   detachSkill,
   skillRead,
   mcp,

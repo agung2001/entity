@@ -97,6 +97,7 @@ function createRpc({
     'workspace.forgetMachineFacts': (args) => workspaces.forgetMachineFacts(args),
     'workspace.skills': ({ id }) => workspaces.skills(id),
     'workspace.attachSkill': (args) => workspaces.attachSkill(args),
+    'workspace.copySkill': (args) => workspaces.copySkill(args),
     'workspace.detachSkill': (args) => workspaces.detachSkill(args),
     'workspace.skillRead': (args) => workspaces.skillRead(args),
     'workspace.mcp': ({ id }) => workspaces.mcp(id),

@@ -458,6 +458,31 @@ export async function detachSkill(name) {
   }
 }
 
+/**
+ * Copy this workspace's own skill into another workspace on this machine.
+ *
+ * The source keeps its copy, so this is not a move: nothing in `from` changes.
+ * The name the copy lands under is decided by the main process (a clash becomes
+ * `-2`, `-3` …) and comes back in the result, so the toast can say exactly where
+ * it went.
+ */
+export async function copySkill({ name, to, onConflict = 'error' } = {}) {
+  workspaces.busy = `skill-copy:${name}`
+  try {
+    const result = await call('workspace.copySkill', {
+      from: workspaces.active,
+      to,
+      name,
+      onConflict,
+    })
+    const renamed = result.name !== result.source ? ` as ${result.name}` : ''
+    toast(`${result.source} copied to ${result.targetLabel}${renamed}`)
+    return result
+  } finally {
+    workspaces.busy = ''
+  }
+}
+
 export async function setMcpEnabled(name, enabled, definition = null) {
   workspaces.busy = `mcp:${name}`
   try {
