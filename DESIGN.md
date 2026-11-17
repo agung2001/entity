@@ -306,6 +306,7 @@ the composer already does: mention another entity.
 | A whole table row is a link with buttons inside it | Make the name the link and keep the row a container | Review |
 | A settings card overflows a phone and the page does not scroll | The grid track is `1fr` (which is `minmax(auto, 1fr)`) and grows to the card's min-content; use `minmax(0, 1fr)` | `app.css` (`.acct-page` ≤980) |
 | A retention legend and the rule effects disagree | Both read one `region` object; the forecast reads `outcome`, and only it describes the pass | `npm test` (`retention`) |
+| The shelf rule never archives anything twice, and never deletes at all | The archive is a folder the shelf walk skips: analyse `artifacts/.archive/` as its own population, and stamp the archive date once on the way in | `npm test` (`artifact-retention`) |
 | A scheduled pass re-stamps the date it counts from | The state write is idempotent and stamps only on the transition | `npm test` (`chat-archive`) |
 | A rename writes `archived: false` into a thread that never had it | Reads answer true/false; `writeThread` strips the pair when it is false | `npm test` (`chat-archive`) |
 | A reply leaves the thread in the archive | Un-archive as its own write, before the turn's metadata baseline | `tests/e2e/full/19-retention.spec.js` |
