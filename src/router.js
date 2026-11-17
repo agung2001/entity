@@ -1,12 +1,13 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { hub, restoreSession } from '@/stores/hub'
-import { loadWorkspaces, openWorkspace, workspaces } from '@/stores/workspaces'
+import { loadWorkspaceList, loadWorkspaces, openWorkspace, workspaces } from '@/stores/workspaces'
 
 /* Every screen is its own chunk: the sign-in page does not download the chat,
    the chat does not download the MCP inventory, and a workspace that is never
    opened costs nothing. The guard below awaits the session and workspace calls,
    so these fetches overlap with that work instead of blocking it. */
 const LoginView = () => import('@/views/LoginView.vue')
+const WelcomeView = () => import('@/views/WelcomeView.vue')
 const SetupView = () => import('@/views/SetupView.vue')
 const HubLayout = () => import('@/layouts/HubLayout.vue')
 const OverviewView = () => import('@/views/OverviewView.vue')
@@ -68,6 +69,14 @@ const router = createRouter({
       name: 'login',
       component: LoginView,
       meta: { public: true, title: 'Sign in · entity' },
+    },
+    {
+      /* the first run: three steps, no account, no folder yet. Public because
+         there is nothing to sign in to — the wizard creates the account. */
+      path: '/welcome',
+      name: 'welcome',
+      component: WelcomeView,
+      meta: { public: true, title: 'Welcome · entity' },
     },
     {
       /* outside HubLayout on purpose: the rail assumes a workspace exists */
@@ -279,14 +288,29 @@ router.beforeEach(async (to) => {
   await restoreSession()
 
   if (to.meta.public) {
-    if (to.name !== 'login' || !hub.session) return true
-    /* a live session does not need the sign-in screen again */
-    if (!workspaces.loaded) await loadWorkspaces()
-    return workspaces.items.length ? { name: 'workspaces' } : { name: 'setup' }
+    /* Session first, even here: a live session never sees either public door. */
+    if (hub.session) {
+      if (to.name !== 'login' && to.name !== 'welcome') return true
+      /* a live session does not need either screen again */
+      if (!workspaces.loaded) await loadWorkspaces()
+      return workspaces.items.length ? { name: 'workspaces' } : { name: 'setup' }
+    }
+    /* No session: the disk decides. A workspace on disk is a sign-in (/login),
+       no workspace at all is the first run (/welcome). */
+    if (!workspaces.loaded && !workspaces.items.length) {
+      await loadWorkspaceList().catch(() => {})
+    }
+    if (!workspaces.items.length) return to.name === 'welcome' ? true : { name: 'welcome' }
+    return to.name === 'welcome' ? { name: 'login' } : true
   }
 
   if (!hub.session) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    if (!workspaces.loaded && !workspaces.items.length) {
+      await loadWorkspaceList().catch(() => {})
+    }
+    return workspaces.items.length
+      ? { name: 'login', query: { redirect: to.fullPath } }
+      : { name: 'welcome' }
   }
 
   if (!workspaces.loaded) await loadWorkspaces()
