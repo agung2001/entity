@@ -200,6 +200,7 @@ Full command list, ports, test packs and release builds:
 | Document | What is in it |
 | --- | --- |
 | [Quickstart](docs/quickstart.md) | requirements, every `npm` command, ports, profiles, test packs, tagged releases |
+| [Onboarding](docs/onboarding.md) | the first run: three steps, the silent owner account, and the return launch |
 | [Workspaces and entities](docs/workspaces.md) | the folder tree, the entity file, Learning, moving in from another tool |
 | [Conversations](docs/conversations.md) | transcripts, timeline, mentions, base directories, links/paths, usage and activity |
 | [Skills](docs/skills.md) | how `/project:`, `/workspace:` and `/<harness>:` resolve, attach versus link |

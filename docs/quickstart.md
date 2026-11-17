@@ -15,9 +15,10 @@ npm install
 npm run dev:desktop      # Vite + Electron, HMR included
 ```
 
-On a fresh profile the app lands on **Create a workspace**. An empty account owns
-the hub; until one is registered, the first sign-in with the workspace owner's email
-and the documented default password `123456` bootstraps it.
+On a fresh profile the app lands on the **/welcome** wizard: name the room, pick an
+agent CLI, say hello. It registers the machine-local owner on the way in — `owner` with
+the default password `123456`, changeable later — so there is no sign-in form to fill
+here; [Onboarding](onboarding.md) walks through the three steps.
 
 ## Commands
 
