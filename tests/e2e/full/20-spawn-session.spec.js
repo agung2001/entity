@@ -116,6 +116,9 @@ test('spawn 2 runs the instruction twice and leaves two sessions', async ({ page
   const { profile, parentId } = await openParent(page)
 
   await sendMessage(page, 'spawn 2 @secretary E2E-STUB-TOKEN write a poem')
+  /* the cards appear while the runs go: wait for the turn to land before
+     reading sessions off disk */
+  await waitForAnswer(page, 'E2E-STUB-OK')
   await expect(page.locator('.msg-delegation')).toHaveCount(2, { timeout: 90_000 })
   await expect(page.locator('.msg-delegation-answer').first()).toContainText('E2E-STUB-OK')
 
@@ -139,11 +142,64 @@ test('spawn 2 runs the instruction twice and leaves two sessions', async ({ page
 
   /* each card continues into its own run: the second card opens the second
      session, not whichever one the first card already visited */
-  const ids = sessions.map((row) => row.id)
+  /* cards are in run order (`· 1/2` first); the thread list is by time, so sort
+     by the share rather than trusting two different orders to agree */
+  const ids = [...sessions].sort((a, b) => a.title.localeCompare(b.title)).map((row) => row.id)
   await page.locator('.msg-delegation').nth(0).locator('.msg-delegation-open').click()
   await expect.poll(() => threadIdFromUrl(page)).toBe(ids[0])
   await page.locator('.cp-from').click()
   await expect.poll(() => threadIdFromUrl(page)).toBe(parentId)
   await page.locator('.msg-delegation').nth(1).locator('.msg-delegation-open').click()
   await expect.poll(() => threadIdFromUrl(page)).toBe(ids[1])
+})
+
+test('spawn per leaves one session for each row of the list', async ({ page }) => {
+  const { profile, parentId } = await openParent(page)
+
+  /* artifacts are a list this suite can resolve without a tracker or a model;
+     the query matches only the two seed fixtures, never what other specs leave */
+  await sendMessage(page, 'spawn per @artifact:fanout @secretary summarise this file')
+  await waitForAnswer(page, 'E2E-STUB-OK')
+  await expect(page.locator('.msg-delegation')).toHaveCount(2, { timeout: 90_000 })
+
+  const sessions = listThreads(profile).filter((thread) => thread.spawnedFrom?.id === parentId)
+  expect(sessions).toHaveLength(2)
+  /* the row is the title: two artifacts, two titles, no shared instruction */
+  expect(sessions.map((row) => row.title).sort()).toEqual([
+    'artifact://fanout/one.md',
+    'artifact://fanout/two.md',
+  ])
+  /* the session's first message names the row before the job */
+  const first = readThread(profile, sessions[0].id)
+  expect(first.messages[0].text).toContain('summarise this file')
+  expect(first.messages[0].text.split('\n')[0]).toBe(sessions[0].title)
+})
+
+test('a fan-out paints its rows while they run, and Stop ends them', async ({ page }) => {
+  const { profile, parentId } = await openParent(page)
+
+  await sendMessage(page, 'spawn 2 @secretary E2E-SLOW write a poem')
+
+  /* The turn has no answer yet, and it is not a bare "Waiting…" either: both
+     rows are on screen, in the card grammar the answer will use. */
+  const live = page.locator('.msg--live')
+  await expect(live.locator('.msg-delegation')).toHaveCount(2, { timeout: 30_000 })
+  await expect(live.locator('.msg-delegation').first()).toHaveAttribute('data-live', 'running')
+  await expect(live.locator('.msg-delegation').first()).toContainText('Working…')
+  await expect(page.locator('.msg-foot--live')).toContainText('0 of 2 done')
+  await expect(page.locator('.ask-sys', { hasText: 'Waiting for' })).toHaveCount(0)
+
+  /* Stop reaches the delegated harnesses: there is no parent turn to kill yet */
+  await page.getByRole('button', { name: 'Stop agent' }).click()
+  await expect(page.locator('.ask-sys', { hasText: 'Stopped by you.' })).toBeVisible({
+    timeout: 40_000,
+  })
+  await expect(live).toHaveCount(0)
+
+  const thread = readThread(profile, parentId)
+  expect(thread.messages.at(-1).text).toBe('Stopped by you.')
+  /* the question stays, and no session is left for a run that never finished */
+  expect(thread.messages[0].text).toContain('spawn 2 @secretary')
+  expect(thread.messages[0].mentions || []).toEqual([])
+  expect(listThreads(profile).filter((row) => row.spawnedFrom?.id === parentId)).toHaveLength(0)
 })

@@ -1846,6 +1846,46 @@ kbd {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* ── the same card, still running ───────────────────────────────────
+   A fan-out is the turn while it runs: its rows sit in the live bubble with the
+   card grammar the finished answer will use, so nothing changes shape when the
+   answer lands. Queued is quiet, running has one moving dot, and a row that
+   settles keeps the answer it produced. */
+.msg-delegation[data-live] {
+  background: var(--surface);
+  border-left-color: color-mix(in oklab, var(--accent-ink) 30%, var(--border));
+}
+.msg-delegation[data-live='queued'] {
+  opacity: 0.6;
+}
+.msg-delegation[data-live='running'] {
+  border-left-color: var(--accent-ink);
+}
+.msg-delegation[data-live='running'] .msg-delegation-answer {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.msg-delegation[data-live='running'] .msg-delegation-answer::after {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--accent-ink);
+  vertical-align: 1px;
+  animation: rchat-blink 1.2s ease-in-out infinite;
+}
+/* The cards carry the presence, so the bubble stops doubling as a frame. */
+.msg--live[data-delegating='1'] {
+  border-style: solid;
+}
+.msg--live[data-delegating='1'] .msg-delegations {
+  margin: 0 0 10px;
+  padding: 0 0 10px;
+}
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -6209,7 +6249,8 @@ label.pick:has(input:focus-visible) {
   animation: rchat-blink 1.4s ease-in-out infinite;
 }
 .msg-foot--live {
-  opacity: 0.8;
+  /* It carries the fan-out's count and clock: it is state, not decoration. */
+  opacity: 1;
 }
 .msg-trace-head {
   display: flex;

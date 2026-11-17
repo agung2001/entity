@@ -11,7 +11,7 @@ through the `entity` CLI:
 "$ENTITY_CLI_PATH" entity clone <name> [--from <workspace>] [--to <workspace>] [--name <new>]
 "$ENTITY_CLI_PATH" entity get <name> --output json
 "$ENTITY_CLI_PATH" entity set-instructions <name> --body-stdin
-"$ENTITY_CLI_PATH" entity set-fields <name> --model <m> --mcp <a,b>
+"$ENTITY_CLI_PATH" entity set-fields <name> --harness <h> --model <m> --dir <d>
 "$ENTITY_CLI_PATH" mcp list | mcp add <name> --command <cmd> | mcp remove <name>
 "$ENTITY_CLI_PATH" skill list | skill attach <name> | skill detach <name>
 "$ENTITY_CLI_PATH" skill create <name> --description "<one line>" --body-stdin
@@ -54,8 +54,9 @@ yourself.
 
 The same works for MCP: servers in `<workspace>/mcp.json` apply to every entity in
 this workspace, so a server someone added there is already yours to use — do not
-ask to have it bound. An entity may narrow the pool with `mcp: a, b`, and a named
-server that is missing is reported instead of being silently dropped.
+ask to have it bound, and do not try to have one attached to a single entity: the
+pool belongs to the workspace, and `harness`, `model` and `dir` are the only fields
+that are per entity.
 
 - `--help` on any verb beats guessing a flag.
 - A name is not an id: `list` first, then act on what it returned.

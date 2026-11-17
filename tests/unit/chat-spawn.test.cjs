@@ -147,3 +147,24 @@ test('three spawned sessions are told apart by their share', () => {
   assert.match(first.spawnedFrom.id, /^t_/)
   assert.equal(chats.read({ workspace: record.id, id: first.id }).messages[0].text, 'write a poem')
 })
+
+test('a fanned-out run is titled by its row, not by the shared instruction', () => {
+  const record = workspaceWith()
+  const parent = parentIn(record)
+  const session = chats.spawnMentionSession(
+    record,
+    parent,
+    mentionOf({
+      job: 'ENTITY-14 — Sync evaluator aborts the sync\n\nfix it',
+      row: 'ENTITY-14 — Sync evaluator aborts the sync',
+      share: '3/7',
+    }),
+  )
+  /* seven issues must read as seven titles in the tree */
+  assert.equal(session.title, 'ENTITY-14 — Sync evaluator aborts the sync')
+  const read = chats.read({ workspace: record.id, id: session.id })
+  assert.equal(read.messages[0].text, 'ENTITY-14 — Sync evaluator aborts the sync\n\nfix it')
+  /* and the link back still holds, so it sits under its parent's count */
+  const summary = chats.list({ workspace: record.id }).find((row) => row.id === session.id)
+  assert.deepEqual(summary.spawnedFrom, { workspace: record.id, id: parent.id })
+})
