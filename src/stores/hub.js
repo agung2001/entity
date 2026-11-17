@@ -8,7 +8,7 @@
  * component's state.
  *
  * The arrays start empty on purpose: a hub with no workspace is not a hub with
- * sample data, it is a hub that should be at /setup.
+ * sample data, it is a hub that should be at /welcome.
  */
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'

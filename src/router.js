@@ -8,7 +8,6 @@ import { loadWorkspaceList, loadWorkspaces, openWorkspace, workspaces } from '@/
    so these fetches overlap with that work instead of blocking it. */
 const LoginView = () => import('@/views/LoginView.vue')
 const WelcomeView = () => import('@/views/WelcomeView.vue')
-const SetupView = () => import('@/views/SetupView.vue')
 const HubLayout = () => import('@/layouts/HubLayout.vue')
 const OverviewView = () => import('@/views/OverviewView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
@@ -72,18 +71,13 @@ const router = createRouter({
     },
     {
       /* the first run: three steps, no account, no folder yet. Public because
-         there is nothing to sign in to — the wizard creates the account. */
+         there is nothing to sign in to — the wizard creates the account. It is
+         also the only surface that creates a workspace, so a session with no
+         room on disk is sent back here rather than to a second setup page. */
       path: '/welcome',
       name: 'welcome',
       component: WelcomeView,
       meta: { public: true, title: 'Welcome · entity' },
-    },
-    {
-      /* outside HubLayout on purpose: the rail assumes a workspace exists */
-      path: '/setup',
-      name: 'setup',
-      component: SetupView,
-      meta: { title: 'Create a workspace · entity' },
     },
     {
       path: '/',
@@ -280,8 +274,8 @@ const router = createRouter({
  *
  * The workspace trigger is the directory on disk (`workspace.needsSetup()`), not
  * a flag someone has to remember to set, so a fresh profile — or a workspace
- * deleted outside the app — lands on /setup every time. The deep link the user
- * was trying to reach travels in `?redirect` and is honoured after creation.
+ * deleted outside the app — lands on /welcome every time. The deep link the user
+ * was trying to reach travels in `?redirect` and is honoured after sign-in.
  */
 router.beforeEach(async (to) => {
   /* A remembered session is only trusted after auth.json agrees with it. */
@@ -290,10 +284,17 @@ router.beforeEach(async (to) => {
   if (to.meta.public) {
     /* Session first, even here: a live session never sees either public door. */
     if (hub.session) {
+      /* The wizard stays reachable for a session with no room on disk — it is
+         the only surface that creates one. Anything else has a hub to open, so
+         the answer has to come from disk, not from an unloaded store. */
+      if (!workspaces.loaded && !workspaces.items.length) {
+        await loadWorkspaceList().catch(() => {})
+      }
+      if (to.name === 'welcome' && !workspaces.items.length) return true
       if (to.name !== 'login' && to.name !== 'welcome') return true
-      /* a live session does not need either screen again */
+      /* a live session does not need the sign-in screen again */
       if (!workspaces.loaded) await loadWorkspaces()
-      return workspaces.items.length ? { name: 'workspaces' } : { name: 'setup' }
+      return { name: 'workspaces' }
     }
     /* No session: the disk decides. A workspace on disk is a sign-in (/login),
        no workspace at all is the first run (/welcome). */
@@ -315,16 +316,7 @@ router.beforeEach(async (to) => {
 
   if (!workspaces.loaded) await loadWorkspaces()
 
-  if (to.name === 'setup') {
-    /* the setup screen is for a profile with no workspace; adding another one
-       later happens as a modal from the workspace picker, not by leaving the hub */
-    if (workspaces.items.length) return { name: 'workspaces' }
-    return true
-  }
-
-  if (!workspaces.items.length) {
-    return { name: 'setup', query: { redirect: to.fullPath } }
-  }
+  if (!workspaces.items.length) return { name: 'welcome' }
 
   const wanted = String(to.params.workspace || '')
   if (wanted) {
