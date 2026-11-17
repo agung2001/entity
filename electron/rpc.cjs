@@ -162,6 +162,11 @@ function createRpc({
     'mcp.tools': (args) => mcpTools.tools(args),
     'harness.list': () => harnesses.list(),
     'harness.models': (args) => harnesses.models(args),
+    'harness.resolvePiModel': (args) =>
+      harnesses.resolvePiModel(String(args?.model || ''), {
+        binaryPath: harnesses.resolvedPath('pi'),
+        provider: harnesses.configuredProvider('pi'),
+      }),
     'harness.setPath': (args) => harnesses.setPath(args),
 
     /* workspace artifacts: files beside the entities and chats */
