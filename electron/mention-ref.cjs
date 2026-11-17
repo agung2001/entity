@@ -43,10 +43,11 @@ const ORCA_TIMEOUT_MS = 10_000
 const ORCA_CACHE_MS = 60_000
 /* A delegated job is real work — reading a brief, editing files, running the
    test suite — not a search. Two minutes killed the very delegation this
-   feature exists for; half an hour is still bounded, and a person can cancel
-   the turn. */
+   feature exists for. An hour, because a job that has to be *finished* is not
+   one pass: a first pass that goes green, a fix round and a screenshot took 28
+   minutes on a real issue. Still bounded, and a person can cancel the turn. */
 const MENTION_TIMEOUT_MS = Number(process.env.ENTITY_MENTION_TIMEOUT_MS)
-const ENTITY_TIMEOUT_MS = MENTION_TIMEOUT_MS > 0 ? MENTION_TIMEOUT_MS : 30 * 60_000
+const ENTITY_TIMEOUT_MS = MENTION_TIMEOUT_MS > 0 ? MENTION_TIMEOUT_MS : 60 * 60_000
 const MAX_ENTITY_RUNS = 2
 /* `spawn N @entity …` is an explicit ask for N parallel runs of one instruction,
    so its own cap is what the person wrote — still bounded, because a typo is not
@@ -56,6 +57,9 @@ const MAX_SPAWN_RUNS = 5
    block the reply reads holds eight rows and each run owns one: a ninth answer
    would be dropped by a ceiling nobody chose. */
 const MAX_FANOUT_ROWS = 8
+/* What one delegated run may report back. The card and the session show this
+   text; the parent's prompt gets a digest of it. */
+const MAX_DELEGATION_ANSWER = 8_000
 const ARTIFACT_SCAN_CAP = 2000
 
 /* ── parsing ──────────────────────────────────────────────────────── */
@@ -944,7 +948,11 @@ async function resolveOne(ctx, segment) {
           ? { share: `${segment.share[0]}/${segment.share[1]}` }
           : {}),
         items: [],
-        answer: String(run.answer || '').slice(0, 1200),
+        /* The session and the card are the record of a delegated job, and a
+           real report (seven tasks, seven READY lines) runs to a few thousand
+           characters. Cutting it at 1200 truncated the very line that says what
+           was verified; the reply above reads its own 400-char digest anyway. */
+        answer: String(run.answer || '').slice(0, MAX_DELEGATION_ANSWER),
         note: run.ok ? '' : `@${mentioned.name} failed: ${run.error}`,
         status: run.ok ? 'ok' : 'error',
         ...(run.execution ? { execution: run.execution } : {}),
@@ -1252,8 +1260,8 @@ async function rewrite(
   const fanned = spawn && (spawn.kind === 'per' || spawn.count > 1) && runs.length > 1
   const prompt = fanned
     ? `${runs.length} runs of ${tokenOf(target || runs[0])}, one per row above. They have already ` +
-      'run and their answers are in the list; use them. Do not run them again, and do not do ' +
-      'their work yourself.'
+      'run and their answers are in the list. Write one short paragraph saying what each run did ' +
+      'and which one still needs something; do not run them again and do not do their work yourself.'
     : source
   return {
     text: block ? `${block}\n\n${prompt}` : prompt,

@@ -590,7 +590,10 @@ test('the parent is told what ran, never the raw fan-out sentence', async () => 
      prompt says the work is done instead. The transcript keeps the words. */
   assert.doesNotMatch(out.text, /spawn 2/)
   assert.match(out.text, /2 runs of @py-agent, one per row above/)
-  assert.match(out.text, /Do not run them again/)
+  /* it has no task of its own any more, so it is told what to write instead of
+     answering "your message contains no new task" — which is what it did */
+  assert.match(out.text, /Write one short paragraph saying what each run did/)
+  assert.match(out.text, /do not run them again and do not do their work yourself/)
 })
 
 test('the block stops at eight rows and says how many it dropped', async () => {
