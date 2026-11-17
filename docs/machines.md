@@ -30,6 +30,14 @@ sequenceDiagram
   App->>Box: pull artifacts back, delete the run directory
 ```
 
+The staged payload is bounded. `entities/` and `skills/` travel whole (kilobytes), and
+`artifacts/` travels **newest first up to 24 MB / 120 files** — a working shelf can hold
+hundreds of megabytes of renders, and staging all of it made every remote turn wait a
+minute before the harness started. When files stay behind, the prompt says so, so the
+model reports the absence instead of guessing; attach a specific old file to send it.
+The transfer's deadline follows the payload rather than a fixed minute. Raise the
+budget with `ENTITY_REMOTE_ARTIFACT_MB` when a workspace lives on a fast link.
+
 Runs still execute on the machine whose window started them. The stored inventory is a
 capability snapshot, not a placement engine or a credential — see
 [Limits](../docs/limits.md).

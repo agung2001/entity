@@ -42,6 +42,26 @@ const HARNESS_IDLE_MS = 15 * 60 * 1000
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 const MAX_OUTPUT_CHARS = 240_000
 
+/* The artifact shelf is the only unbounded thing in a workspace: a working
+   profile can hold hundreds of megabytes of renders and screenshots. Staging all
+   of it made every remote turn wait a minute or more before the harness even
+   started — and tripped the transfer timeout, which is how a turn came back with
+   `scp failed: Command failed:` and no reason in it.
+   
+   So the turn gets the newest files up to a budget, and the prompt is told what
+   stayed behind (see `artifactsNote`). Entities and skills are kilobytes and are
+   always staged whole. */
+const ARTIFACT_BUDGET_BYTES = Math.max(
+  0,
+  Math.round(Number(process.env.ENTITY_REMOTE_ARTIFACT_MB) * 1024 * 1024),
+) || 24 * 1024 * 1024
+const ARTIFACT_BUDGET_FILES = 120
+const ARTIFACT_SCAN_CAP = 4000
+/* A pessimistic floor for the uplink: the timeout follows the payload instead of
+   being a constant that a big stage can never meet. */
+const TRANSFER_BYTES_PER_MS = 400
+const TRANSFER_FLOOR_MS = 120_000
+
 const SKILL_ROOTS = {
   pi: '.pi/agent/skills',
   claude: '.claude/skills',
@@ -78,10 +98,17 @@ function sshArgs(alias, command) {
   return [...SSH_OPTIONS, alias, command]
 }
 
-function runFile(bin, args, { timeout = 20_000, maxBuffer = 4 * 1024 * 1024 } = {}) {
+function runFile(bin, args, { timeout = 20_000, maxBuffer = 4 * 1024 * 1024, label = '' } = {}) {
   return new Promise((resolve, reject) => {
     execFile(bin, args, { timeout, maxBuffer, windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
+        /* A killed transfer reports no stderr at all, so the old message was the
+           command line and nothing else. Name the thing that ran out. */
+        if (error.killed || error.signal) {
+          const seconds = Math.round(Number(timeout) / 1000)
+          reject(new Error(`${bin} timed out after ${seconds} s${label ? ` (${label})` : ''}.`))
+          return
+        }
         const detail = String(stderr || error.message || error)
           .split(/\r?\n/)
           .map((line) => line.trim())
@@ -124,13 +151,124 @@ function copyDirIfPresent(source, target) {
   }
 }
 
+/** Every real file under the shelf, newest-ready. Skipped: dotfiles and the
+    `.tmp` files an interrupted artifact write leaves behind. */
+function listArtifactFiles(root, rel = '', depth = 0, out = []) {
+  if (out.length >= ARTIFACT_SCAN_CAP || depth > 6) return out
+  let entries = []
+  try {
+    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
+  } catch {
+    return out
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue
+    if (!entry.isDirectory() && /\.tmp$/i.test(entry.name)) continue
+    const next = rel ? `${rel}/${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      listArtifactFiles(root, next, depth + 1, out)
+      continue
+    }
+    if (!entry.isFile()) continue
+    try {
+      const stat = fs.statSync(path.join(root, next))
+      out.push({ rel: next, size: stat.size, mtime: stat.mtimeMs })
+    } catch {
+      /* a file that vanished between readdir and stat */
+    }
+  }
+  return out
+}
+
+/**
+ * Copy the newest artifacts until the budget is spent, and report the rest.
+ *
+ * Newest first on purpose: a remote turn is about the work in progress, not
+ * about a render from last month. The counts are what the prompt tells the
+ * model, so an old file is *absent and named* rather than silently missing.
+ */
+function stageArtifacts(source, target, { maxBytes = ARTIFACT_BUDGET_BYTES, maxFiles = ARTIFACT_BUDGET_FILES } = {}) {
+  const files = listArtifactFiles(source).sort((a, b) => b.mtime - a.mtime)
+  const result = { staged: 0, skipped: 0, bytes: 0, skippedBytes: 0 }
+  if (!files.length) return result
+  let bytes = 0
+  for (const file of files) {
+    const overBudget = result.staged >= maxFiles || bytes + file.size > maxBytes
+    if (overBudget) {
+      result.skipped += 1
+      result.skippedBytes += file.size
+      continue
+    }
+    const to = path.join(target, file.rel)
+    try {
+      fs.mkdirSync(path.dirname(to), { recursive: true })
+      fs.copyFileSync(path.join(source, file.rel), to)
+      bytes += file.size
+      result.staged += 1
+    } catch {
+      result.skipped += 1
+      result.skippedBytes += file.size
+    }
+  }
+  result.bytes = bytes
+  return result
+}
+
 function stageWorkspace(record, stage) {
   const workspace = path.join(stage, 'workspace')
   fs.mkdirSync(workspace, { recursive: true })
-  for (const name of ['entities', 'artifacts', 'skills']) {
+  for (const name of ['entities', 'skills']) {
     copyDirIfPresent(path.join(record.path, name), path.join(workspace, name))
   }
-  return workspace
+  const shelf = path.join(record.path, 'artifacts')
+  const artifacts = fs.existsSync(shelf)
+    ? stageArtifacts(shelf, path.join(workspace, 'artifacts'))
+    : { staged: 0, skipped: 0, bytes: 0, skippedBytes: 0 }
+  return { workspace, artifacts }
+}
+
+/** What the model is told when only part of the shelf travelled. */
+function artifactsNote({ staged, skipped, skippedBytes }) {
+  if (!skipped) return ''
+  return [
+    'Artifacts (only part of the shelf is staged on this host):',
+    `- ${staged} most recent files are available under workspace/artifacts`,
+    `- ${skipped} older files (${formatMb(skippedBytes)}) stayed on the machine that started this turn —`,
+    '  say so if one of them is needed instead of assuming it is empty or missing.',
+  ].join('\n')
+}
+
+function formatMb(bytes) {
+  const mb = (Number(bytes) || 0) / (1024 * 1024)
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+}
+
+/** Bytes on disk under a stage directory, for the transfer timeout. */
+function dirBytes(dir, depth = 0) {
+  if (depth > 8) return 0
+  let total = 0
+  let entries = []
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) total += dirBytes(full, depth + 1)
+    else if (entry.isFile()) {
+      try {
+        total += fs.statSync(full).size
+      } catch {
+        /* gone since readdir */
+      }
+    }
+  }
+  return total
+}
+
+function transferTimeout(bytes) {
+  return Math.max(TRANSFER_FLOOR_MS, TRANSFER_FLOOR_MS + Math.ceil(bytes / TRANSFER_BYTES_PER_MS))
 }
 
 function safeFileName(value, used) {
@@ -222,7 +360,9 @@ async function downloadArtifacts(alias, remoteRun, record) {
     await runFile(
       'scp',
       [...SCP_OPTIONS, `${alias}:${remoteRun}/workspace/artifacts/.`, `${target}/`],
-      { timeout: 30_000 },
+      /* best effort, but a generated board render is megabytes: give it room and
+         keep the failure silent, because the turn itself already succeeded */
+      { timeout: TRANSFER_FLOOR_MS * 2, label: `artifacts back to this machine` },
     )
   } catch {
     /* no artifacts, or the host removed them; the turn itself already succeeded */
@@ -347,10 +487,11 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
   fs.mkdirSync(stage, { recursive: true, mode: 0o700 })
 
   try {
-    stageWorkspace(record, stage)
+    const staged = stageWorkspace(record, stage)
     const files = stageFiles(attachments, stage)
     const fileBlock = filesBlock(files.files, remotePath(remoteRun, 'attachments'))
-    const finalPrompt = fileBlock ? `${prompt.trim()}\n\n${fileBlock}` : prompt
+    const shelfNote = artifactsNote(staged.artifacts)
+    const finalPrompt = [prompt.trim(), fileBlock, shelfNote].filter(Boolean).join('\n\n')
     const remoteInstructions = platform.compose({ record, entity, remote: true })
     const { script, promptText } = buildScript({
       harness,
@@ -362,10 +503,14 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
     fs.writeFileSync(path.join(stage, 'run.sh'), script, { encoding: 'utf8', mode: 0o755 })
 
     await sshText(alias, `mkdir -p ${quote(remoteRoot)} && chmod 700 ${quote(remoteRoot)}`)
+    /* The transfer's deadline follows what is actually being sent: a fixed minute
+       cannot hold a staged workspace on a home uplink, and when it cannot, the
+       harness never starts. */
+    const payload = dirBytes(stage)
     await runFile(
       'scp',
       [...SCP_OPTIONS, stage, `${alias}:${remoteRoot}/`],
-      { timeout: 60_000 },
+      { timeout: transferTimeout(payload), label: `${formatMb(payload)} to ${alias}` },
     )
 
     const startedMs = Date.now()
@@ -534,5 +679,9 @@ module.exports = {
   clearSkillCache,
   buildScript,
   stageFiles,
+  stageArtifacts,
+  listArtifactFiles,
+  artifactsNote,
+  transferTimeout,
   SKILL_ROOTS,
 }
