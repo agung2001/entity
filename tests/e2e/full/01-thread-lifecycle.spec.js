@@ -69,7 +69,8 @@ test.describe('thread lifecycle', () => {
     await expect(page.locator('.rchat-row')).toHaveCount(1)
 
     await search.fill('zzzz-no-such-thread-zzzz')
-    await expect(page.locator('.rchat-empty')).toContainText('match this search and time filter')
+    /* the shipped sentence names all three filters: search, tag and time */
+    await expect(page.locator('.rchat-empty')).toContainText('match this search, tag and time filter')
     await page.getByRole('button', { name: 'Clear search' }).click()
   })
 

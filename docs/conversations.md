@@ -59,6 +59,13 @@ and spend sit beside the steps, from the same records the charts use.
   never sees the request.
 - A thread records the account that created it. List, read, rename, send, cancel and
   remove only see that account's threads, even in a shared workspace.
+- **Archive** is the reversible middle between keeping a thread forever and
+  deleting it: one click in the ⋯ menu, an `Undo` in the toast for five seconds,
+  and no confirm (Delete keeps its two clicks). The row leaves the working list
+  and lands in a collapsed **Archived** group at the foot of the same rail — one
+  click to open, one hover-visible **Restore** to come back, pin and all. Search
+  and every filter reach into it: a query that only an archived thread matches
+  opens the group and counts matches instead of lying with an empty list.
 - The first message names a thread — until you rename it. A title you typed (or cleared)
   is never replaced by a later turn; the rail falls back to the first message only while
   the thread has no title of its own.

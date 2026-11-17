@@ -6,7 +6,7 @@ import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
 import EntityRailPanel from '@/components/EntityRailPanel.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import NavIcon from '@/components/NavIcon.vue'
-import { hub } from '@/stores/hub'
+import { activeSummaryCount, hub } from '@/stores/hub'
 import { fleet, loadFleet } from '@/stores/fleet'
 import { artifacts } from '@/stores/artifacts'
 import { shortcutLabel } from '@/lib/shortcuts'
@@ -67,7 +67,9 @@ const section = computed(() => {
   if (hub.rail.artifacts) return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
   if (name === 'entity') return { id: 'entities', title: 'Entities', count: hub.agents.length }
   if (name === 'artifact') return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
-  if (name === 'chat') return { id: 'chat', title: 'Chats', count: hub.chat.summaries.length }
+  /* The working list only: the header must never disagree with the rows above
+     the Archived divider. */
+  if (name === 'chat') return { id: 'chat', title: 'Chats', count: activeSummaryCount() }
   /* Machines is a sub-page of the workspace, so it carries the same way back
      the settings page does; the host detail goes one step further up, to the
      list it came from. */

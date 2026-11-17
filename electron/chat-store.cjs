@@ -302,6 +302,11 @@ function normaliseThread(raw, record) {
        wrote (or cleared) is never re-derived by a later turn. */
     titleSource: raw.titleSource === 'user' || raw.titleSource === 'auto' ? raw.titleSource : '',
     pinned: Boolean(raw.pinned),
+    /* Archiving is a reversible state of the same record, not a move: the
+       thread keeps its file, its messages and its pin. Absent means active, so
+       a file that has never been archived stays byte-identical. */
+    archived: Boolean(raw.archived),
+    ...(raw.archivedAt && raw.archived ? { archivedAt: String(raw.archivedAt) } : {}),
     tags: normaliseTags(raw.tags),
     createdAt: raw.createdAt || now(),
     updatedAt: raw.updatedAt || raw.createdAt || now(),
@@ -315,6 +320,7 @@ function metadataOf(thread) {
     title: thread.title,
     titleSource: thread.titleSource,
     pinned: thread.pinned,
+    archived: thread.archived,
     tags: thread.tags,
     dir: thread.dir,
     attachmentsEnabled: thread.attachmentsEnabled,
@@ -338,6 +344,12 @@ function saveTurn(record, thread, baseline) {
       thread.titleSource = current.titleSource
     }
     if (current.pinned !== baseline.pinned) thread.pinned = current.pinned
+    /* archive/restore from another window wins over this turn's copy */
+    if (current.archived !== baseline.archived) {
+      thread.archived = current.archived
+      if (current.archivedAt) thread.archivedAt = current.archivedAt
+      else delete thread.archivedAt
+    }
     if (JSON.stringify(current.tags) !== JSON.stringify(baseline.tags)) thread.tags = current.tags
     if (current.dir !== baseline.dir) thread.dir = current.dir
     if (current.attachmentsEnabled !== baseline.attachmentsEnabled) {
@@ -400,6 +412,8 @@ function summarise(thread) {
     dir: thread.dir || '',
     title: thread.title || titleOf(thread),
     pinned: Boolean(thread.pinned),
+    archived: Boolean(thread.archived),
+    ...(thread.archivedAt ? { archivedAt: thread.archivedAt } : {}),
     tags: thread.tags || [],
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
@@ -620,6 +634,31 @@ function pin({ workspace, id, pinned }) {
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   thread.pinned = Boolean(pinned)
   thread.updatedAt = now()
+  writeThread(record, thread)
+  return thread
+}
+
+/**
+ * Archive or restore. One reversible write, no guard: the thread stays on disk
+ * with everything in it, and the action carries an Undo.
+ *
+ * Restoring **deletes** both keys instead of writing `archived: false`, so a
+ * thread that was never archived and one that was and came back are the same
+ * bytes — `grep 'archived: false'` over a workspace stays empty.
+ */
+function archive({ workspace, id, archived }) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  if (archived) {
+    thread.archived = true
+    thread.archivedAt = now()
+  } else {
+    delete thread.archived
+    delete thread.archivedAt
+  }
+  /* `updatedAt` is the row's age, not a place in the archive order: keep it, so
+     restoring a thread does not make it look freshly used. */
   writeThread(record, thread)
   return thread
 }
@@ -1709,6 +1748,7 @@ module.exports = {
   update,
   rename,
   pin,
+  archive,
   tags,
   remove,
   send,

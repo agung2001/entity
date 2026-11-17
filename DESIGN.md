@@ -178,6 +178,8 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Two surfaces open and both close on one `Esc` | One stack entry per surface, last opened is top | `useDialog.js` |
 | A new shortcut exists but is not in `?` | Add it to `SHORTCUT_GROUPS`; render the guide from the catalog | Review + guide |
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
+| A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `app.css` (`.rchat-menu-item[disabled]`) |
+| A popover floats off screen because its height was hardcoded | Measure `offsetHeight` after render and flip from the measurement | `ChatHistoryRail.openRowMenu` |
 | Unsent text disappears when you switch threads (or reload) | Drafts are per thread in the store, persisted through `src/lib/drafts.js`; the composer reports every change and adopts the new thread's text | `tests/e2e/full/15-drafts.spec.js` |
 | A finished turn switches the conversation you are reading | Store the result and update the rail row; `active` moves only from a click, a deep link, a new thread or a delete | `tests/e2e/full/14-turn-settles.spec.js` |
 | Scrolling up during a turn snaps back to the newest chunk | A programmatic scroll to the bottom arms the follow flag; the live watchers are not exempt | `tests/e2e/full/13-scroll-follow.spec.js` |
@@ -382,6 +384,36 @@ remembering its opening sentence.
   status. A tag chip in a row is a filter button, not decoration.
 - Tags belong in the rail search text too: a person searching `billing` should
   find the thread even when the title never says it.
+
+## A thread has three lifetimes, and archive is the middle one
+
+Delete is the only exit a thread had, so every finished conversation either
+stayed in the list forever or was destroyed. Archive is the honest middle.
+
+- **Archive is one click with an Undo; Delete keeps its two-click guard.** A
+  confirm on a reversible action makes it as expensive as the irreversible one
+  and teaches that both are dangerous. The undo *is* the confirmation.
+- **The state is one field on the record** (`archived`, `archivedAt`), mirroring
+  `pinned`. Restoring **deletes** both keys rather than writing `false`, so a
+  thread that came back is byte-identical to one that never left.
+- **One list, one collapsed group at the foot.** No second page and no scope
+  switch: a route change unmounts the open thread and resets every filter.
+  The group is collapsed by default and **force-opens under any query**, with
+  its count switched to matches — an empty result while an archived thread
+  matches would be a lie.
+- **The header counts the working list only.** A count that includes the
+  archive can disagree with the rows above the divider, so it never does.
+- **The archived row is the active row.** No `ARCHIVED` chip and no pin glyph
+  (the archive sort ignores the pin, so the glyph would claim an order the list
+  is not in). One hover-revealed `Restore` where the pin used to be, and the
+  menu offers Restore in place of Pin.
+- **The menu measures itself.** It used to assume 152 px to flip above the row;
+  a five-item menu is 170 px. Read `offsetHeight` after render instead of adding
+  a second constant.
+- **A disabled menu item must look disabled.** Nothing styled `[disabled]` on
+  `.rchat-menu-item`, so a mid-turn action was pixel-identical to an enabled one.
+- **Escape closes the row menu** and returns focus to the ⋯ that opened it:
+  `useDialogDismiss`, like every other dismissible surface.
 
 ## An artifact is a file with the chat's bar, not a card in a page
 

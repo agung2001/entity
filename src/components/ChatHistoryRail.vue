@@ -3,11 +3,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import { onRunEvent } from '@/composables/localBridge'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesQuery } from '@/composables/search'
 import { referenceBlock, shareHref } from '@/lib/share-url'
 import { playSfx } from '@/lib/sfx'
 import {
   ago,
+  archiveThread,
   ensureChats,
   hub,
   isSending,
@@ -57,6 +59,27 @@ const STATUS_OPTIONS = [
 const STATUS_KEY = 'entity.rail.chatStatus.v2'
 const status = ref(readStatus())
 const filtersOpen = ref(false)
+/* The archived group remembers being opened; a query is temporary and must not
+   overwrite that. */
+const ARCHIVE_KEY = 'entity.rail.archivedOpen'
+const archivedOpen = ref(readArchivedOpen())
+
+function readArchivedOpen() {
+  try {
+    return localStorage.getItem(ARCHIVE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function toggleArchived() {
+  archivedOpen.value = !archivedOpen.value
+  try {
+    localStorage.setItem(ARCHIVE_KEY, archivedOpen.value ? '1' : '0')
+  } catch {
+    /* session-only */
+  }
+}
 const tagFilter = ref('')
 const customStart = ref('')
 const customEnd = ref('')
@@ -183,6 +206,49 @@ const filteredThreads = computed(() =>
     .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))),
 )
 
+/** Every filter the rail has: search, tag, status, time. */
+const filtering = computed(
+  () => Boolean(query.value.trim()) || advancedActive.value,
+)
+
+const activeRows = computed(() => filteredThreads.value.filter((thread) => !thread.archived))
+
+/* The archive ignores the pin: it is a pile, newest archived first. */
+const archivedRows = computed(() =>
+  filteredThreads.value
+    .filter((thread) => thread.archived)
+    .sort((a, b) =>
+      String(b.archivedAt || b.updatedAt || '').localeCompare(
+        String(a.archivedAt || a.updatedAt || ''),
+      ),
+    ),
+)
+
+/**
+ * A query force-opens the group, but only when something in it matches: an
+ * empty result while an archived thread is a hit would be a lie, and a group
+ * that opens to nothing is noise.
+ */
+const archivedShown = computed(
+  () => archivedOpen.value || (filtering.value && archivedRows.value.length > 0),
+)
+
+/* A group with no rows is not rendered at all — an empty section would swallow
+   the list's own empty state and leave the rail looking broken. */
+const groups = computed(() =>
+  [
+    { id: 'working', rows: activeRows.value },
+    { id: 'archived', rows: archivedRows.value, open: archivedShown.value },
+  ].filter((group) => group.rows.length > 0),
+)
+
+/** Under a query the count is the match count, so it explains the open group. */
+const archivedCount = computed(() => {
+  const total = archivedRows.value.length
+  if (!filtering.value) return String(total)
+  return total === 1 ? '1 match' : `${total} matches`
+})
+
 function stateOf(thread) {
   if (isWorking(thread)) return 'Working…'
   if (!thread.queries) return 'New'
@@ -204,27 +270,72 @@ function newThread() {
   router.push({ name: 'chat', params: { workspace: hub.workspace }, query })
 }
 
+let menuTrigger = null
+
+/**
+ * The menu is positioned from its own height, measured after it renders.
+ *
+ * It used to assume 152 px to decide whether to flip above the row; Archive made
+ * it a five-item, 170 px menu, and a hardcoded number would have been wrong
+ * again on the next item. The trigger is kept so Escape can hand focus back.
+ */
 function openRowMenu(event, thread) {
   event?.stopPropagation?.()
   if (menuItem.value?.id === thread.id) {
-    menuItem.value = null
+    closeMenu(false)
     return
   }
+  menuTrigger = event?.currentTarget || null
   const rect = event.currentTarget.getBoundingClientRect()
   const width = 170
-  const height = 152
   const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8)
-  let top = rect.bottom + 5
-  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 5)
-  menuPos.value = { top: `${top}px`, left: `${left}px` }
+  menuPos.value = { top: `${rect.bottom + 5}px`, left: `${left}px` }
   menuItem.value = thread
-  nextTick(() => hmenu.value?.querySelector('button')?.focus())
+  nextTick(() => {
+    const el = hmenu.value
+    const height = el?.offsetHeight || 170
+    let top = rect.bottom + 5
+    if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 5)
+    menuPos.value = { top: `${top}px`, left: `${left}px` }
+    el?.querySelector('button')?.focus()
+  })
 }
+
+/** Escape and every other dismissal path go through here. */
+function closeMenu(refocus = true) {
+  const trigger = menuTrigger
+  menuItem.value = null
+  menuTrigger = null
+  if (refocus && trigger instanceof HTMLElement) nextTick(() => trigger.focus())
+}
+
+useDialogDismiss({ active: () => Boolean(menuItem.value), close: () => closeMenu() })
 
 function menuPin() {
   const thread = menuItem.value
   menuItem.value = null
   if (thread) togglePin(thread)
+}
+
+async function menuArchive() {
+  const thread = menuItem.value
+  closeMenu(false)
+  if (!thread) return
+  playSfx('tap')
+  try {
+    await archiveThread(thread.id, !thread.archived)
+  } catch {
+    /* the store already put the row back and said why */
+  }
+}
+
+async function restoreThread(thread) {
+  playSfx('open')
+  try {
+    await archiveThread(thread.id, false)
+  } catch {
+    /* the store already put the row back and said why */
+  }
 }
 
 function menuRename() {
@@ -233,6 +344,12 @@ function menuRename() {
   if (thread) startRename(thread)
 }
 
+/**
+ * Copy the thread's address, in whatever form this window can actually hand
+ * over: the URL in a browser tab, the id in the packaged app (which has no
+ * origin of its own to share). No quoted reference block — it pasted as prose
+ * wherever a link was wanted.
+ */
 async function menuCopyLink() {
   const thread = menuItem.value
   menuItem.value = null
@@ -403,7 +520,7 @@ defineExpose({ newThread })
     <div v-if="!props.headless" class="rchat-head">
       <span>Chats</span>
       <span class="rchat-head-right">
-        <span class="n">{{ threads.length }}</span>
+        <span class="n">{{ activeRows.length }}</span>
         <button class="rchat-new" type="button" title="New chat" aria-label="New chat" @click="newThread">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M8 3.2v9.6M3.2 8h9.6" />
@@ -507,9 +624,37 @@ defineExpose({ newThread })
     </div>
 
     <div class="rchat-list">
-      <template v-if="filteredThreads.length">
+      <template v-if="groups.length">
+        <div
+          v-for="group in groups"
+          :key="group.id"
+          class="rchat-section"
+          :data-group="group.id"
+        >
+          <!-- The working group has no header: an "Active" label above the rows
+               the person came for is chrome. The archive needs one, because it
+               is the only signal that those rows are a different place. -->
+          <button
+            v-if="group.id === 'archived'"
+            class="rchat-section-head"
+            type="button"
+            :aria-expanded="group.open ? 'true' : 'false'"
+            aria-controls="rchat-archived"
+            @click="toggleArchived"
+          >
+            <svg class="rchat-group-chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M6 3.5L10.5 8 6 12.5" />
+            </svg>
+            <span class="rchat-section-label">Archived</span>
+            <span class="rchat-section-count" :data-matches="filtering ? '1' : '0'">{{ archivedCount }}</span>
+          </button>
+          <div
+            v-show="group.id !== 'archived' || group.open"
+            :id="group.id === 'archived' ? 'rchat-archived' : undefined"
+            class="rchat-section-body"
+          >
             <div
-              v-for="thread in filteredThreads"
+              v-for="thread in group.rows"
               :key="thread.id"
               class="rchat-row"
               :data-on="thread.id === hub.chat.active ? '1' : '0'"
@@ -530,8 +675,10 @@ defineExpose({ newThread })
                 <EntityMark mini animate :entity="thread.entity" />
                 <span class="rchat-text">
                   <span class="rchat-title">
+                    <!-- the archive sort ignores the pin, so an archived row
+                         must not advertise one -->
                     <svg
-                      v-if="thread.pinned"
+                      v-if="thread.pinned && !thread.archived"
                       class="rchat-pin"
                       viewBox="0 0 16 16"
                       fill="none"
@@ -577,6 +724,20 @@ defineExpose({ newThread })
                 </span>
               </div>
               <button
+                v-if="thread.archived"
+                class="rchat-restore"
+                type="button"
+                data-sfx="open"
+                title="Restore thread"
+                aria-label="Restore thread"
+                @click.stop="restoreThread(thread)"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M3.4 7.2a4.6 4.6 0 118 3" />
+                  <path d="M3.2 3.4v3.9h3.9" />
+                </svg>
+              </button>
+              <button
                 class="rchat-dots"
                 type="button"
                 :aria-expanded="menuItem?.id === thread.id ? 'true' : 'false'"
@@ -591,6 +752,8 @@ defineExpose({ newThread })
                 </svg>
               </button>
             </div>
+          </div>
+        </div>
       </template>
 
       <p v-else-if="threads.length" class="rchat-empty">
@@ -611,11 +774,34 @@ defineExpose({ newThread })
         :style="{ top: menuPos.top, left: menuPos.left }"
         @click.stop
       >
-        <button class="rchat-menu-item" type="button" role="menuitem" data-sfx="pin" @click="menuPin">
+        <button
+          v-if="!menuItem.archived"
+          class="rchat-menu-item"
+          type="button"
+          role="menuitem"
+          data-sfx="pin"
+          @click="menuPin"
+        >
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
             <path d="M6 2.4h4l-.7 3.1 2.2 2.2-2.9.9-1.4 4.9-1.4-4.9-2.9-.9 2.2-2.2z" />
           </svg>
           {{ menuItem.pinned ? 'Unpin thread' : 'Pin thread' }}
+        </button>
+        <!-- A pin has no effect inside the archive, so an archived row offers
+             Restore in its place rather than an action that cannot apply. -->
+        <button
+          v-else
+          class="rchat-menu-item"
+          type="button"
+          role="menuitem"
+          data-sfx="open"
+          @click="menuArchive"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M3.4 7.2a4.6 4.6 0 118 3" />
+            <path d="M3.2 3.4v3.9h3.9" />
+          </svg>
+          Restore thread
         </button>
         <button class="rchat-menu-item" type="button" role="menuitem" @click="menuRename">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
@@ -630,6 +816,22 @@ defineExpose({ newThread })
             <path d="M10.8 5.2l1-.9a2.2 2.2 0 013.1 3.1l-2 2a2.2 2.2 0 01-3.1 0" />
           </svg>
           Copy reference
+        </button>
+        <button
+          v-if="!menuItem.archived"
+          class="rchat-menu-item"
+          type="button"
+          role="menuitem"
+          :disabled="isWorking(menuItem)"
+          :title="isWorking(menuItem) ? 'Stop the turn before archiving this thread' : ''"
+          @click="menuArchive"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M2.6 3.6h10.8v2.6H2.6z" />
+            <path d="M3.6 6.2v6.2h8.8V6.2" />
+            <path d="M8 7.6v3.4M6.4 9.4L8 11l1.6-1.6" />
+          </svg>
+          Archive thread
         </button>
         <button
           class="rchat-menu-item rchat-menu-danger"

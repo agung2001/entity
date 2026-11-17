@@ -318,6 +318,10 @@ function createRpc({
     'chat.update': (args) => chats.update(args),
     'chat.rename': (args) => chats.rename(args),
     'chat.pin': (args) => chats.pin(args),
+    /* One reversible verb, two spellings: archiving and restoring are the same
+       write, and the row menu reads better than `archived: false`. */
+    'chat.archive': (args) => chats.archive({ ...args, archived: true }),
+    'chat.restore': (args) => chats.archive({ ...args, archived: false }),
     'chat.tags': (args) => chats.tags(args),
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),

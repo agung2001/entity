@@ -14516,6 +14516,105 @@ button.empty-link {
   padding-left: 10px;
 }
 
+/* ── chat rail: the archive group ────────────────────────────────────────
+ * The group vocabulary is the shipped `.rchat-section*` block (12685); these are
+ * the declarations it was missing. The divider belongs *after* the reset that
+ * turns it off in this block — the original `border-top` at 12691 never
+ * rendered, which is why the archive group had no separator to inherit. */
+.rchat-section + .rchat-section {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+/* the committed group head has no focus style; the new control needs one */
+.rchat-section-head:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+/* under a query the count is a match count, and says so in words */
+.rchat-section-count[data-matches='1'] {
+  color: var(--accent-ink);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* The restore slot: the same 22 px box, 4 px top margin, opacity mechanics and
+ * hover background as the `.rchat-dots` beside it, so the row's right edge reads
+ * as one control pair rather than two systems. `pointer-events` is left alone —
+ * a hidden button must still hit-test to itself when the row is hovered. */
+.rchat-restore {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.rchat-restore svg {
+  width: 13px;
+  height: 13px;
+}
+.rchat-row:hover .rchat-restore,
+.rchat-row[data-on='1'] .rchat-restore,
+.rchat-restore:focus-visible {
+  opacity: 1;
+}
+.rchat-restore:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+.rchat-restore:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* A disabled menu item looked identical to an enabled one — nothing in this
+ * file styled `[disabled]`. Archive inherits the trap mid-turn, and Delete is
+ * fixed by the same rule. */
+.rchat-menu-item[disabled],
+.rchat-menu-item[disabled]:hover {
+  background: none;
+  color: var(--muted);
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* The toast's one optional action. The pill is pointer-events: none so it never
+ * blocks the page; the button opts back in. */
+.toast-action {
+  margin-left: 9px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.toast-action:hover {
+  color: var(--bg);
+}
+.toast-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ── chat rail: status switch and per-thread health chip ───────────────── */
 .rchat-status-switch {
   display: flex;

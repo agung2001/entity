@@ -311,7 +311,7 @@ export const hub = reactive({
   /* the second tier can temporarily show the workspace list instead of the
      current section's list; it is navigation state, not a route */
   rail: { entities: false, artifacts: false },
-  toast: { open: false, message: '' },
+  toast: { open: false, message: '', actionLabel: '' },
 
   /* --- consoles ------------------------------------------------------ */
   /* Chat threads are files in the workspace. `summaries` is the history list;
@@ -521,6 +521,9 @@ export function ago(iso) {
 
 /* ── toast ────────────────────────────────────────────────────────── */
 let toastTimer = 0
+/* The action belongs to the toast that was open when it was set: a later
+   message without one must not keep offering the previous Undo. */
+let toastAction = null
 /** Open the artifact page as a dialog over the chat (image, page, document). */
 export function openArtifactPreview(id) {
   hub.artifact.open = String(id || '')
@@ -530,13 +533,34 @@ export function closeArtifactPreview() {
   hub.artifact.open = ''
 }
 
-export function toast(message) {
+/**
+ * One message, optionally with one action.
+ *
+ * A reversible write needs an Undo where the person is already looking, and the
+ * toast is that place — no second component, no dialog. It lives longer (5 s)
+ * because a one-word button is not readable in two and a half.
+ */
+export function toast(message, { actionLabel = '', onAction = null } = {}) {
   hub.toast.message = message
+  hub.toast.actionLabel = actionLabel && typeof onAction === 'function' ? actionLabel : ''
+  toastAction = hub.toast.actionLabel ? onAction : null
   hub.toast.open = true
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => {
-    hub.toast.open = false
-  }, 2600)
+  toastTimer = setTimeout(closeToast, hub.toast.actionLabel ? 5000 : 2600)
+}
+
+export function closeToast() {
+  clearTimeout(toastTimer)
+  toastAction = null
+  hub.toast.open = false
+  hub.toast.actionLabel = ''
+}
+
+/** Run the toast's action once, then get out of the way. */
+export function runToastAction() {
+  const action = toastAction
+  closeToast()
+  if (action) action()
 }
 
 /* ── session ──────────────────────────────────────────────────────── */
@@ -1004,6 +1028,60 @@ export async function pinThread(id, pinned) {
   await refreshChatList()
   return updated
 }
+
+/**
+ * Archive or restore a thread — optimistic, because the row has to leave the
+ * list in the same frame the click lands, and reversible, because the write is.
+ *
+ * The summary is patched in place rather than re-read: a round trip before the
+ * row moves makes the action feel unconfirmed, and the list would flash its old
+ * order while the file is written. A failure puts the row back and says so.
+ */
+export async function archiveThread(id, archived, { silent = false } = {}) {
+  const row = hub.chat.summaries.find((thread) => thread.id === id)
+  if (!row) return null
+  const before = { archived: row.archived, archivedAt: row.archivedAt }
+  const patch = (next) => {
+    hub.chat.summaries = hub.chat.summaries.map((thread) =>
+      thread.id === id ? { ...thread, ...next } : thread,
+    )
+  }
+  patch(
+    archived
+      ? { archived: true, archivedAt: new Date().toISOString() }
+      : { archived: false, archivedAt: undefined },
+  )
+  try {
+    const updated = await call(archived ? 'chat.archive' : 'chat.restore', {
+      workspace: hub.workspace,
+      id,
+    })
+    const row2 = hub.chat.summaries.find((thread) => thread.id === id)
+    if (row2) patch({ archived: Boolean(updated.archived), archivedAt: updated.archivedAt })
+    if (hub.chat.threads[id]) {
+      hub.chat.threads = { ...hub.chat.threads, [id]: updated }
+    }
+    if (!silent) {
+      toast(archived ? 'Thread archived' : 'Thread restored', {
+        actionLabel: 'Undo',
+        onAction: () => {
+          archiveThread(id, !archived, { silent: true }).catch((error) => {
+            toast(error?.message || 'The thread could not be moved back.')
+          })
+        },
+      })
+    }
+    return updated
+  } catch (error) {
+    patch(before)
+    if (!silent) toast(error?.message || 'The thread could not be archived.')
+    throw error
+  }
+}
+
+/** The header counts what the working list holds, never the archive too. */
+export const activeSummaryCount = () =>
+  liveSummaries().filter((thread) => !thread.archived).length
 
 /** Tags are thread metadata, editable at any time like the title and the pin. */
 export async function setThreadTags(id, tags) {
