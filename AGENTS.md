@@ -31,6 +31,36 @@ never touches `fs`: every local read and write goes through the one call table
 in `electron/rpc.cjs` (IPC in Electron, `POST /__entity/call` in the dev
 server). Keep it that way when adding a feature.
 
+## Sample data is fictional — this repository is public
+
+Every fixture, doc snippet, comment and commit message here is read by strangers
+and indexed by search engines. **A real colleague's name in a test is a leak even
+when the test passes.** Write examples nobody can mistake for a real profile.
+
+- **Reserved domains only.** `example.test` and `example.com` (RFC 2606: they can
+  never be registered), or anything under `.example`. Never a company or product
+  domain and never a plausible mailbox: `avery@example.test`, not
+  `avery@<company>.test`.
+- **Placeholder people and workspaces.** `Ada` / `Avery` / `Blake` / `Casey` for
+  members, `acme` / `demo-workspace` / `scope-shelf` for labels. A role-shaped
+  account reads better than a plausible one anyway.
+- **Nothing copied out of a real profile.** A value taken from `~/.entity/…`,
+  `auth.json`, a workspace record, a screenshot path or a live issue gets
+  rewritten before it reaches a file: strip the username, the host, the
+  workspace id and anything token-shaped.
+- **The rule covers prose too.** PR bodies, issue text, comments and `docs/`
+  examples are published, and a branch that never merges still sits on the
+  remote.
+- **What is not a leak.** The project's own GitHub URL, the ghcr image path and
+  the copyright line name the maintainer on purpose. Leave those alone.
+
+Check before you commit — a hit means a real identity reached a file:
+
+```bash
+git grep -nE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- tests docs src electron server \
+  | grep -vE '(@example\.)|(\.example\b)'
+```
+
 ## Commands
 
 | Command | What it does |
