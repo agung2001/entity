@@ -52,6 +52,10 @@ const MAX_ENTITY_RUNS = 2
    so its own cap is what the person wrote — still bounded, because a typo is not
    a reason to start forty harnesses. */
 const MAX_SPAWN_RUNS = 5
+/* `spawn per` is one run for each row the list resolved. Eight, because the
+   block the reply reads holds eight rows and each run owns one: a ninth answer
+   would be dropped by a ceiling nobody chose. */
+const MAX_FANOUT_ROWS = 8
 const ARTIFACT_SCAN_CAP = 2000
 
 /* ── parsing ──────────────────────────────────────────────────────── */
@@ -59,16 +63,25 @@ const ARTIFACT_SCAN_CAP = 2000
 /* A mention starts at `@` after start/space/(/[ so `me@example.com` stays text. */
 const MENTION_AT = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/g
 
-/* `spawn 3 @secretary …` right at the start of the message. It only counts when
-   a mention follows, so "spawn 3 tasks in the backlog" stays prose. */
+/* `spawn 3 @secretary …` and `spawn per @youtrack:… @coder …`, right at the start
+   of the message. Both only count when a mention follows, so "spawn 3 tasks in
+   the backlog" stays prose. */
 const SPAWN_PREFIX = /^\s*spawn\s+(\d{1,2})\s+(?=@)/
+const SPAWN_PER = /^\s*spawn\s+per\s+(?=@)/i
+/* `skill-ref` replaces a leading `/workspace:x` with this line before we see the
+   prompt, so a skill at the front of a fan-out arrives as a prologue. */
+const SKILL_PROLOGUE = /^use this skill \S+\s*\n+/i
+const SPAWN_AFTER_SKILL = /^\s*spawn\s+(?:per\b|\d{1,2}\s+@)/i
 
 function spawnPrefix(source) {
-  const match = String(source || '').match(SPAWN_PREFIX)
+  const text = String(source || '')
+  const per = text.match(SPAWN_PER)
+  if (per) return { kind: 'per', count: 0, end: per[0].length }
+  const match = text.match(SPAWN_PREFIX)
   if (!match) return null
   const count = Number(match[1])
   if (!Number.isFinite(count) || count < 1) return null
-  return { count, end: match[0].length }
+  return { kind: 'repeat', count, end: match[0].length }
 }
 
 /**
@@ -90,6 +103,59 @@ function expandSpawn(segments, spawn) {
   const out = [...segments]
   out.splice(out.indexOf(first), 1, ...copies)
   return out
+}
+
+/**
+ * One run for each row a list resolved: the entity mention is copied once per
+ * row, and the row travels on the copy so the run, its session, its card and the
+ * reply above all say which issue they are about.
+ */
+function expandFanout(segments, target, items) {
+  const count = items.length
+  const copies = items.map((item, index) => ({
+    ...target,
+    row: String(item.label || item.id || item.rel || `row ${index + 1}`),
+    rowDetail: String(item.detail || ''),
+    rowUrl: String(item.url || ''),
+    share: [index + 1, count],
+  }))
+  const out = [...segments]
+  out.splice(out.indexOf(target), 1, ...copies)
+  return out
+}
+
+/** What one run of a fan-out is told about its place in it. */
+function shareNote(segment) {
+  const share = segment.share
+  if (!share || share[1] < 2) return ''
+  if (segment.row) {
+    return (
+      `(Run ${share[0]} of ${share[1]}: your row is "${segment.row}". Do only that row — ` +
+      `the other ${share[1] - 1} runs handle the rest, each in its own place, and you cannot see them.)`
+    )
+  }
+  return (
+    `(Run ${share[0]} of ${share[1]} of this same instruction. Produce a distinct result — ` +
+    'do not coordinate with the other runs, which you cannot see.)'
+  )
+}
+
+/** A delegated job may start with a `/workspace:` skill: resolve it here too. */
+const QUALIFIED_SKILL = /^\/\/?[a-z0-9][a-z0-9-]*:[A-Za-z0-9._-]+(?:\s|$)/
+
+function resolveSkillInJob(record, text) {
+  const job = String(text || '')
+  /* Qualified only. A bare `/srv/app` is a path, and a job whose first word
+     happens to be a command is not ours to rewrite. */
+  if (!QUALIFIED_SKILL.test(job)) return job
+  /* required here: `skill-ref` is a sibling, and the mention layer must not add
+     a load-time edge to it */
+  const skillRef = require('./skill-ref.cjs')
+  const ref = skillRef.parse(job)
+  if (!ref) return job
+  /* The sub-run is local whatever machine the thread is pinned to: the entity
+     runs here, so the skill is resolved here. */
+  return skillRef.rewrite(record, job, { machine: skillRef.LOCAL_MACHINE, dir: '' }).text
 }
 
 function parse(text) {
@@ -346,7 +412,7 @@ async function resolveYoutrack(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
 
 /* ── entity: a mini run, not a path ───────────────────────────────── */
 
-function spawnParse(spec, dir, { record, entity, mcp }) {
+function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
   return new Promise((resolve) => {
     let child
     try {
@@ -363,6 +429,13 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
       return
     }
 
+    /* Handed to the caller the moment it exists: a fan-out is seven harnesses
+       and the window's Stop has to reach all of them, not just the parent. */
+    try {
+      onChild?.(child)
+    } catch {
+      /* a bookkeeping failure must not fail the run */
+    }
     const startedMs = Date.now()
     const startedAt = new Date(startedMs).toISOString()
     const timing = { firstStepAt: '', firstTextAt: '' }
@@ -456,7 +529,7 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
   })
 }
 
-async function runEntity(record, mentioned, job) {
+async function runEntity(record, mentioned, job, { onChild = null } = {}) {
   if (!job) throw new Error(`@${mentioned.name} needs a job after the name.`)
   /* required here, not at the top: `runner-local` owns this module's entry
      points, and a load-time cycle would hand it an empty object */
@@ -478,7 +551,7 @@ async function runEntity(record, mentioned, job) {
       return { ok: false, answer: '', error: String(error?.message || error) }
     }
     spec.cmd = harnesses.binary(mentioned.harness) || spec.cmd
-    return await spawnParse(spec, dir, { record, entity: mentioned, mcp })
+    return await spawnParse(spec, dir, { record, entity: mentioned, mcp, onChild })
   } finally {
     mcp.cleanup?.()
   }
@@ -822,21 +895,51 @@ async function resolveOne(ctx, segment) {
         }
         return
       }
-      /* A spawned run is one of N: it is told which one, because three answers
-         to the same sentence only differ if each knows it must. The session and
-         the card keep the person's own words. */
-      const job =
-        segment.share && segment.share[1] > 1
-          ? `${segment.job}\n\n(Run ${segment.share[0]} of ${segment.share[1]} of this same instruction. ` +
-            'Produce a distinct result — do not coordinate with the other runs, which you cannot see.)'
-          : segment.job
-      const run = await ctx.deps.runEntity(ctx.record, mentioned, job)
+      /* The run's own instruction: its row first, so a session says which issue
+         it is about, then the person's words. The session and the card keep this
+         — a spawned run is one of N, and it is told which one, because answers
+         to a shared sentence only differ if each knows it must. */
+      segment.runName = mentioned.name
+      if (!segment.runStatus) segment.runStatus = 'queued'
+      /* A stop lands between two runs, not only inside one: seven queued jobs
+         must not start after the person pressed Stop. */
+      if (ctx.stopped?.()) {
+        segment.runStatus = 'error'
+        segment.mention = {
+          kind: 'entity',
+          raw: segment.raw,
+          token: tokenOf(segment),
+          name: mentioned.name,
+          job: segment.row ? `${segment.row}\n\n${segment.job}` : segment.job,
+          ...(segment.row ? { row: segment.row } : {}),
+          items: [],
+          answer: '',
+          note: 'stopped by you',
+          status: 'error',
+        }
+        ctx.report()
+        return
+      }
+      segment.runStatus = 'running'
+      ctx.report()
+      const instruction = segment.row ? `${segment.row}\n\n${segment.job}` : segment.job
+      /* The skill is resolved on the person's words, not on the row-prefixed
+         instruction: `use this skill <path>` has to stay the first line for the
+         harness to load it. The row reaches the run through the note below. */
+      const job = [resolveSkillInJob(ctx.record, segment.job), shareNote(segment)]
+        .filter(Boolean)
+        .join('\n\n')
+      const run = await ctx.deps.runEntity(ctx.record, mentioned, job, {
+        onChild: ctx.onChild,
+      })
+      segment.runStatus = run.ok ? 'ok' : 'error'
       segment.mention = {
         kind: 'entity',
         raw: segment.raw,
         token: tokenOf(segment),
         name: mentioned.name,
-        job: segment.job,
+        job: instruction,
+        ...(segment.row ? { row: segment.row } : {}),
         ...(segment.share && segment.share[1] > 1
           ? { share: `${segment.share[0]}/${segment.share[1]}` }
           : {}),
@@ -848,6 +951,7 @@ async function resolveOne(ctx, segment) {
         ...(Array.isArray(run.steps) && run.steps.length ? { steps: run.steps } : {}),
       }
       if (!run.ok) ctx.notes.push(segment.mention.note)
+      ctx.report()
       return
     }
 
@@ -858,21 +962,25 @@ async function resolveOne(ctx, segment) {
     }
 
     if (segment.kind === 'artifact') {
-      const items = resolveArtifact(ctx.record, segment.query)
+      const items = resolveArtifact(ctx.record, segment.query, {
+        limit: ctx.rowLimit || MAX_PER_SOURCE,
+      })
       segment.mention = { kind: 'artifact', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`@artifact:${segment.query} matched no file in this workspace`)
       return
     }
 
     if (segment.kind === 'maka') {
-      const items = await resolveMaka(ctx, segment)
+      const items = await resolveMaka(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
       segment.mention = { kind: 'maka', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`@maka:${segment.query} found no note`)
       return
     }
 
     if (segment.kind === 'youtrack') {
-      const items = await resolveYoutrack(ctx, segment)
+      const items = await resolveYoutrack(ctx, segment, {
+        limit: ctx.rowLimit || MAX_PER_SOURCE,
+      })
       segment.mention = { kind: 'youtrack', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`@youtrack:${segment.query} found no issue`)
     }
@@ -891,6 +999,9 @@ function blockFor(segments, notes) {
   for (const segment of segments) {
     const mention = segment.mention
     if (!mention) continue
+    /* A fanned-out list is not a result to repeat: each run below names its own
+       row, which is the same information once instead of twice. */
+    if (mention.fanout) continue
     if (mention.kind === 'entity') {
       if (mention.reference) {
         rows.push(
@@ -901,8 +1012,12 @@ function blockFor(segments, notes) {
       const answer = mention.answer
         ? mention.answer.replace(/\s+/g, ' ').slice(0, 400)
         : mention.note || 'no answer'
-      /* `spawn 3` gives three answers to one sentence: the share is the only
-         thing that tells the reply above which run said what. */
+      /* A row is what a run is about, and the only label that tells seven
+         answers apart; without one, the share is. */
+      if (mention.row) {
+        rows.push(`- ${mention.row} (${mention.name}) → answer: ${answer}`)
+        continue
+      }
       const which = mention.share ? ` run ${mention.share}` : ''
       rows.push(
         `- ${mention.token || mention.raw} (entity ${mention.name}${which}) → answer: ${answer}`,
@@ -935,18 +1050,74 @@ function blockFor(segments, notes) {
  * `deps` is a test seam only: production callers pass nothing and get the real
  * Orca CLI, the real MCP client, and a real entity sub-run.
  */
-async function rewrite(record, text, { entity = null, machine = 'local', localOnly = false, deps = {} } = {}) {
+async function rewrite(
+  record,
+  text,
+  {
+    entity = null,
+    machine = 'local',
+    localOnly = false,
+    deps = {},
+    onProgress = null,
+    onChild = null,
+    stopped = null,
+  } = {},
+) {
   const source = String(text || '')
   const spawn = spawnPrefix(source)
   const parsed = parse(source)
   if (!parsed.segments.length) return { text: source, mentions: [] }
-  if (spawn && spawn.count > MAX_SPAWN_RUNS) {
+  /* A fan-out routes each run, not the message. A leading `/workspace:` reaches
+     us as `use this skill <path>` in front of the prefix, which used to leave the
+     parent to create one desk for the whole message — the exact opposite. */
+  const prologue = source.match(SKILL_PROLOGUE)
+  if (prologue && SPAWN_AFTER_SKILL.test(source.slice(prologue[0].length))) {
+    throw new Error(
+      'A fan-out routes each run, not the message: put the skill inside the job — ' +
+        '`spawn per @youtrack:… @coder /workspace:orca-worktree …` — so every run gets its own. ' +
+        'Nothing was sent.',
+    )
+  }
+  if (spawn?.kind === 'repeat' && spawn.count > MAX_SPAWN_RUNS) {
     throw new Error(
       `spawn ${spawn.count} is more than ${MAX_SPAWN_RUNS} runs. Nothing was sent — lower the number.`,
     )
   }
-  const segments = expandSpawn(parsed.segments, spawn)
-  const runCap = spawn ? Math.max(MAX_ENTITY_RUNS, spawn.count) : MAX_ENTITY_RUNS
+  let segments = parsed.segments
+  let listSegment = null
+  let target = null
+  if (spawn?.kind === 'per') {
+    target = segments.find((segment) => segment.kind === 'entity' && segment.start >= spawn.end)
+    if (!target) {
+      throw new Error(
+        'spawn per needs an entity to run: `spawn per @youtrack:<project>:<query> @coder <job>`. ' +
+          'Nothing was sent.',
+      )
+    }
+    listSegment =
+      segments.find(
+        (segment) =>
+          segment !== target &&
+          segment.start >= spawn.end &&
+          segment.start < target.start &&
+          segment.kind !== 'unknown' &&
+          segment.kind !== 'entity',
+      ) || null
+    if (!listSegment) {
+      throw new Error(
+        'spawn per needs the list before the entity: ' +
+          '`spawn per @youtrack:ENTITY:relates to: ENTITY-21 #Unresolved @coder <job>`. ' +
+          'One run per row it resolves. Nothing was sent.',
+      )
+    }
+  }
+  if (spawn?.kind === 'repeat') segments = expandSpawn(segments, spawn)
+  const runCap =
+    spawn?.kind === 'per'
+      ? MAX_FANOUT_ROWS
+      : spawn?.kind === 'repeat'
+        ? Math.max(MAX_ENTITY_RUNS, spawn.count)
+        : MAX_ENTITY_RUNS
 
   const ctx = {
     record,
@@ -955,9 +1126,85 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
     deps: { ...defaultDeps, ...deps },
     notes: [],
     errors: [],
+    onChild,
+    stopped,
+    /* the entity segments of this message, in order: what a progress row is
+       about, and what the window paints while they run */
+    runs: [],
     entities: new Map(
       entities.list(record.id).map((item) => [item.name.toLowerCase(), item]),
     ),
+  }
+  /* One event carries every row, so the window never has to patch a list it
+     has to guess the shape of. At most eight rows — small enough for that. */
+  ctx.report = () => {
+    if (!onProgress || !ctx.runs.length) return
+    try {
+      onProgress({
+        total: ctx.runs.length,
+        rows: ctx.runs.map((segment, index) => ({
+          index,
+          total: ctx.runs.length,
+          name: segment.runName || segment.name || '',
+          row: segment.row || '',
+          job: segment.row ? segment.job : segment.job || '',
+          share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
+          status: segment.runStatus || 'queued',
+          answer: String(segment.mention?.answer || ''),
+          note: String(segment.mention?.note || ''),
+          ms: segment.mention?.ms || 0,
+        })),
+      })
+    } catch {
+      /* the window may be gone; the turn itself must not care */
+    }
+  }
+
+  /* A delegated job ends at the next `@`. `@coder fix it in @orca:entity` hands
+     the coder "fix it in" and turns the repo into a mention of its own, whose
+     resolved path only the parent ever reads — so the run would ask which repo
+     it is working in. Say it rather than let that happen quietly. */
+  if (spawn) {
+    const anchor = target || segments.find((segment) => segment.kind === 'entity')
+    for (const segment of segments) {
+      if (segment.kind === 'entity' || segment === listSegment || !anchor) continue
+      if (segment.start <= anchor.start) continue
+      ctx.notes.push(
+        `${segment.raw} is a mention of its own, so the delegated job stopped before it and ` +
+          'the run cannot read its value. Write the repo, path or file in the job’s words.',
+      )
+    }
+  }
+
+  /* One row, one run: the list is resolved before any run exists, because the
+     number of runs is what it returns. Its failure is a hard error — spawning
+     nothing while the parent talks as if it had is worse than stopping. */
+  if (listSegment) {
+    ctx.rowLimit = MAX_FANOUT_ROWS
+    await resolveOne(ctx, listSegment)
+    if (ctx.errors.length) {
+      throw new Error(
+        `${ctx.errors.join('\n')}\nFix the list or remove it — nothing was sent.`,
+      )
+    }
+    const rows = listSegment.mention?.items || []
+    if (rows.length > MAX_FANOUT_ROWS) {
+      throw new Error(
+        `spawn per resolved ${rows.length} rows and runs one per row, at most ${MAX_FANOUT_ROWS}. ` +
+          'Narrow the query — nothing was sent.',
+      )
+    }
+    if (!rows.length) {
+      /* No rows, no runs: a delegatee with the instruction but no row would pick
+         one and be wrong, and the parent would read it as a real answer. */
+      ctx.notes.push(
+        `spawn per ran nothing: ${listSegment.raw} resolved no row, so ${target.raw} did not run`,
+      )
+      segments = segments.filter((segment) => segment !== target)
+    } else {
+      listSegment.mention.fanout = rows.length
+      segments = expandFanout(segments, target, rows)
+    }
   }
 
   const candidates = localOnly ? segments.filter((segment) => segment.local) : segments
@@ -976,11 +1223,16 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
     )
   }
 
-  await Promise.all(
-    candidates
-      .filter((segment) => segment.kind !== 'unknown' && !skipped.includes(segment))
-      .map((segment) => resolveOne(ctx, segment)),
+  const runNow = candidates.filter(
+    (segment) =>
+      segment.kind !== 'unknown' && segment !== listSegment && !skipped.includes(segment),
   )
+  ctx.runs = runNow.filter((segment) => segment.kind === 'entity')
+  /* Before the first harness exists: the window shows every row as queued, so a
+     fan-out that takes minutes never looks like a hang. */
+  ctx.report()
+
+  await Promise.all(runNow.map((segment) => resolveOne(ctx, segment)))
 
   if (ctx.errors.length) {
     throw new Error(
@@ -989,8 +1241,22 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
   }
 
   const block = blockFor(segments, ctx.notes)
+  /* A fan-out is done by the time the parent reads its prompt: the runs already
+     happened. Handing it the raw `spawn per … @coder …` sentence invites a
+     parent that delegates — or works — a second time, which for a routing skill
+     means an extra worktree. The transcript keeps the person's words; the prompt
+     states what was done. */
+  const runs = segments.filter(
+    (segment) => segment.mention?.kind === 'entity' && !segment.mention.reference,
+  )
+  const fanned = spawn && (spawn.kind === 'per' || spawn.count > 1) && runs.length > 1
+  const prompt = fanned
+    ? `${runs.length} runs of ${tokenOf(target || runs[0])}, one per row above. They have already ` +
+      'run and their answers are in the list; use them. Do not run them again, and do not do ' +
+      'their work yourself.'
+    : source
   return {
-    text: block ? `${block}\n\n${source}` : source,
+    text: block ? `${block}\n\n${prompt}` : prompt,
     mentions: segments
       .filter((segment) => segment.mention)
       .map((segment) => segment.mention),
