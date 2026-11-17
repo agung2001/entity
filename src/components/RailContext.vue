@@ -1,16 +1,20 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ArtifactRailPanel from '@/components/ArtifactRailPanel.vue'
 import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
 import EntityRailPanel from '@/components/EntityRailPanel.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import NavIcon from '@/components/NavIcon.vue'
+import HarnessIcon from '@/components/HarnessIcon.vue'
 import { activeSummaryCount, hub } from '@/stores/hub'
 import { fleet, loadFleet } from '@/stores/fleet'
 import { artifacts } from '@/stores/artifacts'
 import { shortcutLabel } from '@/lib/shortcuts'
-import { definitionOf, poolEntries, transportOf } from '@/lib/mcp'
+import { useDialogDismiss } from '@/composables/useDialog'
+import { call } from '@/composables/localBridge'
+import { matchesQuery } from '@/composables/search'
+import { commandLine, definitionOf, poolEntries, transportOf } from '@/lib/mcp'
 import { workspaces } from '@/stores/workspaces'
 
 /**
@@ -104,10 +108,27 @@ const section = computed(() => {
   /* The server page is the same list with one row current: the panel must not
      lose the inventory when the address gains a name. */
   if (name === 'mcp' || name === 'mcp-server') {
-    return { id: 'mcp', title: 'MCP', count: mcpPool.value.length }
+    /* One section, two scopes: the head counts what the rows count. */
+    return {
+      id: 'mcp',
+      title: 'MCP',
+      count: mcpScope.value === 'harness' ? mcpGlobals.count : mcpPool.value.length,
+    }
   }
   return { id: 'overview', title: 'Overview', count: hub.machines.length }
 })
+
+/* The workspace pool and the harness configs on this machine are two scopes of
+   the same list — the switch `McpView` already has, sized for the panel. */
+const mcpScope = ref('workspace')
+const mcpQuery = ref('')
+const mcpHarness = ref('all')
+const mcpGlobals = reactive({ loading: false, loaded: false, error: '', groups: [], count: 0 })
+
+/* ponytail: the chips are the groups `mcp.globals` returned, so a harness whose
+   config declares nothing (Codex today) has no chip at all. Giving it one means
+   the main process returning empty groups too — one change in mcp-store.cjs,
+   none here. */
 
 /* Parked servers stay in the list: a disabled definition that vanishes reads as
    a broken sync, and it is exactly the row that needs opening. */
@@ -118,12 +139,110 @@ const mcpPool = computed(() =>
       ...entry,
       definition,
       transport: transportOf(definition),
+      command: commandLine(definition),
+      /* Which harness configs also declare this name: the drift signal, read
+         from the scan below rather than a second call. */
+      declaredBy: mcpGlobals.groups
+        .filter((group) => (group.servers || []).some((server) => server.name === entry.name))
+        .map((group) => group.harness)
+        .join(', '),
     }
   }),
 )
 const currentServer = computed(() =>
   route.name === 'mcp-server' ? String(route.params.name || '') : '',
 )
+
+const mcpWorkspaceRows = computed(() =>
+  mcpPool.value.filter((entry) =>
+    matchesQuery(`${entry.name} ${entry.command} ${entry.declaredBy}`, mcpQuery.value),
+  ),
+)
+
+const mcpHarnessRows = computed(() =>
+  mcpGlobals.groups
+    .filter((group) => mcpHarness.value === 'all' || group.harness === mcpHarness.value)
+    .flatMap((group) =>
+      (group.servers || []).map((server) => {
+        const definition = definitionOf(server)
+        return {
+          name: String(server.name || ''),
+          harness: group.harness,
+          harnessLabel: group.label || group.harness,
+          command: commandLine(definition),
+          attached: Boolean(
+            workspaces.mcp?.servers?.[server.name] || workspaces.mcp?.disabled?.[server.name],
+          ),
+        }
+      }),
+    )
+    .filter((row) =>
+      matchesQuery(`${row.name} ${row.command} ${row.harnessLabel}`, mcpQuery.value),
+    ),
+)
+
+const mcpRows = computed(() =>
+  mcpScope.value === 'workspace' ? mcpWorkspaceRows.value : mcpHarnessRows.value,
+)
+const mcpTotal = computed(() =>
+  mcpScope.value === 'harness' ? mcpGlobals.count : mcpPool.value.length,
+)
+const mcpEmpty = computed(() => {
+  const query = mcpQuery.value.trim()
+  if (query) return `No server matches "${query}".`
+  if (mcpScope.value === 'harness') {
+    return mcpGlobals.loading && !mcpGlobals.groups.length
+      ? 'Reading harness configs…'
+      : 'No harness declarations here.'
+  }
+  return 'No MCP servers attached to this workspace.'
+})
+
+/* The query survives a scope switch: comparing the same server across both
+   lists is the reason the switch exists. The harness chip resets. */
+function setMcpScope(next) {
+  mcpScope.value = next
+  mcpHarness.value = 'all'
+}
+
+async function loadMcpGlobals(force = false) {
+  if (!force && (mcpGlobals.loading || mcpGlobals.loaded)) return
+  mcpGlobals.loading = true
+  mcpGlobals.error = ''
+  try {
+    const data = await call('mcp.globals')
+    mcpGlobals.groups = data?.groups || []
+    mcpGlobals.count = data?.count || 0
+    mcpGlobals.loaded = true
+  } catch {
+    /* The pool is the page; a machine-wide read that fails must not take it
+       down. `Try again` refetches. */
+    mcpGlobals.error = 'Could not read harness configs.'
+    mcpGlobals.groups = []
+    mcpGlobals.count = 0
+    mcpGlobals.loaded = false
+  } finally {
+    mcpGlobals.loading = false
+  }
+}
+
+/* One scan for the session, paid for only while the MCP section is on screen. */
+watch(
+  () => section.value.id,
+  (id) => {
+    if (id === 'mcp') loadMcpGlobals().catch(() => {})
+  },
+  { immediate: true },
+)
+
+/* Escape empties the filter before it closes the rail: the query is the
+   narrowest thing on screen, so it goes first. */
+useDialogDismiss({
+  active: () => section.value.id === 'mcp' && Boolean(mcpQuery.value),
+  close: () => {
+    mcpQuery.value = ''
+  },
+})
 
 function openWorkspaceTab(tab) {
   router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: tab === 'general' ? {} : { tab } })
@@ -297,48 +416,133 @@ const backLabel = computed(() => {
       </button>
     </div>
 
-    <div v-else-if="section.id === 'mcp'" class="rail-t2-body">
-      <p v-if="!mcpPool.length" class="rail-t2-empty">
-        No MCP servers attached to this workspace.
-      </p>
-      <router-link
-        v-for="entry in mcpPool"
-        :key="entry.name"
-        class="rail-t2-row"
-        :to="{ name: 'mcp-server', params: { workspace: hub.workspace, name: entry.name } }"
-        :aria-current="currentServer === entry.name ? 'page' : undefined"
-      >
-        <span class="rail-t2-ic">
-          <svg
-            v-if="entry.transport === 'http'"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="9" />
-            <path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z" />
+    <div v-else-if="section.id === 'mcp'" class="rail-t2-body rail-t2-body--mcp">
+      <div class="rail-t2-tools">
+        <label class="rail-search">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.6" />
+            <path d="M10.4 10.4L14 14" />
           </svg>
-          <svg
-            v-else
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            aria-hidden="true"
+          <input
+            v-model="mcpQuery"
+            type="search"
+            placeholder="Search servers…"
+            aria-label="Search MCP servers"
+            autocomplete="off"
+          />
+          <span class="rail-t2-q">{{ mcpRows.length }}/{{ mcpTotal }}</span>
+        </label>
+        <div class="rail-t2-seg" role="group" aria-label="MCP scope">
+          <button
+            type="button"
+            :aria-pressed="mcpScope === 'workspace' ? 'true' : 'false'"
+            @click="setMcpScope('workspace')"
+          >Workspace <span>{{ mcpPool.length }}</span></button>
+          <button
+            type="button"
+            :aria-pressed="mcpScope === 'harness' ? 'true' : 'false'"
+            @click="setMcpScope('harness')"
+          >Harness <span>{{ mcpGlobals.count }}</span></button>
+        </div>
+        <div
+          v-if="mcpScope === 'harness'"
+          class="rail-t2-chips"
+          role="group"
+          aria-label="Harness filter"
+        >
+          <button
+            type="button"
+            :aria-pressed="mcpHarness === 'all' ? 'true' : 'false'"
+            @click="mcpHarness = 'all'"
+          >All <span>{{ mcpGlobals.count }}</span></button>
+          <button
+            v-for="group in mcpGlobals.groups"
+            :key="group.harness"
+            type="button"
+            :aria-pressed="mcpHarness === group.harness ? 'true' : 'false'"
+            @click="mcpHarness = group.harness"
           >
-            <rect x="3" y="4" width="18" height="6" rx="1.6" />
-            <rect x="3" y="14" width="18" height="6" rx="1.6" />
-            <path d="M7 7h.01M7 17h.01" stroke-linecap="round" />
-          </svg>
-        </span>
-        <span class="t">
-          <b>{{ entry.name }}</b>
-          <span class="m">{{ entry.transport }}</span>
-        </span>
-        <span v-if="!entry.enabled" class="c">parked</span>
-      </router-link>
+            <HarnessIcon :name="group.harness" :size="11" />
+            {{ group.label }} <span>{{ group.servers?.length || 0 }}</span>
+          </button>
+        </div>
+        <p v-if="mcpGlobals.error" class="rail-t2-empty" role="alert">
+          {{ mcpGlobals.error }}
+          <button class="rail-t2-link" type="button" @click="loadMcpGlobals(true)">Try again</button>
+        </p>
+      </div>
+
+      <div class="rail-t2-list">
+        <p v-if="!mcpRows.length" class="rail-t2-empty">
+          {{ mcpEmpty }}
+          <button v-if="mcpQuery.trim()" class="rail-t2-link" type="button" @click="mcpQuery = ''">
+            Clear search
+          </button>
+        </p>
+        <template v-else-if="mcpScope === 'workspace'">
+          <router-link
+            v-for="entry in mcpWorkspaceRows"
+            :key="entry.name"
+            class="rail-t2-row"
+            :to="{ name: 'mcp-server', params: { workspace: hub.workspace, name: entry.name } }"
+            :aria-current="currentServer === entry.name ? 'page' : undefined"
+          >
+            <span class="rail-t2-ic">
+              <svg
+                v-if="entry.transport === 'http'"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z" />
+              </svg>
+              <svg
+                v-else
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <rect x="3" y="4" width="18" height="6" rx="1.6" />
+                <rect x="3" y="14" width="18" height="6" rx="1.6" />
+                <path d="M7 7h.01M7 17h.01" stroke-linecap="round" />
+              </svg>
+            </span>
+            <span class="t">
+              <b>{{ entry.name }}</b>
+              <span class="m">{{ entry.transport }}</span>
+            </span>
+            <span v-if="!entry.enabled" class="c">parked</span>
+            <span
+              v-else-if="entry.declaredBy"
+              class="c"
+              data-drift="1"
+              :title="`Also declared by ${entry.declaredBy}`"
+            >{{ entry.declaredBy }}</span>
+            <span v-else class="c">—</span>
+          </router-link>
+        </template>
+        <template v-else>
+          <router-link
+            v-for="row in mcpHarnessRows"
+            :key="`${row.harness}:${row.name}`"
+            class="rail-t2-row"
+            :to="{ name: 'mcp-server', params: { workspace: hub.workspace, name: row.name } }"
+            :aria-current="currentServer === row.name ? 'page' : undefined"
+          >
+            <span class="rail-t2-ic"><HarnessIcon :name="row.harness" :size="14" /></span>
+            <span class="t">
+              <b>{{ row.name }}</b>
+              <span class="m">{{ row.command }}</span>
+            </span>
+            <span class="c">{{ row.attached ? 'in pool' : 'attach' }}</span>
+          </router-link>
+        </template>
+      </div>
     </div>
 
   </aside>

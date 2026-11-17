@@ -13252,6 +13252,125 @@ button.msg-attach-copy:hover b {
   line-height: 1.5;
   color: var(--muted);
 }
+/* MCP: the search, the scope switch and the chips stay put; only the rows
+   scroll, because a 236px panel has no room for a filter that leaves. */
+.rail-t2-body--mcp {
+  gap: 6px;
+  overflow: hidden;
+}
+.rail-t2-tools {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rail-t2-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overscroll-behavior: contain;
+}
+.rail-t2-q {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.rail-t2-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.rail-t2-seg button {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-t2-seg button:hover {
+  color: var(--ink-2);
+}
+.rail-t2-seg button[aria-pressed='true'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.rail-t2-seg button span {
+  margin-left: 3px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.rail-t2-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+}
+.rail-t2-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 21px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  font-size: 9.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rail-t2-chips button:hover {
+  background: var(--surface);
+  color: var(--ink-2);
+}
+.rail-t2-chips button[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.rail-t2-chips button span {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+}
+/* The drift tag: this workspace's copy is not the only one. */
+.rail-t2-row .c[data-drift='1'] {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent-ink);
+}
+.rail-t2-link {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.rail-t2-link:hover {
+  text-decoration: underline;
+}
 .rail-resize {
   right: -3px;
 }
