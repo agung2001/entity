@@ -1140,6 +1140,18 @@ function exportWorkspace({ id } = {}) {
   for (const dir of EXPORT_DIRS) {
     walkBundleFiles(record.path, dir, files, dir === 'artifacts')
   }
+  /* The artifact scope index is workspace config, not shelf content, so the
+     walker above skips it as a dotfile. An export that dropped it would come
+     back with every shared file Personal: carry it, as text, bounded like the
+     rest. */
+  try {
+    const scope = fs.readFileSync(path.join(record.path, 'artifacts', '.scope.json'), 'utf8')
+    if (!scope.includes('\0') && scope.length <= MAX_BUNDLE_FILE) {
+      files['artifacts/.scope.json'] = scope
+    }
+  } catch {
+    /* nothing has been shared in this workspace yet */
+  }
   try {
     const mcp = fs.readFileSync(mcpPath(record), 'utf8')
     if (!mcp.includes('\0') && mcp.length <= MAX_BUNDLE_FILE) files['mcp.json'] = mcp

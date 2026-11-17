@@ -27,6 +27,11 @@ const crypto = require('node:crypto')
 
 const SCOPES = ['entities', 'artifacts', 'skills']
 const VIRTUAL = ['workspace.json', 'mcp.json', 'skills.json']
+/* The one hidden file the manifest carries. It is workspace config, not shelf
+   content: the artifact store hides it from `walk()` so it never lists as an
+   artifact, and an export or a sync that dropped it would turn every shared
+   file back into Personal on the other machine. */
+const SCOPE_REL = 'artifacts/.scope.json'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 const MAX_FILES = 20_000
 const REDACTED = '***'
@@ -72,7 +77,10 @@ function safeRel(value) {
   const parts = rel.split('/').filter(Boolean)
   if (!parts.length) return null
   if (parts.some((part) => part === '.' || part === '..')) return null
-  if (parts.some((part) => part.startsWith('.'))) return null
+  /* Every dot-prefixed name stays off the wire — that is what keeps
+     `.remote.token` and an agent's own scratch files out. The artifact scope
+     index is the single exception, by exact path. */
+  if (parts.some((part) => part.startsWith('.')) && parts.join('/') !== SCOPE_REL) return null
   if (parts.length > 32) return null
   const joined = parts.join('/')
   if (joined.length > 1024) return null
@@ -87,6 +95,33 @@ function safeRel(value) {
 
 function isVirtual(rel) {
   return VIRTUAL.includes(String(rel || ''))
+}
+
+/**
+ * Two scope indexes, one shelf. A share is additive, so a clash on this file is
+ * a union, not a keep-both copy: each machine's shares survive. Per id the
+ * newer `at` wins (local on a tie) because a file has one owner and the later
+ * share is the one that happened.
+ *
+ * `ponytail:` an un-share leaves no tombstone, so a peer that never saw it can
+ * bring the entry back on its next push. The ceiling is one stale machine, and
+ * the upgrade path is a `personal: { id: at }` map compared here.
+ */
+function mergeScopeIndex(localText, remoteText) {
+  const entries = (text) => {
+    try {
+      const raw = JSON.parse(String(text || ''))
+      return raw && raw.schema === 1 && raw.shared && typeof raw.shared === 'object' ? raw.shared : {}
+    } catch {
+      return {}
+    }
+  }
+  const merged = entries(remoteText)
+  for (const [id, entry] of Object.entries(entries(localText))) {
+    const other = merged[id]
+    if (!other || String(entry?.at || '') >= String(other?.at || '')) merged[id] = entry
+  }
+  return `${JSON.stringify({ schema: 1, shared: merged }, null, 2)}\n`
 }
 
 function absoluteFor(root, rel) {
@@ -393,7 +428,8 @@ async function walkDir(base, diskRel, manifestRel, files, skipped, depth, follow
     return
   }
   for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue
+    /* one hidden file travels: the artifact scope index (see `safeRel`) */
+    if (entry.name.startsWith('.') && `${manifestRel}/${entry.name}` !== SCOPE_REL) continue
     const diskChild = diskRel ? path.join(diskRel, entry.name) : entry.name
     const rel = `${manifestRel}/${entry.name}`
     const full = path.join(base, diskChild)
@@ -528,6 +564,8 @@ function writeAtomic(file, buffer, { mode } = {}) {
 module.exports = {
   SCOPES,
   VIRTUAL,
+  SCOPE_REL,
+  mergeScopeIndex,
   MAX_FILE_BYTES,
   MAX_FILES,
   REDACTED,
