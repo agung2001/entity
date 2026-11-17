@@ -41,12 +41,20 @@ const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 /**
- * The files a live conversation still points at: `artifact://<id>` anywhere in the
- * transcript of a thread that has not been archived. This lives here, not in the
- * shelf's store, because it reads the chat store's data — the shelf only receives
- * the answer. A reference is matched by its exact path; a folder reference
- * (`artifact://design/`) names no single file and protects none.
+ * The files a live conversation still points at: `artifact://<id>` in a message, a
+ * tool call's input, or a tool result. This lives here, not in the shelf's store,
+ * because it reads the chat store's data — the shelf only receives the answer. A
+ * reference is matched by its exact path; a folder reference (`artifact://design/`)
+ * names no single file and protects none.
  */
+const ARTIFACT_REF = /artifact:\/\/([^\s)"'`<>]+)/g
+
+function collectRefs(text, found) {
+  for (const hit of String(text || '').matchAll(ARTIFACT_REF)) {
+    found.add(hit[1].replace(/[.,;:]+$/, ''))
+  }
+}
+
 function referencedArtifacts({ workspace } = {}) {
   const found = new Set()
   let threads = []
@@ -64,9 +72,11 @@ function referencedArtifacts({ workspace } = {}) {
       continue
     }
     for (const message of thread?.messages || []) {
-      const text = String(message?.text || '')
-      for (const hit of text.matchAll(/artifact:\/\/([^\s)"'`<>]+)/g)) {
-        found.add(hit[1].replace(/[.,;:]+$/, ''))
+      collectRefs(message?.text, found)
+      for (const step of message?.steps || []) {
+        collectRefs(step?.content, found)
+        collectRefs(step?.output, found)
+        if (step?.input && typeof step.input === 'object') collectRefs(JSON.stringify(step.input), found)
       }
     }
   }

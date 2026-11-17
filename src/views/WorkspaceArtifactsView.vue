@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { hub, toast } from '@/stores/hub'
 import {
   artifactRetention,
@@ -35,6 +36,14 @@ const loading = computed(() => artifactRetention.loading && !state.value)
 const saving = computed(() => artifactRetention.saving)
 const error = computed(() => artifactRetention.error)
 const open = ref(false)
+/* The forecast's file list is a dismissible surface: Esc closes it, like every
+   dialog in the app, and so does the button that opened it. */
+useDialogDismiss({
+  active: () => open.value,
+  close: () => {
+    open.value = false
+  },
+})
 /* A typed number is a burst of keystrokes; the store is asked once they stop. */
 let timer = null
 
@@ -60,6 +69,8 @@ const delDays = computed(() => state.value?.thresholds.deleteAfterDays ?? 0)
 const deathDays = computed(() => state.value?.thresholds.deathDays ?? 0)
 const off = computed(() => arcDays.value <= 0 && delDays.value <= 0)
 const idle = computed(() => Boolean(settings.value?.whenIdle))
+const late = computed(() => Boolean(schedule.value?.archive.late || schedule.value?.delete.late))
+const remote = computed(() => hub.workspaceKind === 'remote')
 const manual = computed(
   () => settings.value?.archiveEvery === 'manual' && settings.value?.deleteEvery === 'manual',
 )
@@ -195,6 +206,12 @@ function toggleReferenced() {
   patch({ protectReferenced: !settings.value?.protectReferenced }, 'referenced')
 }
 
+/** The shelf is the rail's own panel, not a page: this opens it where it lives. */
+function openShelf() {
+  hub.rail.entities = false
+  hub.rail.artifacts = true
+}
+
 async function runNow() {
   if (!canEdit.value || saving.value) return
   const result = await runArtifactRetention()
@@ -239,6 +256,32 @@ onBeforeUnmount(() => {
         ② decides what leaves this machine for good. An archived file is out of the
         shelf's list, not off the disk.
       </p>
+
+      <div v-if="!canEdit" class="role-line">
+        <span class="role-badge">{{ role }}</span>
+        <span>
+          You can see these rules but not change them — only an owner or an admin moves
+          the lines, changes a cadence, or runs a pass.
+        </span>
+      </div>
+
+      <div v-if="remote" class="role-line">
+        <span class="role-badge">remote</span>
+        <span>
+          This workspace is a local clone of a shared one. The sweep runs on this
+          machine's copy and its moves sync like any other change; the other side sweeps
+          its own copy where it is opened.
+        </span>
+      </div>
+
+      <div v-if="late && !manual" class="role-line">
+        <span class="role-badge">waiting</span>
+        <span>
+          The pass due at {{ clock(settings?.archiveBy) }} has not run yet. The deadline
+          passed while this machine was busy or shut, so nothing is skipped: it starts at
+          the next tick, or within a minute of the next launch.
+        </span>
+      </div>
 
       <div class="acct-sep">
         The shelf, by age
@@ -572,7 +615,7 @@ onBeforeUnmount(() => {
         <p class="forecast-head">
           <template v-if="manual">No automatic pass</template>
           <template v-else-if="schedule?.archive.late || schedule?.delete.late">
-            Due now — the deadline passed while the app was closed
+            Due now — the deadline has passed
           </template>
           <template v-else-if="idle">
             Next pass · any quiet moment, by {{ clock(settings?.archiveBy) }}
@@ -619,7 +662,7 @@ onBeforeUnmount(() => {
           aria-controls="art-ret-list"
           @click="open = !open"
         >
-          {{ open ? 'Hide' : 'Show' }} what the next pass changes
+          {{ open ? 'Hide' : 'Show' }} what changes tonight
         </button>
 
         <ul v-if="open && forecast?.list.length" id="art-ret-list" class="tlist">
@@ -643,9 +686,9 @@ onBeforeUnmount(() => {
             <span>
               {{ plural(forecast?.held.referenced || 0, 'file') }} ·
               {{ mb(forecast?.held.bytes) }} named by an
-              <code class="mono">artifact://</code> reference in a thread that has not been
-              archived. The conversation is how you remember why the file exists, so the
-              file keeps its place.
+              <code class="mono">artifact://</code> path in a message, a tool call or a
+              tool result of a thread that has not been archived. The conversation is how
+              you remember why the file exists, so the file keeps its place.
               <template v-if="!state?.references">
                 This build has no chat index wired in, so the switch currently protects
                 nothing.
@@ -686,6 +729,9 @@ onBeforeUnmount(() => {
       </p>
 
       <div class="acct-actions">
+        <button class="btn btn-ghost" type="button" @click="openShelf">
+          Open the shelf
+        </button>
         <button
           class="btn btn-ink"
           type="button"
