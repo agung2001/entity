@@ -1,5 +1,6 @@
 @import './login.css';
 @import './skill.css';
+@import './welcome.css';
 
 @font-face {
   font-family: 'Geist';
@@ -29,6 +30,13 @@
   --danger: oklch(52% 0.19 27);
   --danger-soft: oklch(96.5% 0.025 27);
   --ok: oklch(58% 0.13 152);
+  /* The boundary a control is allowed to keep. `--border-strong` measures
+     1.53:1 against `--bg`, well under the 3:1 a control edge needs. */
+  --field-edge: #8a7a55;
+  /* The primary button's label. `--ink` on `--accent` is 10.53:1 in daylight
+     but 1.50:1 at night, where it flips to near-white — so the fill pins its
+     own ink instead of inheriting. */
+  --on-accent: #2a2208;
   --r-sm: 8px;
   --r: 10px;
   --r-lg: 16px;
@@ -60,6 +68,8 @@
   --danger: oklch(70% 0.17 27);
   --danger-soft: #331b18;
   --ok: oklch(70% 0.13 152);
+  --field-edge: #827a6b;
+  --on-accent: #171407;
   --rail-bg: #191813;
   color-scheme: dark;
 }
@@ -1190,6 +1200,7 @@ kbd {
 .btn-primary {
   background: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 78%, #000);
+  color: var(--on-accent);
   font-family: var(--font);
   font-weight: 600;
 }

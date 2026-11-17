@@ -78,6 +78,8 @@ function posters({ force = false } = {}) {
   ]
   let built = 0
   for (const file of files) {
+    /* A still ships as the webp alone, so it has no poster to put beside it. */
+    if (!isAnimated(file)) continue
     const poster = file.replace(/\.webp$/, '.poster.jpg')
     if (existsSync(poster) && !force) continue
     run('ffmpeg', ['-v', 'error', '-y', '-i', file, '-frames:v', '1', '-q:v', String(POSTER_QUALITY), poster])
@@ -168,15 +170,18 @@ function check() {
     }
     const size = statSync(file).size
     if (file.endsWith('.webp')) {
+      const animated = isAnimated(file)
+      /* The poster is the fallback for an animation. A still has nothing to fall
+         back from, so it ships as the webp alone and needs no twin. */
       const poster = file.replace(/\.webp$/, '.poster.jpg')
-      if (!existsSync(poster)) {
+      if (animated && !existsSync(poster)) {
         console.log(`  ✖ ${rel}  has no ${path.basename(poster)} fallback`)
         problems += 1
       }
       if (size > WEBP_BUDGET) {
         console.log(`  ⚠ ${rel}  ${kb(size)} is over ${kb(WEBP_BUDGET)}`)
       }
-      if (!isAnimated(file)) {
+      if (!animated) {
         console.log(`  · ${rel}  is a still — record it for a demo`)
         stills += 1
       }
