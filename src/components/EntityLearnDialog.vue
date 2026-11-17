@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { call } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
+import { copyText } from '@/lib/clipboard'
 import { hub, toast } from '@/stores/hub'
 
 /**
@@ -117,12 +118,8 @@ async function startEditing() {
 
 async function copyProposal() {
   if (!result.value || !draft.value.trim()) return
-  try {
-    await navigator.clipboard.writeText(draft.value)
-    toast('Proposed instructions copied')
-  } catch {
-    toast('Could not copy to the clipboard')
-  }
+  const copied = await copyText(draft.value)
+  toast(copied ? 'Proposed instructions copied' : 'Could not copy to the clipboard')
 }
 
 /* ── side-by-side diff ─────────────────────────────────────────────────────

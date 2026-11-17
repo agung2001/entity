@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import ExecutionTimeline from '@/components/ExecutionTimeline.vue'
 import EChart from '@/components/EChart.vue'
+import { copyText } from '@/lib/clipboard'
 import { chartTheme, formatTokens, formatUsd } from '@/lib/chart-math'
 import { themeMode } from '@/lib/theme'
 import { useDialogDismiss } from '@/composables/useDialog'
@@ -338,12 +339,10 @@ async function copyTimeline() {
       return `${head}\n${body}`.trim()
     }),
   ]
-  try {
-    await navigator.clipboard.writeText(lines.join('\n\n'))
-    toast('Timeline copied')
-  } catch {
-    toast('The timeline could not be copied.')
-  }
+  /* One copy path: the clipboard promise rejects in the packaged app often
+     enough that a plain `navigator.clipboard` call is a silent failure. */
+  const copied = await copyText(lines.join('\n\n'))
+  toast(copied ? 'Timeline copied' : 'The timeline could not be copied.')
 }
 
 watch(

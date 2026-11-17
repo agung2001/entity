@@ -49,7 +49,10 @@ and spend sit beside the steps, from the same records the charts use.
   drafts are kept in this window, never in the workspace files — and sending in
   one thread empties only that one.
 - Every message has copy and share; share is a deep link (`?thread=…&msg=…`) that
-  opens the thread and scrolls to the row.
+  opens the thread and scrolls to the row. In a browser tab the share sheet takes
+  the link and the text; the packaged app has no share sheet, so Share puts the
+  link on the clipboard and says so — a card in the rail offers the thread's
+  **link** in a tab and its **id** in the app, never a quoted block.
 - The newest reply offers three **follow-ups** — short actions with a full prompt
   behind them. One click sends it down the same path as typed text.
 - A screenshot or document a turn saved is attached to that turn as soon as it

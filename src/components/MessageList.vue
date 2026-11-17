@@ -7,8 +7,8 @@ import ChatArtifacts from '@/components/ChatArtifacts.vue'
 import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
 import { credentials, hub, isSending, toast } from '@/stores/hub'
+import { copyText } from '@/lib/clipboard'
 import { gravatarUrl } from '@/lib/gravatar'
-import { referenceBlock } from '@/lib/share-url'
 import { createSpeaker } from '@/lib/voice'
 
 /**
@@ -360,47 +360,36 @@ watch(
   { immediate: true },
 )
 
-async function copyText(text) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    /* fall through */
-  }
-  try {
-    const area = document.createElement('textarea')
-    area.value = text
-    area.setAttribute('readonly', '')
-    area.style.position = 'fixed'
-    area.style.opacity = '0'
-    document.body.appendChild(area)
-    area.select()
-    const copied = document.execCommand('copy')
-    area.remove()
-    return copied
-  } catch {
-    return false
-  }
-}
-
 async function copyMessage(message) {
   const copied = await copyText(message.text)
   const noun = message.who === 'me' ? 'Message' : 'Response'
   toast(copied ? `${noun} copied` : `The ${noun.toLowerCase()} could not be copied.`)
 }
 
-async function shareMessage(message, index) {
-  let url = ''
+/** The message's own address: a web URL in a tab, `entity://` in the app. */
+function linkFor(message, index) {
   const raw = props.shareUrl ? props.shareUrl(index, message) : ''
-  if (raw) {
-    try {
-      url = new URL(raw, window.location.href).href
-    } catch {
-      url = ''
-    }
+  if (!raw) return ''
+  try {
+    return new URL(raw, window.location.href).href
+  } catch {
+    return ''
   }
+}
+
+/**
+ * Share means "hand this to someone else", and the two environments can do
+ * different things:
+ *
+ *  - a browser tab has the Web Share API, so the OS sheet takes the text and the
+ *    link;
+ *  - the packaged app does not — Electron implements neither `navigator.share`
+ *    nor a share sheet — so the honest outcome is **the link on the clipboard**,
+ *    not a quoted reference nobody asked for. Deep links (`entity://open/…`)
+ *    travel between installs; a workspace with a remote server shares its URL.
+ */
+async function shareMessage(message, index) {
+  const url = linkFor(message, index)
   if (navigator.share) {
     try {
       await navigator.share({
@@ -413,17 +402,14 @@ async function shareMessage(message, index) {
       if (error?.name === 'AbortError') return
     }
   }
-  /* The share sheet takes the link. The copy fallback is a reference a person
-     can paste anywhere, with the link last when there is one. */
-  const block = referenceBlock({
-    text: message.text,
-    entity: props.entityName,
-    workspace: hub.workspace,
-    when: message.at,
-    url,
-  })
-  const copied = await copyText(block)
-  toast(copied ? 'Reference copied' : 'The reference could not be copied.')
+  const copied = await copyText(url || message.text)
+  toast(
+    copied
+      ? url
+        ? 'Link copied'
+        : 'Response copied'
+      : 'The link could not be copied.',
+  )
 }
 
 async function saveMessage(message) {

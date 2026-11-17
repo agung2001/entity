@@ -5,7 +5,9 @@ import EntityMark from '@/components/EntityMark.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesQuery } from '@/composables/search'
-import { referenceBlock, shareHref } from '@/lib/share-url'
+import { shareHref } from '@/lib/share-url'
+import { copyText } from '@/lib/clipboard'
+import { isDesktopApp } from '@/lib/shortcuts'
 import { playSfx } from '@/lib/sfx'
 import {
   ago,
@@ -34,6 +36,10 @@ const props = defineProps({
   headless: { type: Boolean, default: false },
 })
 const router = useRouter()
+/* What "copy" means here depends on where the rail is running: a tab can share a
+   URL, the packaged app has none, so it hands over the id the app addresses the
+   thread by. The label says which one it is. */
+const desktopApp = isDesktopApp()
 const editing = ref('')
 const editTitle = ref('')
 const confirming = ref('')
@@ -359,21 +365,17 @@ async function menuCopyLink() {
     params: { workspace: hub.workspace },
     query: { thread: thread.id },
   }).href
-  const url = shareHref(href, hub.workspace)
-  const block = referenceBlock({
-    text: titleOf(thread),
-    entity: thread.entity,
-    workspace: hub.workspace,
-    when: thread.updatedAt,
-    url,
-  })
-  try {
-    await navigator.clipboard.writeText(block)
-    toast('Thread reference copied')
-    playSfx('confirm')
-  } catch {
-    toast('The reference could not be copied.')
-  }
+  const url = desktopApp ? '' : shareHref(href, hub.workspace)
+  const payload = url || thread.id
+  const copied = await copyText(payload)
+  if (copied) playSfx('confirm')
+  toast(
+    copied
+      ? desktopApp || !url
+        ? 'Thread id copied'
+        : 'Thread link copied'
+      : 'The thread could not be copied.',
+  )
 }
 
 async function menuDelete() {
@@ -815,7 +817,7 @@ defineExpose({ newThread })
             <path d="M6.4 9.6l3.2-3.2M5.2 10.8l-1 .9a2.2 2.2 0 01-3.1-3.1l2-2a2.2 2.2 0 013.1 0" />
             <path d="M10.8 5.2l1-.9a2.2 2.2 0 013.1 3.1l-2 2a2.2 2.2 0 01-3.1 0" />
           </svg>
-          Copy reference
+          {{ desktopApp ? 'Copy thread id' : 'Copy link' }}
         </button>
         <button
           v-if="!menuItem.archived"

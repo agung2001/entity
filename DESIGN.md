@@ -145,6 +145,11 @@ The message box is for the prompt. Attachments belong in a tray below it.
   same change. Do not invent a token that the help does not document.
 - Remote `@file` uploads are temporary; remote `/workspace:` skills are
   persistent in the target harness and need a backup.
+- **"Share" and "copy" say what they will actually do.** A browser tab can hand
+  over a URL and has the Web Share API; the packaged app has neither, so it puts
+  the *id* (rail) or the *link* (`entity://`, message) on the clipboard and the
+  label says which. Never a quoted reference block — it pasted as prose wherever
+  a link was wanted.
 - **A draft belongs to the thread it was typed in.** The composer is one box for
   every conversation, so the text is keyed by thread in the store and persisted
   in `localStorage` (`src/lib/drafts.js`) — never in the workspace files, which
@@ -178,6 +183,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | Two surfaces open and both close on one `Esc` | One stack entry per surface, last opened is top | `useDialog.js` |
 | A new shortcut exists but is not in `?` | Add it to `SHORTCUT_GROUPS`; render the guide from the catalog | Review + guide |
 | Escape handlers on elements that never receive focus | The listener belongs on the window; the surface registers its close | `useDialog.js` |
+| "Copy" does nothing and the toast blames the content | `navigator.clipboard` rejects in the packaged app; go through `src/lib/clipboard.js` (clipboard API → selection fallback → `false`) and let the toast say which happened | `npm test` (`clipboard`) |
 | A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `app.css` (`.rchat-menu-item[disabled]`) |
 | A popover floats off screen because its height was hardcoded | Measure `offsetHeight` after render and flip from the measurement | `ChatHistoryRail.openRowMenu` |
 | Unsent text disappears when you switch threads (or reload) | Drafts are per thread in the store, persisted through `src/lib/drafts.js`; the composer reports every change and adopts the new thread's text | `tests/e2e/full/15-drafts.spec.js` |

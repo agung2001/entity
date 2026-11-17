@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
+import { copyText } from '@/lib/clipboard'
 import { parametersOf } from '@/lib/mcp'
 import { toast } from '@/stores/hub'
 
@@ -173,12 +174,8 @@ async function testConnection() {
 }
 
 async function copy(value, label) {
-  try {
-    await navigator.clipboard.writeText(value)
-    toast(`${label} copied`)
-  } catch {
-    toast(`${label} could not be copied.`)
-  }
+  const copied = await copyText(value)
+  toast(copied ? `${label} copied` : `${label} could not be copied.`)
 }
 
 async function rotate() {
