@@ -93,6 +93,7 @@ const MENTION_KINDS = computed(() => [
   { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
   { name: '@maka:', desc: 'A note in a Maka vault — vault:query' },
   { name: '@youtrack:', desc: 'An issue — project:query' },
+  { name: '@thread:', desc: 'Another conversation in this workspace' },
 ])
 
 /** `@` right before the caret, with the partial word typed after it. */
