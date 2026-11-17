@@ -17,7 +17,7 @@ import {
 } from '@/stores/hub'
 import { loadHarnesses } from '@/stores/harnesses'
 import { loadEntities } from '@/stores/entities'
-import { createWorkspace, workspaces } from '@/stores/workspaces'
+import { createWorkspace, loadSamples, workspaces } from '@/stores/workspaces'
 
 /**
  * First run: one route, three steps.
@@ -206,6 +206,11 @@ async function createRoom() {
   msg.value = ''
   busy.value = true
   try {
+    /* The three default sample entities (chief of staff, writer, secretary)
+       come with every room the wizard makes: an empty hub was the one thing
+       the old setup screen's checkboxes were for. */
+    const samples = await loadSamples()
+    const defaults = samples.filter((sample) => sample.default).map((sample) => sample.name)
     /* One account per machine, and this screen only appears on a machine with
        no workspace, so a missing account is created here rather than asked for. */
     const account = accountExists()
@@ -217,7 +222,13 @@ async function createRoom() {
           role: 'owner',
         })
     signIn(account.username, account.email, account.role)
-    await createWorkspace({ label: label.value.trim(), seed: false })
+    await createWorkspace({
+      label: label.value.trim(),
+      seed: true,
+      /* an explicit [] means "none", so a failed read must pass null: the
+         defaults are the point of "always" */
+      seedEntities: defaults.length ? defaults : null,
+    })
     step.value = 2
     await probe()
   } catch (problem) {
@@ -296,8 +307,8 @@ onMounted(async () => {
           <form novalidate @submit.prevent="primary">
             <template v-if="step === 1">
               <p class="sub">
-                Everything you make lives in one folder on this machine. No account to create,
-                nothing uploaded.
+                Everything you make lives in one folder on this machine. It starts with three
+                example entities, and nothing is uploaded.
               </p>
               <div class="field">
                 <label for="room">Workspace name</label>
