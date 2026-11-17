@@ -135,7 +135,8 @@ function normaliseStep(raw, index) {
 
 function normaliseMention(raw) {
   if (!raw || typeof raw !== 'object') return null
-  const kind = ['entity', 'orca', 'artifact', 'maka', 'youtrack'].includes(raw.kind)
+  /* a `thread` mention is another conversation, shown as a card not a run */
+  const kind = ['entity', 'orca', 'artifact', 'maka', 'youtrack', 'thread'].includes(raw.kind)
     ? raw.kind
     : 'unknown'
   return {
@@ -1718,6 +1719,21 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
       entity,
       machine: thread.machine,
       localOnly: thread.machine !== 'local',
+      threadId: thread.id,
+      /* `@thread:` reads through the store's own list/read, so `canAccess` and
+         the entity filter are the whole privacy story — mention-ref never opens
+         a chat file itself. */
+      deps: {
+        threads: {
+          list: () => list({ workspace: record.id }),
+          read: (id) => {
+            const found = read({ workspace: record.id, id })
+            /* the auto title is derived, not stored; a digest is useless without
+               it, so it is filled in here as the history list already does */
+            return found && !found.title ? { ...found, title: titleOf(found) } : found
+          },
+        },
+      },
     })
     turnMentions = mentioned.mentions
     /* One session per delegated entity mention. A session that cannot be written

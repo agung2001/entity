@@ -12,6 +12,8 @@
  *   @artifact:shot-2026                a workspace artifact, as artifact://
  *   @maka:one:plan                     maka_search_notes over MCP
  *   @youtrack:AC:login bug             search_issues over MCP, scoped to AC
+ *   @thread:t_abc123                   another conversation in this workspace:
+ *                                      its title, questions and last answer
  *
  * Two failure modes, on purpose:
  *
@@ -35,7 +37,7 @@ const mcpRuntime = require('./mcp-runtime.cjs')
 const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 
-const KINDS = new Set(['orca', 'artifact', 'maka', 'youtrack'])
+const KINDS = new Set(['orca', 'artifact', 'maka', 'youtrack', 'thread'])
 
 const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 8
@@ -133,6 +135,12 @@ function parseMention(raw) {
 
   if (head === 'artifact') return { kind: 'artifact', query: rest.trim(), local }
 
+  /* `@thread:` carries the id and nothing else, so the id is ONE word — the
+     composer inserts `@thread:<id>` and the person keeps typing after it.
+     Reading the whole rest made "@thread:t_a what did we decide?" a thread id
+     and failed the message before it was sent. */
+  if (head === 'thread') return { kind: 'thread', id: rest.trim().split(/\s+/)[0] || '', local }
+
   const parts = rest.split(':')
   const first = (parts[0] || '').trim()
   const tail = parts.slice(1).join(':').trim()
@@ -168,6 +176,7 @@ function tokenOf(segment) {
     return `${at}orca:${segment.project}${segment.file ? `:${segment.file}` : ''}`
   }
   if (segment.kind === 'artifact') return `${at}artifact:${segment.query}`
+  if (segment.kind === 'thread') return `${at}thread:${segment.id}`
   if (segment.kind === 'maka') {
     return segment.vault
       ? `${at}maka:${segment.vault}${segment.query ? `:${segment.query}` : ''}`
@@ -638,6 +647,29 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     }
   }
 
+  if (kind === 'thread') {
+    /* the picker must never throw: a build with no chat store wired gets an
+       empty menu rather than a composer that breaks on `@thread:` */
+    if (!merged.threads) return { items: [], more: false }
+    const query = fields.join(':').trim().toLowerCase()
+    const rows = await merged.threads.list()
+    const matched = query
+      ? rows.filter((row) =>
+          [row.id, row.title, row.entity].some((value) =>
+            String(value || '').toLowerCase().includes(query),
+          ),
+        )
+      : rows
+    return {
+      items: matched.slice(offset, offset + limit).map((row) => ({
+        insert: `@thread:${row.id}`,
+        label: row.title || row.id,
+        detail: `${row.entity} · ${row.queries ?? 0} turns${row.archived ? ' · archived' : ''}`,
+      })),
+      more: matched.length > offset + limit,
+    }
+  }
+
   if (kind === 'orca') {
     const project = String(fields[0] || '').trim()
     const file = fields.slice(1).join(':').trim()
@@ -780,7 +812,9 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
  */
 async function search({ record, kind, fields = [], limit = 10, offset = 0, dir = '', deps = {} } = {}) {
   const ctx = { record, workspace: record?.id, dir: String(dir || ''), deps: { ...defaultDeps, ...deps } }
-  const key = `${kind}|${ctx.dir}|${fields.join(':')}|${offset}|${limit}`
+  /* `thread` is scoped to the workspace, so the id is part of the key: without
+     it one workspace's thread titles would answer another workspace's picker. */
+  const key = `${kind}|${ctx.workspace || ''}|${ctx.dir}|${fields.join(':')}|${offset}|${limit}`
   const hit = searchCache.get(key)
   if (hit && Date.now() - hit.at < SEARCH_CACHE_MS) return hit.value
   const value = await fetchPage(ctx, kind, fields, limit, offset)
@@ -793,6 +827,48 @@ const defaultDeps = {
   orcaRepos,
   mcpCall: mcpTools.callTool,
   runEntity,
+}
+
+/**
+ * What one thread can say about itself inside another thread's prompt: its
+ * title, the questions it was asked and its last answer.
+ *
+ * Deliberately NOT the transcript. `sent` on a message holds the foreign
+ * context that turn already resolved (`@orca:`, `@maka:`, another `@thread:`);
+ * copying that into this turn would launder someone else's resolved sources as
+ * if they were ours. Same reason the steps, tool output and `mentions` are
+ * unread — only the words the person and the agent typed.
+ */
+function threadDigest(
+  thread,
+  { askCount = 3, askChars = 200, answerChars = 1200, totalChars = 2000 } = {},
+) {
+  const squeeze = (text) => String(text || '').replace(/\s+/g, ' ').trim()
+  const messages = Array.isArray(thread.messages) ? thread.messages : []
+  const questions = messages.filter((message) => message.who === 'me' && !message.error)
+  const asked = questions.slice(-askCount).map((message) => squeeze(message.text).slice(0, askChars))
+  const lastAnswer = [...messages].reverse().find((message) => message.who === 'agent')
+  const concluded = lastAnswer ? squeeze(lastAnswer.text).slice(0, answerChars) : ''
+  /* A digest is bounded by characters, not by messages: three terse questions
+     and three essays cost very different prompt space. Oldest questions go
+     first — the newest one is what the mention was about. With the defaults the
+     budget cannot bite (3 × 200 + 1200 < 2000); it is the guard for a caller
+     that widens `askCount`, not a live path. */
+  let truncated = false
+  while (asked.length && asked.join('').length + concluded.length > totalChars) {
+    asked.shift()
+    truncated = true
+  }
+  return {
+    title: String(thread.title || '').trim(),
+    entity: thread.entity,
+    turns: messages.filter((message) => message.who === 'agent').length,
+    asked,
+    concluded,
+    truncated,
+    /* counted for the block only: one row says how much is missing */
+    hidden: questions.length - asked.length,
+  }
 }
 
 async function resolveOne(ctx, segment) {
@@ -864,6 +940,67 @@ async function resolveOne(ctx, segment) {
       return
     }
 
+    if (segment.kind === 'thread') {
+      /* no reader wired (a test seam, or a build without a chat store) is a
+         wiring fault, not a missing thread — it must be loud */
+      if (!ctx.deps.threads) throw new Error('@thread: has no thread reader wired.')
+      if (!segment.id) {
+        ctx.errors.push('@thread: needs a thread id.')
+        return
+      }
+      /* Deduped before the first await on purpose: every mention resolves in
+         one Promise.all, so a check after the read would inject both copies. */
+      if (ctx.seenThreads.has(segment.id)) {
+        ctx.notes.push(`@thread:${segment.id} mentioned twice; injected once`)
+        return
+      }
+      ctx.seenThreads.add(segment.id)
+      /* read() throws on a malformed id and answers null for anything it may
+         not show; both become the same sentence, so a mention can never be used
+         to learn whether another account's thread exists. */
+      let thread = null
+      try {
+        thread = await ctx.deps.threads.read(segment.id)
+      } catch {
+        thread = null
+      }
+      if (!thread) {
+        ctx.errors.push(`@thread:${segment.id} is not a thread in this workspace.`)
+        return
+      }
+      if (segment.id === ctx.threadId) {
+        /* no mention on the segment, so the token stays plain text */
+        ctx.notes.push(`@thread:${segment.id} is this conversation; nothing to inject`)
+        return
+      }
+      const digest = threadDigest(thread)
+      segment.mention = {
+        kind: 'thread',
+        raw: segment.raw,
+        token: tokenOf(segment),
+        status: 'ok',
+        threadId: segment.id,
+        title: digest.title,
+        entity: digest.entity,
+        turns: digest.turns,
+        truncated: digest.truncated,
+        items: [
+          {
+            label: digest.title
+              ? `“${digest.title}” · ${digest.entity} · ${digest.turns} turns`
+              : segment.id,
+            detail: segment.id,
+          },
+        ],
+        note: '',
+      }
+      /* The digest rides on the segment, not on the mention: the block is what
+         gets sent, and `message.mentions` stays a small card. */
+      segment.digest = digest
+      if (!digest.concluded) ctx.notes.push(`@thread:${segment.id} has no answer yet`)
+      return
+    }
+
     if (segment.kind === 'maka') {
       const items = await resolveMaka(ctx, segment)
       segment.mention = { kind: 'maka', raw: segment.raw, token: tokenOf(segment), items, note: '' }
@@ -879,8 +1016,9 @@ async function resolveOne(ctx, segment) {
   } catch (error) {
     const message = String(error?.message || error)
     /* names are hard errors; a search that failed is a note */
-    if (segment.kind === 'entity' || segment.kind === 'orca') ctx.errors.push(message)
-    else ctx.notes.push(message)
+    if (segment.kind === 'entity' || segment.kind === 'orca' || segment.kind === 'thread') {
+      ctx.errors.push(message)
+    } else ctx.notes.push(message)
   } finally {
     if (segment.mention) segment.mention.ms = Date.now() - started
   }
@@ -909,6 +1047,23 @@ function blockFor(segments, notes) {
       )
       continue
     }
+    if (mention.kind === 'thread') {
+      /* One row per mention, multi-line: a digest is a paragraph, and a row per
+         question would eat `MAX_BLOCK_ROWS` out of the whole block. */
+      const digest = segment.digest || { asked: [], concluded: '', hidden: 0 }
+      const which = digest.title ? `“${digest.title}”` : mention.threadId || mention.raw
+      const lines = [
+        `- ${mention.token || mention.raw} → ${which} (${mention.entity || 'thread'} · ${
+          mention.turns || 0
+        } turns)`,
+      ]
+      const more = digest.hidden > 0 ? ` (+${digest.hidden} earlier questions not shown)` : ''
+      if (digest.asked.length) lines.push(`  asked: ${digest.asked.join('; ')}${more}`)
+      else if (more) lines.push(`  asked:${more}`)
+      lines.push(`  concluded: ${digest.concluded || '(no answer yet)'}`)
+      rows.push(lines.join('\n'))
+      continue
+    }
     if (!mention.items.length) {
       rows.push(`- ${mention.token || mention.raw} → nothing found`)
       continue
@@ -935,7 +1090,11 @@ function blockFor(segments, notes) {
  * `deps` is a test seam only: production callers pass nothing and get the real
  * Orca CLI, the real MCP client, and a real entity sub-run.
  */
-async function rewrite(record, text, { entity = null, machine = 'local', localOnly = false, deps = {} } = {}) {
+async function rewrite(
+  record,
+  text,
+  { entity = null, machine = 'local', localOnly = false, threadId = '', deps = {} } = {},
+) {
   const source = String(text || '')
   const spawn = spawnPrefix(source)
   const parsed = parse(source)
@@ -952,9 +1111,13 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
     record,
     machine,
     entity,
+    /* the conversation this turn belongs to: `@thread:<this one>` is a no-op */
+    threadId: String(threadId || ''),
     deps: { ...defaultDeps, ...deps },
     notes: [],
     errors: [],
+    /* thread ids already injected in this message; see the dedupe in resolveOne */
+    seenThreads: new Set(),
     entities: new Map(
       entities.list(record.id).map((item) => [item.name.toLowerCase(), item]),
     ),
@@ -964,8 +1127,8 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
   for (const segment of candidates) {
     if (segment.kind !== 'unknown') continue
     ctx.errors.push(
-      `@${segment.name}: is not a mention kind. Use @orca:, @artifact:, @maka: or @youtrack:, ` +
-        'or write the entity name without a colon.',
+      `@${segment.name}: is not a mention kind. Use @orca:, @artifact:, @maka:, @youtrack: or ` +
+        '@thread:, or write the entity name without a colon.',
     )
   }
   const entitiesToRun = candidates.filter((segment) => segment.kind === 'entity')
