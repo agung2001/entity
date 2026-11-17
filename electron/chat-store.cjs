@@ -302,9 +302,10 @@ function normaliseThread(raw, record) {
        wrote (or cleared) is never re-derived by a later turn. */
     titleSource: raw.titleSource === 'user' || raw.titleSource === 'auto' ? raw.titleSource : '',
     pinned: Boolean(raw.pinned),
-    /* Archiving is a reversible state of the same record, not a move: the
-       thread keeps its file, its messages and its pin. Absent means active, so
-       a file that has never been archived stays byte-identical. */
+    /* Archiving is a reversible state of the same record, not a move: the thread
+       keeps its file, its messages and its pin. A read always answers `true` or
+       `false`; `writeThread` is what keeps the key out of a file that never had
+       it (see there). */
     archived: Boolean(raw.archived),
     ...(raw.archivedAt && raw.archived ? { archivedAt: String(raw.archivedAt) } : {}),
     tags: normaliseTags(raw.tags),
@@ -361,10 +362,19 @@ function saveTurn(record, thread, baseline) {
 
 function writeThread(record, thread) {
   windowCache.delete(record.id)
+  artifactIndexCache.delete(record.id)
   const file = threadFile(record, thread.id)
   const tmp = `${file}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(tmp, `${JSON.stringify(thread, null, 2)}\n`, 'utf8')
+  /* Absent means active. A read answers `false`, but writing that back would put
+     `"archived": false` into every thread a rename, a pin or a turn touches — the
+     one shape ENTITY-18 promised never to produce. */
+  const document = { ...thread }
+  if (!document.archived) {
+    delete document.archived
+    delete document.archivedAt
+  }
+  fs.writeFileSync(tmp, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
   fs.renameSync(tmp, file)
   return thread
 }
@@ -645,12 +655,22 @@ function pin({ workspace, id, pinned }) {
  * Restoring **deletes** both keys instead of writing `archived: false`, so a
  * thread that was never archived and one that was and came back are the same
  * bytes — `grep 'archived: false'` over a workspace stays empty.
+ *
+ * The call is **idempotent, and `archivedAt` is stamped once**, on the
+ * false→true transition. A click would survive re-stamping; a scheduled pass
+ * would not. Retention counts *days in the archive* (`archivedAt` → deletion),
+ * so a sweep that re-archived an already-archived thread would push its date
+ * forward on every tick and the delete would never come due. Nothing is written
+ * when the state already matches, so a pass over a quiet workspace touches no
+ * files at all.
  */
 function archive({ workspace, id, archived }) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
-  if (archived) {
+  const wanted = Boolean(archived)
+  if (wanted === Boolean(thread.archived)) return thread
+  if (wanted) {
     thread.archived = true
     thread.archivedAt = now()
   } else {
@@ -928,6 +948,10 @@ function threadWindows(thread) {
  * shared shelf needs to know about those, so attribution reads the siblings.
  */
 const windowCache = new Map()
+/* Thread id → how many artifacts it saved. Filled by the attribution pass below
+   and read by chat retention's protection ③. */
+const artifactIndexCache = new Map()
+const ARTIFACT_INDEX_MS = 5000
 const WINDOW_CACHE_MS = 1000
 
 function workspaceWindows(thread) {
@@ -1092,6 +1116,59 @@ function attachArtifactsByTurn(thread) {
     for (const item of found) claimed.add(item.id)
   }
   return thread
+}
+
+/**
+ * Which threads have saved an artifact.
+ *
+ * Protection ③ is "never delete a thread that saved an artifact", and the honest
+ * answer is the one the chat already shows: the chips on a turn. Attribution is
+ * per thread (`claimsFor` is called with the whole window list but only ever
+ * assigns the windows of the thread it is given), so running the existing pass
+ * per thread produces exactly the transcript's answer — no second rule, no
+ * heuristic on timestamps.
+ *
+ * The shelf is read once, and the result is cached for a few seconds because the
+ * settings card asks on every keystroke while a number is being typed.
+ */
+
+function threadsWithArtifacts({ workspace } = {}) {
+  const key = String(workspace || '')
+  const hit = artifactIndexCache.get(key)
+  const nowMs = Date.now()
+  if (hit && nowMs - hit.at < ARTIFACT_INDEX_MS) return hit.value
+
+  const value = { threads: 0, files: new Map(), total: 0 }
+  let record = null
+  let files = []
+  try {
+    record = workspaces.open(key)
+    files = fs.readdirSync(chatsDir(record)).filter((file) => file.endsWith('.json'))
+  } catch {
+    artifactIndexCache.set(key, { at: nowMs, value })
+    return value
+  }
+
+  for (const file of files) {
+    const thread = readThread(record, file.replace(/\.json$/, ''))
+    if (!thread || !canAccess(thread)) continue
+    let marked = thread
+    try {
+      marked = attachArtifactsByTurn(thread)
+    } catch {
+      continue
+    }
+    const found = new Set()
+    for (const message of marked.messages) {
+      for (const artifact of message.artifacts || []) if (artifact?.id) found.add(artifact.id)
+    }
+    if (!found.size) continue
+    value.threads += 1
+    value.files.set(thread.id, found.size)
+    value.total += found.size
+  }
+  artifactIndexCache.set(key, { at: nowMs, value })
+  return value
 }
 
 function promptFor(messages) {
@@ -1488,6 +1565,21 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  /* Answering brings a thread back into the working list. The archive is a quiet
+     place, not a lock: an archived thread is unreachable from the rail's working
+     list but a deep link still opens it, and replying there must not leave a live
+     conversation in the archive where retention is counting days toward deleting
+     it.
+     
+     Written **here**, before the turn's metadata baseline, so the saves that
+     follow compare against a file that already agrees: a later `saveTurn` would
+     otherwise read the still-archived file, decide another window must have done
+     it, and adopt the archive straight back. */
+  if (thread.archived) {
+    delete thread.archived
+    delete thread.archivedAt
+    writeThread(record, thread)
+  }
   /* What the person's metadata looked like before this turn touched anything. */
   const baseline = metadataOf(thread)
 
@@ -1749,6 +1841,7 @@ module.exports = {
   rename,
   pin,
   archive,
+  threadsWithArtifacts,
   tags,
   remove,
   send,

@@ -69,6 +69,11 @@ and spend sit beside the steps, from the same records the charts use.
   click to open, one hover-visible **Restore** to come back, pin and all. Search
   and every filter reach into it: a query that only an archived thread matches
   opens the group and counts matches instead of lying with an empty list.
+  `archivedAt` records **when it went in**, and is written once — the move is a
+  state setter, not a button press: archiving an archived thread changes nothing
+  and writes no file, so a scheduled pass can call the same write every boot
+  without resetting the clock a "delete it N days after it was archived" rule
+  would count from.
 - The first message names a thread — until you rename it. A title you typed (or cleared)
   is never replaced by a later turn; the rail falls back to the first message only while
   the thread has no title of its own.

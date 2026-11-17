@@ -448,6 +448,12 @@ stayed in the list forever or was destroyed. Archive is the honest middle.
 - **The state is one field on the record** (`archived`, `archivedAt`), mirroring
   `pinned`. Restoring **deletes** both keys rather than writing `false`, so a
   thread that came back is byte-identical to one that never left.
+- **`archivedAt` is stamped once, on the false→true transition, and the write is
+  idempotent.** A click survives re-stamping; a rule that runs on every boot does
+  not — anything that counts *days in the archive* would have its clock reset each
+  tick. The same function is the one a scheduled pass calls, so it takes a state
+  (`{ archived }`), never a verb, and writes nothing when the state already
+  matches.
 - **One list, one collapsed group at the foot.** No second page and no scope
   switch: a route change unmounts the open thread and resets every filter.
   The group is collapsed by default and **force-opens under any query**, with
