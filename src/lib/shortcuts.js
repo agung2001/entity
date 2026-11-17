@@ -61,6 +61,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'N'],
       },
       {
+        id: 'start-thread',
+        label: 'Start the new thread',
+        desc: 'In the New thread dialog: file it with the entity, machine, harness and model already picked.',
+        desktop: ['mod', 'enter'],
+        browser: ['mod', 'enter'],
+      },
+      {
         id: 'rail-search',
         label: 'Focus rail search',
         desc: 'Jump into the search field of the active second-tier rail.',

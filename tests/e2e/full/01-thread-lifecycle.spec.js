@@ -74,6 +74,41 @@ test.describe('thread lifecycle', () => {
     await page.getByRole('button', { name: 'Clear search' }).click()
   })
 
+  test('the rail says what copy means here, and copies exactly that', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await openChat(page)
+    await newThread(page, { entity: 'chief-of-staff' })
+    await sendMessage(page, 'E2E-RAIL-COPY me')
+    await waitForAnswer(page, 'E2E-STUB-OK')
+
+    const row = page.locator('.rchat-row').filter({ hasText: 'E2E-RAIL-COPY' }).first()
+    const id = new URL(page.url()).searchParams.get('thread')
+    await row.locator('.rchat-dots').click()
+    /* a browser tab can share a URL, and the label says so */
+    const item = page.getByRole('menuitem', { name: 'Copy link' })
+    await expect(item).toBeVisible()
+    await item.click()
+
+    const copied = await page.evaluate(() => navigator.clipboard.readText())
+    expect(copied).toContain('/chat?thread=')
+    expect(copied).toContain(id)
+    /* the old behaviour pasted a quoted reference block instead */
+    expect(copied.startsWith('>')).toBe(false)
+  })
+
+  test('the new-thread dialog opens on the first picker and starts with the combo', async ({ page }) => {
+    await openChat(page)
+    await page.keyboard.press('Meta+KeyN')
+    await expect(page.locator('.newthread-modal')).toHaveAttribute('data-open', '1')
+    /* focus is on the entity picker, not lost on the page behind it */
+    await expect(page.locator('.newthread-modal .pickbtn').first()).toBeFocused()
+
+    const before = await page.locator('.rchat-row').count()
+    await page.keyboard.press('Meta+Enter')
+    await expect(page.locator('.newthread-modal')).toHaveAttribute('data-open', '0')
+    await expect(page.locator('.rchat-row')).toHaveCount(before + 1)
+  })
+
   test('a deep link opens the named message; a dead link falls back', async ({ page }) => {
     const deepToken = 'E2E-DEEP-TOKEN'
     const profile = readProfile()

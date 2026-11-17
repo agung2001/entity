@@ -609,6 +609,7 @@ onBeforeUnmount(() => {
             :id="item.id"
             :name="item.name"
             @send="sendAnnotations"
+            @escape="modal && emit('close')"
           />
           <MarkdownEditor
             v-else-if="canEditText && isMarkdown"

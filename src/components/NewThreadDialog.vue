@@ -1,10 +1,11 @@
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { call } from '@/composables/localBridge'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { agentById, createThread, hub } from '@/stores/hub'
 import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
@@ -23,6 +24,11 @@ const props = defineProps({
 const emit = defineEmits(['close', 'created'])
 
 const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: '', dir: '' })
+const startKey = shortcutLabel('start-thread')
+/* The dialog is now fully keyboard-driven: it opens on the first picker, each
+   picker takes arrows and Enter, and the combo below files the thread without
+   reaching for the mouse. */
+const body = ref(null)
 const error = ref('')
 const busy = ref(false)
 const resetting = ref(false)
@@ -153,6 +159,7 @@ function reset() {
   if (!remote.value) loadModels(form.harness).catch(() => {})
   nextTick(() => {
     resetting.value = false
+    if (props.open) body.value?.querySelector('.pickbtn:not([disabled])')?.focus()
   })
 }
 
@@ -264,6 +271,24 @@ watch(
   },
 )
 
+/**
+ * The `start-thread` combo files the thread with the picks made — the same key
+ * that confirms a message, used for the one dialog whose whole point is "start".
+ *
+ * The listener is window-level because focus moves between the pickers, the
+ * model field and the folder input; the composer's own send handler lives on
+ * its textarea, so nothing behind this dialog can fire.
+ */
+function onKey(event) {
+  if (!props.open || busy.value) return
+  if (!matchesShortcut('start-thread', event)) return
+  event.preventDefault()
+  submit()
+}
+
+onMounted(() => window.addEventListener('keydown', onKey, true))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
+
 async function submit() {
   if (busy.value) return
   error.value = ''
@@ -313,7 +338,7 @@ async function submit() {
       </button>
     </div>
 
-    <form class="mo-body thread-body newthread-body" @submit.prevent="submit">
+    <form ref="body" class="mo-body thread-body newthread-body" @submit.prevent="submit">
       <div class="fld">
         <span class="lbl">Entity</span>
         <PickMenu
@@ -490,6 +515,7 @@ async function submit() {
         <button class="btn" type="button" :disabled="busy" @click="emit('close')">Cancel</button>
         <button class="btn btn-ink" type="submit" :disabled="busy || !hub.agents.length || !form.harness">
           {{ busy ? 'Starting…' : 'Start thread' }}
+          <kbd v-if="!busy" class="btn-kbd">{{ startKey }}</kbd>
         </button>
       </div>
     </form>

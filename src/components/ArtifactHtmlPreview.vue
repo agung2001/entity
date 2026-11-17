@@ -9,6 +9,7 @@ import {
   targetOf,
 } from '@/lib/annotate'
 import { useDialogDismiss } from '@/composables/useDialog'
+import { copyText } from '@/lib/clipboard'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { toast } from '@/stores/hub'
 
@@ -28,7 +29,7 @@ const props = defineProps({
   name: { type: String, default: '' },
 })
 
-const emit = defineEmits(['send'])
+const emit = defineEmits(['send', 'escape'])
 
 const annotateKey = shortcutLabel('annotate')
 const addNoteKey = shortcutLabel('send')
@@ -171,6 +172,26 @@ function onPointerMove(event) {
 
 /* The send shortcut adds the note, exactly like sending a message; the combo
    comes from the catalog so it can never drift from the guide. */
+/**
+ * Inside the preview document. A click in the frame takes focus away from the
+ * app window, so an Escape pressed there reaches nothing that could close the
+ * dialog — this is the bridge. Both halves of the rule live here: the picker
+ * closes first, and when there is nothing of ours to close the surface around
+ * the frame gets the key.
+ */
+function onFrameKey(event) {
+  if (event.key !== 'Escape') {
+    onKey(event)
+    return
+  }
+  if (picked.value) {
+    event.preventDefault()
+    closePicker()
+    return
+  }
+  emit('escape')
+}
+
 function onNoteKey(event) {
   if (matchesShortcut('send', event)) {
     event.preventDefault()
@@ -207,6 +228,12 @@ function closePicker() {
   clearOutline()
 }
 
+/* The picker is a layer of its own, so Escape closes it before the dialog it
+   sits in. Without this the stack only knew about the dialog: one Escape threw
+   the note away and shut the whole page. It registers after the dialog because
+   it opens later, which is the order the stack pops in. */
+useDialogDismiss({ active: () => Boolean(picked.value), close: () => closePicker() })
+
 function addNote() {
   const target = picked.value
   const text = sanitizeInline(noteText.value, 2000)
@@ -226,14 +253,15 @@ async function copyPrompt() {
   const prompt = annotationPrompt({ id: props.id, name: props.name, notes: notes.value })
   if (!prompt) return
   copying.value = true
-  try {
-    await navigator.clipboard.writeText(prompt)
-    toast(`Copied ${notes.value.length} note${notes.value.length === 1 ? '' : 's'}`)
-  } catch {
-    toast('The clipboard is not available here.')
-  } finally {
-    copying.value = false
-  }
+  /* Whether the prompt went to chat or the clipboard, the write has to land:
+     this is the last resort when the dialog has no thread behind it. */
+  const copied = await copyText(prompt)
+  copying.value = false
+  toast(
+    copied
+      ? `Copied ${notes.value.length} note${notes.value.length === 1 ? '' : 's'}`
+      : 'The clipboard is not available here.',
+  )
 }
 
 function sendPrompt() {
@@ -244,7 +272,7 @@ function sendPrompt() {
 function detach() {
   doc?.removeEventListener('mousemove', onPointerMove, true)
   doc?.removeEventListener('click', onClick, true)
-  doc?.removeEventListener('keydown', onKey, true)
+  doc?.removeEventListener('keydown', onFrameKey, true)
   doc?.removeEventListener('scroll', follow, true)
   doc?.removeEventListener('resize', follow, true)
   doc = null
@@ -258,7 +286,7 @@ function onFrameLoad() {
   if (!doc) return
   doc.addEventListener('mousemove', onPointerMove, true)
   doc.addEventListener('click', onClick, true)
-  doc.addEventListener('keydown', onKey, true)
+  doc.addEventListener('keydown', onFrameKey, true)
   doc.addEventListener('scroll', follow, true)
   doc.addEventListener('resize', follow, true)
   ensureOverlay()
@@ -282,14 +310,9 @@ useDialogDismiss({ active: () => Boolean(picked.value), close: closePicker })
 
 /* The annotate shortcut from the catalog: one key to start reviewing, the
    same key to stop. The combo itself is never written here. */
+/** In the app's own window: the annotate shortcut. Escape belongs to the one
+    dismiss stack, which knows both this picker and the dialog around it. */
 function onKey(event) {
-  /* Escape reaches us only when the focus is inside the preview document; the
-     one dismiss stack owns the case where it is in the app. */
-  if (event.key === 'Escape' && picked.value) {
-    event.preventDefault()
-    closePicker()
-    return
-  }
   if (!matchesShortcut('annotate', event)) return
   if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) {
     return

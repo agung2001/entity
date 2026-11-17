@@ -40,4 +40,15 @@ test('a card shows only the design the turn worked on', async ({ page }) => {
   await expect(after).not.toContainText('board.png')
   await expect(after).not.toContainText('shots.png')
   expect((await cardIds(page)).length).toBeGreaterThanOrEqual(3)
+
+  /* Escape must close the dialog even when focus is inside the rendered page:
+     a click in the frame takes focus out of the app window, and a keydown there
+     never reaches the one dismiss stack. */
+  await page.locator('.msg-attach').filter({ hasText: 'index.html' }).locator('.msg-attach-copy').click()
+  await expect(page.locator('.artifact-close')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.artifact-preview')).toBeVisible({ timeout: 20_000 })
+  await page.waitForTimeout(1200)
+  await page.frameLocator('.artifact-preview').locator('body').click({ position: { x: 6, y: 6 } })
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.artifact-close')).toHaveCount(0)
 })
