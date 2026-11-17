@@ -125,3 +125,25 @@ test('a session’s thread is continuable: a second turn keeps the link', () => 
   assert.equal(read.model, 'opus[1m]')
   assert.deepEqual(read.tags, ['vendor'])
 })
+
+test('three spawned sessions are told apart by their share', () => {
+  const record = workspaceWith()
+  const parent = parentIn(record)
+  const titles = [1, 2, 3].map(
+    (index) =>
+      chats.spawnMentionSession(
+        record,
+        parent,
+        mentionOf({ job: 'write a poem', share: `${index}/3` }),
+      ).title,
+  )
+  assert.deepEqual(titles, [
+    'write a poem · 1/3',
+    'write a poem · 2/3',
+    'write a poem · 3/3',
+  ])
+  /* the message the person would see is still their own sentence */
+  const first = chats.list({ workspace: record.id }).find((row) => row.title === titles[0])
+  assert.match(first.spawnedFrom.id, /^t_/)
+  assert.equal(chats.read({ workspace: record.id, id: first.id }).messages[0].text, 'write a poem')
+})

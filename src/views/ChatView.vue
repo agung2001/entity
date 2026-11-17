@@ -1499,6 +1499,7 @@ watch(
               { token: '@artifact:login shot', what: 'A file on this workspace’s artifact shelf, matched by name.' },
               { token: '@maka:one:plan', what: 'A note found through the Maka MCP server — vault, then what to search for.' },
               { token: '@youtrack:AC:login bug', what: 'Issues found through the YouTrack MCP server, scoped to the project key you name. The rows show the project and the issue title.' },
+              { token: 'spawn 3 @secretary write a poem', what: 'The same instruction, three times in parallel — three answers, three sessions, three cards, each one continuable. Every run is told which one it is so the results differ. Up to five.' },
               { token: '@@<mention>', what: 'Resolve this mention on the local machine instead of the remote context.' },
             ]" :key="row.token" class="help-mention">
               <code class="mono">{{ row.token }}</code>

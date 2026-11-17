@@ -504,7 +504,13 @@ function mentionLabel(mention) {
 
 function mentionMeta(mention) {
   const execution = mention.execution || {}
-  return [execution.harness, execution.model, formatDuration(mention.ms || execution.ms)]
+  return [
+    execution.harness,
+    execution.model,
+    formatDuration(mention.ms || execution.ms),
+    /* three runs of one instruction: the card has to say which one it is */
+    mention.share ? `run ${mention.share}` : '',
+  ]
     .filter(Boolean)
     .join(' · ')
 }
@@ -599,7 +605,7 @@ function traceSummary(message) {
         >
           <div
             v-for="(mention, j) in delegations(m)"
-            :key="mention.token || mention.name || j"
+            :key="`${mention.token || mention.name || 'mention'}-${mention.share || j}`"
             class="msg-delegation"
             :data-error="mention.status === 'error' ? '1' : '0'"
             :title="mention.job || mention.raw || ''"

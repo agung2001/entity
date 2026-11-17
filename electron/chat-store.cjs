@@ -144,6 +144,7 @@ function normaliseMention(raw) {
     ...(typeof raw.token === 'string' ? { token: raw.token } : {}),
     ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
     ...(typeof raw.job === 'string' ? { job: raw.job } : {}),
+    ...(typeof raw.share === 'string' ? { share: raw.share } : {}),
     ...(Array.isArray(raw.items) ? { items: raw.items } : {}),
     ...(typeof raw.answer === 'string' ? { answer: raw.answer } : {}),
     ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
@@ -588,6 +589,9 @@ function spawnMentionSession(record, parent, mention) {
   const endedAt = execution.endedAt || startedAt
   const stamp = () => `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const job = String(mention.job).replace(/\s+/g, ' ').trim()
+  /* `spawn 3` gives three sessions the same instruction: the share is what makes
+     three identical titles readable in the tree. */
+  const title = (mention.share ? `${job} · ${mention.share}` : job).slice(0, 120)
   const failed = mention.status === 'error'
   const thread = {
     schema: 1,
@@ -601,7 +605,7 @@ function spawnMentionSession(record, parent, mention) {
     model: String(execution.model || ''),
     attachmentsEnabled: false,
     user: parent.user,
-    title: job.slice(0, 120),
+    title,
     titleSource: 'auto',
     pinned: false,
     tags: [],

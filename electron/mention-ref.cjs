@@ -48,12 +48,49 @@ const ORCA_CACHE_MS = 60_000
 const MENTION_TIMEOUT_MS = Number(process.env.ENTITY_MENTION_TIMEOUT_MS)
 const ENTITY_TIMEOUT_MS = MENTION_TIMEOUT_MS > 0 ? MENTION_TIMEOUT_MS : 30 * 60_000
 const MAX_ENTITY_RUNS = 2
+/* `spawn N @entity …` is an explicit ask for N parallel runs of one instruction,
+   so its own cap is what the person wrote — still bounded, because a typo is not
+   a reason to start forty harnesses. */
+const MAX_SPAWN_RUNS = 5
 const ARTIFACT_SCAN_CAP = 2000
 
 /* ── parsing ──────────────────────────────────────────────────────── */
 
 /* A mention starts at `@` after start/space/(/[ so `me@example.com` stays text. */
 const MENTION_AT = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/g
+
+/* `spawn 3 @secretary …` right at the start of the message. It only counts when
+   a mention follows, so "spawn 3 tasks in the backlog" stays prose. */
+const SPAWN_PREFIX = /^\s*spawn\s+(\d{1,2})\s+(?=@)/
+
+function spawnPrefix(source) {
+  const match = String(source || '').match(SPAWN_PREFIX)
+  if (!match) return null
+  const count = Number(match[1])
+  if (!Number.isFinite(count) || count < 1) return null
+  return { count, end: match[0].length }
+}
+
+/**
+ * One instruction, N sessions. The mention is copied N times so the runs happen
+ * in parallel and each gets its own session, answer and card; `share` tells the
+ * entity which run it is, which is the only way three answers to the same
+ * sentence come out different.
+ */
+function expandSpawn(segments, spawn) {
+  if (!spawn) return segments
+  const first = segments.find(
+    (segment) => segment.kind === 'entity' && segment.start >= spawn.end,
+  )
+  if (!first) return segments
+  const copies = []
+  for (let index = 1; index <= spawn.count; index += 1) {
+    copies.push({ ...first, share: [index, spawn.count] })
+  }
+  const out = [...segments]
+  out.splice(out.indexOf(first), 1, ...copies)
+  return out
+}
 
 function parse(text) {
   const source = String(text || '')
@@ -85,7 +122,9 @@ function parseMention(raw) {
     const [word, ...rest] = body.trim().split(/\s+/)
     /* "ask @secretary." names the entity, not an entity called "secretary.". */
     const name = word.replace(/[.,;!?)\]]+$/, '')
-    return { kind: 'entity', name, job: rest.join(' ').trim(), query: rest.join(' ').trim(), local }
+    /* `@secretary, do X` is a job, not a job that begins with a comma. */
+    const job = rest.join(' ').trim().replace(/^[,;:–—-]+\s*/, '')
+    return { kind: 'entity', name, job, query: job, local }
   }
 
   const head = body.slice(0, colon).trim().toLowerCase()
@@ -783,13 +822,24 @@ async function resolveOne(ctx, segment) {
         }
         return
       }
-      const run = await ctx.deps.runEntity(ctx.record, mentioned, segment.job)
+      /* A spawned run is one of N: it is told which one, because three answers
+         to the same sentence only differ if each knows it must. The session and
+         the card keep the person's own words. */
+      const job =
+        segment.share && segment.share[1] > 1
+          ? `${segment.job}\n\n(Run ${segment.share[0]} of ${segment.share[1]} of this same instruction. ` +
+            'Produce a distinct result — do not coordinate with the other runs, which you cannot see.)'
+          : segment.job
+      const run = await ctx.deps.runEntity(ctx.record, mentioned, job)
       segment.mention = {
         kind: 'entity',
         raw: segment.raw,
         token: tokenOf(segment),
         name: mentioned.name,
         job: segment.job,
+        ...(segment.share && segment.share[1] > 1
+          ? { share: `${segment.share[0]}/${segment.share[1]}` }
+          : {}),
         items: [],
         answer: String(run.answer || '').slice(0, 1200),
         note: run.ok ? '' : `@${mentioned.name} failed: ${run.error}`,
@@ -851,7 +901,12 @@ function blockFor(segments, notes) {
       const answer = mention.answer
         ? mention.answer.replace(/\s+/g, ' ').slice(0, 400)
         : mention.note || 'no answer'
-      rows.push(`- ${mention.token || mention.raw} (entity ${mention.name}) → answer: ${answer}`)
+      /* `spawn 3` gives three answers to one sentence: the share is the only
+         thing that tells the reply above which run said what. */
+      const which = mention.share ? ` run ${mention.share}` : ''
+      rows.push(
+        `- ${mention.token || mention.raw} (entity ${mention.name}${which}) → answer: ${answer}`,
+      )
       continue
     }
     if (!mention.items.length) {
@@ -882,8 +937,16 @@ function blockFor(segments, notes) {
  */
 async function rewrite(record, text, { entity = null, machine = 'local', localOnly = false, deps = {} } = {}) {
   const source = String(text || '')
-  const { segments } = parse(source)
-  if (!segments.length) return { text: source, mentions: [] }
+  const spawn = spawnPrefix(source)
+  const parsed = parse(source)
+  if (!parsed.segments.length) return { text: source, mentions: [] }
+  if (spawn && spawn.count > MAX_SPAWN_RUNS) {
+    throw new Error(
+      `spawn ${spawn.count} is more than ${MAX_SPAWN_RUNS} runs. Nothing was sent — lower the number.`,
+    )
+  }
+  const segments = expandSpawn(parsed.segments, spawn)
+  const runCap = spawn ? Math.max(MAX_ENTITY_RUNS, spawn.count) : MAX_ENTITY_RUNS
 
   const ctx = {
     record,
@@ -906,8 +969,12 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
     )
   }
   const entitiesToRun = candidates.filter((segment) => segment.kind === 'entity')
-  const skipped = entitiesToRun.slice(MAX_ENTITY_RUNS)
-  for (const segment of skipped) ctx.notes.push(`${segment.raw} skipped: at most ${MAX_ENTITY_RUNS} entity mentions per message`)
+  const skipped = entitiesToRun.slice(runCap)
+  for (const segment of skipped) {
+    ctx.notes.push(
+      `${segment.raw} skipped: at most ${runCap} entity ${runCap === 1 ? 'mention' : 'mentions'} per message`,
+    )
+  }
 
   await Promise.all(
     candidates

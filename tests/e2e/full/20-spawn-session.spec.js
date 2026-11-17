@@ -111,3 +111,39 @@ test.describe('a mention is a session', () => {
     expect(threadIdFromUrl(page)).toBe(parentId)
   })
 })
+
+test('spawn 2 runs the instruction twice and leaves two sessions', async ({ page }) => {
+  const { profile, parentId } = await openParent(page)
+
+  await sendMessage(page, 'spawn 2 @secretary E2E-STUB-TOKEN write a poem')
+  await expect(page.locator('.msg-delegation')).toHaveCount(2, { timeout: 90_000 })
+  await expect(page.locator('.msg-delegation-answer').first()).toContainText('E2E-STUB-OK')
+
+  /* two cards, two sessions, one rail count */
+  const sessions = listThreads(profile).filter((thread) => thread.spawnedFrom?.id === parentId)
+  expect(sessions).toHaveLength(2)
+  /* the run number is what tells two identical instructions apart */
+  expect(sessions.map((row) => row.title).sort()).toEqual([
+    'E2E-STUB-TOKEN write a poem · 1/2',
+    'E2E-STUB-TOKEN write a poem · 2/2',
+  ])
+  /* the row of the conversation on screen, whatever else the shared workspace
+     holds from other specs */
+  const count = page.locator('.rchat-row[data-on="1"]').first().locator('.rchat-kids')
+  await expect(count).toContainText('spawned 2 chats')
+  await count.click()
+  await expect(tree(page).locator('.spawn-tree-row')).toHaveCount(2)
+  /* the tree is a dialog over the page: close it before reaching the cards */
+  await page.keyboard.press('Escape')
+  await expect(tree(page)).toHaveAttribute('data-open', '0')
+
+  /* each card continues into its own run: the second card opens the second
+     session, not whichever one the first card already visited */
+  const ids = sessions.map((row) => row.id)
+  await page.locator('.msg-delegation').nth(0).locator('.msg-delegation-open').click()
+  await expect.poll(() => threadIdFromUrl(page)).toBe(ids[0])
+  await page.locator('.cp-from').click()
+  await expect.poll(() => threadIdFromUrl(page)).toBe(parentId)
+  await page.locator('.msg-delegation').nth(1).locator('.msg-delegation-open').click()
+  await expect.poll(() => threadIdFromUrl(page)).toBe(ids[1])
+})

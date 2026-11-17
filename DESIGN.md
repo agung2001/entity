@@ -268,6 +268,12 @@ the composer already does: mention another entity.
   a busy thread can own a dozen sessions, and rows for them drown the list. The parent
   row carries `spawned N chats`, the count opens a tree (sessions of sessions included),
   and opening one marks the parent row active so the rail still says where you are.
+- **Fan-out is asked for, never inferred.** `spawn N @entity <job>` at the start of the
+  message runs the same instruction N times in parallel, one session each — capped at
+  five, and only when a mention follows the number, so "spawn 3 tasks in the backlog" is
+  prose. Every run is told which one it is (that is the only reason three answers to one
+  sentence differ), the session titles carry the share (`· 2/3`), and the reply above sees
+  all of them.
 - **The child says where it came from.** A `↳ from #<parent>` line above its title, and
   the whole parent title in `title` — the header's meta line is too narrow for a crumb.
 - **The count and the rows must agree.** `activeSummaryCount`, the rail's rows, its
@@ -355,6 +361,7 @@ the composer already does: mention another entity.
 | One long skill description makes the whole grid scroll sideways | `1fr` tracks need `minmax(0, 1fr)`, cards need `min-width: 0`, and clamped text needs `overflow-wrap: anywhere` | `SkillsView` / `.grid3` |
 | A metadata row lists a path that cannot be opened | Only list paths that `fs.statSync` found, and re-check before acting | `thread-metadata.cjs` |
 | Spawning needs its own button, dialog and card next to the composer | A mention *is* the spawn: `@entity <job>` files a session and the transcript's delegation card continues into it | `tests/e2e/full/20-spawn-session.spec.js` |
+| Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |
 | A count says 4 and the rail paints 2 | Counts, filters and groups all exclude sessions; only the tree shows them | `hub.activeSummaryCount` |

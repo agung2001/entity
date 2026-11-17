@@ -160,6 +160,19 @@ with that entity, linked to this one.
   by the app, not by a remote host), and nothing about them is stored beyond the thread
   itself.
 
+**One instruction, several sessions.** Start the message with `spawn N` and the mention
+runs N times, in parallel — N answers, N cards, N sessions:
+
+```
+spawn 3 @secretary write a poem
+```
+
+Each run is told which one it is (run 1 of 3, and so on) because three answers to the
+same sentence only differ if each knows it must; the sessions are titled
+`write a poem · 1/3` … `3/3`, and the parent's reply sees all three answers. `N` is
+capped at 5, and `spawn 3 tasks in the backlog` (no mention after the number) stays
+prose.
+
 ## Usage and activity## Usage and activity
 
 <picture><source srcset="assets/readme-features/usage.webp" type="image/webp" /><img src="assets/readme-features/usage.poster.jpg" alt="The overview's spend chart and a calendar heatmap of active days" width="820" /></picture>

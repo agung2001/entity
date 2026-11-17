@@ -271,6 +271,90 @@ test('at most two entity mentions run, the rest are noted', async () => {
   assert.match(out.text, /@py-agent three skipped: at most 2 entity mentions per message/)
 })
 
+test('spawn N runs one instruction N times, in parallel, one session each', async () => {
+  const record = workspace()
+  const jobs = []
+  const out = await mention.rewrite(record, 'spawn 3 @py-agent write a poem', {
+    deps: deps({
+      runEntity: async (_record, entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: `answer ${jobs.length}`, error: '' }
+      },
+    }),
+  })
+  assert.equal(jobs.length, 3)
+  /* each run is told which one it is, or three answers to one sentence repeat */
+  assert.match(jobs[0], /^write a poem\n\n\(Run 1 of 3 /)
+  assert.match(jobs[2], /^write a poem\n\n\(Run 3 of 3 /)
+  assert.equal(out.mentions.length, 3)
+  assert.deepEqual(out.mentions.map((row) => row.share), ['1/3', '2/3', '3/3'])
+  /* the person's own words stay on the mention, not the note */
+  assert.equal(out.mentions[1].job, 'write a poem')
+})
+
+test('spawn 3 is the cap it wrote, above the two-mention rule', async () => {
+  const record = workspace()
+  let runs = 0
+  const out = await mention.rewrite(record, 'spawn 3 @py-agent do it', {
+    deps: deps({
+      runEntity: async () => {
+        runs += 1
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+  })
+  assert.equal(runs, 3)
+  assert.doesNotMatch(out.text, /skipped/)
+})
+
+test('spawn is capped, and saying more is a hard error before anything runs', async () => {
+  const record = workspace()
+  let runs = 0
+  await assert.rejects(
+    () =>
+      mention.rewrite(record, 'spawn 9 @py-agent do it', {
+        deps: deps({
+          runEntity: async () => {
+            runs += 1
+            return { ok: true, answer: 'ok', error: '' }
+          },
+        }),
+      }),
+    /spawn 9 is more than 5 runs/,
+  )
+  assert.equal(runs, 0)
+})
+
+test('“spawn 3 tasks in the backlog” is prose, not a fan-out', async () => {
+  const record = workspace()
+  let runs = 0
+  const out = await mention.rewrite(record, 'spawn 3 tasks in the backlog', {
+    deps: deps({
+      runEntity: async () => {
+        runs += 1
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+  })
+  assert.equal(runs, 0)
+  assert.deepEqual(out.mentions, [])
+  assert.equal(out.text, 'spawn 3 tasks in the backlog')
+})
+
+test('a comma after the name is not part of the job', async () => {
+  const record = workspace()
+  const seen = []
+  await mention.rewrite(record, '@py-agent, fix the build', {
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        seen.push(job)
+        return { ok: true, answer: 'fixed', error: '' }
+      },
+    }),
+  })
+  assert.deepEqual(seen, ['fix the build'])
+})
+
 test('the block stops at eight rows and says how many it dropped', async () => {
   const record = workspace()
   const many = Array.from({ length: 12 }, (_, i) => `note-${i}`)
