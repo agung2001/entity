@@ -14988,6 +14988,13 @@ button.empty-link {
 .rmt-note b {
   color: var(--ink);
 }
+.rmt-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
 .rmt-note code {
   font-size: 11.8px;
 }

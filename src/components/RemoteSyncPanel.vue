@@ -13,7 +13,7 @@ import {
   syncRemote,
 } from '@/stores/remote'
 import { toast } from '@/stores/hub'
-import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
+import { harnesses, loadHarnesses, loadModels, resolvePiModel } from '@/stores/harnesses'
 
 /**
  * One connected workspace's remote status: what the last pass did, what the
@@ -32,11 +32,14 @@ const evalEnabled = ref(false)
 const evalHarness = ref('')
 const evalModel = ref('')
 const savingGuard = ref(false)
+const evalChoices = ref([])
 
 const installedHarnesses = computed(() => harnesses.items.filter((item) => item.installed))
 const evalModelState = computed(() => harnesses.models[evalHarness.value] || null)
 const evalModels = computed(() => evalModelState.value?.models || [])
 const state = computed(() => remoteFor(props.workspace))
+/** Providers pi named when the evaluator stopped a pass (`error.choices`). */
+const syncChoices = computed(() => state.value?.guardModelChoices || [])
 /** True while a pass is running, whoever started it (this panel, or the poll). */
 const syncing = computed(() => state.value?.status === 'syncing')
 const progress = computed(() => remote.progress[props.workspace] || null)
@@ -181,16 +184,35 @@ async function saveEvaluator() {
   if (savingGuard.value) return
   savingGuard.value = true
   try {
+    let model = evalEnabled.value ? evalModel.value.trim() : ''
+    /* A bare name pi cannot resolve is refused by the sync itself; catch it
+       before it is stored, while the person is still looking at the field. */
+    if (evalEnabled.value && evalHarness.value === 'pi' && model) {
+      const resolved = await resolvePiModel(model).catch(() => null)
+      if (resolved?.status === 'ambiguous') {
+        evalChoices.value = resolved.providers.map((name) => `${name}/${model}`)
+        toast('That model name matches more than one provider — pick one below.')
+        return
+      }
+      if (resolved?.model) model = resolved.model
+    }
+    evalChoices.value = []
     await setRemoteGuard(props.workspace, {
       enabled: evalEnabled.value,
       harness: evalEnabled.value ? evalHarness.value : '',
-      model: evalEnabled.value ? evalModel.value.trim() : '',
+      model,
     })
   } catch (error) {
     toast(error?.message || 'The sync evaluator could not be saved.')
   } finally {
     savingGuard.value = false
   }
+}
+
+function pickChoice(choice) {
+  evalModel.value = choice
+  evalChoices.value = []
+  saveEvaluator()
 }
 
 async function syncNow() {
@@ -298,6 +320,18 @@ async function disconnect() {
         </div>
 
         <p v-if="state.lastError" class="rmt-error" role="alert">{{ state.lastError }}</p>
+        <div v-if="syncChoices.length" class="rmt-note rmt-choices">
+          pi reports these providers:
+          <button
+            v-for="choice in syncChoices"
+            :key="choice"
+            class="btn btn-sm"
+            type="button"
+            @click="pickChoice(choice)"
+          >
+            {{ choice }}
+          </button>
+        </div>
 
         <form
           v-if="state.status === 'unauthorized' || /rejected|sign in/i.test(state.lastError || '')"
@@ -404,6 +438,18 @@ async function disconnect() {
                 :disabled="savingGuard"
                 placeholder="harness default"
               />
+              <div v-if="evalChoices.length" class="mnote rmt-choices">
+                pi reports these providers:
+                <button
+                  v-for="choice in evalChoices"
+                  :key="choice"
+                  class="btn btn-sm"
+                  type="button"
+                  @click="pickChoice(choice)"
+                >
+                  {{ choice }}
+                </button>
+              </div>
             </div>
           </div>
           <p v-if="!installedHarnesses.length" class="mnote">

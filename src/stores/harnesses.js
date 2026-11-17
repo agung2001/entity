@@ -83,3 +83,11 @@ export async function setHarnessPath(id, path) {
   delete harnesses.models[id]
   return item
 }
+
+/**
+ * pi resolves a name across the providers it has authenticated, so a bare
+ * `provider/model` can be ambiguous. Ask the main process before saving.
+ */
+export async function resolvePiModel(model) {
+  return call('harness.resolvePiModel', { model: String(model || '') })
+}
