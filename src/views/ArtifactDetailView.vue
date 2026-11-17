@@ -109,7 +109,9 @@ const canUnshare = computed(
 const scopeAction = computed(() => (isMine.value ? 'Move back to Personal' : 'Remove from workspace'))
 const scopeHint = computed(() => {
   if (isMine.value) return 'It leaves the workspace shelf and goes back to yours. Nothing is deleted.'
-  if (canUnshare.value) return 'It leaves the shelf for everyone. The file stays on disk.'
+  /* Taking a file off the team's shelf puts it on *your* shelf — the file is not
+     deleted, but it does leave everyone else's. Say so before the click. */
+  if (canUnshare.value) return 'It leaves the shelf for everyone and lands on yours. Nothing is deleted.'
   return "Only the file's owner or a workspace owner/admin can move that file back."
 })
 /* At 1 member it is "the other member"; with no roster to read, the sentence
@@ -718,7 +720,7 @@ onBeforeUnmount(() => {
                   <circle cx="8" cy="8" r="6" />
                   <path d="M8 5v3.6M8 11h.01" />
                 </svg>
-                <span>Could not share <code>{{ item.name }}</code>. Nothing was moved.</span>
+                <span>Could not share <code>{{ item.name }}</code>. Nothing was moved.<em v-if="shareError" class="share-why">{{ shareError }}</em></span>
               </div>
               <p v-if="!shareError" class="share-pop-note">
                 You can move it back to Personal at any time.

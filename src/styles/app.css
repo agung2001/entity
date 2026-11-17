@@ -14164,6 +14164,14 @@ button.msg-attach-copy:hover b {
   padding: 0;
   color: inherit;
 }
+/* The consequence is the sentence; the store's reason is the second line, so a
+   name clash on the shelf is not a failed share with no explanation. */
+.share-why {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  opacity: 0.85;
+}
 /* The shipped `.mo-foot` recipe: quiet button first, acting button last. */
 .share-pop-foot {
   display: flex;
