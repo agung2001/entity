@@ -268,3 +268,202 @@ test('a sole writer still owns everything it saved', () => {
     ['shot-0.png', 'shot-1.png', 'shot-2.png'],
   )
 })
+
+/* ── one conversation, one design ─────────────────────────────────────
+ *
+ * The leak this pins, seen in a real workspace: while a turn about
+ * `design/mcp-inventory/` was running, a render for a *different* design
+ * (`design/chat-rail-archive/`) wrote fifteen PNGs into the shelf. Nothing else
+ * ran in the app at that moment, so the turn was the only window covering those
+ * files — and the old rule read "only one turn could have written it" as
+ * "therefore it did". The chat showed another design's screenshots.
+ *
+ * Time is now a filter, never a reason: a turn owns what it names, what it
+ * wrote, and the folder it demonstrably produced into. A design that is not in
+ * the answer does not appear on the card.
+ */
+
+function designFile(record, id, seconds) {
+  writeShelfFile(record, id, seconds)
+  return id
+}
+
+test('a stray render for another design stays off the card', () => {
+  const record = workspaceWithShelf()
+  /* the turn's own deliverable, and the page it edited */
+  writeShelfFile(record, 'design/mcp-inventory/b-navigation.html', 110)
+  writeShelfFile(record, 'design/mcp-inventory/b-navigation.png', 120)
+  /* a background render for a different design, inside the same minutes */
+  for (const name of ['06-empty', '07-search-empty', '08-long-content']) {
+    writeShelfFile(record, `design/chat-rail-archive/shots/${name}.png`, 150)
+  }
+
+  writeThread(record, {
+    id: 't_one_design',
+    messages: [
+      { who: 'me', text: 'Add the harness marks to b-navigation.', at: at(100) },
+      {
+        who: 'agent',
+        text: 'Marks are in — artifact://design/mcp-inventory/b-navigation.png',
+        at: at(400),
+        execution: { harness: 'pi', endedAt: at(400), status: 'ok' },
+        steps: [
+          {
+            seq: 1,
+            type: 'tool_use',
+            tool: 'edit',
+            at: at(110),
+            input: { path: '/ws/artifacts/design/mcp-inventory/b-navigation.html' },
+          },
+        ],
+      },
+    ],
+  })
+
+  const thread = chats.read({ workspace: record.id, id: 't_one_design' })
+  assert.deepEqual(
+    (thread.messages[1].artifacts || []).map((entry) => entry.id).sort(),
+    ['design/mcp-inventory/b-navigation.html', 'design/mcp-inventory/b-navigation.png'],
+  )
+})
+
+test('a render batch follows the folder the turn wrote into', () => {
+  const record = workspaceWithShelf()
+  writeShelfFile(record, 'design/board/index.html', 110)
+  /* the PNG and the shot beside it are never linked in the answer */
+  writeShelfFile(record, 'design/board/board.png', 130)
+  writeShelfFile(record, 'design/board/shots/dark.png', 140)
+  /* …and a sibling folder that only shares a prefix must stay out */
+  writeShelfFile(record, 'design/boarder/other.png', 150)
+
+  writeThread(record, {
+    id: 't_batch',
+    messages: [
+      { who: 'me', text: 'Draw the board.', at: at(100) },
+      {
+        who: 'agent',
+        text: 'Drawn.',
+        at: at(400),
+        execution: { harness: 'pi', endedAt: at(400), status: 'ok' },
+        steps: [
+          {
+            seq: 1,
+            type: 'tool_use',
+            tool: 'write',
+            at: at(110),
+            input: { path: 'artifacts/design/board/index.html' },
+          },
+        ],
+      },
+    ],
+  })
+
+  const thread = chats.read({ workspace: record.id, id: 't_batch' })
+  assert.deepEqual(
+    (thread.messages[1].artifacts || []).map((entry) => entry.id).sort(),
+    ['design/board/board.png', 'design/board/index.html', 'design/board/shots/dark.png'],
+  )
+})
+
+test('no evidence means no card, even when the turn is the only window', () => {
+  const record = workspaceWithShelf()
+  writeShelfFile(record, 'design/someone-else/shot.png', 120)
+
+  writeThread(record, {
+    id: 't_blind',
+    messages: [
+      { who: 'me', text: 'Answer a question about the weather.', at: at(100) },
+      {
+        who: 'agent',
+        text: 'It is raining.',
+        at: at(400),
+        execution: { harness: 'pi', endedAt: at(400), status: 'ok' },
+      },
+    ],
+  })
+
+  const thread = chats.read({ workspace: record.id, id: 't_blind' })
+  assert.deepEqual(thread.messages[1].artifacts || [], [])
+})
+
+test('two turns writing into one folder do not both list the same fresh file', () => {
+  const record = workspaceWithShelf()
+  writeShelfFile(record, 'design/shared/index.html', 120)
+  writeShelfFile(record, 'design/shared/fresh.png', 300)
+
+  for (const [id, start, end] of [
+    ['t_folder_a', 100, 400],
+    ['t_folder_b', 250, 500],
+  ]) {
+    writeThread(record, {
+      id,
+      messages: [
+        { who: 'me', text: 'Edit the shared page.', at: at(start) },
+        {
+          who: 'agent',
+          text: 'Edited.',
+          at: at(end),
+          execution: { harness: 'pi', endedAt: at(end), status: 'ok' },
+          steps: [
+            {
+              seq: 1,
+              type: 'tool_use',
+              tool: 'edit',
+              at: at(start + 10),
+              input: { path: 'artifacts/design/shared/index.html' },
+            },
+          ],
+        },
+      ],
+    })
+  }
+
+  const ids = (id) =>
+    (chats.read({ workspace: record.id, id }).messages[1].artifacts || []).map((entry) => entry.id)
+  /* `fresh.png` was written inside both windows: nobody gets to guess.
+     `index.html` is named by both turns, so both keep it. */
+  assert.deepEqual(ids('t_folder_a').sort(), ['design/shared/index.html'])
+  assert.deepEqual(ids('t_folder_b').sort(), ['design/shared/index.html'])
+})
+
+test('a turn that revises a file another turn created still shows it', () => {
+  const record = workspaceWithShelf()
+  /* one file, written twice: the shelf keeps the last bytes only */
+  writeShelfFile(record, 'design/page/index.html', 350)
+  writeShelfFile(record, 'design/page/spec.md', 360)
+
+  writeThread(record, {
+    id: 't_revise',
+    messages: [
+      { who: 'me', text: 'Draw it.', at: at(100) },
+      {
+        who: 'agent',
+        text: 'Drawn — artifact://design/page/index.html',
+        at: at(200),
+        execution: { harness: 'pi', endedAt: at(200), status: 'ok' },
+      },
+      { who: 'me', text: 'Now the icons.', at: at(300) },
+      {
+        who: 'agent',
+        text: 'Icons in — artifact://design/page/index.html',
+        at: at(400),
+        execution: { harness: 'pi', endedAt: at(400), status: 'ok' },
+        steps: [
+          {
+            seq: 1,
+            type: 'tool_use',
+            tool: 'bash',
+            at: at(310),
+            input: { command: 'cd artifacts/design/page && cat >> spec.md' },
+          },
+        ],
+      },
+    ],
+  })
+
+  const thread = chats.read({ workspace: record.id, id: 't_revise' })
+  const ids = (index) => (thread.messages[index].artifacts || []).map((entry) => entry.id).sort()
+  /* the first turn names the page, the second names it and wrote the spec */
+  assert.deepEqual(ids(1), ['design/page/index.html'])
+  assert.deepEqual(ids(3), ['design/page/index.html', 'design/page/spec.md'])
+})

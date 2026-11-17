@@ -31,9 +31,9 @@ test('an artifact written during a turn is recent output, not shelf history', ()
 test('a thread keeps attached artifacts through a read', () => {
   const chatsDir = path.join(record.path, 'chats')
   fs.mkdirSync(chatsDir, { recursive: true })
-  /* The file was saved *during* the turn, which is the only way a chip is
-     earned: the shelf is re-read on every open, so a chip whose file predates
-     its own turn would be a guess and is dropped (see chat-artifacts.test). */
+  /* A chip is earned by the transcript, not by the clock: the answer names the
+     file it saved. The shelf is re-read on every open, so a chip whose file
+     predates its own turn is a guess and is dropped (see chat-artifacts.test). */
   const askedAt = new Date(Date.now() - 90_000)
   const savedAt = new Date(Date.now() - 60_000)
   const answeredAt = new Date(Date.now() - 30_000)
@@ -52,7 +52,7 @@ test('a thread keeps attached artifacts through a read', () => {
         { who: 'me', text: 'take a screenshot', at: askedAt.toISOString() },
         {
           who: 'agent',
-          text: 'Here it is.',
+          text: 'Here it is — artifact://shots/login.png',
           at: answeredAt.toISOString(),
           execution: { harness: 'pi', endedAt: answeredAt.toISOString(), status: 'ok' },
           artifacts: [
@@ -75,7 +75,7 @@ test('a thread keeps attached artifacts through a read', () => {
   assert.equal(thread.messages[1].artifacts[0].kind, 'image')
 })
 
-test('an older unanswered turn still finds the artifact saved after it', () => {
+test('an unanswered turn does not guess what it saved', () => {
   const second = workspaces.create({ label: 'artifact-backfill' })
   const folder = workspaces.open(second.id)
   const shots = path.join(folder.path, 'artifacts', 'shots')
@@ -108,8 +108,26 @@ test('an older unanswered turn still finds the artifact saved after it', () => {
     'utf8',
   )
 
-  const thread = chats.read({ workspace: second.id, id: 't_backfill' })
-  assert.equal(thread.messages[0].artifacts?.length, 1)
-  assert.equal(thread.messages[0].artifacts[0].id, 'shots/page.png')
-  assert.equal(thread.messages[1].artifacts, undefined)
+  /* The file landed in the first request's window, but that turn never said a
+     word: a second process could have written it (this shelf is shared with the
+     machine), so nothing is invented for it. */
+  const blind = chats.read({ workspace: second.id, id: 't_backfill' })
+  assert.equal(blind.messages[0].artifacts, undefined)
+
+  /* The same file is the turn's as soon as the turn says so — the wording a
+     platform brief asks for, and the backfill the old rule existed for. */
+  const file = path.join(chatsDir, 't_backfill.json')
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+  raw.messages.push({
+    who: 'agent',
+    text: 'Saved — artifact://shots/page.png',
+    at: new Date().toISOString(),
+    execution: { harness: 'pi', endedAt: new Date().toISOString(), status: 'ok' },
+  })
+  fs.writeFileSync(file, JSON.stringify(raw, null, 2))
+
+  const named = chats.read({ workspace: second.id, id: 't_backfill' })
+  assert.equal(named.messages[2].artifacts?.length, 1)
+  assert.equal(named.messages[2].artifacts[0].id, 'shots/page.png')
+  assert.equal(named.messages[0].artifacts, undefined)
 })

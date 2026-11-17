@@ -20,9 +20,25 @@ flowchart LR
   D --> PAGE["its own page: preview,<br/>metadata, download, reveal"]
 ```
 
-The chat renders that reference as an image or a download card, and also attaches any
-file written to the shelf during the turn even when the answer never names it. The
-rail's artifact panel browses, uploads, searches and removes; a row opens the
+The chat renders that reference as an image or a download card. It also attaches the
+**rest of that deliverable**: a file the answer never links is still on the card when
+it sits in a folder the turn wrote into — a page and the PNG beside it are one design.
+
+What it never does is use the clock as an argument. The shelf is shared with this
+machine, so a render for another design, a script in a terminal or a second conversation
+can put fresh files there while a turn runs; "only one turn ran in those minutes" is not
+evidence that the turn wrote it. A file reaches a card for one of three reasons:
+
+1. **the turn says so** — `artifact://<id>`, the relative path in the answer, a write
+   tool's path, or a shell write operator next to it;
+2. **the folder** — the turn demonstrably wrote into it, and the file lands there while
+   the turn runs (a render batch);
+3. **the shelf root** — nobody's folder to be wrong about, and the turn ran alone.
+
+Everything else stays on the shelf. That is deliberate: an unattached file costs a
+click, while a file attached to the wrong design costs trust in every card.
+
+The rail's artifact panel browses, uploads, searches and removes; a row opens the
 artifact's own page.
 
 ### HTML artifacts: preview, and notes written on it

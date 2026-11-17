@@ -689,11 +689,11 @@ function artifactSummary(item) {
 /**
  * The files the *running* turn wrote, computed once when it ends.
  *
- * Same rule as the read-time rebuild (`ownsFile`): a file that another turn in
- * this workspace could also have written is attached only when the transcript
- * names it. The old version took everything on the shelf modified since the
- * question, which is how four conversations came to claim the same thirteen
- * files.
+ * Same rule as the read-time rebuild (`claimsFor`): evidence first, folder
+ * second, never the clock alone. The old version took everything on the shelf
+ * modified since the question, which is how four conversations came to claim the
+ * same thirteen files — and how a turn about one design displayed another
+ * design's screenshots.
  */
 function turnArtifacts(thread, turnStartedMs, answer, steps = []) {
   const linked = artifactRefs(answer)
@@ -707,16 +707,20 @@ function turnArtifacts(thread, turnStartedMs, answer, steps = []) {
     threadId: thread.id,
     seq: -1,
     start: turnStartedMs,
+    /* the turn is still running: it has no end yet, and no grace period either */
     end: Infinity,
+    hard: Infinity,
     turn: { text: answer, steps },
   }
   const windows = [self, ...otherWindows(thread)]
   const remote = Boolean(thread.machine && thread.machine !== 'local')
   const evidence = new Map()
-  return shelf
+  const candidates = shelf
     .map((item) => ({ ...item, ms: timeOf(item.modifiedAt) }))
     .filter((item) => item.ms > 0 && item.ms >= turnStartedMs && !linked.has(item.id))
-    .filter((item) => ownsFile(self, windows, item, { remote, cache: evidence }))
+  const owned = claimsFor(self, candidates, windows, { remote, cache: evidence })
+  return candidates
+    .filter((item) => owned.has(item.id))
     .sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt)))
     .slice(0, 16)
     .map(({ ms, ...item }) => artifactSummary(item))
@@ -852,13 +856,23 @@ function threadWindows(thread) {
         break
       }
     }
+    /* `end` carries a grace period: the last write of a turn often lands a
+       second after the answer. `hard` is the turn itself, and only `hard`
+       decides whether two turns *could* both have written a file — the grace
+       must not make an old turn look like a candidate for the next turn's
+       output. */
     let end = nextStart
+    let hard = nextStart
     if (turn?.who === 'agent') {
       const ended = timeOf(turn.execution?.endedAt)
-      if (ended >= start) end = Math.min(end, ended + 5000)
+      if (ended >= start) {
+        hard = Math.min(hard, ended)
+        end = Math.min(end, ended + 5000)
+      }
     }
+    if (!Number.isFinite(hard)) hard = updated && updated >= start ? updated : start
     if (!Number.isFinite(end)) end = updated ? Math.max(start, updated + 5000) : start
-    windows.push({ threadId: thread.id, seq: index, start, end, request, turn })
+    windows.push({ threadId: thread.id, seq: index, start, end, hard, request, turn })
   }
   return windows
 }
@@ -913,25 +927,87 @@ function otherWindows(thread) {
 }
 
 /**
- * Does this turn own that file?
+ * The files one turn owns.
  *
- *  - a remote turn keeps only what it names — staging rewrites every mtime, so
- *    time is not evidence there;
- *  - a file that falls in exactly one turn's window belongs to that turn;
- *  - a file several turns could have written is attached only when the
- *    transcript names it. Two conversations never claim the same file by
- *    accident, and nothing is invented for a file nobody mentions.
+ * Time is **never** enough on its own. The shelf is shared with this machine:
+ * the person's own render, another app, a second turn in another conversation or
+ * a background script all write into it, and none of them is in the transcript.
+ * "Only one turn ran in those minutes, so it must be that turn's" is how a
+ * turn about one design came to display another design's screenshots.
+ *
+ * What counts as evidence, in order:
+ *
+ *  1. **the turn says so** — `artifact://<id>`, the relative id in the answer,
+ *     a write tool with that path, or a shell write operator beside it. Strong
+ *     enough to win even when another turn overlaps;
+ *  2. **the folder the turn wrote into** — a render batch is one deliverable:
+ *     the page it edited and the PNG beside it belong to the same turn, even
+ *     when the answer only links one of them. Only for files whose window has
+ *     exactly one owner, so two conversations in one folder cannot both claim
+ *     a fresh file;
+ *  3. **a file at the shelf root**, same single-owner condition. There is no
+ *     folder to be wrong about, so the window is the best available signal.
+ *
+ * Everything else stays on the shelf. An unattached file costs a click; a file
+ * attached to the wrong design costs trust in every card in the app.
  */
-function ownsFile(window, windows, item, { remote = false, cache } = {}) {
-  if (remote) return mentionsArtifact(window.turn, item)
-  const owners = windows.filter(
-    (candidate) => item.ms >= candidate.start && item.ms < candidate.end,
-  )
-  if (!owners.length) return false
-  if (owners.length === 1) {
-    return owners[0].threadId === window.threadId && owners[0].seq === window.seq
+function claimsFor(window, items, windows, { remote = false, cache, taken = new Set() } = {}) {
+  const owned = new Set()
+  if (remote) {
+    /* staging rewrites every mtime: only what the turn names is its own */
+    for (const item of items) {
+      if (mentionsArtifact(window.turn, item)) owned.add(item.id)
+    }
+    return owned
   }
-  return wroteArtifact(window, item, cache || new Map())
+
+  const named = new Set()
+  const within = (item) => item.ms >= window.start && item.ms < window.end
+  /* Naming is precise — a full relative id or a path the turn wrote — so it
+     needs no window and no first-come rule: the turn that created a file and
+     the turn that revised it both did work the card should show. */
+  for (const item of items) {
+    if (!wroteArtifact(window, item, cache || new Map())) continue
+    owned.add(item.id)
+    named.add(item.id)
+  }
+
+  /* the folders this turn demonstrably produced into */
+  const dirs = new Set()
+  for (const id of named) {
+    const cut = id.lastIndexOf('/')
+    if (cut > 0) dirs.add(id.slice(0, cut))
+  }
+
+  for (const item of items) {
+    if (owned.has(item.id)) continue
+    /* An inferred claim is first come, first served: two turns writing into one
+       folder must not both list the same PNG. */
+    if (taken.has(item.id)) continue
+    if (!within(item)) continue
+    /* Someone else could have written it: the window is not an argument.
+       Judged on the turn itself (`hard`), never on the grace period. */
+    const owners = windows.filter(
+      (candidate) => item.ms >= candidate.start && item.ms < candidate.hard,
+    )
+    if (owners.length !== 1) continue
+    if (owners[0].threadId !== window.threadId || owners[0].seq !== window.seq) continue
+
+    const cut = item.id.lastIndexOf('/')
+    if (cut <= 0) {
+      /* the shelf root: no folder to be wrong about */
+      owned.add(item.id)
+      continue
+    }
+    const dir = item.id.slice(0, cut)
+    for (const base of dirs) {
+      if (dir === base || dir.startsWith(`${base}/`)) {
+        owned.add(item.id)
+        break
+      }
+    }
+  }
+  return owned
 }
 
 function attachArtifactsByTurn(thread) {
@@ -959,9 +1035,8 @@ function attachArtifactsByTurn(thread) {
 
   for (const window of windows) {
     if (window.threadId !== thread.id) continue
-    const found = available.filter(
-      (item) => !claimed.has(item.id) && ownsFile(window, windows, item, { remote, cache: evidence }),
-    )
+    const owned = claimsFor(window, available, windows, { remote, cache: evidence, taken: claimed })
+    const found = available.filter((item) => owned.has(item.id))
     if (!found.length) continue
     const target = window.turn || window.request
     target.artifacts = [...(target.artifacts || []), ...found.map(({ ms, ...item }) => item)]

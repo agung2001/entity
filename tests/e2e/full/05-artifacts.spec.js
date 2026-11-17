@@ -20,7 +20,9 @@ test.describe('artifacts', () => {
     await page.goto(`/${profile.workspace}/artifacts/e2e-turn-note.md`)
     await expect(page.getByRole('heading', { name: 'e2e-turn-note.md' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Download/ }).first()).toBeVisible()
-    await expect(page.getByText('E2E-ARTIFACT-CANARY')).toBeVisible()
+    /* Markdown opens in the editor; the rendered text lives behind Review. */
+    await page.getByRole('tab', { name: 'Review' }).click()
+    await expect(page.locator('.md-preview')).toContainText('E2E-ARTIFACT-CANARY')
   })
 
   test('a reply can be saved back to the artifact shelf', async ({ page }) => {

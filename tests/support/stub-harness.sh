@@ -9,6 +9,7 @@
 #   E2E-SLOW        emit one thinking step, then wait to be stopped
 #   E2E-SELF-EDIT   read this entity with the real CLI, then rewrite it
 #   E2E-ARTIFACT    write a file onto the workspace artifact shelf
+#   E2E-DESIGN      write two designs; the answer links one of them
 #   E2E-ATTACH      answer; the prompt log proves the attachment block arrived
 #   E2E-401         fail like an unauthenticated harness
 #   E2E-BOOM        fail like a transient upstream error
@@ -133,6 +134,24 @@ E2E-CANARY-EDIT-APPLIED
     emit "E2E-SELF-EDIT-DONE"
     exit 0
     ;;
+  *E2E-DESIGN*)
+    # Two designs in one shelf, one turn: the card must show only the design the
+    # answer links, even though a second folder got fresh files in the same
+    # minutes. This is the real leak — a background render for another design.
+    if [ -z "${ENTITY_HOME:-}" ] || [ -z "${ENTITY_WORKSPACE:-}" ]; then
+      printf 'E2E design: missing ENTITY_HOME or ENTITY_WORKSPACE\n' >&2
+      exit 6
+    fi
+    ART="$ENTITY_HOME/workspaces/$ENTITY_WORKSPACE/artifacts"
+    mkdir -p "$ART/design/mine" "$ART/design/theirs"
+    printf 'the page this turn drew\n' > "$ART/design/mine/index.html"
+    printf 'png bytes for mine\n' > "$ART/design/mine/index.png"
+    printf 'notes\n' > "$ART/design/mine/spec.md"
+    printf 'png bytes for another design\n' > "$ART/design/theirs/board.png"
+    printf 'png bytes for another design\n' > "$ART/design/theirs/shots.png"
+    emit "Design drawn — artifact://design/mine/index.png"
+    exit 0
+    ;;
   *E2E-ARTIFACT*)
     if [ -z "${ENTITY_HOME:-}" ] || [ -z "${ENTITY_WORKSPACE:-}" ]; then
       printf 'E2E artifact: missing ENTITY_HOME or ENTITY_WORKSPACE\n' >&2
@@ -141,7 +160,9 @@ E2E-CANARY-EDIT-APPLIED
     ART="$ENTITY_HOME/workspaces/$ENTITY_WORKSPACE/artifacts"
     mkdir -p "$ART"
     printf '# E2E artifact\n\nE2E-ARTIFACT-CANARY\n' > "$ART/e2e-turn-note.md"
-    emit "E2E-ARTIFACT-DONE"
+    # The platform brief asks a turn to reference what it saved; the card is
+    # earned by that reference, not by the clock.
+    emit "E2E-ARTIFACT-DONE — artifact://e2e-turn-note.md"
     exit 0
     ;;
   *E2E-ATTACH*)
