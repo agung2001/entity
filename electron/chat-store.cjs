@@ -718,7 +718,11 @@ function turnArtifacts(thread, turnStartedMs, answer, steps = []) {
   const candidates = shelf
     .map((item) => ({ ...item, ms: timeOf(item.modifiedAt) }))
     .filter((item) => item.ms > 0 && item.ms >= turnStartedMs && !linked.has(item.id))
-  const owned = claimsFor(self, candidates, windows, { remote, cache: evidence })
+  const owned = claimsFor(self, candidates, windows, {
+    remote,
+    cache: evidence,
+    alsoNamed: linked,
+  })
   return candidates
     .filter((item) => owned.has(item.id))
     .sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt)))
@@ -951,7 +955,7 @@ function otherWindows(thread) {
  * Everything else stays on the shelf. An unattached file costs a click; a file
  * attached to the wrong design costs trust in every card in the app.
  */
-function claimsFor(window, items, windows, { remote = false, cache, taken = new Set() } = {}) {
+function claimsFor(window, items, windows, { remote = false, cache, taken = new Set(), alsoNamed = [] } = {}) {
   const owned = new Set()
   if (remote) {
     /* staging rewrites every mtime: only what the turn names is its own */
@@ -972,11 +976,13 @@ function claimsFor(window, items, windows, { remote = false, cache, taken = new 
     named.add(item.id)
   }
 
-  /* the folders this turn demonstrably produced into */
+  /* the folders this turn demonstrably produced into — including a file the
+     answer links, which the live path keeps out of the card because the answer
+     already renders it */
   const dirs = new Set()
-  for (const id of named) {
-    const cut = id.lastIndexOf('/')
-    if (cut > 0) dirs.add(id.slice(0, cut))
+  for (const id of [...named, ...alsoNamed]) {
+    const cut = String(id).lastIndexOf('/')
+    if (cut > 0) dirs.add(String(id).slice(0, cut))
   }
 
   for (const item of items) {
@@ -985,13 +991,17 @@ function claimsFor(window, items, windows, { remote = false, cache, taken = new 
        folder must not both list the same PNG. */
     if (taken.has(item.id)) continue
     if (!within(item)) continue
-    /* Someone else could have written it: the window is not an argument.
-       Judged on the turn itself (`hard`), never on the grace period. */
-    const owners = windows.filter(
-      (candidate) => item.ms >= candidate.start && item.ms < candidate.hard,
+    /* Another turn could have written it: the window is not an argument.
+       Judged on the turn itself (`hard`), never on the grace period, and asked
+       as "is anyone else a candidate" — a file written in the last millisecond
+       before the answer is still this turn's, and it has no other owner. */
+    const rival = windows.some(
+      (candidate) =>
+        (candidate.threadId !== window.threadId || candidate.seq !== window.seq) &&
+        item.ms >= candidate.start &&
+        item.ms < candidate.hard,
     )
-    if (owners.length !== 1) continue
-    if (owners[0].threadId !== window.threadId || owners[0].seq !== window.seq) continue
+    if (rival) continue
 
     const cut = item.id.lastIndexOf('/')
     if (cut <= 0) {

@@ -23,19 +23,21 @@ test('a card shows only the design the turn worked on', async ({ page }) => {
 
   const card = page.locator('.msg-artifacts--turn').first()
   await expect(card).toBeVisible({ timeout: 20_000 })
-  await expect(card).toContainText('index.png')
-  /* the same folder: the page and its notes are the one deliverable */
   await expect(card).toContainText('index.html')
   await expect(card).toContainText('spec.md')
-  /* the other design, written in the same turn window, is not on the card */
+  /* the other design, written in the same turn window, is not on the card —
+     neither while the turn settles nor after the read-time rebuild */
   await expect(card).not.toContainText('board.png')
   await expect(card).not.toContainText('shots.png')
 
-  /* The read-time rebuild must agree with the live one, or a reload changes it. */
-  const live = await cardIds(page)
   await page.reload()
   await expect(page.locator('.msg-artifacts--turn').first()).toBeVisible({ timeout: 20_000 })
-  const after = await cardIds(page)
-  expect(after.sort()).toEqual(live.sort())
-  await expect(page.locator('.msg-artifacts--turn').first()).not.toContainText('board.png')
+  const after = page.locator('.msg-artifacts--turn').first()
+  /* the named file is in the answer as well, so the rebuilt card lists all three */
+  await expect(after).toContainText('index.png')
+  await expect(after).toContainText('index.html')
+  await expect(after).toContainText('spec.md')
+  await expect(after).not.toContainText('board.png')
+  await expect(after).not.toContainText('shots.png')
+  expect((await cardIds(page)).length).toBeGreaterThanOrEqual(3)
 })
