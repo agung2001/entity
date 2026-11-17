@@ -122,21 +122,29 @@ const counts = computed(() => {
   return { all: toolRows.value.length, write, read: toolRows.value.length - write }
 })
 
-const kindFilters = computed(() => [
-  { id: 'all', label: 'All', count: counts.value.all },
-  { id: 'read', label: 'Read', count: counts.value.read },
-  { id: 'write', label: 'Write', count: counts.value.write },
-])
-
 /** Name and description: what a person remembers about a tool is one or the other. */
-const visibleTools = computed(() => {
+const searchedTools = computed(() => {
   const needle = query.value.trim().toLowerCase()
-  return toolRows.value.filter((row) => {
-    if (kind.value !== 'all' && (row.write ? 'write' : 'read') !== kind.value) return false
-    if (!needle) return true
-    return `${row.name} ${row.about}`.toLowerCase().includes(needle)
-  })
+  if (!needle) return toolRows.value
+  return toolRows.value.filter((row) => `${row.name} ${row.about}`.toLowerCase().includes(needle))
 })
+
+/* The filters count what the search left, so each label is the number of rows
+   that clicking it shows; the section head keeps the server's own totals. */
+const kindFilters = computed(() => {
+  const write = searchedTools.value.filter((row) => row.write).length
+  return [
+    { id: 'all', label: 'All', count: searchedTools.value.length },
+    { id: 'read', label: 'Read', count: searchedTools.value.length - write },
+    { id: 'write', label: 'Write', count: write },
+  ]
+})
+
+const visibleTools = computed(() =>
+  kind.value === 'all'
+    ? searchedTools.value
+    : searchedTools.value.filter((row) => (row.write ? 'write' : 'read') === kind.value),
+)
 
 const toolsHead = computed(() => {
   if (tools.value.loading) return 'asking…'
@@ -157,11 +165,11 @@ const toolsNote = computed(() => {
   return 'This server reported no tools. An HTTP server that needs a token will answer empty when the token is missing.'
 })
 
-const noMatchNote = computed(() => {
-  const needle = query.value.trim()
-  if (!needle) return `This server has no ${kind.value} tools.`
-  return `No tool matches “${needle}”${kind.value === 'all' ? '' : ` among the ${kind.value} tools`}.`
-})
+const noMatchNote = computed(() =>
+  query.value.trim()
+    ? 'No tool matches that. The list is whatever the server reported — refresh to re-ask it.'
+    : `This server has no ${kind.value} tools.`,
+)
 
 /* Where this name is defined: the workspace pool, then one row per harness. */
 const places = computed(() => {
@@ -292,6 +300,18 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+/* Attach copies another file's definition in verbatim, so it asks twice like
+   Detach: the first click arms the button, the second one copies. The two verbs
+   never render together, so they share the one flag and the one disarm. */
+function confirmAttach() {
+  if (!confirming.value) {
+    confirming.value = true
+    return
+  }
+  confirming.value = false
+  attach()
 }
 
 async function attach() {
@@ -593,17 +613,25 @@ watch(name, async () => {
                   ? 'Copy the harness definition in verbatim and attach it to this workspace'
                   : 'No harness on this machine declares this server — there is nothing to copy in'
               "
-              aria-label="Attach — copy the definition a harness config already declares into this workspace"
-              @click="attach"
+              :aria-label="
+                confirming
+                  ? 'Click again to copy that definition in and attach this server to the workspace'
+                  : 'Attach — copy the definition a harness config already declares into this workspace'
+              "
+              @click="confirmAttach"
+              @blur="confirming = false"
             >
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                 <path d="M8 2.8v5.6M5.6 6L8 8.4 10.4 6M3 11.2v1.6a1 1 0 001 1h8a1 1 0 001-1v-1.6" />
               </svg>
               <span class="row2">
                 <span class="nm">Attach</span>
-                <i>finds this name in a harness config and copies that definition in verbatim</i>
+                <i>
+                  find other instance — {{ globalRow?.harnessLabel || 'a harness' }} defines
+                  this too; copied in verbatim, tokens differ
+                </i>
               </span>
-              <span class="hint">{{ definedPlaces }} found</span>
+              <span class="hint">{{ confirming ? 'click again' : `${definedPlaces} found` }}</span>
             </button>
             <template v-else>
               <div class="sep" aria-hidden="true"></div>
