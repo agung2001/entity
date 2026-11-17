@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import ThreadMinimap from '@/components/ThreadMinimap.vue'
 import MessageBody from '@/components/MessageBody.vue'
+import DelegationCard from '@/components/DelegationCard.vue'
 import ChatArtifacts from '@/components/ChatArtifacts.vue'
 import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
@@ -93,6 +94,30 @@ const liveText = computed(() => {
     .trim()
 })
 
+/* Rows the fan-out has announced, with answers as they land. The card grammar is
+   the one the finished answer uses, so nothing changes shape mid-turn. */
+const liveDelegations = computed(() =>
+  (props.live?.delegations || []).map((row) => ({
+    kind: 'entity',
+    name: row.name,
+    row: row.row,
+    job: row.job,
+    share: row.share,
+    status: row.status,
+    answer: row.answer,
+    note: row.note,
+    ms: row.ms,
+    live: true,
+  })),
+)
+
+const liveProgress = computed(() => {
+  const rows = props.live?.delegations || []
+  if (!rows.length) return ''
+  const done = rows.filter((row) => row.status === 'ok' || row.status === 'error').length
+  return `${done} of ${rows.length} done`
+})
+
 const liveTool = computed(() => {
   const tools = liveSteps.value.filter((step) => step.type === 'tool_use')
   const last = tools[tools.length - 1]
@@ -115,8 +140,13 @@ const liveAction = computed(() => {
   return 'Starting'
 })
 
+/* While rows are delegated the cards are the status — each one says Working or
+   keeps its answer — so the foot carries the count and the clock, not another
+   sentence about the same thing. */
 const liveStatus = computed(() =>
-  [liveAction.value, liveElapsed.value].filter(Boolean).join(' · '),
+  [liveProgress.value ? liveProgress.value : liveAction.value, liveElapsed.value]
+    .filter(Boolean)
+    .join(' · '),
 )
 
 /* The bubble belongs to the signed-in account; the entity owns the reply. */
@@ -498,23 +528,6 @@ function delegations(message) {
   return rows.filter((mention) => mention?.kind === 'entity')
 }
 
-function mentionLabel(mention) {
-  return mention.token || `@${mention.name || 'entity'}`
-}
-
-function mentionMeta(mention) {
-  const execution = mention.execution || {}
-  return [
-    execution.harness,
-    execution.model,
-    formatDuration(mention.ms || execution.ms),
-    /* three runs of one instruction: the card has to say which one it is */
-    mention.share ? `run ${mention.share}` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-}
-
 function traceKey(message, index) {
   return message.id || `msg-${message.at || index}`
 }
@@ -603,42 +616,12 @@ function traceSummary(message) {
           class="msg-delegations"
           aria-label="Delegated work"
         >
-          <div
+          <DelegationCard
             v-for="(mention, j) in delegations(m)"
             :key="`${mention.token || mention.name || 'mention'}-${mention.share || j}`"
-            class="msg-delegation"
-            :data-error="mention.status === 'error' ? '1' : '0'"
-            :title="mention.job || mention.raw || ''"
-          >
-            <EntityMark
-              :entity="mention.name"
-              animate
-              class="msg-delegation-mark"
-            />
-            <div class="msg-delegation-body">
-              <div class="msg-delegation-head">
-                <span class="msg-delegation-kicker">Delegated to</span>
-                <span class="msg-delegation-name">{{ mentionLabel(mention) }}</span>
-                <span v-if="mentionMeta(mention)" class="msg-delegation-meta">{{ mentionMeta(mention) }}</span>
-                <!-- The run is a session, not a dead end: continue it as a real
-                     conversation with that entity. -->
-                <button
-                  v-if="mention.threadId"
-                  class="msg-delegation-open"
-                  type="button"
-                  :title="`Continue this session with ${mention.name || 'the entity'}`"
-                  @click="emit('open-thread', mention.threadId)"
-                >
-                  Continue
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                    <path d="M5.5 3h7.5v7.5M13 3L6.5 9.5" />
-                  </svg>
-                </button>
-              </div>
-              <p v-if="mention.job" class="msg-delegation-job">{{ mention.job }}</p>
-              <p class="msg-delegation-answer">{{ mention.answer || mention.note || 'No answer recorded.' }}</p>
-            </div>
-          </div>
+            :mention="mention"
+            @open-thread="emit('open-thread', $event)"
+          />
         </div>
         <MessageBody :text="m.text" />
         <EntityMark v-if="m.who === 'agent'" mini :entity="entityName" class="msg-avatar" />
@@ -729,12 +712,26 @@ function traceSummary(message) {
       </template>
     </template>
 
-    <div v-if="live" class="msg msg--live" data-who="agent">
+    <div
+      v-if="live"
+      class="msg msg--live"
+      data-who="agent"
+      :data-delegating="liveDelegations.length ? '1' : '0'"
+    >
+      <!-- A fan-out is the turn: its rows are painted here, queued then
+           running then answered, so minutes of work never read as a hang. -->
+      <div v-if="liveDelegations.length" class="msg-delegations" aria-label="Delegated work in progress">
+        <DelegationCard
+          v-for="(mention, j) in liveDelegations"
+          :key="`${mention.row || mention.name || 'run'}-${mention.index ?? j}`"
+          :mention="mention"
+        />
+      </div>
       <div class="msg-body">
         <div v-if="liveText" class="msg-live-text">
           {{ liveText }}<span class="msg-live-caret" aria-hidden="true"></span>
         </div>
-        <div v-else class="msg-live-status">
+        <div v-else-if="!liveDelegations.length" class="msg-live-status">
           <span class="msg-live-dot" aria-hidden="true"></span>{{ liveAction }}…
         </div>
       </div>

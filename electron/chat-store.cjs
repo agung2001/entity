@@ -43,6 +43,9 @@ const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
 const sending = new Map()
 /** threadId → live harness process, so a quit mid-answer takes it down too */
 const inFlight = new Map()
+/* A fan-out is up to eight harnesses that exist before the parent turn starts.
+   The window's Stop has to reach them, so they are held per thread. */
+const mentionChildren = new Map()
 /** thread ids the person explicitly stopped; close is not a harness failure */
 const canceling = new Set()
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g
@@ -146,6 +149,8 @@ function normaliseMention(raw) {
     ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
     ...(typeof raw.job === 'string' ? { job: raw.job } : {}),
     ...(typeof raw.share === 'string' ? { share: raw.share } : {}),
+    /* the row a fanned-out run is about — an issue id and its title */
+    ...(typeof raw.row === 'string' && raw.row ? { row: raw.row } : {}),
     ...(Array.isArray(raw.items) ? { items: raw.items } : {}),
     ...(typeof raw.answer === 'string' ? { answer: raw.answer } : {}),
     ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
@@ -590,9 +595,10 @@ function spawnMentionSession(record, parent, mention) {
   const endedAt = execution.endedAt || startedAt
   const stamp = () => `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const job = String(mention.job).replace(/\s+/g, ' ').trim()
-  /* `spawn 3` gives three sessions the same instruction: the share is what makes
-     three identical titles readable in the tree. */
-  const title = (mention.share ? `${job} · ${mention.share}` : job).slice(0, 120)
+  /* A row is the best title a session can have — seven sessions of one fan-out
+     read as seven issues. Failing that, `spawn 3` gives three sessions the same
+     instruction, and the share is what tells them apart. */
+  const title = (mention.row || (mention.share ? `${job} · ${mention.share}` : job)).slice(0, 120)
   const failed = mention.status === 'error'
   const thread = {
     schema: 1,
@@ -1686,6 +1692,47 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
   }
   thread.attachmentsEnabled = enabled
 
+  /* The turn's own id and its one emitter, created before any mention resolves:
+     a fan-out runs for minutes, and the live surface has to know which turn it
+     belongs to while it runs, not after it lands. */
+  const messageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const emitTurn = (phase, data) => {
+    try {
+      emit({
+        kind: 'chat.turn',
+        workspace: record.id,
+        threadId: thread.id,
+        entity: thread.entity,
+        title: thread.title || '',
+        messageId,
+        phase,
+        data,
+      })
+    } catch {
+      /* the window may have closed; the thread file is the record */
+    }
+  }
+
+  /* The question is written by whichever path ends the turn, so a stopped
+     fan-out keeps its question instead of leaving only "Stopped by you." */
+  const writeUserRow = (skillApplied, resolved) => {
+    const rewritten = Boolean(skillApplied.ref || skillApplied.skill)
+    thread.messages.push({
+      who: 'me',
+      id: `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      text: message,
+      at: now(),
+      /* A local skill returns `ref`; a remote skill returns `skill` after it
+         has been installed on the host. Both mean the prompt was rewritten. */
+      ...(rewritten || resolved.mentions.length || resolvedAttachments.length
+        ? { sent: resolved.text }
+        : {}),
+      ...(resolved.mentions.length ? { mentions: resolved.mentions } : {}),
+      ...(resolvedAttachments.length ? { attachments: resolvedAttachments } : {}),
+      ...(skillApplied.skill ? { skill: skillApplied.skill } : {}),
+    })
+  }
+
   if (retryTurn) {
     const last = thread.messages[thread.messages.length - 1]
     if (!last || last.who !== 'sys' || !last.error) {
@@ -1734,8 +1781,37 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
           },
         },
       },
+      /* rows as they are queued, start and settle — the window paints the
+         delegation cards from these, so seven runs never look like a hang */
+      onProgress: (data) => emitTurn('delegating', data),
+      onChild: (child) => {
+        const held = mentionChildren.get(thread.id) || new Set()
+        held.add(child)
+        mentionChildren.set(thread.id, held)
+      },
+      stopped: () => canceling.has(thread.id),
     })
+    mentionChildren.delete(thread.id)
     turnMentions = mentioned.mentions
+    /* Stopped while the runs were going: the turn ends here, with the same row
+       a stopped harness leaves, and no sessions for runs that never finished.
+       Nothing is sent to the parent. */
+    if (canceling.delete(thread.id)) {
+      const at = now()
+      /* Keep the runs that finished before the stop — their answers are real
+         work. A killed harness is not a failure to report: "Stopped by you." is
+         the whole story, and a red card would blame the agent for the clock. */
+      writeUserRow(applied, {
+        ...mentioned,
+        mentions: mentioned.mentions.filter((mention) => mention.status === 'ok'),
+      })
+      const stopped = { who: 'sys', id: messageId, text: 'Stopped by you.', at }
+      thread.messages.push(stopped)
+      thread.updatedAt = at
+      saveTurn(record, thread, baseline)
+      emitTurn('done', { message: stopped })
+      return readThread(record, thread.id)
+    }
     /* One session per delegated entity mention. A session that cannot be written
        must not fail the turn that already ran, so each is its own try. */
     for (const mention of turnMentions) {
@@ -1746,42 +1822,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
         /* the answer is still in the transcript above the reply */
       }
     }
-    const userMessageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    thread.messages.push({
-      who: 'me',
-      id: userMessageId,
-      text: message,
-      at: now(),
-      /* A local skill returns `ref`; a remote skill returns `skill` after it
-         has been installed on the host. Both mean the prompt was rewritten. */
-      ...(applied.ref || applied.skill || mentioned.mentions.length || resolvedAttachments.length
-        ? { sent: mentioned.text }
-        : {}),
-      ...(mentioned.mentions.length ? { mentions: mentioned.mentions } : {}),
-      ...(resolvedAttachments.length ? { attachments: resolvedAttachments } : {}),
-      ...(applied.skill ? { skill: applied.skill } : {}),
-    })
+    writeUserRow(applied, mentioned)
   }
   thread.updatedAt = now()
   saveTurn(record, thread, baseline)
-
-  const messageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const emitTurn = (phase, data) => {
-    try {
-      emit({
-        kind: 'chat.turn',
-        workspace: record.id,
-        threadId: thread.id,
-        entity: thread.entity,
-        title: thread.title || '',
-        messageId,
-        phase,
-        data,
-      })
-    } catch {
-      /* the window may have closed; the thread file is the record */
-    }
-  }
 
   const baseExecution = {
     harness: thread.harness,
@@ -1930,9 +1974,19 @@ function cancel({ workspace, id } = {}) {
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   const child = inFlight.get(thread.id)
-  if (!child) return { canceled: false, reason: 'not running' }
+  const kids = mentionChildren.get(thread.id)
+  if (!child && !(kids && kids.size)) return { canceled: false, reason: 'not running' }
   canceling.add(thread.id)
-  stopProcess(child)
+  if (child) stopProcess(child)
+  /* A fan-out has no parent harness yet: the delegated runs are the turn, and
+     the flag is what keeps the queued ones from starting. */
+  for (const kid of kids || []) {
+    try {
+      killTree(kid, 'SIGTERM')
+    } catch {
+      /* already gone */
+    }
+  }
   return { canceled: true }
 }
 
@@ -1956,8 +2010,15 @@ module.exports = {
   /** Quitting with an answer in flight must not leave the harness running. */
   closeAll: () => {
     for (const child of inFlight.values()) killTree(child, 'SIGTERM')
+    for (const kids of mentionChildren.values()) {
+      for (const kid of kids) killTree(kid, 'SIGTERM')
+    }
     inFlight.clear()
+    mentionChildren.clear()
     canceling.clear()
   },
-  activeCount: () => inFlight.size,
+  /* Delegated runs are work in flight: quitting must not orphan them, and the
+     count is what the app checks before it closes. */
+  activeCount: () =>
+    inFlight.size + [...mentionChildren.values()].reduce((sum, kids) => sum + kids.size, 0),
 }
