@@ -14,9 +14,13 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const workspaces = require('./workspace-store.cjs')
+const auth = require('./auth-store.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
 const DIRNAME = 'artifacts'
+/* The scope index sits beside the files and is hidden, so `walk` never lists it.
+   An absent entry is Personal — the default, with nothing to opt into. */
+const SCOPE_FILE = '.scope.json'
 const MAX_WRITE_BYTES = 25 * 1024 * 1024
 const MAX_READ_BYTES = 25 * 1024 * 1024
 const MAX_TEXT_CHARS = 400_000
@@ -78,6 +82,72 @@ const TEXT_EXT = new Set([
 
 function artifactsDir(record) {
   return path.join(record.path, DIRNAME)
+}
+
+function scopeFile(record) {
+  return path.join(artifactsDir(record), SCOPE_FILE)
+}
+
+function readScope(record) {
+  let raw = null
+  try {
+    raw = JSON.parse(fs.readFileSync(scopeFile(record), 'utf8'))
+  } catch {
+    /* no index yet, or one we cannot read: everything is personal */
+  }
+  const shared =
+    raw && raw.schema === 1 && raw.shared && typeof raw.shared === 'object' ? raw.shared : {}
+  return { schema: 1, shared }
+}
+
+function writeScope(record, index) {
+  ensureDir(record)
+  const file = scopeFile(record)
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify({ schema: 1, shared: index.shared }), 'utf8')
+  fs.renameSync(tmp, file)
+}
+
+/**
+ * Who is asking. The account on this machine names the actor and the workspace
+ * record names their role; a name or role sent by the renderer is never read.
+ */
+function actorFor(record) {
+  const user = auth.get() || null
+  const owner = record.owner || null
+  const members = Array.isArray(record.members) ? record.members : []
+  const email = String(user?.email || '').toLowerCase()
+  const member = email
+    ? members.find((entry) => String(entry.email || '').toLowerCase() === email)
+    : null
+  const name =
+    member?.name ||
+    String(user?.username || '').trim() ||
+    (email ? email.split('@')[0] : '') ||
+    owner?.name ||
+    'Someone'
+  /* The record's owner is an owner even when the roster has not caught up. */
+  const isOwner =
+    Boolean(email) &&
+    (String(owner?.email || '').toLowerCase() === email || member?.role === 'owner')
+  return {
+    name,
+    email: String(user?.email || owner?.email || ''),
+    role: isOwner ? 'owner' : member?.role || (user ? 'member' : 'owner'),
+  }
+}
+
+function sameActor(left, right) {
+  const a = String(left?.email || '').toLowerCase()
+  const b = String(right?.email || '').toLowerCase()
+  if (a && b) return a === b
+  const name = String(left?.name || '').toLowerCase()
+  return Boolean(name) && name === String(right?.name || '').toLowerCase()
+}
+
+function canUnshare(record, entry) {
+  const actor = actorFor(record)
+  return sameActor(actor, entry.owner) || actor.role === 'owner' || actor.role === 'admin'
 }
 
 function ensureDir(record) {
@@ -161,9 +231,10 @@ function capabilitiesFor(name) {
   return out
 }
 
-function metadata(record, rel, stat) {
+function metadata(record, rel, stat, index = { shared: {} }) {
   const name = path.basename(rel)
   const ext = path.extname(name).toLowerCase()
+  const entry = index.shared?.[rel]
   return {
     id: rel,
     name,
@@ -175,10 +246,13 @@ function metadata(record, rel, stat) {
     modifiedAt: stat.mtime.toISOString(),
     /* Reveal applies to every file; editor/browser depend on the extension. */
     capabilities: capabilitiesFor(name),
+    /* Personal is the default; only an index entry makes a file shared. */
+    scope: entry ? 'shared' : 'personal',
+    owner: entry?.owner || null,
   }
 }
 
-function walk(record, rel, out) {
+function walk(record, rel, out, index = { shared: {} }) {
   let entries = []
   try {
     entries = fs.readdirSync(path.join(artifactsDir(record), rel), { withFileTypes: true })
@@ -191,7 +265,7 @@ function walk(record, rel, out) {
     const child = rel ? `${rel}/${entry.name}` : entry.name
     if (entry.isSymbolicLink()) continue
     if (entry.isDirectory()) {
-      walk(record, child, out)
+      walk(record, child, out, index)
       continue
     }
     if (!entry.isFile()) continue
@@ -201,20 +275,86 @@ function walk(record, rel, out) {
     } catch {
       continue
     }
-    out.push(metadata(record, child, stat))
+    out.push(metadata(record, child, stat, index))
   }
 }
 
 function list({ workspace } = {}) {
   const record = workspaces.open(workspace)
+  const index = readScope(record)
   const items = []
-  walk(record, '', items)
+  walk(record, '', items, index)
   items.sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt)))
+  const counts = { personal: 0, shared: 0 }
+  for (const item of items) counts[item.scope] += 1
+  /* An id whose file is gone is a lie in the counts. Below the walk's cap the
+     list is complete, so it can say which entries are stale; above it, a
+     missing row may simply be unread — keep the index rather than guess. */
+  if (items.length < MAX_ITEMS_SCANNED) {
+    const alive = new Set(items.map((item) => item.id))
+    const stale = Object.keys(index.shared).filter((id) => !alive.has(id))
+    if (stale.length) {
+      for (const id of stale) delete index.shared[id]
+      writeScope(record, index)
+    }
+  }
   return {
     path: tilde(artifactsDir(record)),
     count: items.length,
     items,
+    counts,
   }
+}
+
+/**
+ * Put a file on the workspace shelf. No bytes move — the index gains an owner,
+ * and an entry that is already there is left alone so a second share cannot
+ * take a file someone else put on the shelf.
+ */
+function share({ workspace, id } = {}) {
+  const record = workspaces.open(workspace)
+  const rel = safeRelative(id)
+  const file = absolute(record, rel)
+  let stat
+  try {
+    stat = fs.statSync(file)
+  } catch {
+    throw new Error('That artifact no longer exists.')
+  }
+  if (!stat.isFile()) throw new Error('That artifact is not a file.')
+  const index = readScope(record)
+  if (index.shared[rel]) return metadata(record, rel, stat, index)
+  const actor = actorFor(record)
+  index.shared[rel] = {
+    owner: { name: actor.name, email: actor.email },
+    at: new Date().toISOString(),
+  }
+  writeScope(record, index)
+  return metadata(record, rel, fs.statSync(file), index)
+}
+
+/** Move a shared file back to the personal shelf: same file, one index key less. */
+function unshare({ workspace, id } = {}) {
+  const record = workspaces.open(workspace)
+  const rel = safeRelative(id)
+  const index = readScope(record)
+  const entry = index.shared[rel]
+  if (entry && !canUnshare(record, entry)) {
+    throw new Error("Only the file's owner or a workspace owner/admin can move that file back.")
+  }
+  const file = absolute(record, rel)
+  let stat
+  try {
+    stat = fs.statSync(file)
+  } catch {
+    throw new Error('That artifact no longer exists.')
+  }
+  if (!stat.isFile()) throw new Error('That artifact is not a file.')
+  if (entry) {
+    delete index.shared[rel]
+    writeScope(record, index)
+  }
+  return metadata(record, rel, stat, index)
 }
 
 /** Files written since a timestamp, newest first. Used to attach a turn's
@@ -224,7 +364,7 @@ function recent({ workspace, since, limit = 12 } = {}) {
   const numeric = Number(since)
   const sinceMs = Number.isFinite(numeric) ? numeric : Date.parse(String(since || ''))
   const items = []
-  walk(record, '', items)
+  walk(record, '', items, readScope(record))
   const rows = Number.isFinite(sinceMs)
     ? items.filter((item) => {
         const at = Date.parse(item.modifiedAt)
@@ -247,7 +387,7 @@ function read({ workspace, id } = {}) {
   if (!stat.isFile()) throw new Error('That artifact is not a file.')
   if (stat.size > MAX_READ_BYTES) throw new Error('That artifact is too large to preview here.')
   const buffer = fs.readFileSync(file)
-  const meta = metadata(record, safeRelative(id), stat)
+  const meta = metadata(record, safeRelative(id), stat, readScope(record))
   if (meta.kind === 'text') {
     const text = buffer.toString('utf8')
     return {
@@ -273,7 +413,7 @@ function download({ workspace, id } = {}) {
   }
   if (!stat.isFile()) throw new Error('That artifact is not a file.')
   if (stat.size > MAX_READ_BYTES) throw new Error('That artifact is too large to download here.')
-  const meta = metadata(record, safeRelative(id), stat)
+  const meta = metadata(record, safeRelative(id), stat, readScope(record))
   return {
     ...meta,
     dataUrl: `data:${meta.mime};base64,${fs.readFileSync(file).toString('base64')}`,
@@ -302,7 +442,7 @@ function upload({ workspace, name, dataUrl } = {}) {
   const tmp = `${file}.${process.pid}.tmp`
   fs.writeFileSync(tmp, buffer)
   fs.renameSync(tmp, file)
-  return metadata(record, target, fs.statSync(file))
+  return metadata(record, target, fs.statSync(file), readScope(record))
 }
 
 function saveText({ workspace, name, text } = {}) {
@@ -318,7 +458,7 @@ function saveText({ workspace, name, text } = {}) {
   const tmp = `${file}.${process.pid}.tmp`
   fs.writeFileSync(tmp, body, 'utf8')
   fs.renameSync(tmp, file)
-  return metadata(record, target, fs.statSync(file))
+  return metadata(record, target, fs.statSync(file), readScope(record))
 }
 
 /**
@@ -341,7 +481,7 @@ function writeText({ workspace, id, text } = {}) {
   }
   if (stat.isSymbolicLink()) throw new Error('That artifact is a link, not a file.')
   if (!stat.isFile()) throw new Error('That artifact is not a file.')
-  const meta = metadata(record, rel, stat)
+  const meta = metadata(record, rel, stat, readScope(record))
   if (meta.kind !== 'text') throw new Error('Only text artifacts can be edited here.')
   const body = String(text ?? '')
   const bytes = Buffer.byteLength(body, 'utf8')
@@ -349,7 +489,7 @@ function writeText({ workspace, id, text } = {}) {
   const tmp = `${file}.${process.pid}.tmp`
   fs.writeFileSync(tmp, body, 'utf8')
   fs.renameSync(tmp, file)
-  return metadata(record, rel, fs.statSync(file))
+  return metadata(record, rel, fs.statSync(file), readScope(record))
 }
 
 function remove({ workspace, id } = {}) {
@@ -363,7 +503,14 @@ function remove({ workspace, id } = {}) {
   }
   if (!stat.isFile()) throw new Error('That artifact is not a regular file.')
   fs.rmSync(file, { force: true })
-  return { id: safeRelative(id), removed: true }
+  /* The index must not keep an id whose file is gone. */
+  const rel = safeRelative(id)
+  const index = readScope(record)
+  if (index.shared[rel]) {
+    delete index.shared[rel]
+    writeScope(record, index)
+  }
+  return { id: rel, removed: true }
 }
 
 function locate({ workspace, id } = {}) {
@@ -377,7 +524,7 @@ function locate({ workspace, id } = {}) {
     throw new Error('That artifact no longer exists.')
   }
   if (!stat.isFile()) throw new Error('That artifact is not a file.')
-  return { file, root: artifactsDir(record), meta: metadata(record, rel, stat) }
+  return { file, root: artifactsDir(record), meta: metadata(record, rel, stat, readScope(record)) }
 }
 
 function rootPath({ workspace } = {}) {
@@ -405,6 +552,8 @@ module.exports = {
   artifactsDir,
   rootPath,
   list,
+  share,
+  unshare,
   recent,
   read,
   download,

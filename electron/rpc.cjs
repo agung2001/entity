@@ -166,6 +166,8 @@ function createRpc({
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
+    'artifact.share': (args) => artifacts.share(args),
+    'artifact.unshare': (args) => artifacts.unshare(args),
     'artifact.read': (args) => artifacts.read(args),
     'artifact.download': (args) => artifacts.download(args),
     'artifact.upload': (args) => artifacts.upload(args),
