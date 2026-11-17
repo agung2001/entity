@@ -31,7 +31,8 @@ sequenceDiagram
 ```
 
 The staged payload is bounded. `entities/` and `skills/` travel whole (kilobytes), and
-`artifacts/` travels **newest first up to 24 MB / 120 files** — a working shelf can hold
+`artifacts/` travels **newest first up to 24 MB / 120 files**, minus the sync engine's
+`conflicts/` copies — a working shelf can hold
 hundreds of megabytes of renders, and staging all of it made every remote turn wait a
 minute before the harness started. When files stay behind, the prompt says so, so the
 model reports the absence instead of guessing; attach a specific old file to send it.

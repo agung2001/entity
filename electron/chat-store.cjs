@@ -832,31 +832,6 @@ const WRITE_OPERATOR = /(?:^|[^>])>>?(?!>)|\btee\b|\bcp\b|\bmv\b|\brsync\b|\bsip
 const GLOBAL_WRITE_OPERATOR = new RegExp(WRITE_OPERATOR.source, 'g')
 const WRITE_PATH_KEYS = ['path', 'file_path', 'file', 'target', 'notebook_path', 'to']
 
-/** Everything a turn says, for the looser naming rule. */
-function turnText(turn) {
-  return [
-    turn?.text || '',
-    ...(turn?.steps || []).map((step) =>
-      [
-        step.content || '',
-        step.output || '',
-        step.input && typeof step.input === 'object' ? JSON.stringify(step.input) : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    ),
-  ].join('\n')
-}
-
-function mentionsArtifact(turn, item) {
-  const text = turnText(turn)
-  return (
-    text.includes(`artifact://${item.id}`) ||
-    text.includes(`artifact://${item.name}`) ||
-    text.includes(item.name)
-  )
-}
-
 /** The snippets of a turn that look like they write a file. Cached per turn. */
 function writeEvidence(window, cache) {
   const key = `${window.threadId}:${window.seq}`
@@ -881,6 +856,14 @@ function writeEvidence(window, cache) {
   cache.set(key, evidence)
   return evidence
 }
+
+/**
+ * The sync engine's conflict copies live in the shelf (`artifacts/conflicts/…`)
+ * but they are not deliverables: no turn wrote one, and they are what you open
+ * the Artifacts page to resolve. The page still lists them; attribution never
+ * sees them.
+ */
+const isSyncCopy = (id) => /^conflicts\//.test(String(id))
 
 function wroteArtifact(window, item, cache) {
   const evidence = writeEvidence(window, cache)
@@ -1021,9 +1004,13 @@ function otherWindows(thread) {
 function claimsFor(window, items, windows, { remote = false, cache, taken = new Set(), alsoNamed = [] } = {}) {
   const owned = new Set()
   if (remote) {
-    /* staging rewrites every mtime: only what the turn names is its own */
+    /* Staging rewrites every mtime, so the window says nothing here: the turn's
+       own evidence is the only claim. It must be *evidence* — a path it wrote, or
+       an `artifact://` reference — because "the filename appears somewhere in the
+       turn" was satisfied by a directory listing: a `find` over the staged shelf
+       chipped every file it printed, conflict copies included. */
     for (const item of items) {
-      if (mentionsArtifact(window.turn, item)) owned.add(item.id)
+      if (wroteArtifact(window, item, cache || new Map())) owned.add(item.id)
     }
     return owned
   }
@@ -1104,6 +1091,7 @@ function attachArtifactsByTurn(thread) {
   const available = shelf
     .map((item) => ({ ...artifactSummary(item), ms: timeOf(item.modifiedAt) }))
     .filter((item) => item.ms > 0)
+    .filter((item) => !isSyncCopy(item.id))
   const claimed = new Set()
 
   for (const window of windows) {

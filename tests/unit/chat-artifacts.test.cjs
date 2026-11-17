@@ -467,3 +467,101 @@ test('a turn that revises a file another turn created still shows it', () => {
   assert.deepEqual(ids(1), ['design/page/index.html'])
   assert.deepEqual(ids(3), ['design/page/index.html', 'design/page/spec.md'])
 })
+
+/**
+ * A remote turn stages the shelf and may read all of it. Reading is not writing:
+ * a `find` or an `ls` prints filenames, and the old rule — "the filename appears
+ * somewhere in the turn" — turned that listing into sixteen chips for files the
+ * turn never touched (a real thread: a maintenance question on a remote host,
+ * answered with 16 conflict copies attached to it).
+ */
+function remoteThreadWithShelf(files) {
+  const workspace = workspaces.create({ label: `artifacts-shelf-${++seq}` })
+  entities.scaffold({ workspace: workspace.id, name: 'chief-of-staff', harness: 'pi' })
+  const record = workspaces.open(workspace.id)
+  for (const [rel, body] of Object.entries(files)) {
+    const full = path.join(record.path, 'artifacts', rel)
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    fs.writeFileSync(full, body || 'bytes')
+  }
+  const created = chats.create({ workspace: record.id, entity: 'chief-of-staff', harness: 'pi' })
+  const file = path.join(record.path, 'chats', `${created.id}.json`)
+  const thread = JSON.parse(fs.readFileSync(file, 'utf8'))
+  thread.machine = 'root-ubuntu'
+  thread.messages = [
+    { who: 'me', text: 'What is in this shelf?', at: new Date().toISOString() },
+    { who: 'agent', text: 'Let me look.', at: new Date().toISOString(), steps: [] },
+  ]
+  fs.writeFileSync(file, JSON.stringify(thread, null, 2))
+  return { record, id: created.id, file }
+}
+
+const rewrite = (file, mutate) => {
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+  mutate(raw)
+  fs.writeFileSync(file, JSON.stringify(raw, null, 2))
+}
+
+test('a listing in a remote turn is not evidence of ownership', () => {
+  const { record, id, file } = remoteThreadWithShelf({
+    'design/a/board.png': 'png',
+    'design/b/board.png': 'png',
+  })
+  rewrite(file, (raw) => {
+    raw.messages[1].steps = [
+      {
+        seq: 1,
+        type: 'tool_use',
+        tool: 'bash',
+        input: { command: 'find workspace/artifacts -name "*.png"' },
+        output: 'workspace/artifacts/design/a/board.png\nworkspace/artifacts/design/b/board.png\n',
+      },
+    ]
+  })
+  const read = chats.read({ workspace: record.id, id })
+  assert.equal(read.messages[1].artifacts, undefined, 'reading a file is not writing it')
+})
+
+test('a remote turn still owns what it wrote, and what it names', () => {
+  const { record, id, file } = remoteThreadWithShelf({
+    'design/a/board.png': 'png',
+    'design/b/board.png': 'png',
+  })
+  rewrite(file, (raw) => {
+    raw.messages[1].text = 'The render is artifact://design/b/board.png'
+    raw.messages[1].steps = [
+      {
+        seq: 1,
+        type: 'tool_use',
+        tool: 'write',
+        input: { path: '/root/.entity/remote-runs/x/r1/workspace/artifacts/design/a/board.png' },
+      },
+      /* a `cp` beside a path is a write; a bare listing is not */
+      { seq: 2, type: 'tool_use', tool: 'bash', input: { command: 'cp a b' }, output: 'done' },
+    ]
+  })
+  const read = chats.read({ workspace: record.id, id })
+  assert.deepEqual(
+    (read.messages[1].artifacts || []).map((item) => item.id).sort(),
+    ['design/a/board.png', 'design/b/board.png'],
+  )
+})
+
+test('a sync conflict copy is never an artifact, even when it is named', () => {
+  const { record, id, file } = remoteThreadWithShelf({
+    'design/a/board.png': 'png',
+    'conflicts/artifacts/design/a/board.20260101T000000000Z.local.png': 'png',
+  })
+  rewrite(file, (raw) => {
+    raw.messages[1].text = [
+      'Two files disagreed.',
+      'artifact://conflicts/artifacts/design/a/board.20260101T000000000Z.local.png',
+    ].join('\n')
+  })
+  const read = chats.read({ workspace: record.id, id })
+  assert.equal(
+    read.messages[1].artifacts,
+    undefined,
+    'the sync engine writes there, not a turn',
+  )
+})

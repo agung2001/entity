@@ -35,7 +35,9 @@ end — milliseconds, not a re-upload.
   version keeps the path and the local bytes go to
   `artifacts/conflicts/<path>.<stamp>.local.<ext>`. Deletes move to
   `.remote-trash/<stamp>/`. Writes are conditional (`x-entity-base`), so a concurrent
-  edit answers `409` and is resolved on the next pass.
+  edit answers `409` and is resolved on the next pass. A conflict copy is the sync
+  engine's, never a turn's: it is never attached to a message as an artifact and it is
+  never staged to a remote host (it is the largest thing on a shelf that has one).
 - **MCP travels ready to use, except where it cannot work.** A portable server is
   enabled on the clone with no second setup step. A definition bound to the machine that
   wrote it — a loopback URL, a command inside a home directory — is still shared but

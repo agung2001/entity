@@ -164,6 +164,10 @@ function listArtifactFiles(root, rel = '', depth = 0, out = []) {
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue
     if (!entry.isDirectory() && /\.tmp$/i.test(entry.name)) continue
+    /* `conflicts/` is the sync engine's copy of files that disagreed, not the
+       member's work. It is the largest thing on a shelf that has one (56 MB here)
+       and staging it spent the whole budget on duplicates. */
+    if (!rel && entry.isDirectory() && entry.name === 'conflicts') continue
     const next = rel ? `${rel}/${entry.name}` : entry.name
     if (entry.isDirectory()) {
       listArtifactFiles(root, next, depth + 1, out)
