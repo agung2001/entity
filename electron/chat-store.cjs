@@ -145,6 +145,8 @@ function normaliseMention(raw) {
     ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
     ...(typeof raw.job === 'string' ? { job: raw.job } : {}),
     ...(typeof raw.share === 'string' ? { share: raw.share } : {}),
+    /* the row a fanned-out run is about — an issue id and its title */
+    ...(typeof raw.row === 'string' && raw.row ? { row: raw.row } : {}),
     ...(Array.isArray(raw.items) ? { items: raw.items } : {}),
     ...(typeof raw.answer === 'string' ? { answer: raw.answer } : {}),
     ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
@@ -589,9 +591,10 @@ function spawnMentionSession(record, parent, mention) {
   const endedAt = execution.endedAt || startedAt
   const stamp = () => `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const job = String(mention.job).replace(/\s+/g, ' ').trim()
-  /* `spawn 3` gives three sessions the same instruction: the share is what makes
-     three identical titles readable in the tree. */
-  const title = (mention.share ? `${job} · ${mention.share}` : job).slice(0, 120)
+  /* A row is the best title a session can have — seven sessions of one fan-out
+     read as seven issues. Failing that, `spawn 3` gives three sessions the same
+     instruction, and the share is what tells them apart. */
+  const title = (mention.row || (mention.share ? `${job} · ${mention.share}` : job)).slice(0, 120)
   const failed = mention.status === 'error'
   const thread = {
     schema: 1,

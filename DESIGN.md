@@ -274,6 +274,15 @@ the composer already does: mention another entity.
   prose. Every run is told which one it is (that is the only reason three answers to one
   sentence differ), the session titles carry the share (`· 2/3`), and the reply above sees
   all of them.
+- **A fan-out may take its count from a list, and then the row is the run.**
+  `spawn per @<list> @entity <job>` resolves the list first, copies the entity once per
+  row, and titles each session with its row — seven issues read as seven sessions, not
+  seven copies of one instruction. The cap is the reply's own row budget (eight): one run
+  per row, one row per answer, no answer silently dropped. A list that resolves nothing
+  runs nothing — a delegatee holding the instruction but no row would pick one.
+- **In a fan-out the skill belongs to each run, not to the message.** `/workspace:…` goes
+  after the entity, so every run is routed; a skill at the front is a hard error that says
+  exactly that.
 - **The child says where it came from.** A `↳ from #<parent>` line above its title, and
   the whole parent title in `title` — the header's meta line is too narrow for a crumb.
 - **The count and the rows must agree.** `activeSummaryCount`, the rail's rows, its
@@ -361,6 +370,8 @@ the composer already does: mention another entity.
 | One long skill description makes the whole grid scroll sideways | `1fr` tracks need `minmax(0, 1fr)`, cards need `min-width: 0`, and clamped text needs `overflow-wrap: anywhere` | `SkillsView` / `.grid3` |
 | A metadata row lists a path that cannot be opened | Only list paths that `fs.statSync` found, and re-check before acting | `thread-metadata.cjs` |
 | Spawning needs its own button, dialog and card next to the composer | A mention *is* the spawn: `@entity <job>` files a session and the transcript's delegation card continues into it | `tests/e2e/full/20-spawn-session.spec.js` |
+| Seven runs of a list all carry the shared instruction as their title | The row (issue id + title) is the mention's label and the session's title, and the block names each run by it |
+| A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | Refused before anything runs: the skill goes inside the job, one route per run |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |

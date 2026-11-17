@@ -139,11 +139,34 @@ test('spawn 2 runs the instruction twice and leaves two sessions', async ({ page
 
   /* each card continues into its own run: the second card opens the second
      session, not whichever one the first card already visited */
-  const ids = sessions.map((row) => row.id)
+  /* cards are in run order (`· 1/2` first); the thread list is by time, so sort
+     by the share rather than trusting two different orders to agree */
+  const ids = [...sessions].sort((a, b) => a.title.localeCompare(b.title)).map((row) => row.id)
   await page.locator('.msg-delegation').nth(0).locator('.msg-delegation-open').click()
   await expect.poll(() => threadIdFromUrl(page)).toBe(ids[0])
   await page.locator('.cp-from').click()
   await expect.poll(() => threadIdFromUrl(page)).toBe(parentId)
   await page.locator('.msg-delegation').nth(1).locator('.msg-delegation-open').click()
   await expect.poll(() => threadIdFromUrl(page)).toBe(ids[1])
+})
+
+test('spawn per leaves one session for each row of the list', async ({ page }) => {
+  const { profile, parentId } = await openParent(page)
+
+  /* artifacts are a list this suite can resolve without a tracker or a model;
+     the query matches only the two seed fixtures, never what other specs leave */
+  await sendMessage(page, 'spawn per @artifact:fanout @secretary summarise this file')
+  await expect(page.locator('.msg-delegation')).toHaveCount(2, { timeout: 90_000 })
+
+  const sessions = listThreads(profile).filter((thread) => thread.spawnedFrom?.id === parentId)
+  expect(sessions).toHaveLength(2)
+  /* the row is the title: two artifacts, two titles, no shared instruction */
+  expect(sessions.map((row) => row.title).sort()).toEqual([
+    'artifact://fanout/one.md',
+    'artifact://fanout/two.md',
+  ])
+  /* the session's first message names the row before the job */
+  const first = readThread(profile, sessions[0].id)
+  expect(first.messages[0].text).toContain('summarise this file')
+  expect(first.messages[0].text.split('\n')[0]).toBe(sessions[0].title)
 })

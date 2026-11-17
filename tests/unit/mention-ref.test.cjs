@@ -32,6 +32,12 @@ function workspace() {
   entities.scaffold({ workspace: created.id, name: 'chief-of-staff', harness: 'claude' })
   entities.scaffold({ workspace: created.id, name: 'py-agent', harness: 'claude' })
   const record = workspaces.open(created.id)
+  /* one workspace skill, so a delegated `/workspace:x` job has something real */
+  fs.mkdirSync(path.join(record.path, 'skills', 'alpha'), { recursive: true })
+  fs.writeFileSync(
+    path.join(record.path, 'skills', 'alpha', 'SKILL.md'),
+    '---\nname: alpha\ndescription: A fixture skill\n---\n\nDo the alpha thing.\n',
+  )
   fs.mkdirSync(path.join(record.path, 'artifacts', 'shots'), { recursive: true })
   fs.writeFileSync(path.join(record.path, 'artifacts', 'shots', 'login-shot.png'), 'x')
   fs.writeFileSync(path.join(record.path, 'artifacts', 'release-notes.md'), 'x')
@@ -353,6 +359,176 @@ test('a comma after the name is not part of the job', async () => {
     }),
   })
   assert.deepEqual(seen, ['fix the build'])
+})
+
+test('spawn per runs once for every row the list resolved', async () => {
+  const record = workspace()
+  const seen = []
+  const out = await mention.rewrite(
+    record,
+    'spawn per @youtrack:AC:login bug @py-agent fix it',
+    {
+      deps: deps({
+        mcpCall: async ({ tool, arguments: args }) => {
+          assert.equal(tool, 'search_issues')
+          /* the fan-out asks for more rows than an ordinary mention */
+          assert.equal(args.limit, 8)
+          return {
+            data: {
+              issuesPage: [
+                { id: 'AC-1', summary: 'First', url: 'https://yt/AC-1', customFields: { State: 'Open' } },
+                { id: 'AC-2', summary: 'Second', url: 'https://yt/AC-2', customFields: { State: 'Open' } },
+                { id: 'AC-3', summary: 'Third', url: 'https://yt/AC-3', customFields: { State: 'Open' } },
+              ],
+            },
+          }
+        },
+        runEntity: async (_record, _entity, job) => {
+          seen.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(seen.length, 3)
+  /* the row reaches the run through its note, so the person's words stay the
+     instruction and a `/workspace:` skill can still lead it */
+  assert.match(seen[0], /^fix it\n\n\(Run 1 of 3: your row is "AC-1 — First"/)
+  assert.match(seen[2], /AC-3 — Third/)
+  const runs_ = out.mentions.filter((row) => row.kind === 'entity')
+  assert.deepEqual(
+    runs_.map((row) => row.row),
+    ['AC-1 — First', 'AC-2 — Second', 'AC-3 — Third'],
+  )
+  assert.equal(runs_[0].job, 'AC-1 — First\n\nfix it')
+  /* the session's first message is the row and the person's words, no note */
+  /* the block lists the three runs by their rows, and the list once is not
+     repeated as seven lines */
+  assert.match(out.text, /- AC-2 — Second \(py-agent\) → answer: done/)
+  assert.doesNotMatch(out.text, /AC-2 — Second — AC · Open/)
+})
+
+test('a fan-out runs all its rows, past the two-mention ceiling', async () => {
+  const record = workspace()
+  let runs = 0
+  const out = await mention.rewrite(record, 'spawn per @youtrack:AC:bug @py-agent fix', {
+    deps: deps({
+      mcpCall: async () => ({
+        data: {
+          issuesPage: Array.from({ length: 7 }, (_, index) => ({
+            id: `AC-${index + 1}`,
+            summary: `Issue ${index + 1}`,
+            customFields: {},
+          })),
+        },
+      }),
+      runEntity: async () => {
+        runs += 1
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+  })
+  assert.equal(runs, 7)
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 7)
+  assert.doesNotMatch(out.text, /skipped/)
+})
+
+test('an empty list spawns nothing and says so', async () => {
+  const record = workspace()
+  let runs = 0
+  const out = await mention.rewrite(record, 'spawn per @youtrack:AC:nothing @py-agent fix', {
+    deps: deps({
+      mcpCall: async () => ({ data: { issuesPage: [] } }),
+      runEntity: async () => {
+        runs += 1
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+  })
+  assert.equal(runs, 0)
+  assert.match(out.text, /note: spawn per ran nothing/)
+})
+
+test('spawn per without a list, or without an entity, is a hard error', async () => {
+  const record = workspace()
+  await assert.rejects(
+    () => mention.rewrite(record, 'spawn per @py-agent fix it', { deps: deps() }),
+    /spawn per needs the list before the entity/,
+  )
+  await assert.rejects(
+    () => mention.rewrite(record, 'spawn per @youtrack:AC:bug', { deps: deps() }),
+    /spawn per needs an entity to run/,
+  )
+})
+
+test('a skill at the front of a fan-out is refused, because each run needs it', async () => {
+  const record = workspace()
+  /* this is what `skill-ref` hands us: the resolved prologue, then the prefix */
+  await assert.rejects(
+    () =>
+      mention.rewrite(
+        record,
+        'use this skill /skills/alpha\n\nspawn 3 @py-agent write a poem',
+        { deps: deps() },
+      ),
+    /put the skill inside the job/,
+  )
+})
+
+test('a delegated job may carry its own /workspace: skill', async () => {
+  const record = workspace()
+  const seen = []
+  await mention.rewrite(record, '@py-agent /workspace:alpha fix the build', {
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        seen.push(job)
+        return { ok: true, answer: 'fixed', error: '' }
+      },
+    }),
+  })
+  assert.equal(seen.length, 1)
+  assert.match(seen[0], /^use this skill .*skills[\\/]alpha\n\nfix the build$/)
+})
+
+test('an unknown skill in a delegated job is a hard error', async () => {
+  const record = workspace()
+  let runs = 0
+  await assert.rejects(
+    () =>
+      mention.rewrite(record, '@py-agent /workspace:ghost fix the build', {
+        deps: deps({
+          runEntity: async () => {
+            runs += 1
+            return { ok: true, answer: 'ok', error: '' }
+          },
+        }),
+      }),
+    /is not a skill this workspace can reach/,
+  )
+  assert.equal(runs, 0)
+})
+
+test('a mention after the job is named as the trap it is', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, 'spawn 2 @py-agent fix it in @orca:One', {
+    deps: deps({
+      orcaRepos: async () => [{ displayName: 'One', path: ORCA_ONE }],
+    }),
+  })
+  /* the job stops at the `@`, and the resolved repo path never reaches the run */
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity')[0].job, 'fix it in')
+  assert.match(out.text, /@orca:One is a mention of its own, so the delegated job stopped before it/)
+})
+
+test('the parent is told what ran, never the raw fan-out sentence', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, 'spawn 2 @py-agent write a poem', { deps: deps() })
+  assert.equal(out.mentions.length, 2)
+  /* a parent holding `spawn 2 @py-agent …` could delegate a third time; the
+     prompt says the work is done instead. The transcript keeps the words. */
+  assert.doesNotMatch(out.text, /spawn 2/)
+  assert.match(out.text, /2 runs of @py-agent, one per row above/)
+  assert.match(out.text, /Do not run them again/)
 })
 
 test('the block stops at eight rows and says how many it dropped', async () => {
