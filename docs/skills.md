@@ -18,6 +18,43 @@ copies the first time the inventory is read.
 Updates to the library do not flow through afterwards. That is the trade: portable
 over live. Re-attach (or edit the workspace copy) on purpose.
 
+## The roster
+
+`Skills` in the sidebar lists what this workspace carries, as a **table**, not a
+grid of cards: one row per skill with its description, file count, size and age.
+The list is searchable — `/` puts the caret in the search field — and it never
+grows the page without bound; a workspace with a hundred skills scrolls inside
+the same box.
+
+What it draws for the awkward cases:
+
+| state | what you see |
+| --- | --- |
+| reading the directory | skeleton rows, never a spinner over nothing |
+| nothing attached | the empty note and a way to the harness libraries |
+| no row matches | the query, how many skills are attached, and **Clear the search** |
+| the directory cannot be read | the path, the reason from the OS, and **Try again** |
+| a skill whose folder is gone | a tinted row, `—` for its size, `Copy…` unavailable |
+
+## Copying a skill into another workspace
+
+Each row has **Copy…**, which opens a sheet for one decision: where does it go?
+The copy is the workspace's **own bytes** — the edits you made here, not the
+harness library's version — and the source keeps its copy.
+
+If the destination already has a skill with that name, the sheet says so before
+anything is written and asks you to choose:
+
+- **Replace the copy** — the destination's folder is deleted and the new one takes
+  its place. There is no undo.
+- **Keep both** — the new one lands as `<name>-2` (or `-3`, …), and its declared
+  name is rewritten to match, so `/workspace:<name>-2` resolves and the roster
+  shows two different rows.
+
+The copy is staged inside the destination and renamed into place, so a failed copy
+never leaves a half-written skill behind. `Esc` and a click on the backdrop close
+the sheet — except while the copy is in flight, when both do nothing.
+
 ## Calling one in a message
 
 Type `/` in the composer to hand a skill to the assistant. The menu inserts the

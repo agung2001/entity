@@ -6,6 +6,7 @@ import NavIcon from '@/components/NavIcon.vue'
 import RailContext from '@/components/RailContext.vue'
 import { ensureChats, hub, initials, liveSummaries, roleById, signOut } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
+import { isEditable } from '@/lib/dom'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { gravatarUrl } from '@/lib/gravatar'
 import { themeMode, toggleTheme } from '@/lib/theme'
@@ -199,11 +200,7 @@ function onDocumentClick(event) {
 }
 
 function onDocumentKey(event) {
-  const target = event.target
-  const editable =
-    target instanceof HTMLElement &&
-    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-  if (editable) return
+  if (isEditable(event.target)) return
 
   if (event.key === 'Escape') {
     accountOpen.value = false

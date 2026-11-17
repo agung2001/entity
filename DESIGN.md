@@ -172,6 +172,39 @@ The message box is for the prompt. Attachments belong in a tray below it.
 - Previous/next conversation shortcuts live in the shortcut catalog and wrap at
   the ends only if the rail wraps; they are not a hidden component handler.
 
+## A roster is a table, and a copy is a decision
+
+A seven-item roster used to be a three-up card grid: about 60% of the horizontal
+band empty, and a two-line description given the height of a card. A roster is an
+inventory, and this repo already owns the grammar for one.
+
+- **Draw it as a table with one bounded scroll area** (`max-height:
+  min(60vh, 560px)`, sticky header, 58 px rows). A 200-item roster keeps the page
+  height fixed; the box scrolls, the page does not.
+- **One separator system**: no `border-bottom` on the head, `border-top` on every
+  data row, `:first-child` exempt. Never both.
+- **The name is the link, the row is not.** `Copy…` and `Detach` live inside the
+  row, so a row-wrapping `<a>` would nest interactive elements.
+- **State the count once** ("7 of 7 · 10 entities can call them"), not in the page
+  head, the tab and the bar. Three counts is three chances to disagree.
+- **A search field is on the page, with its shortcut from the catalog.** `/`
+  focuses it through `matchesShortcut('inventory-search')` and never fires while
+  the caret is in a field (`isEditable`).
+- **Draw every list state**: skeleton in the real grid, empty, no-results with the
+  query echoed and a way to clear it, unreadable-directory error with the raw
+  reason and a retry, and the row whose folder is gone. An inventory that reports
+  "0 skills" for a directory it could not read is lying.
+- **A copy is a sheet, and the clash is decided before a byte moves.** Destination,
+  hand-off (from → to, with file counts) and — when the name exists — Replace or
+  Keep both, with the primary disabled until that choice is made. The copy is
+  staged in the destination and renamed into place, so a failure leaves nothing
+  behind.
+- **A renamed copy renames what the skill calls itself.** `x` that landed as `x-2`
+  must declare `name: x-2`, or the roster shows two identical names and the slash
+  reference resolves to neither.
+- **Escape is guarded while the work is in flight** (`guard: () => busy`), and the
+  X, Cancel and primary all agree with it.
+
 ## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
@@ -191,6 +224,12 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | "Copy" does nothing and the toast blames the content | `navigator.clipboard` rejects in the packaged app; go through `src/lib/clipboard.js` (clipboard API → selection fallback → `false`) and let the toast say which happened | `npm test` (`clipboard`) |
 | Escape does nothing while an artifact preview has focus | A frame never receives the window's keydown: forward it from the frame's own document | `tests/e2e/full/16-artifact-scope.spec.js` |
 | A dialog opens with focus still on the page behind it | Focus the first control on open, and give the dialog its confirm combo | `tests/e2e/full/01-thread-lifecycle.spec.js` |
+| A roster of seven items is drawn as a card grid | Inventories are tables: bounded scroll area, one row per item, name as the only link | `tests/e2e/full/18-skills-copy.spec.js` |
+| An unreadable directory is reported as "0 skills" | A read that failed is an error note with the reason and a retry; only a missing directory is an empty list | `electron/workspace-store.cjs` (`skills`) |
+| A copy lands as `x-2` but still declares `name: x` | Rewrite the declared name, or the roster shows two identical rows and the slash reference resolves to neither | `npm test` (`workspace-skills`) |
+| A sheet's footer scrolls out of reach with its body | The footer is a sibling of the scrolling body, not a child of it | `SkillCopyDialog` |
+| A whole table row is a link with buttons inside it | Make the name the link and keep the row a container | Review |
+| A recursive copy of an unreadable directory kills the process | `fs.cpSync({ recursive })` aborts on a permission error instead of throwing; walk the tree with `readdirSync` first and fail with a message | `npm test` (`workspace-skills`) |
 | A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `app.css` (`.rchat-menu-item[disabled]`) |
 | A popover floats off screen because its height was hardcoded | Measure `offsetHeight` after render and flip from the measurement | `ChatHistoryRail.openRowMenu` |
 | Unsent text disappears when you switch threads (or reload) | Drafts are per thread in the store, persisted through `src/lib/drafts.js`; the composer reports every change and adopts the new thread's text | `tests/e2e/full/15-drafts.spec.js` |

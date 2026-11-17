@@ -9,6 +9,7 @@ import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import { closeWizard, hub, toast } from '@/stores/hub'
 import { loadHarnesses } from '@/stores/harnesses'
 import { toggleTheme } from '@/lib/theme'
+import { isEditable } from '@/lib/dom'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hasDesktopBridge } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
@@ -107,13 +108,6 @@ function openNewThread() {
 function onScrim() {
   if (hub.palette.open) hub.palette.open = false
   else if (hub.wizard.open) closeWizard()
-}
-
-function isEditable(target) {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-  )
 }
 
 function onKey(e) {

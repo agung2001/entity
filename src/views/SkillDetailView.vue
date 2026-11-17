@@ -2,7 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import SkillCopyDialog from '@/components/SkillCopyDialog.vue'
 import { readSkillEntry } from '@/composables/localBridge'
+import { copyText } from '@/lib/clipboard'
 import { hub, toast } from '@/stores/hub'
 import {
   attachSkill,
@@ -52,6 +54,7 @@ const error = ref('')
 const tab = ref('overview')
 const fileIndex = ref(0)
 const busy = ref(false)
+const copying = ref(false)
 let token = 0
 
 const files = computed(() => entry.value?.files || [])
@@ -105,16 +108,10 @@ async function load() {
 
 watch([name, wantedHarness, () => workspaces.active], load, { immediate: true })
 
-function copyMd() {
+async function copyMd() {
   const text = entry.value?.md || ''
-  if (!navigator.clipboard?.writeText) {
-    toast('Copy blocked by the browser')
-    return
-  }
-  navigator.clipboard.writeText(text).then(
-    () => toast('SKILL.md copied'),
-    () => toast('Copy blocked by the browser'),
-  )
+  if (await copyText(text)) toast('SKILL.md copied')
+  else toast('The entry file could not be copied.')
 }
 
 async function detach() {
@@ -172,6 +169,16 @@ async function attach() {
           </p>
         </div>
         <div class="sk-actions">
+          <button
+            v-if="inWorkspace"
+            class="btn"
+            type="button"
+            :disabled="busy || missing"
+            :title="missing ? 'A missing skill has no files to copy' : 'Copy this workspace\'s files into another workspace'"
+            @click="copying = true"
+          >
+            Copy to workspace…
+          </button>
           <button v-if="inWorkspace" class="btn" type="button" :disabled="busy" @click="detach">
             {{ busy ? 'Detaching…' : 'Detach from workspace' }}
           </button>
@@ -372,5 +379,12 @@ async function attach() {
       <span>It may live in a different harness library, or the workspace link may be stale.</span>
       <router-link :to="{ name: 'skills', params: { workspace: hub.workspace } }">Back to skills</router-link>
     </div>
+
+    <SkillCopyDialog
+      v-if="copying && workspaceItem"
+      :name="workspaceItem.name"
+      :source="hub.workspace"
+      @close="copying = false"
+    />
   </div>
 </template>

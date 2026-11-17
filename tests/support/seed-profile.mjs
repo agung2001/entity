@@ -111,6 +111,18 @@ export async function seedProfile({ root, profile, stateDir, external, stubLog }
     'utf8',
   )
 
+  /* One unbroken 200-character token: a description must never widen the page. */
+  /* (The dangling-skill row is created by its own spec instead of seeded here: a
+     broken link inside the workspace would break the backup fixture that ZIPs
+     this same directory.) */
+  const longDir = path.join(workspacePath, 'skills', 'uat-long')
+  fs.mkdirSync(longDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(longDir, 'SKILL.md'),
+    ['---', 'name: uat-long', `description: ${'token'.repeat(40)}`, '---', '', '# long\n', ''].join('\n'),
+    'utf8',
+  )
+
   /* Artifact shelf fixtures. The PNG is a real 1x1 image so the preview path
      is exercised, not mocked. */
   const artifactDir = path.join(workspacePath, 'artifacts', 'notes')
@@ -173,6 +185,12 @@ export async function seedProfile({ root, profile, stateDir, external, stubLog }
     paths: { external, stubLog, stub, failStub, flakyStub },
     entities: Object.keys(entitiesByName),
     skill: { name: 'uat-alpha', path: skillDir },
+    skills: {
+      alpha: 'uat-alpha',
+      broken: process.platform === 'win32' ? '' : 'uat-broken',
+      long: 'uat-long',
+      remote: 'e2e-remote-alpha',
+    },
     artifacts: {
       note: 'notes/e2e-note.md',
       image: 'e2e-shot.png',

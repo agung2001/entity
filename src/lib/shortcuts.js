@@ -68,6 +68,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['mod', 'enter'],
       },
       {
+        id: 'inventory-search',
+        label: 'Search the list',
+        desc: 'Put the caret in the search field of the inventory on this page.',
+        desktop: ['/'],
+        browser: ['/'],
+      },
+      {
         id: 'rail-search',
         label: 'Focus rail search',
         desc: 'Jump into the search field of the active second-tier rail.',

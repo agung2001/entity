@@ -970,3 +970,404 @@
     max-height: 92vh;
   }
 }
+
+/* ── workspace roster: the command bar and the dense table ─────────────
+   The workspace scope is an inventory, so it is a table with one bounded scroll
+   area, not a card grid. Grammar is the repo's own (`.cov .row` in this file):
+   one separator system, mono meta at 10px, name at 13/600. */
+.skbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.sksearch {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 180px;
+  display: block;
+}
+.sksearch input {
+  width: 100%;
+  height: 34px;
+  padding: 0 32px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  transition: border-color 0.16s ease;
+  appearance: none;
+}
+.sksearch input::placeholder {
+  color: var(--muted);
+}
+.sksearch input:hover {
+  border-color: var(--muted);
+}
+.sksearch input:focus {
+  border-color: var(--ink);
+}
+.sksearch input::-webkit-search-cancel-button {
+  margin-right: 4px;
+}
+.sksearch > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.sksearch-key {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: var(--surface);
+  pointer-events: none;
+}
+/* the shared tab strip becomes a pill group inside the bar */
+.skbar .sk-tabs {
+  border-bottom: 0;
+  margin: 0;
+  gap: 2px;
+  overflow: visible;
+  flex: none;
+}
+.skbar .sk-tabs button {
+  padding: 7px 10px;
+  margin: 0;
+  border-bottom: 0;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+}
+.skbar .sk-tabs button:first-child {
+  padding-left: 10px;
+}
+.skbar .sk-tabs button:hover {
+  background: var(--surface);
+}
+.skbar .sk-tabs button[aria-selected='true'] {
+  background: var(--surface);
+  border-bottom-color: transparent;
+}
+.skbar-where {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.skt {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: auto;
+  background: var(--bg);
+  /* an inventory never grows the page without bound */
+  max-height: min(60vh, 560px);
+}
+.skt .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px 84px 140px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  min-height: 58px;
+  border-top: 1px solid var(--border);
+}
+.skt .row:first-child {
+  border-top: 0;
+}
+.skt .row.head {
+  min-height: 32px;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.skt .row:hover:not(.head) {
+  background: var(--surface);
+}
+.skt .what {
+  min-width: 0;
+  padding: 9px 0;
+}
+.skt .what .nm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.skt .what .nm .harness-icon {
+  flex: none;
+  color: var(--muted);
+}
+.skt .what .nm .t {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skt .what .nm:hover .t {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.skt .what .d {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.skt .files,
+.skt .upd {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skt .acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.skt .acts-head {
+  text-align: right;
+}
+/* a skill whose directory is gone: tinted row, copy unavailable, detach still
+   offered because removing the broken entry is the fix */
+.skt .row.miss {
+  background: color-mix(in oklab, var(--danger-soft) 55%, var(--bg));
+}
+.skt .row.miss .d {
+  color: var(--danger);
+}
+.skt .row.miss .files,
+.skt .row.miss .upd {
+  color: var(--ink-2);
+}
+.skfoot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.skfoot span:last-child {
+  flex: none;
+  white-space: nowrap;
+}
+/* skeleton, not a spinner over nothing */
+.sk {
+  display: block;
+  background: var(--surface-2);
+  border-radius: 5px;
+  animation: sk-pulse 1.3s ease-in-out infinite;
+}
+@keyframes sk-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+  }
+}
+
+/* a failed directory read is a note with the raw reason, never a blank panel */
+.empty-note.err {
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.empty-note.err b {
+  color: var(--danger);
+}
+
+/* ── copy sheet: the name-clash decision ─────────────────────────────── */
+/* `.modal` lives in app.css, which imports this file first, so a single class
+   here loses the cascade: the sheet states its size at two classes. */
+.modal.skcopy-modal {
+  /* the clash decision needs room for two options side by side, and the whole
+     sheet is a decision: destination, hand-off and clash on one screen */
+  width: min(520px, 94vw);
+  max-height: min(92vh, 720px);
+}
+.skcopy-modal .mo-body {
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+}
+.skclash {
+  border: 1px solid color-mix(in oklab, var(--accent) 60%, var(--border));
+  background: color-mix(in oklab, var(--accent-soft) 60%, var(--bg));
+  border-radius: var(--r);
+  padding: 12px 13px;
+}
+.skclash p {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--accent-ink);
+}
+.skclash p b {
+  font-weight: 600;
+}
+.skchoose {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.skchoose button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.13s ease, background 0.13s ease;
+}
+.skchoose button:hover:not([disabled]) {
+  border-color: var(--muted);
+  background: var(--surface);
+}
+.skchoose button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--surface);
+}
+.skchoose button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.skchoose button span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .skt .row {
+    grid-template-columns: minmax(0, 1fr) 92px 132px;
+    gap: 10px;
+  }
+  .skt .row .upd,
+  .skt .row.head .upd {
+    display: none;
+  }
+  .skbar-where {
+    margin-left: 0;
+  }
+}
+@media (max-width: 640px) {
+  .skt .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+    padding: 12px 13px;
+  }
+  .skt .row.head {
+    display: none;
+  }
+  .skt .what,
+  .skt .acts {
+    grid-column: 1 / -1;
+  }
+  /* the middle breakpoint drops `updated`; on a phone it comes back beside
+     the file count, because that is the whole row's meta */
+  .skt .row .upd {
+    display: block;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .skt .what {
+    padding: 0;
+  }
+  .skt .what .nm {
+    font-size: 14px;
+  }
+  .skt .what .d {
+    -webkit-line-clamp: 2;
+    font-size: 12.5px;
+    margin-top: 4px;
+  }
+  .skt .files {
+    font-size: 10.5px;
+  }
+  .skt .acts {
+    justify-content: stretch;
+    gap: 8px;
+  }
+  .skt .acts .btn {
+    flex: 1 1 auto;
+    height: 44px;
+    min-width: 0;
+  }
+  .skt .acts .btn-icon {
+    width: 44px;
+    flex: none;
+  }
+  .sksearch input {
+    height: 44px;
+  }
+  .skfoot {
+    flex-wrap: wrap;
+  }
+  .skfoot span:last-child {
+    white-space: normal;
+  }
+  .skcopy-modal .clone-flow {
+    grid-template-columns: 1fr;
+  }
+  .skchoose {
+    grid-template-columns: 1fr;
+  }
+}
