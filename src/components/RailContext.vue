@@ -33,6 +33,7 @@ const WORKSPACE_TABS = [
   { id: 'skills', label: 'Skills', hint: 'attached to the workspace' },
   { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
   { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
+  { id: 'chats', label: 'Chats', hint: 'silence, archiving and removal' },
   { id: 'activity', label: 'Activity', hint: 'recent workspace events' },
 ]
 

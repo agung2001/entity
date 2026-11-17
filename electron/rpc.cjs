@@ -34,6 +34,7 @@ const usage = require('./usage.cjs')
 const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
 const backups = require('./backup-store.cjs')
+const retention = require('./retention-store.cjs')
 const voice = require('./voice.cjs')
 const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
@@ -58,6 +59,10 @@ function createRpc({
   /* Smart backups are a timer, not a request. It is unref'd, so it never keeps
      the process alive, and `closeAll` clears it before a reload. */
   backups.start({ log: (line) => console.log(`[entity] ${line}`) })
+  /* Chat retention is the same shape of timer: one boot tick that catches a
+     deadline missed while the app was shut, then a poll. A workspace with no
+     `retention.json` is never touched. */
+  retention.start({ log: (line) => console.log(`[entity] ${line}`) })
   /* The desktop app has one account in `~/.entity/auth.json`. The server build
      passes the signed-in server user instead, so the same call table writes the
      right owner without a second implementation. */
@@ -326,6 +331,15 @@ function createRpc({
     'chat.tags': (args) => chats.tags(args),
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
+    /* retention: one rule per workspace, a forecast, and the pass itself */
+    'chat.retention': (args) => retention.analyse(args),
+    /* Saves as you change it: the answer is the whole card again, so the
+       forecast under the field is always the one the new number produces. */
+    'chat.setRetention': (args) => {
+      retention.save(args)
+      return retention.analyse(args)
+    },
+    'chat.runRetention': (args) => retention.run(args),
     'chat.cancel': (args) => chats.cancel(args),
     'chat.suggest': (args) => suggestions.suggest(args),
 

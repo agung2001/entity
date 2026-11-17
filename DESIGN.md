@@ -205,6 +205,48 @@ inventory, and this repo already owns the grammar for one.
 - **Escape is guarded while the work is in flight** (`guard: () => busy`), and the
   X, Cancel and primary all agree with it.
 
+## A retention rule is a chart, and a deadline the app can miss
+
+Workspace settings → Chats decides when a silent thread archives itself and when an
+archived one is removed. It is the artifacts shelf's shape (two thresholds, a
+histogram, a forecast) applied to a different population, so the two pages read as one
+system.
+
+- **Two thresholds, two clocks.** ① counts silence since the thread's last message;
+  ② counts days *in the archive*. A thread that goes silent today dies at
+  `archiveAfter + deleteAfter` days of silence, and moving ① moves both lines. Copy that
+  says "delete after 180 days" while the line sits at 210 is the bug to avoid.
+- **The chart is the control, not a picture of it.** The dashed lines *are* the
+  thresholds; the rows underneath move them. A member who cannot say what "30 days"
+  costs tonight has been given a number field, not a setting.
+- **The legend describes the axis, the forecast describes the pass.** One object
+  (`rowFor`) answers two questions: `region` ignores the protections (where a thread
+  sits relative to the two lines — what the legend, the bars and the two effect counts
+  show) and `outcome` applies them (what tonight's pass will actually do). Computing
+  the legend from the pass would make "Archived 26" disagree with the bars; computing
+  the pass from the region would delete threads a protection was holding.
+- **`Never` is a unit, not a switch.** Both rules on `Never` is retention off, and the
+  card says exactly that instead of leaving two dead rows.
+- **A cadence plus a deadline, never a bare hour.** The app is open all day and shut at
+  night, so an appointment is a time nothing runs at. `every day by 03:00` means "at most
+  a day behind, and not before 03:00"; the boot tick catches a deadline that passed
+  while the app was closed, which is why the copy says "or at the next launch".
+- **Only an opted-in workspace is swept.** The rule lives in `<workspace>/retention.json`
+  and the first read of the tab creates it. No file, no pass: installing the app never
+  archives a history nobody has looked at.
+- **A pass is idempotent and its archive date is stamped once.** A scheduler that runs
+  every thirty minutes must not reset the clock a "days in the archive" rule counts.
+- **A disabled or absent control states its own state.** `only when I ask` removes the
+  `by` word and the time field from the row rather than leaving them contradicted.
+- **② at ≤ 7 days is a stated consequence, never a modal.** The value is legal, the field
+  that caused it is on screen, and the banner outlives the click.
+- **The archive is a place, not a lock.** Answering an archived thread brings it back
+  (and stops its delete clock) — written as its own write, before the turn's metadata
+  baseline, so the turn's later save cannot adopt the archive straight back.
+- **Grid tracks that hold cards are `minmax(0, 1fr)`.** A bare `1fr` is
+  `minmax(auto, 1fr)`: the track grows to the card's min-content and the shell hides the
+  overflow, so a phone silently loses 45 px of every settings card.
+
 ## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
@@ -229,6 +271,11 @@ inventory, and this repo already owns the grammar for one.
 | A copy lands as `x-2` but still declares `name: x` | Rewrite the declared name, or the roster shows two identical rows and the slash reference resolves to neither | `npm test` (`workspace-skills`) |
 | A sheet's footer scrolls out of reach with its body | The footer is a sibling of the scrolling body, not a child of it | `SkillCopyDialog` |
 | A whole table row is a link with buttons inside it | Make the name the link and keep the row a container | Review |
+| A settings card overflows a phone and the page does not scroll | The grid track is `1fr` (which is `minmax(auto, 1fr)`) and grows to the card's min-content; use `minmax(0, 1fr)` | `app.css` (`.acct-page` ≤980) |
+| A retention legend and the rule effects disagree | Both read one `region` object; the forecast reads `outcome`, and only it describes the pass | `npm test` (`retention`) |
+| A scheduled pass re-stamps the date it counts from | The state write is idempotent and stamps only on the transition | `npm test` (`chat-archive`) |
+| A rename writes `archived: false` into a thread that never had it | Reads answer true/false; `writeThread` strips the pair when it is false | `npm test` (`chat-archive`) |
+| A reply leaves the thread in the archive | Un-archive as its own write, before the turn's metadata baseline | `tests/e2e/full/19-retention.spec.js` |
 | A recursive copy of an unreadable directory kills the process | `fs.cpSync({ recursive })` aborts on a permission error instead of throwing; walk the tree with `readdirSync` first and fail with a message | `npm test` (`workspace-skills`) |
 | A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `app.css` (`.rchat-menu-item[disabled]`) |
 | A popover floats off screen because its height was hardcoded | Measure `offsetHeight` after render and flip from the measurement | `ChatHistoryRail.openRowMenu` |

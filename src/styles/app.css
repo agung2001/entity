@@ -4921,7 +4921,10 @@ select:focus-visible {
     grid-template-columns: 1fr 1fr;
   }
   .acct-page {
-    grid-template-columns: 1fr;
+    /* `1fr` is `minmax(auto, 1fr)`: the track then grows to the widest card's
+       min-content, which is a 45 px overflow on a phone and invisible because the
+       shell clips sideways. A zero minimum is what makes the card wrap instead. */
+    grid-template-columns: minmax(0, 1fr);
   }
   .tr {
     grid-template-columns: 1.6fr 1fr 0.7fr 76px 100px;
@@ -19838,5 +19841,514 @@ button.empty-link {
   .clone-consent .cc-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+}
+
+/* ── chat retention: the silence histogram and its two rules ──────────
+   ENTITY-20. The chart is the control: the two dashed lines are the two
+   thresholds, and the rows underneath move them. Vocabulary mirrors the
+   artifacts shelf (ENTITY-16) so the two cards read as one system. */
+.ret-intro {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.ages {
+  margin: 0;
+  padding: 12px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.ages-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+.legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.legend-key b {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.legend-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  flex: none;
+}
+.sw-keep {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+/* The amber fill is a hue signal, as shipped in ENTITY-16; the mixed edge is the
+   shape boundary, so that is the part that has to clear 3:1. */
+.sw-arch {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 78%, #000);
+}
+.sw-del {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.ages-plot {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  align-items: end;
+  gap: 3px;
+  height: 168px;
+  /* room for the two chips above the tallest bar */
+  margin-top: 34px;
+  border-bottom: 1px solid var(--border-strong);
+}
+.bar {
+  border: 1px solid transparent;
+  border-radius: 3px 3px 0 0;
+  min-height: 3px;
+  transition: height 0.16s ease-out;
+}
+/* an empty band is not "a little bit of data": no stub, no bar */
+.bar[data-empty='1'] {
+  min-height: 0;
+  height: 0 !important;
+  border: 0;
+}
+.bar--keep {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+.bar--arch {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 78%, #000);
+}
+.bar--del {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.ages-rule {
+  grid-row: 1;
+  align-self: stretch;
+  justify-self: start;
+  width: 0;
+  margin-left: -2px;
+  border-left: 2px dashed var(--ink);
+  position: relative;
+  opacity: 0.85;
+  transition: grid-column 0.16s ease-out;
+}
+.ages-rule .tag {
+  position: absolute;
+  top: -20px;
+  left: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+/* the two chips never share a row, so two adjacent thresholds cannot collide */
+.ages-rule[data-n='2'] .tag {
+  top: -2px;
+}
+/* in the last three columns there is no room to the right of the line */
+.ages-rule[data-edge='1'] .tag {
+  left: auto;
+  right: 5px;
+}
+.ages-rule .tag b {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ages-axis {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 5px;
+}
+.ages-axis span {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+  text-align: center;
+}
+.ages-xtitle {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--muted);
+  text-align: right;
+}
+.ages-caption {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* a narrow card restates the legend under the chart instead of a 14-column axis */
+.ages-summary {
+  display: none;
+  margin-top: 12px;
+}
+.ages-summary .split {
+  display: flex;
+  height: 22px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.ages-summary .split i {
+  display: block;
+  border-right: 1px solid var(--bg);
+}
+.ages-summary .split i:last-child {
+  border-right: 0;
+}
+.ages-summary .keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 7px;
+}
+
+/* ── the two thresholds as sentences with the number inside them ──── */
+.rule-rows {
+  display: flex;
+  flex-direction: column;
+}
+.rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+.rule-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.rule-row:last-child {
+  padding-bottom: 0;
+}
+.rule-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+}
+.rule-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.rule-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.rule-num {
+  width: 62px;
+  flex: none;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 13px;
+  -moz-appearance: textfield;
+}
+.rule-num::-webkit-outer-spin-button,
+.rule-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.rule-unit {
+  width: 92px;
+  flex: none;
+}
+.rule-tail {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+/* the outcome owns its line on purpose: a count that lands wherever a wrap drops
+   it reads as a different sentence */
+.rule-effect {
+  flex: 1 0 100%;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.rule-derived {
+  margin: 10px 0 16px;
+  line-height: 1.5;
+}
+.sched {
+  display: flex;
+  flex-direction: column;
+}
+.sched-row .rule-unit {
+  width: 140px;
+  text-align: left;
+}
+.sched-time {
+  width: 108px;
+  flex: none;
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.sched-time::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+}
+.sched-tail {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+/* a row on `only when I ask` has no deadline, so the word and the field leave
+   rather than sit contradicted */
+.sched-tail[hidden],
+.sched-time[hidden] {
+  display: none;
+}
+.sched-effect {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── the forecast ──────────────────────────────────────────────────── */
+.forecast {
+  margin-top: 12px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.forecast-head {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.forecast ul {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.forecast li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.forecast li b {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.forecast li em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.forecast li.del b {
+  color: var(--danger);
+}
+.disclose {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.tlist {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.tlist-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.tlist-row:last-child {
+  border-bottom: 0;
+}
+.tlist-row .n {
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tlist-row .s,
+.tlist-row .d {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* ── the irreversible consequence, and the card's own notes ───────── */
+.ret-warn {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--bg));
+  border-radius: var(--r-sm);
+}
+.ret-warn b {
+  font-weight: 600;
+}
+.sweep-note {
+  margin: 18px 0 0;
+  line-height: 1.5;
+}
+/* the aside is 292 px: a code block there wraps rather than clipping (the
+   shipped .codebox scrolls sideways, which hides half the sample) */
+.ret-code {
+  margin: 12px 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: visible;
+}
+.ret-note {
+  margin-top: 14px;
+}
+.ret-foot {
+  margin-top: 10px;
+  text-align: right;
+}
+.skel {
+  display: block;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+.skel--line {
+  height: 10px;
+}
+.skel--bar {
+  border-radius: 3px 3px 0 0;
+  background: var(--border);
+}
+.ages[data-loading='1'] .ages-legend,
+.ages[data-loading='1'] .ages-axis {
+  opacity: 0.5;
+}
+.empty-inline {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+  height: 168px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.empty-inline b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  /* a label and its note share a line only when there is room for both */
+  .acct-sep {
+    display: block;
+  }
+  .acct-sep small {
+    display: block;
+    margin-top: 3px;
+  }
+  .rule-row {
+    gap: 8px;
+  }
+  .rule-label {
+    font-size: 12.5px;
+  }
+  .rule-num {
+    width: 54px;
+  }
+  .rule-unit,
+  .sched-row .rule-unit {
+    width: 120px;
+  }
+  .sched-row {
+    row-gap: 6px;
+  }
+  .ages-plot,
+  .ages-axis,
+  .ages-caption {
+    display: none;
+  }
+  .ages-summary {
+    display: block;
+  }
+  .ages {
+    padding: 12px 12px 10px;
+  }
+  .forecast li {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .ages-rule {
+    transition: none;
   }
 }

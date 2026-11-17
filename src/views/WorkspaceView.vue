@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ActivityView from '@/views/ActivityView.vue'
+import WorkspaceChatsView from '@/views/WorkspaceChatsView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import McpView from '@/views/McpView.vue'
 import MachinesView from '@/views/MachinesView.vue'
@@ -17,7 +18,7 @@ import { activeWorkspace, updateWorkspace } from '@/stores/workspaces'
 const router = useRouter()
 const route = useRoute()
 const current = computed(() => activeWorkspace.value)
-const TABS = ['general', 'members', 'skills', 'mcp', 'machines', 'activity']
+const TABS = ['general', 'members', 'skills', 'mcp', 'machines', 'chats', 'activity']
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
 
 /* The tab is part of the URL, so a link can land on Activity and Back works. */
@@ -340,6 +341,7 @@ async function save() {
     <SkillsView v-else-if="tab === 'skills'" embedded />
     <McpView v-else-if="tab === 'mcp'" embedded />
     <MachinesView v-else-if="tab === 'machines'" embedded />
+    <WorkspaceChatsView v-else-if="tab === 'chats'" />
     <ActivityView v-else embedded />
   </div>
 </template>

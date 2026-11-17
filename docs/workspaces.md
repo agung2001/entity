@@ -92,6 +92,37 @@ a write.
 Reviewing costs one run of the entity's harness. If the harness cannot answer, the
 dialog says so and nothing changes.
 
+## Chat retention
+
+Workspace settings → **Chats** holds one rule for the whole workspace: when a thread
+archives itself, and when it is gone.
+
+- **① Archive** counts days since the thread's **last message**. A thread that reaches
+  the threshold leaves the rail's working list and joins the archived group — the same
+  group the ⋯ menu puts it in, with the same one-click Restore. Reversible.
+- **② Delete** counts days **in the archive**, not days of silence. A thread archived
+  today and left at 180 is removed at 210 days of silence, and moving ① moves both
+  lines. `remove()` is a hard unlink: there is no Trash and no restore.
+- **Both are a number plus a unit** (`days` / `weeks` / `months`), and `Never` is a unit
+  rather than a switch. Both on `Never` is retention off, and the card says so.
+- **When it runs** is a cadence plus a deadline (`every day by 03:00`, `every week`,
+  `only when I ask`). The deadline is a "not before", not an appointment: the app is
+  open all day and shut at night, so a pass that came due while it was closed runs
+  within a minute of the next launch. There is no pass while the app is closed.
+- **Three protections, counted live** before anything moves: a pinned thread is never
+  archived by the rule, a thread with a turn in flight waits, and a thread that saved an
+  artifact is never deleted (the conversation is how you remember why the file exists).
+  Pinning is the per-thread escape hatch.
+- **The chart is the control.** The two dashed lines are the two thresholds and the rows
+  underneath move them; the legend and the two effect counts describe the axis, while
+  the forecast says what tonight's pass actually does (including what a protection holds
+  back), and names the six threads it will touch.
+- **Answering an archived thread brings it back** into the working list, so a
+  conversation somebody still uses can never be counting days toward deletion.
+
+The rule lives in `<workspace>/retention.json`, so it travels with a backup or a remote
+copy. A workspace that has never had this tab opened is never swept.
+
 ## Moving in from another tool
 
 There is no importer and no import button, on purpose: an entity is a file, so a
