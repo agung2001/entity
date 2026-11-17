@@ -586,6 +586,19 @@ function applyPull(record, rel, buffer, { conflict, executable } = {}) {
     }
     return { quarantined: [], diverged: [], ...applyRemoteSkills(record, parsed) }
   }
+  if (rel === manifest.SCOPE_REL) {
+    /* Shares from both machines belong on the shelf: union them instead of
+       choosing a winner, and let the merge be the conflict resolution. */
+    let localText = ''
+    try {
+      localText = fs.readFileSync(manifest.absoluteFor(record.path, rel), 'utf8')
+    } catch {
+      /* first sync of this workspace: nothing local to keep */
+    }
+    const merged = manifest.mergeScopeIndex(localText, buffer.toString('utf8'))
+    manifest.writeAtomic(manifest.absoluteFor(record.path, rel), Buffer.from(merged, 'utf8'))
+    return { quarantined: [] }
+  }
   if (conflict) {
     /* Preserve the local bytes before the remote version takes the path. */
     try {
@@ -733,6 +746,11 @@ async function deleteRemote(record, state, rel, baseSha) {
 
 function guardPayload(entry) {
   if (entry.path === 'skills.json') return null
+  /* The scope index is a map of ids to owners, read by the shelf only — skipped
+     for the same reason skills.json is: a display name is not an instruction a
+     harness reads, and scanning it would let one member's name block every
+     sync pass. */
+  if (entry.path === manifest.SCOPE_REL) return null
   if (entry.path === 'mcp.json') {
     try {
       const parsed = JSON.parse(entry.buffer.toString('utf8'))
