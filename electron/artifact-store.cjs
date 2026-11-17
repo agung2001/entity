@@ -235,6 +235,50 @@ function recent({ workspace, since, limit = 12 } = {}) {
   return rows.slice(0, Math.max(0, Math.min(100, Number(limit) || 12)))
 }
 
+/* ── when a file was last opened ─────────────────────────────────────
+ * The shelf's age rule counts from the last time a person looked at the file,
+ * which is not its modification time: a March screenshot reviewed last week is
+ * not a March file. One small map beside the files records it, and the walk
+ * skips dot entries, so it never appears as an artifact itself.
+ *
+ * ponytail: the whole map is rewritten on every open — one small write per read.
+ * The shelf can afford that at thousands of files; if a profile ever says
+ * otherwise, fold the map into an `.index.json` and append rather than rewrite.
+ */
+const OPENED = '.opened.json'
+
+function openedFile(record) {
+  return path.join(artifactsDir(record), OPENED)
+}
+
+function readOpened(record) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(openedFile(record), 'utf8'))
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch {
+    return {}
+  }
+}
+
+/** `<id> → ISO` for every file this machine has opened. */
+function openedMap({ workspace } = {}) {
+  return readOpened(workspaces.open(workspace))
+}
+
+/** Stamp one id as opened now. A shelf that cannot be written is still readable. */
+function touchOpened(record, rel) {
+  try {
+    const map = readOpened(record)
+    map[rel] = new Date().toISOString()
+    const file = openedFile(record)
+    const tmp = `${file}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, `${JSON.stringify(map)}\n`, 'utf8')
+    fs.renameSync(tmp, file)
+  } catch {
+    /* the age rule falls back to the file's own mtime */
+  }
+}
+
 function read({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
   const file = absolute(record, id)
@@ -248,6 +292,7 @@ function read({ workspace, id } = {}) {
   if (stat.size > MAX_READ_BYTES) throw new Error('That artifact is too large to preview here.')
   const buffer = fs.readFileSync(file)
   const meta = metadata(record, safeRelative(id), stat)
+  touchOpened(record, meta.id)
   if (meta.kind === 'text') {
     const text = buffer.toString('utf8')
     return {
@@ -274,6 +319,7 @@ function download({ workspace, id } = {}) {
   if (!stat.isFile()) throw new Error('That artifact is not a file.')
   if (stat.size > MAX_READ_BYTES) throw new Error('That artifact is too large to download here.')
   const meta = metadata(record, safeRelative(id), stat)
+  touchOpened(record, meta.id)
   return {
     ...meta,
     dataUrl: `data:${meta.mime};base64,${fs.readFileSync(file).toString('base64')}`,
@@ -377,6 +423,9 @@ function locate({ workspace, id } = {}) {
     throw new Error('That artifact no longer exists.')
   }
   if (!stat.isFile()) throw new Error('That artifact is not a file.')
+  /* Reveal, editor and browser all pass through here, so this is the one place
+     that knows a person just opened the file. */
+  touchOpened(record, rel)
   return { file, root: artifactsDir(record), meta: metadata(record, rel, stat) }
 }
 
@@ -406,6 +455,7 @@ module.exports = {
   rootPath,
   list,
   recent,
+  openedMap,
   read,
   download,
   upload,

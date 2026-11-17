@@ -35,9 +35,61 @@ const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
 const backups = require('./backup-store.cjs')
 const retention = require('./retention-store.cjs')
+const artifactRetention = require('./artifact-retention-store.cjs')
 const voice = require('./voice.cjs')
 const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
+
+/**
+ * The files a live conversation still points at: `artifact://<id>` anywhere in the
+ * transcript of a thread that has not been archived. This lives here, not in the
+ * shelf's store, because it reads the chat store's data — the shelf only receives
+ * the answer. A reference is matched by its exact path; a folder reference
+ * (`artifact://design/`) names no single file and protects none.
+ */
+function referencedArtifacts({ workspace } = {}) {
+  const found = new Set()
+  let threads = []
+  try {
+    threads = chats.list({ workspace })
+  } catch {
+    return found
+  }
+  for (const summary of threads) {
+    if (summary.archived) continue
+    let thread = null
+    try {
+      thread = chats.read({ workspace, id: summary.id })
+    } catch {
+      continue
+    }
+    for (const message of thread?.messages || []) {
+      const text = String(message?.text || '')
+      for (const hit of text.matchAll(/artifact:\/\/([^\s)"'`<>]+)/g)) {
+        found.add(hit[1].replace(/[.,;:]+$/, ''))
+      }
+    }
+  }
+  return found
+}
+
+/**
+ * The OS Trash only exists in the desktop shell. In the Vite server (plain Node)
+ * `require('electron')` is not the Electron API, so the pass falls back to the
+ * workspace's own `.trash` folder and the card says which one it used.
+ */
+function systemTrash() {
+  try {
+    const electron = require('electron')
+    const shell = electron && electron.shell
+    if (shell && typeof shell.trashItem === 'function') {
+      return (file) => shell.trashItem(file)
+    }
+  } catch {
+    /* no Electron shell in this build */
+  }
+  return null
+}
 
 function createRpc({
   emit = () => {},
@@ -63,6 +115,16 @@ function createRpc({
      deadline missed while the app was shut, then a poll. A workspace with no
      `retention.json` is never touched. */
   retention.start({ log: (line) => console.log(`[entity] ${line}`) })
+  /* The artifact shelf is the same rule again, applied to files. Its two
+     providers are wired here because neither belongs to the store: `referenced`
+     reads the live transcripts, and `trash` is a promise only the desktop build
+     can keep. `busy` is the quiet signal a desktop can actually see. */
+  artifactRetention.configure({
+    referenced: referencedArtifacts,
+    trash: systemTrash(),
+    busy: () => chats.activeCount() + runner.activeCount(),
+  })
+  artifactRetention.start({ log: (line) => console.log(`[entity] ${line}`) })
   /* The desktop app has one account in `~/.entity/auth.json`. The server build
      passes the signed-in server user instead, so the same call table writes the
      right owner without a second implementation. */
@@ -340,6 +402,13 @@ function createRpc({
       return retention.analyse(args)
     },
     'chat.runRetention': (args) => retention.run(args),
+    /* the shelf's own rule: the same three calls, on files instead of threads */
+    'artifact.retention': (args) => artifactRetention.analyse(args),
+    'artifact.setRetention': (args) => {
+      artifactRetention.save(args)
+      return artifactRetention.analyse(args)
+    },
+    'artifact.runRetention': (args) => artifactRetention.run(args),
     'chat.cancel': (args) => chats.cancel(args),
     'chat.suggest': (args) => suggestions.suggest(args),
 
