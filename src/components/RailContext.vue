@@ -10,6 +10,7 @@ import { activeSummaryCount, hub } from '@/stores/hub'
 import { fleet, loadFleet } from '@/stores/fleet'
 import { artifacts } from '@/stores/artifacts'
 import { shortcutLabel } from '@/lib/shortcuts'
+import { definitionOf, poolEntries, transportOf } from '@/lib/mcp'
 import { workspaces } from '@/stores/workspaces'
 
 /**
@@ -103,10 +104,26 @@ const section = computed(() => {
   /* The server page is the same list with one row current: the panel must not
      lose the inventory when the address gains a name. */
   if (name === 'mcp' || name === 'mcp-server') {
-    return { id: 'mcp', title: 'MCP', count: Object.keys(workspaces.mcp?.servers || {}).length }
+    return { id: 'mcp', title: 'MCP', count: mcpPool.value.length }
   }
   return { id: 'overview', title: 'Overview', count: hub.machines.length }
 })
+
+/* Parked servers stay in the list: a disabled definition that vanishes reads as
+   a broken sync, and it is exactly the row that needs opening. */
+const mcpPool = computed(() =>
+  poolEntries(workspaces.mcp).map((entry) => {
+    const definition = definitionOf(entry.definition)
+    return {
+      ...entry,
+      definition,
+      transport: transportOf(definition),
+    }
+  }),
+)
+const currentServer = computed(() =>
+  route.name === 'mcp-server' ? String(route.params.name || '') : '',
+)
 
 function openWorkspaceTab(tab) {
   router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: tab === 'general' ? {} : { tab } })
@@ -281,21 +298,47 @@ const backLabel = computed(() => {
     </div>
 
     <div v-else-if="section.id === 'mcp'" class="rail-t2-body">
-      <p v-if="!Object.keys(workspaces.mcp?.servers || {}).length" class="rail-t2-empty">
+      <p v-if="!mcpPool.length" class="rail-t2-empty">
         No MCP servers attached to this workspace.
       </p>
-      <button
-        v-for="(server, name) in workspaces.mcp?.servers || {}"
-        :key="name"
+      <router-link
+        v-for="entry in mcpPool"
+        :key="entry.name"
         class="rail-t2-row"
-        type="button"
-        @click="router.push({ name: 'mcp', params: { workspace: hub.workspace } })"
+        :to="{ name: 'mcp-server', params: { workspace: hub.workspace, name: entry.name } }"
+        :aria-current="currentServer === entry.name ? 'page' : undefined"
       >
-        <span class="t">
-          <b>{{ name }}</b>
-          <span class="m">{{ server?.transport || server?.command || 'stdio' }}</span>
+        <span class="rail-t2-ic">
+          <svg
+            v-if="entry.transport === 'http'"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z" />
+          </svg>
+          <svg
+            v-else
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <rect x="3" y="4" width="18" height="6" rx="1.6" />
+            <rect x="3" y="14" width="18" height="6" rx="1.6" />
+            <path d="M7 7h.01M7 17h.01" stroke-linecap="round" />
+          </svg>
         </span>
-      </button>
+        <span class="t">
+          <b>{{ entry.name }}</b>
+          <span class="m">{{ entry.transport }}</span>
+        </span>
+        <span v-if="!entry.enabled" class="c">parked</span>
+      </router-link>
     </div>
 
   </aside>
