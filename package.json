@@ -1,6 +1,6 @@
 {
   "name": "entity",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Vue 3 + Electron desktop application",
   "private": true,
   "type": "module",
