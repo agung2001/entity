@@ -147,6 +147,7 @@ function normaliseMention(raw) {
     ...(Array.isArray(raw.items) ? { items: raw.items } : {}),
     ...(typeof raw.answer === 'string' ? { answer: raw.answer } : {}),
     ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
+    ...(typeof raw.threadId === 'string' ? { threadId: raw.threadId } : {}),
     ...(Number.isFinite(raw.ms) ? { ms: raw.ms } : {}),
     ...(typeof raw.status === 'string' ? { status: raw.status } : {}),
     ...(raw.execution && typeof raw.execution === 'object'
@@ -278,10 +279,25 @@ function normaliseTags(raw) {
   return out
 }
 
+/**
+ * A spawn link is one optional pair of ids: the workspace and thread this
+ * conversation was started from. Both directions are derived — a parent's
+ * children are the rows whose `spawnedFrom.id` is the parent — so there is no
+ * children array to keep in sync and no run id stored.
+ */
+function spawnedFromOf(raw) {
+  const value = raw || {}
+  const id = typeof value.id === 'string' ? value.id.trim() : ''
+  const workspace = typeof value.workspace === 'string' ? value.workspace.trim() : ''
+  if (!id || !workspace || !THREAD_ID.test(id)) return null
+  return { workspace, id }
+}
+
 function normaliseThread(raw, record) {
   if (!raw || raw.schema !== 1 || typeof raw.id !== 'string') return null
   const entity = String(raw.entity || '')
   if (!entity) return null
+  const spawned = spawnedFromOf(raw.spawnedFrom)
   return {
     schema: 1,
     id: assertThreadId(raw.id),
@@ -309,6 +325,7 @@ function normaliseThread(raw, record) {
     archived: Boolean(raw.archived),
     ...(raw.archivedAt && raw.archived ? { archivedAt: String(raw.archivedAt) } : {}),
     tags: normaliseTags(raw.tags),
+    ...(spawned ? { spawnedFrom: spawned } : {}),
     createdAt: raw.createdAt || now(),
     updatedAt: raw.updatedAt || raw.createdAt || now(),
     messages: Array.isArray(raw.messages) ? raw.messages.map(normaliseMessage).filter(Boolean) : [],
@@ -432,6 +449,9 @@ function summarise(thread) {
     messageCount: queries + replies,
     working: sending.has(thread.id),
     failed: Boolean(lastMessage?.who === 'sys' && lastMessage.error),
+    /* the rail labels the child and the parent counts its children from this,
+       in the same list the window already subscribes to */
+    spawnedFrom: thread.spawnedFrom || null,
     preview: previewOf(thread),
     /* A summary is a row, not the transcript: do not ship every thinking block
        and tool output through the history list. */
@@ -546,6 +566,72 @@ function checkMachine(record, machine, harness) {
     throw new Error(`${harness} is not installed on ${value}.`)
   }
   return value
+}
+
+/**
+ * A delegation is a conversation too.
+ *
+ * `@entity <job>` runs inside the turn — that is what lets the reply above it
+ * use the answer — and it now also leaves a real thread: the job, the answer,
+ * its steps and its timing, linked to the thread it came from. The card in the
+ * transcript offers to continue there; the parent's rail row counts the
+ * sessions; nothing else is stored about the run.
+ *
+ * The session runs on **this** machine even when the parent thread is remote: a
+ * mention is resolved by the app, not by the host (see `mention-ref`).
+ */
+function spawnMentionSession(record, parent, mention) {
+  if (!mention || mention.kind !== 'entity' || mention.reference) return null
+  if (!mention.name || !String(mention.job || '').trim()) return null
+  const execution = mention.execution && typeof mention.execution === 'object' ? mention.execution : {}
+  const startedAt = execution.startedAt || now()
+  const endedAt = execution.endedAt || startedAt
+  const stamp = () => `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const job = String(mention.job).replace(/\s+/g, ' ').trim()
+  const failed = mention.status === 'error'
+  const thread = {
+    schema: 1,
+    id: newThreadId(),
+    workspace: record.id,
+    entity: mention.name,
+    machine: 'local',
+    /* the harness and model that actually answered, so continuing answers in
+       the same voice instead of guessing from the entity file */
+    harness: String(execution.harness || 'claude'),
+    model: String(execution.model || ''),
+    attachmentsEnabled: false,
+    user: parent.user,
+    title: job.slice(0, 120),
+    titleSource: 'auto',
+    pinned: false,
+    tags: [],
+    spawnedFrom: { workspace: record.id, id: parent.id },
+    createdAt: startedAt,
+    updatedAt: endedAt,
+    messages: [
+      { who: 'me', id: stamp(), text: String(mention.job), at: startedAt },
+      failed
+        ? {
+            who: 'sys',
+            id: stamp(),
+            text: String(mention.note || `${mention.name} did not answer.`),
+            at: endedAt,
+            error: true,
+          }
+        : {
+            who: 'agent',
+            id: stamp(),
+            text: String(mention.answer || ''),
+            at: endedAt,
+            ...(Array.isArray(mention.steps) && mention.steps.length
+              ? { steps: mention.steps.map(normaliseStep).filter(Boolean) }
+              : {}),
+            ...(Object.keys(execution).length ? { execution: { ...execution } } : {}),
+          },
+    ],
+  }
+  writeThread(record, thread)
+  return thread
 }
 
 function create({ workspace, entity, machine = 'local', harness, model = '', dir = '', message, attachmentsEnabled = false }) {
@@ -1630,6 +1716,16 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
       localOnly: thread.machine !== 'local',
     })
     turnMentions = mentioned.mentions
+    /* One session per delegated entity mention. A session that cannot be written
+       must not fail the turn that already ran, so each is its own try. */
+    for (const mention of turnMentions) {
+      try {
+        const session = spawnMentionSession(record, thread, mention)
+        if (session) mention.threadId = session.id
+      } catch {
+        /* the answer is still in the transcript above the reply */
+      }
+    }
     const userMessageId = `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     thread.messages.push({
       who: 'me',
@@ -1834,6 +1930,8 @@ module.exports = {
   remove,
   send,
   cancel,
+  /** A delegated mention's own thread; exported for the tests that pin it. */
+  spawnMentionSession,
   summarise,
   /** Quitting with an answer in flight must not leave the harness running. */
   closeAll: () => {

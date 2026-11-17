@@ -134,7 +134,33 @@ conversation. It hides behind a toggle because most threads do not need one.
 - Absolute, existing directories only, and only on this machine — a remote thread
   cannot read this disk, so the field is hidden there.
 
-## Usage and activity
+## A mention leaves a session behind
+
+`@secretary check the pricing page` runs the job inside *this* turn — that is what lets
+the reply above it use the answer — and it also files a **session**: a real conversation
+with that entity, linked to this one.
+
+- The transcript shows a **delegation card**: who ran it, which harness and model, how
+  long it took, the job, and the answer. **Continue** at the card's top right opens the
+  session, with the job and the answer already in it.
+- The session is a thread like any other: send another message there and the entity
+  continues with that history, its harness and model, its own folder.
+- It is linked by **one optional field**, `spawnedFrom: { workspace, id }` — on the
+  session, not on the parent. Both directions are derived from it, so there is no
+  children array to keep in sync.
+- **Sessions are not rows in the rail.** A thread that delegates a few jobs would drown
+  the list, so the rail keeps the conversations you started and the parent row carries
+  `spawned N chats`. Clicking that count opens a tree of the sessions it started
+  (including sessions a session started); one click opens one. While a session is open,
+  the rail marks the conversation it belongs to and the header shows
+  `↳ from #<parent>` to go back.
+- Archiving a parent does not touch its sessions, and deleting one simply leaves the
+  link pointing nowhere — the session is still a readable thread.
+- Sessions stay in the **same workspace**, run on **this machine** (a mention is resolved
+  by the app, not by a remote host), and nothing about them is stored beyond the thread
+  itself.
+
+## Usage and activity## Usage and activity
 
 <picture><source srcset="assets/readme-features/usage.webp" type="image/webp" /><img src="assets/readme-features/usage.poster.jpg" alt="The overview's spend chart and a calendar heatmap of active days" width="820" /></picture>
 

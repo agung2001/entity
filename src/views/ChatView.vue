@@ -43,6 +43,7 @@ import {
   isStopping,
   liveTags,
   machineById,
+  parentOf,
   renameThread,
   selectThread,
   setChatDraft,
@@ -199,6 +200,17 @@ const baseDirName = computed(() => {
   return parts[parts.length - 1] || value
 })
 const followups = computed(() => followupsFor(hub.chat.active))
+/* A child thread says where it came from; the parent card lists what it started. */
+const spawnParent = computed(() => parentOf(thread.value))
+/* A parent's own header may never have been named: the crumb borrows the same
+   fallback every row uses instead of showing an empty `#`. */
+const spawnParentTitle = computed(() => {
+  const parent = spawnParent.value
+  if (!parent) return ''
+  if (parent.title) return parent.title
+  if (parent.preview) return snippet(parent.preview)
+  return `thread with ${parent.entity}`
+})
 
 /* The header's middle zone is the thread's own search and its two totals. A
    long conversation is navigated by finding the line that said the thing, not
@@ -426,6 +438,19 @@ const metadataRevision = computed(() => {
 function startThread() {
   if (!hub.agents.length) return
   newOpen.value = true
+}
+
+/**
+ * A session opened from a delegation card, the rail's tree or a breadcrumb is a
+ * thread like any other: the address follows the click.
+ */
+async function openChild(id) {
+  if (!id || !(await pickThread(id))) return
+  router.push({
+    name: 'chat',
+    params: { workspace: route.params.workspace },
+    query: { ...route.query, thread: id },
+  })
 }
 
 async function stepThread(delta) {
@@ -865,7 +890,12 @@ function onLiveEvent(event) {
       /* Stale chips under a brand-new reply would be worse than none; clear
          them, then let the turn be written before reading the thread. */
       clearFollowups(id)
-      setTimeout(() => ensureFollowups(id, { force: true }).catch(() => {}), 700)
+      /* A suggestion is a model call, and it only helps the thread on screen: a
+         session that settles while you read somewhere else must not spend one.
+         Opening it asks for it then. */
+      if (hub.chat.active === id) {
+        setTimeout(() => ensureFollowups(id, { force: true }).catch(() => {}), 700)
+      }
     }
     playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
@@ -1068,6 +1098,19 @@ watch(
                 <EntityMark :entity="agent.name" />
               </router-link>
               <div class="cp-id">
+                <button
+                  v-if="spawnParent"
+                  class="cp-from"
+                  type="button"
+                  :title="`Open #${spawnParentTitle}`"
+                  @click="openChild(spawnParent.id)"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M3 4v4.4h10V12" />
+                    <path d="M10.6 9.6L13 12l-2.4 2.4" />
+                  </svg>
+                  <span>from #{{ spawnParentTitle }}</span>
+                </button>
                 <form v-if="titleEditing" class="cp-title-form" @submit.prevent="saveTitle">
                   <input
                     ref="titleInput"
@@ -1197,6 +1240,7 @@ watch(
             @retry="retryFailed"
             @followup="sendFollowup"
             @suggest="suggestFollowups"
+            @open-thread="openChild"
           />
 
           <TerminalPanel

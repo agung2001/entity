@@ -1796,6 +1796,34 @@ kbd {
   font-size: 9px;
   color: var(--muted);
 }
+/* The one action on the card sits at its top right, where the eye goes last but
+   the hand finds it: it is the way out of a one-shot run. */
+.msg-delegation-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 9.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msg-delegation-meta + .msg-delegation-open {
+  margin-left: 0;
+}
+.msg-delegation-open:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+.msg-delegation-open svg {
+  width: 9px;
+  height: 9px;
+}
 .msg-delegation-job {
   margin: 4px 0 0;
   font-family: var(--mono);
@@ -3360,7 +3388,11 @@ kbd {
   right: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 310px) auto;
+  /* The search column is sized by the search box, not by a fixed track: a
+     hidden item still reserves its track's minimum, and a `minmax(200px, …)`
+     column left the title one character wide on a phone after `.cp-mid` was
+     hidden. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
   /* A 56px bar, the same height as the app top bar. A two-line title is the
@@ -3447,8 +3479,9 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  min-width: 0;
+  /* the same 200–310px band the track used to give it, now owned by the box so
+     it collapses to nothing when it is hidden */
+  width: clamp(200px, 26vw, 310px);
   height: 30px;
   padding: 0 8px;
   border: 1px solid var(--border);
@@ -3590,7 +3623,10 @@ kbd {
    that. Rather than let them overflow the right edge, the bar gives up detail
    in the order it can spare it: shortcut chips first, then the counters, then
    the button labels — the tooltips and the shortcuts dialog still name both. */
-@container cphead (max-width: 840px) {
+@container cphead (max-width: 1000px) {
+  /* Three buttons, each with a chip and a label, leave a two-line title in the
+     common 1280px window. The chips go first — the guide and the tooltips still
+     name every combo — so the title keeps one line. */
   .cp-head .trace-kbd {
     display: none;
   }
@@ -5747,6 +5783,67 @@ label.pick:has(input:focus-visible) {
   width: 13px;
   height: 13px;
 }
+
+/* The child's way home is its own line above the title: it answers "where did
+   this come from", which a title cannot, and the meta line below the title is
+   already the narrowest track in the header. */
+.cp-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.cp-from:hover {
+  color: var(--ink);
+}
+.cp-from svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  opacity: 0.75;
+}
+.cp-from span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A session is not a row in the rail: the conversation that started it carries
+   the count, and the count opens the tree. */
+.rchat-kids {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rchat-kids:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rchat-kids svg {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+
 .modal-timeline {
   width: min(820px, 94vw);
   max-height: min(88vh, 780px);
@@ -19470,7 +19567,7 @@ button.empty-link {
   width: 100%;
   height: 34px;
   padding: 0 10px;
-  margin-top: 2px;
+  margin: 2px 0 10px;
   background: transparent;
   border: 1px dashed var(--border-strong);
   border-radius: 8px;
@@ -20351,4 +20448,162 @@ button.empty-link {
   .ages-rule {
     transition: none;
   }
+}
+
+/* ── the sessions one conversation started ─────────────────────────
+ *
+ * A delegated mention is a conversation of its own, so a busy thread can own a
+ * dozen of them. They are not rail rows (that list is the conversations the
+ * person started) — the parent row carries a count and this dialog is the map.
+ */
+.spawn-tree {
+  width: min(560px, 94vw);
+  max-height: min(86vh, 720px);
+}
+.spawn-tree .mo-body {
+  /* the footer stays put while the tree scrolls: a dialog whose Close button is
+     below a hundred sessions is a dialog you cannot leave comfortably */
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+}
+.spawn-tree-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.spawn-tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px 7px calc(4px + var(--depth, 0) * 18px);
+  border-top: 1px solid var(--border);
+}
+.spawn-tree-row:first-child {
+  border-top: 0;
+}
+/* the elbow that makes it a tree rather than a list */
+.spawn-tree-row[data-depth='1'] .spawn-tree-rail,
+.spawn-tree-row[data-depth='2'] .spawn-tree-rail,
+.spawn-tree-row[data-depth='3'] .spawn-tree-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(13px + (var(--depth, 1) - 1) * 18px);
+  width: 1px;
+  background: var(--border);
+}
+.spawn-tree-open {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.spawn-tree-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spawn-tree-open:hover .spawn-tree-title {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.spawn-tree-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.spawn-tree-meta svg {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+.spawn-tree-sep {
+  opacity: 0.6;
+}
+.spawn-tree-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 17px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.spawn-tree-pill i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.spawn-tree-pill[data-status='working'] {
+  border-color: color-mix(in oklab, var(--accent) 52%, var(--border));
+  background: color-mix(in oklab, var(--accent-soft) 60%, transparent);
+  color: var(--accent-ink);
+}
+.spawn-tree-pill[data-status='working'] i {
+  background: var(--accent);
+}
+.spawn-tree-pill[data-status='done'] {
+  border-color: color-mix(in oklab, var(--ok) 42%, var(--border));
+  color: color-mix(in oklab, var(--ok) 80%, var(--fg));
+}
+.spawn-tree-pill[data-status='done'] i {
+  background: var(--ok);
+}
+.spawn-tree-pill[data-status='failed'] {
+  border-color: color-mix(in oklab, var(--danger) 44%, var(--border));
+  color: var(--danger);
+}
+.spawn-tree-pill[data-status='failed'] i {
+  background: var(--danger);
+}
+.spawn-tree-go {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.spawn-tree-go:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+.spawn-tree-go svg {
+  width: 10px;
+  height: 10px;
+}
+.spawn-tree-empty {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
 }

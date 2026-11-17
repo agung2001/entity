@@ -247,7 +247,34 @@ system.
   `minmax(auto, 1fr)`: the track grows to the card's min-content and the shell hides the
   overflow, so a phone silently loses 45 px of every settings card.
 
-## Common mistakes
+## A delegation is a session, and the session is not a row
+
+Starting a second conversation from this one is not a button in the header and not a
+panel above the composer — both were built, shipped and rejected on sight. It is what
+the composer already does: mention another entity.
+
+- **A mention is the trigger.** `@entity <job>` runs the job in the turn *and* files a
+  session. No second verb, no prefilled dialog, no floating card: the thing you already
+  type is the thing that spawns.
+- **One optional field, on the child**: `spawnedFrom: { workspace, id }`. Both directions
+  are derived from the list the window already has; a children array would be a second
+  copy that can disagree. A link to a thread that is gone reads as "no link", never as an
+  error.
+- **The run is continued from where it happened.** The delegation card carries
+  **Continue** at its top right, which opens the session that run created — the job, the
+  answer, its steps and its timing are already in it. A card with no way out is a dead
+  end someone will click twice.
+- **A session is not a rail row.** The rail lists the conversations the person started;
+  a busy thread can own a dozen sessions, and rows for them drown the list. The parent
+  row carries `spawned N chats`, the count opens a tree (sessions of sessions included),
+  and opening one marks the parent row active so the rail still says where you are.
+- **The child says where it came from.** A `↳ from #<parent>` line above its title, and
+  the whole parent title in `title` — the header's meta line is too narrow for a crumb.
+- **The count and the rows must agree.** `activeSummaryCount`, the rail's rows, its
+  status counts and its filters all exclude sessions; a count that includes an invisible
+  row lies in the one number people compare against the list.
+
+## Common mistakes## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
 | --- | --- | --- |
@@ -327,6 +354,12 @@ system.
 | An inventory row is taller than a normal list row | Keep 8px vertical padding and details behind the disclosure | Review |
 | One long skill description makes the whole grid scroll sideways | `1fr` tracks need `minmax(0, 1fr)`, cards need `min-width: 0`, and clamped text needs `overflow-wrap: anywhere` | `SkillsView` / `.grid3` |
 | A metadata row lists a path that cannot be opened | Only list paths that `fs.statSync` found, and re-check before acting | `thread-metadata.cjs` |
+| Spawning needs its own button, dialog and card next to the composer | A mention *is* the spawn: `@entity <job>` files a session and the transcript's delegation card continues into it | `tests/e2e/full/20-spawn-session.spec.js` |
+| A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
+| A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |
+| A count says 4 and the rail paints 2 | Counts, filters and groups all exclude sessions; only the tree shows them | `hub.activeSummaryCount` |
+| A breadcrumb in the meta line renders zero-width | The header's meta track is ~157px; put the crumb on its own line above the title and clip it | `tests/e2e/full/20-spawn-session.spec.js` |
+| A thread title is one character per line on a phone | A hidden grid item keeps its track's `minmax` floor: size the middle track from the box (`auto` + `width: clamp()`), not from a fixed minimum | `ChatView` header |
 | The renderer names the path the main process opens | `thread.pathAction` re-derives the metadata and accepts only a member of it | `electron/rpc.cjs` |
 | A dialog's close X floats over the page's own toolbar, in a box with a shadow | When the surface inside the dialog has an action row, the X is the last control **in that row** (`class="x"`), so the bar's flex aligns it; no offsets, no shadow | `ArtifactDetailView` (`modal`) |
 | A drawer is only closable by its X button | Register it with `useDialogDismiss`, like a modal | `npm test` (drawer contract) |

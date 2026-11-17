@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import SpawnTreeDialog from '@/components/SpawnTreeDialog.vue'
 import { onRunEvent } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesQuery } from '@/composables/search'
@@ -132,7 +133,12 @@ function toggleTag(tag) {
   tagFilter.value = tagFilter.value.toLowerCase() === value.toLowerCase() ? '' : value
 }
 
-const threads = computed(() => liveSummaries())
+/**
+ * A delegated mention now leaves a session behind, so a busy thread can own a
+ * dozen conversations. They are **not** rows: the rail is a list of the
+ * conversations you started, and each parent carries its count and a tree.
+ */
+const threads = computed(() => liveSummaries().filter((thread) => !thread.spawnedFrom))
 
 function isWorking(thread) {
   return Boolean(thread?.working) || isSending(thread?.id)
@@ -255,10 +261,74 @@ const archivedCount = computed(() => {
   return total === 1 ? '1 match' : `${total} matches`
 })
 
+/**
+ * Sessions, by the conversation that started them.
+ *
+ * One pass over the list, because a per-row scan of every thread is O(n²) on a
+ * history the retention pass can leave at 400 rows. `kids` counts the live ones:
+ * an archived session is not something the parent still owes you.
+ */
+const spawnIndex = computed(() => {
+  const rows = hub.chat.summaries || []
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const parentOf = new Map()
+  const kids = new Map()
+  for (const row of rows) {
+    const from = row.spawnedFrom?.id
+    if (!from) continue
+    parentOf.set(row.id, from)
+    if (!row.archived) kids.set(from, (kids.get(from) || 0) + 1)
+  }
+  return { byId, parentOf, kids }
+})
+
+const kidsOf = (id) => spawnIndex.value.kids.get(id) || 0
+
+/**
+ * The row a session belongs to. A child is not a row, so opening one must still
+ * light up the conversation it came from — otherwise the rail shows nothing
+ * selected and the person is lost.
+ */
+const activeRoot = computed(() => {
+  let id = hub.chat.active
+  const seen = new Set()
+  while (id && !seen.has(id)) {
+    seen.add(id)
+    const from = spawnIndex.value.parentOf.get(id)
+    if (!from) return id
+    /* a parent that was deleted leaves a dangling link; the child is its own
+       root then */
+    if (!spawnIndex.value.byId.has(from)) return id
+    id = from
+  }
+  return id || ''
+})
+
 function stateOf(thread) {
   if (isWorking(thread)) return 'Working…'
   if (!thread.queries) return 'New'
   return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${ago(thread.updatedAt)}`
+}
+
+const treeRoot = ref('')
+
+function openTree(thread) {
+  menuItem.value = null
+  treeRoot.value = thread.id
+}
+
+function closeTree() {
+  treeRoot.value = ''
+}
+
+useDialogDismiss({ active: () => Boolean(treeRoot.value), close: closeTree })
+
+/** A session opened from the tree is a thread like any other. */
+function openSession(id) {
+  const row = (hub.chat.summaries || []).find((thread) => thread.id === id)
+  if (!row) return
+  closeTree()
+  openThread(row)
 }
 
 function openThread(thread) {
@@ -659,7 +729,7 @@ defineExpose({ newThread })
               v-for="thread in group.rows"
               :key="thread.id"
               class="rchat-row"
-              :data-on="thread.id === hub.chat.active ? '1' : '0'"
+              :data-on="thread.id === activeRoot ? '1' : '0'"
               :data-pinned="thread.pinned ? '1' : '0'"
               :data-working="isWorking(thread) ? '1' : '0'"
               :data-status="statusOf(thread)"
@@ -668,7 +738,7 @@ defineExpose({ newThread })
                 class="rchat-open"
                 role="button"
                 tabindex="0"
-                :aria-current="thread.id === hub.chat.active ? 'page' : undefined"
+                :aria-current="thread.id === activeRoot ? 'page' : undefined"
                 :title="titleOf(thread)"
                 @click="openThread(thread)"
                 @keydown.enter="openThread(thread)"
@@ -706,9 +776,27 @@ defineExpose({ newThread })
                   </span>
                   <span class="rchat-state">
                     <span class="rchat-health" :data-s="statusOf(thread)"><i></i>{{ statusOf(thread) }}</span>
-                    <span class="rchat-entity">{{ thread.entity }}</span>
-                    <span class="rchat-sep" aria-hidden="true">·</span>
-                    <span>{{ stateOf(thread) }}</span>
+                    <!-- The sessions of this conversation: a count, and a tree
+                         behind it. Rows would drown the list the moment a thread
+                         delegates a few jobs. -->
+                    <button
+                      v-if="kidsOf(thread.id)"
+                      class="rchat-kids"
+                      type="button"
+                      :title="`Show the ${kidsOf(thread.id)} session${kidsOf(thread.id) === 1 ? '' : 's'} this conversation started`"
+                      @click.stop="openTree(thread)"
+                    >
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                        <path d="M3 4v4.4h10V12" />
+                        <path d="M10.6 9.6L13 12l-2.4 2.4" />
+                      </svg>
+                      spawned {{ kidsOf(thread.id) }} {{ kidsOf(thread.id) === 1 ? 'chat' : 'chats' }}
+                    </button>
+                    <template v-else>
+                      <span class="rchat-entity">{{ thread.entity }}</span>
+                      <span class="rchat-sep" aria-hidden="true">·</span>
+                      <span>{{ stateOf(thread) }}</span>
+                    </template>
                   </span>
                   <span v-if="thread.tags?.length" class="rchat-tags">
                     <button
@@ -765,6 +853,8 @@ defineExpose({ newThread })
         No chats yet. Use + to start one.
       </p>
     </div>
+
+    <SpawnTreeDialog :root-id="treeRoot" @close="closeTree" @open="openSession" />
 
     <Teleport to="body">
       <div

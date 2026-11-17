@@ -31,7 +31,7 @@ const props = defineProps({
   searchHits: { type: Array, default: () => [] },
   searchActive: { type: Number, default: -1 },
 })
-const emit = defineEmits(['chip', 'retry', 'followup', 'suggest'])
+const emit = defineEmits(['chip', 'retry', 'followup', 'suggest', 'open-thread'])
 
 /* Follow-ups belong to the newest completed reply, not to an empty thread and
    not while a turn is streaming. */
@@ -614,6 +614,20 @@ function traceSummary(message) {
                 <span class="msg-delegation-kicker">Delegated to</span>
                 <span class="msg-delegation-name">{{ mentionLabel(mention) }}</span>
                 <span v-if="mentionMeta(mention)" class="msg-delegation-meta">{{ mentionMeta(mention) }}</span>
+                <!-- The run is a session, not a dead end: continue it as a real
+                     conversation with that entity. -->
+                <button
+                  v-if="mention.threadId"
+                  class="msg-delegation-open"
+                  type="button"
+                  :title="`Continue this session with ${mention.name || 'the entity'}`"
+                  @click="emit('open-thread', mention.threadId)"
+                >
+                  Continue
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M5.5 3h7.5v7.5M13 3L6.5 9.5" />
+                  </svg>
+                </button>
               </div>
               <p v-if="mention.job" class="msg-delegation-job">{{ mention.job }}</p>
               <p class="msg-delegation-answer">{{ mention.answer || mention.note || 'No answer recorded.' }}</p>

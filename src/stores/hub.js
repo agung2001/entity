@@ -998,15 +998,22 @@ export async function createThread(overrides = {}) {
   return thread
 }
 
-/* kept for the views that used the old in-memory name */
-export const newThread = createThread
-
 /** Route into an entity's thread — opens the newest one, or starts a fresh one. */
 export async function chatFocusEntity(id) {
   await ensureChats()
-  const existing = hub.chat.summaries.find((thread) => thread.entity === id)
+  const existing = hub.chat.summaries.find((thread) => thread.entity === id && !thread.spawnedFrom)
   if (existing) await openThread(existing.id)
   else await createThread({ entity: id })
+}
+
+/**
+ * The conversation a row was spawned from, or null when it is a root (or the
+ * parent is gone). A session's only way home is this link.
+ */
+export const parentOf = (row) => {
+  const id = row?.spawnedFrom?.id
+  if (!id) return null
+  return (hub.chat.summaries || []).find((entry) => entry.id === id) || null
 }
 
 /** Title and pin are metadata — editable after the conversation started. */
@@ -1079,9 +1086,12 @@ export async function archiveThread(id, archived, { silent = false } = {}) {
   }
 }
 
-/** The header counts what the working list holds, never the archive too. */
+/**
+ * The header counts what the working list holds, never the archive too — and
+ * never a delegated session: those are not rows.
+ */
 export const activeSummaryCount = () =>
-  liveSummaries().filter((thread) => !thread.archived).length
+  liveSummaries().filter((thread) => !thread.archived && !thread.spawnedFrom).length
 
 /** Tags are thread metadata, editable at any time like the title and the pin. */
 export async function setThreadTags(id, tags) {
@@ -1154,7 +1164,10 @@ export async function setThreadContext(kind, value) {
    must not clear the flag the new turn just set. */
 const turnTokens = new Map()
 
-export async function chatSend(text, { retry = false, attachments = [], attachmentsEnabled = false } = {}) {
+export async function chatSend(
+  text,
+  { retry = false, attachments = [], attachmentsEnabled = false } = {},
+) {
   const thread = activeThread()
   if (!thread || isSending(thread.id)) return
   const message = String(text || '').trim()
@@ -1204,7 +1217,14 @@ export async function chatSend(text, { retry = false, attachments = [], attachme
     /* Content only: the rail row, the live fold and the notification already
        say the turn landed. Stealing `active` would move the reader. */
     store(updated)
-    if (!patchChatSummary(updated)) await refreshChatList()
+    /* A delegation leaves a session behind, and that row is new to the rail.
+       The single-row patch cannot report it, so the list is re-read. */
+    const spawned = (updated.messages || []).some((message) =>
+      (message.execution?.mentions || message.mentions || []).some(
+        (mention) => mention.threadId && !hub.chat.summaries.some((row) => row.id === mention.threadId),
+      ),
+    )
+    if (!patchChatSummary(updated) || spawned) await refreshChatList()
     return updated
   } catch (error) {
     hub.chat.error = error?.message || 'The message could not be sent.'
