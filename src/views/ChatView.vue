@@ -841,6 +841,26 @@ function onLiveEvent(event) {
     return
   }
 
+  /* A fan-out announces its rows before the first harness exists, then each row
+     as it starts and settles. They live on the live entry, so the transcript's
+     live bubble paints them above the text the parent has not written yet. */
+  if (event.phase === 'delegating') {
+    if (stale) return
+    const rows = Array.isArray(event.data?.rows) ? event.data.rows : []
+    hub.chat.live = {
+      ...hub.chat.live,
+      [id]: {
+        ...base,
+        delegations: rows,
+        execution: {
+          ...base.execution,
+          startedAt: base.execution?.startedAt || new Date().toISOString(),
+        },
+      },
+    }
+    return
+  }
+
   if (event.phase === 'step') {
     if (stale) return
     const step = event.data?.step
@@ -1500,6 +1520,7 @@ watch(
               { token: '@maka:one:plan', what: 'A note found through the Maka MCP server — vault, then what to search for.' },
               { token: '@youtrack:AC:login bug', what: 'Issues found through the YouTrack MCP server, scoped to the project key you name. The rows show the project and the issue title.' },
               { token: 'spawn 3 @secretary write a poem', what: 'The same instruction, three times in parallel — three answers, three sessions, three cards, each one continuable. Every run is told which one it is so the results differ. Up to five.' },
+              { token: 'spawn per @youtrack:ENTITY:relates to: ENTITY-21 #Unresolved @coder /workspace:orca-worktree fix it', what: 'One run for every row the list resolves: seven issues become seven sessions, and the job’s own /workspace: skill gives each run its own worktree. The row is the session title. Up to eight rows.' },
               { token: '@@<mention>', what: 'Resolve this mention on the local machine instead of the remote context.' },
             ]" :key="row.token" class="help-mention">
               <code class="mono">{{ row.token }}</code>

@@ -128,6 +128,11 @@ export async function seedProfile({ root, profile, stateDir, external, stubLog }
   const artifactDir = path.join(workspacePath, 'artifacts', 'notes')
   fs.mkdirSync(artifactDir, { recursive: true })
   fs.writeFileSync(path.join(artifactDir, 'e2e-note.md'), '# E2E note\n\nARTIFACT-NOTE-CANARY\n', 'utf8')
+  /* Two files whose name no other spec writes or consumes: `spawn per` needs a
+     list with a known length, and the shared shelf grows as the suite runs. */
+  fs.mkdirSync(path.join(workspacePath, 'artifacts', 'fanout'), { recursive: true })
+  fs.writeFileSync(path.join(workspacePath, 'artifacts', 'fanout', 'one.md'), 'FANOUT-ONE\n', 'utf8')
+  fs.writeFileSync(path.join(workspacePath, 'artifacts', 'fanout', 'two.md'), 'FANOUT-TWO\n', 'utf8')
   fs.writeFileSync(
     path.join(workspacePath, 'artifacts', 'e2e-shot.png'),
     Buffer.from(
