@@ -302,10 +302,26 @@ function createRunner({ emit = () => {} } = {}) {
        a reference that does not resolve throws here, before a run id is spent */
     const applied = skillRef.rewrite(record, String(prompt), { machine: 'local' })
     /* `@…` mentions resolve against this workspace before a run id is spent;
-       a name that does not exist throws, a search that finds nothing notes it */
+       a name that does not exist throws, a search that finds nothing notes it.
+       chat-store requires this file, so its require waits until start(): at load
+       time the module would still be half-built. */
+    const chats = require('./chat-store.cjs')
     const mentioned = await mentionRef.rewrite(record, applied.text, {
       entity,
       machine: 'local',
+      deps: {
+        threads: {
+          list: () => chats.list({ workspace }),
+          read: (id) => {
+            const found = chats.read({ workspace, id })
+            /* the same derived-title fill the send path uses; summarise is the
+               store's own title rule, not a copy of it */
+            return found && !found.title
+              ? { ...found, title: chats.summarise(found).title }
+              : found
+          },
+        },
+      },
     })
     const runId = newRunId()
     const run = {

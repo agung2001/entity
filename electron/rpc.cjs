@@ -140,6 +140,9 @@ function createRpc({
         limit: Number.isFinite(limit) ? limit : 10,
         offset: Number.isFinite(offset) ? offset : 0,
         dir: String(dir || ''),
+        /* `@thread:` offers this workspace's conversations, through the store
+           that already enforces who may read them */
+        deps: { threads: { list: () => chats.list({ workspace }) } },
       }),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),

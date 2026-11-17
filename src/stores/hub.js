@@ -1218,10 +1218,15 @@ export async function chatSend(
        say the turn landed. Stealing `active` would move the reader. */
     store(updated)
     /* A delegation leaves a session behind, and that row is new to the rail.
-       The single-row patch cannot report it, so the list is re-read. */
+       The single-row patch cannot report it, so the list is re-read. Only an
+       entity mention spawns one — a `@thread:` mention also carries a threadId,
+       which is the thread it POINTS AT, not a new one. */
     const spawned = (updated.messages || []).some((message) =>
       (message.execution?.mentions || message.mentions || []).some(
-        (mention) => mention.threadId && !hub.chat.summaries.some((row) => row.id === mention.threadId),
+        (mention) =>
+          mention.kind === 'entity' &&
+          mention.threadId &&
+          !hub.chat.summaries.some((row) => row.id === mention.threadId),
       ),
     )
     if (!patchChatSummary(updated) || spawned) await refreshChatList()

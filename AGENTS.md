@@ -36,6 +36,7 @@ server). Keep it that way when adding a feature.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Renderer only, in a browser at http://localhost:5183 |
+| `npm run dev:lan` | The same, bound to `0.0.0.0` so another machine on your network can open it at `http://<your-ip>:5183` |
 | `npm run dev:desktop` | Vite + Electron with HMR |
 | `npm test` | Unit tests + the UI contract above (`tests/unit/`) |
 | `npm run test:smoke` | Playwright smoke pack, including real `opencode` and `pi` turns |
@@ -47,6 +48,12 @@ server). Keep it that way when adding a feature.
 
 Use `ENTITY_HOME=/tmp/…` for a scratch profile when testing, so real workspaces
 are never touched.
+
+`npm run dev:lan` is `npm run dev` with `--host 0.0.0.0`: Vite's dev middleware
+in `vite.config.js` has no host or origin check, so the call table answers a LAN
+client the same way. Open it by **IP address**, not a hostname — Vite only
+auto-allows `localhost` and literal IPs, so `http://my-mac.local:5183` comes back
+as a blocked host until that name is added to `server.allowedHosts`.
 
 ## Do not commit or push without an explicit go-ahead
 
@@ -60,3 +67,18 @@ An implementation request is **not** permission to publish it.
 
 If a previous instruction said "commit and push", a later instruction to test
 manually first wins.
+
+## This repository and its pull requests are public: no tracker links
+
+Never publish the private issue tracker. That means no tracker URL, no hostname,
+no screenshot of it and no webhook — in a PR title or body, a commit message, a
+branch name, a code comment, a doc, a test fixture or an error string.
+
+An issue key on its own is fine: `ENTITY-23` names the work without handing
+anyone the route to it. **Write the key, never a link** — and do not lean on a
+link to get GitHub's auto-linking; `#123` is the only reference that is already
+public here.
+
+Paid for once: the `@thread:` PR body opened with a tracker link. Nobody caught
+it until the repository owner did. When a body seems to need more context than
+the key, write the context — do not link out.
