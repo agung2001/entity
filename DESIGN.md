@@ -227,6 +227,7 @@ The message box is for the prompt. Attachments belong in a tray below it.
 | One long skill description makes the whole grid scroll sideways | `1fr` tracks need `minmax(0, 1fr)`, cards need `min-width: 0`, and clamped text needs `overflow-wrap: anywhere` | `SkillsView` / `.grid3` |
 | A metadata row lists a path that cannot be opened | Only list paths that `fs.statSync` found, and re-check before acting | `thread-metadata.cjs` |
 | The renderer names the path the main process opens | `thread.pathAction` re-derives the metadata and accepts only a member of it | `electron/rpc.cjs` |
+| A dialog's close X floats over the page's own toolbar, in a box with a shadow | When the surface inside the dialog has an action row, the X is the last control **in that row** (`class="x"`), so the bar's flex aligns it; no offsets, no shadow | `ArtifactDetailView` (`modal`) |
 | A drawer is only closable by its X button | Register it with `useDialogDismiss`, like a modal | `npm test` (drawer contract) |
 | Metadata repeats a second store that can disagree with the chat | Derive it from the transcript; do not persist a copy | Review |
 | A remote thread offers "Reveal in Finder" for a path on another machine | Mark the thread remote, keep copy, and hide local open actions | `ThreadMetadataPanel.vue` |

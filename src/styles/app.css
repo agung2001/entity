@@ -13963,33 +13963,15 @@ button.msg-attach-copy:hover b {
   overflow: hidden;
   background: var(--bg);
 }
-.artifact-dialog-x {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  z-index: 8;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--ink-2);
-  cursor: pointer;
-  box-shadow: 0 6px 16px rgba(10, 10, 10, 0.12);
+/* The dialog's X is `.x` — the app's close control: transparent, 28 px, the
+   hover paints the box. It sits in the action row, so the bar's own flex
+   aligns it and nothing needs an offset. */
+.artifact-close {
+  margin-left: 2px;
 }
-.artifact-dialog-x:hover {
-  background: var(--surface);
-  color: var(--ink);
-}
-.artifact-dialog-x svg {
+.artifact-close svg {
   width: 13px;
   height: 13px;
-}
-/* The page's own actions already reach the right edge; make room for the X. */
-.artifact-dialog .artifact-actions {
-  padding-right: 42px;
 }
 .modal-fade-enter-active,
 .modal-fade-leave-active {

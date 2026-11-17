@@ -515,6 +515,21 @@ onBeforeUnmount(() => {
             </svg>
             {{ confirming === item.id ? 'Confirm delete' : 'Delete' }}
           </button>
+          <!-- In a dialog the page needs its own way out, and it belongs in the
+               row like every other control: same 28 px seat, same hover, no
+               floating chip with a shadow over the page. -->
+          <button
+            v-if="modal"
+            class="x artifact-close"
+            type="button"
+            aria-label="Close"
+            title="Close (Esc)"
+            @click="emit('close')"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" />
+            </svg>
+          </button>
         </div>
       </header>
 

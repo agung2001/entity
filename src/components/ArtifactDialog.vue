@@ -22,11 +22,9 @@ useDialogDismiss({ active: () => open.value, close: () => closeArtifactPreview()
     <div v-if="open" class="artifact-dialog" role="dialog" aria-modal="true" :aria-label="id">
       <div class="artifact-dialog-scrim" @click="closeArtifactPreview()"></div>
       <div class="artifact-dialog-panel">
-        <button class="artifact-dialog-x" type="button" aria-label="Close" title="Close (Esc)" @click="closeArtifactPreview()">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" />
-          </svg>
-        </button>
+        <!-- The page owns its bar, so the X is the last control in that row
+             (`ArtifactDetailView`, `modal`). A second floating one would sit on
+             top of the actions and need offsets to look aligned. -->
         <ArtifactDetailView :id="id" modal @close="closeArtifactPreview()" />
       </div>
     </div>
