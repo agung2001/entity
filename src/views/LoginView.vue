@@ -8,6 +8,7 @@ import {
   DEFAULT_ADMIN,
   adoptWorkspaceOwner,
   credentials,
+  initials,
   loadAccount,
   registerAccount,
   setPassword,
@@ -41,6 +42,13 @@ const pendingRole = ref('')
 const bootstrap = ref(false)
 const accountHint = ref('')
 const identPlaceholder = ref('admin')
+/* a machine that finished first run holds a local account: the profile on disk
+   is the credential, and the form below is one click away for anyone who wants
+   an email instead */
+const resume = ref(false)
+const resumeForm = ref(false)
+/* where a remembered profile lands: the hub, not the picker */
+const landing = ref(null)
 
 const identEl = ref(null)
 const pwEl = ref(null)
@@ -77,6 +85,9 @@ onMounted(async () => {
     /* Deliberately generic: the account email is not a login hint. */
     identPlaceholder.value = 'Email or handle'
     accountHint.value = `Credentials are stored on this machine in ${status.displayPath || status.path || 'auth.json'}.`
+    /* One account, one workspace, no session: this is the second launch of a
+       machine that already finished first run. */
+    resume.value = workspaces.items.length > 0
     return
   }
 
@@ -110,6 +121,24 @@ onMounted(async () => {
   accountHint.value = `This machine still uses the default account. Password ${DEFAULT_ADMIN.password}.`
 })
 
+function continueAsOwner() {
+  if (busy.value || done.value) return
+  const account = credentials()
+  pendingUser.value = account.username
+  pendingEmail.value = account.email || ''
+  pendingRole.value = account.role || 'owner'
+  /* the second launch opens the room it was in, not the workspace picker */
+  let remembered = ''
+  try {
+    remembered = localStorage.getItem('entity.workspace') || ''
+  } catch {
+    remembered = ''
+  }
+  const target = workspaces.items.find((item) => item.id === remembered) || workspaces.items[0]
+  landing.value = target ? { name: 'overview', params: { workspace: target.id } } : null
+  finish()
+}
+
 function finish() {
   busy.value = true
   signIn(
@@ -128,7 +157,8 @@ function finish() {
   clearTimeout(timer)
   timer = setTimeout(() => {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    router.push(redirect && redirect !== '/' ? redirect : '/workspaces')
+    if (landing.value) router.push(landing.value)
+    else router.push(redirect && redirect !== '/' ? redirect : '/workspaces')
   }, 140)
 }
 
@@ -253,7 +283,25 @@ function backToSignIn() {
       <section class="auth-card">
         <p class="kicker">entity</p>
 
-        <template v-if="step === 'credentials'">
+        <template v-if="resume && step === 'credentials' && !resumeForm">
+          <h1>Welcome back 👋</h1>
+          <p class="sub">Signed in on this machine. Pick up where you left off.</p>
+          <div class="resume-who">
+            <span class="mk" aria-hidden="true">{{ initials(credentials().username) }}</span>
+            <span class="who">
+              <b>{{ credentials().username }}</b>
+              <span>{{ credentials().email || 'local profile' }} · local profile</span>
+            </span>
+          </div>
+          <button class="btn-primary" type="button" :disabled="busy || done" @click="continueAsOwner">
+            Continue as owner
+          </button>
+          <p class="alt">
+            <button type="button" @click="resumeForm = true">Use an email and password instead</button>
+          </p>
+        </template>
+
+        <template v-else-if="step === 'credentials'">
           <h1>Sign in</h1>
           <p class="sub">
             Continue to your hub. The first workspace creator owns this account; your agents,
