@@ -841,6 +841,26 @@ function onLiveEvent(event) {
     return
   }
 
+  /* A fan-out announces its rows before the first harness exists, then each row
+     as it starts and settles. They live on the live entry, so the transcript's
+     live bubble paints them above the text the parent has not written yet. */
+  if (event.phase === 'delegating') {
+    if (stale) return
+    const rows = Array.isArray(event.data?.rows) ? event.data.rows : []
+    hub.chat.live = {
+      ...hub.chat.live,
+      [id]: {
+        ...base,
+        delegations: rows,
+        execution: {
+          ...base.execution,
+          startedAt: base.execution?.startedAt || new Date().toISOString(),
+        },
+      },
+    }
+    return
+  }
+
   if (event.phase === 'step') {
     if (stale) return
     const step = event.data?.step

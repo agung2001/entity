@@ -412,7 +412,7 @@ async function resolveYoutrack(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
 
 /* ── entity: a mini run, not a path ───────────────────────────────── */
 
-function spawnParse(spec, dir, { record, entity, mcp }) {
+function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
   return new Promise((resolve) => {
     let child
     try {
@@ -429,6 +429,13 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
       return
     }
 
+    /* Handed to the caller the moment it exists: a fan-out is seven harnesses
+       and the window's Stop has to reach all of them, not just the parent. */
+    try {
+      onChild?.(child)
+    } catch {
+      /* a bookkeeping failure must not fail the run */
+    }
     const startedMs = Date.now()
     const startedAt = new Date(startedMs).toISOString()
     const timing = { firstStepAt: '', firstTextAt: '' }
@@ -522,7 +529,7 @@ function spawnParse(spec, dir, { record, entity, mcp }) {
   })
 }
 
-async function runEntity(record, mentioned, job) {
+async function runEntity(record, mentioned, job, { onChild = null } = {}) {
   if (!job) throw new Error(`@${mentioned.name} needs a job after the name.`)
   /* required here, not at the top: `runner-local` owns this module's entry
      points, and a load-time cycle would hand it an empty object */
@@ -544,7 +551,7 @@ async function runEntity(record, mentioned, job) {
       return { ok: false, answer: '', error: String(error?.message || error) }
     }
     spec.cmd = harnesses.binary(mentioned.harness) || spec.cmd
-    return await spawnParse(spec, dir, { record, entity: mentioned, mcp })
+    return await spawnParse(spec, dir, { record, entity: mentioned, mcp, onChild })
   } finally {
     mcp.cleanup?.()
   }
@@ -892,6 +899,29 @@ async function resolveOne(ctx, segment) {
          it is about, then the person's words. The session and the card keep this
          — a spawned run is one of N, and it is told which one, because answers
          to a shared sentence only differ if each knows it must. */
+      segment.runName = mentioned.name
+      if (!segment.runStatus) segment.runStatus = 'queued'
+      /* A stop lands between two runs, not only inside one: seven queued jobs
+         must not start after the person pressed Stop. */
+      if (ctx.stopped?.()) {
+        segment.runStatus = 'error'
+        segment.mention = {
+          kind: 'entity',
+          raw: segment.raw,
+          token: tokenOf(segment),
+          name: mentioned.name,
+          job: segment.row ? `${segment.row}\n\n${segment.job}` : segment.job,
+          ...(segment.row ? { row: segment.row } : {}),
+          items: [],
+          answer: '',
+          note: 'stopped by you',
+          status: 'error',
+        }
+        ctx.report()
+        return
+      }
+      segment.runStatus = 'running'
+      ctx.report()
       const instruction = segment.row ? `${segment.row}\n\n${segment.job}` : segment.job
       /* The skill is resolved on the person's words, not on the row-prefixed
          instruction: `use this skill <path>` has to stay the first line for the
@@ -899,7 +929,10 @@ async function resolveOne(ctx, segment) {
       const job = [resolveSkillInJob(ctx.record, segment.job), shareNote(segment)]
         .filter(Boolean)
         .join('\n\n')
-      const run = await ctx.deps.runEntity(ctx.record, mentioned, job)
+      const run = await ctx.deps.runEntity(ctx.record, mentioned, job, {
+        onChild: ctx.onChild,
+      })
+      segment.runStatus = run.ok ? 'ok' : 'error'
       segment.mention = {
         kind: 'entity',
         raw: segment.raw,
@@ -918,6 +951,7 @@ async function resolveOne(ctx, segment) {
         ...(Array.isArray(run.steps) && run.steps.length ? { steps: run.steps } : {}),
       }
       if (!run.ok) ctx.notes.push(segment.mention.note)
+      ctx.report()
       return
     }
 
@@ -1016,7 +1050,19 @@ function blockFor(segments, notes) {
  * `deps` is a test seam only: production callers pass nothing and get the real
  * Orca CLI, the real MCP client, and a real entity sub-run.
  */
-async function rewrite(record, text, { entity = null, machine = 'local', localOnly = false, deps = {} } = {}) {
+async function rewrite(
+  record,
+  text,
+  {
+    entity = null,
+    machine = 'local',
+    localOnly = false,
+    deps = {},
+    onProgress = null,
+    onChild = null,
+    stopped = null,
+  } = {},
+) {
   const source = String(text || '')
   const spawn = spawnPrefix(source)
   const parsed = parse(source)
@@ -1080,9 +1126,38 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
     deps: { ...defaultDeps, ...deps },
     notes: [],
     errors: [],
+    onChild,
+    stopped,
+    /* the entity segments of this message, in order: what a progress row is
+       about, and what the window paints while they run */
+    runs: [],
     entities: new Map(
       entities.list(record.id).map((item) => [item.name.toLowerCase(), item]),
     ),
+  }
+  /* One event carries every row, so the window never has to patch a list it
+     has to guess the shape of. At most eight rows — small enough for that. */
+  ctx.report = () => {
+    if (!onProgress || !ctx.runs.length) return
+    try {
+      onProgress({
+        total: ctx.runs.length,
+        rows: ctx.runs.map((segment, index) => ({
+          index,
+          total: ctx.runs.length,
+          name: segment.runName || segment.name || '',
+          row: segment.row || '',
+          job: segment.row ? segment.job : segment.job || '',
+          share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
+          status: segment.runStatus || 'queued',
+          answer: String(segment.mention?.answer || ''),
+          note: String(segment.mention?.note || ''),
+          ms: segment.mention?.ms || 0,
+        })),
+      })
+    } catch {
+      /* the window may be gone; the turn itself must not care */
+    }
   }
 
   /* A delegated job ends at the next `@`. `@coder fix it in @orca:entity` hands
@@ -1148,14 +1223,16 @@ async function rewrite(record, text, { entity = null, machine = 'local', localOn
     )
   }
 
-  await Promise.all(
-    candidates
-      .filter(
-        (segment) =>
-          segment.kind !== 'unknown' && segment !== listSegment && !skipped.includes(segment),
-      )
-      .map((segment) => resolveOne(ctx, segment)),
+  const runNow = candidates.filter(
+    (segment) =>
+      segment.kind !== 'unknown' && segment !== listSegment && !skipped.includes(segment),
   )
+  ctx.runs = runNow.filter((segment) => segment.kind === 'entity')
+  /* Before the first harness exists: the window shows every row as queued, so a
+     fan-out that takes minutes never looks like a hang. */
+  ctx.report()
+
+  await Promise.all(runNow.map((segment) => resolveOne(ctx, segment)))
 
   if (ctx.errors.length) {
     throw new Error(

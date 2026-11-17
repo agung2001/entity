@@ -182,7 +182,14 @@ spawn per @youtrack:ENTITY:relates to: ENTITY-21 #Unresolved @coder /workspace:o
 
 The list mention resolves first, then the entity is copied once per row, so seven issues
 become seven sessions titled by their issue id and title, seven delegation cards and seven
-continuations. Each run is told which row is its own ("do only that row — the other six
+continuations.
+
+**The rows are on screen while they run.** The turn's live bubble paints one delegation card
+per run the moment it exists — queued, then `Working…`, then the answer it produced — and the
+foot says `3 of 7 done · 2m 04s`. A fan-out can hold the turn for half an hour, and a bare
+"Waiting for …" for that long reads as a hang. Stop ends all of them: the delegated runs are
+the turn, so the button kills every child harness, keeps the answers that already landed, and
+leaves `Stopped by you.` Each run is told which row is its own ("do only that row — the other six
 runs handle the rest"). Two rules come with it:
 
 - **Eight rows, one row per run** — the reply above reads at most eight rows, and a

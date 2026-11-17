@@ -520,6 +520,68 @@ test('a mention after the job is named as the trap it is', async () => {
   assert.match(out.text, /@orca:One is a mention of its own, so the delegated job stopped before it/)
 })
 
+test('a fan-out announces every row, then each one as it starts and settles', async () => {
+  const record = workspace()
+  const seen = []
+  await mention.rewrite(record, 'spawn 3 @py-agent write a poem', {
+    deps: deps({
+      runEntity: async (_record, _entity, job) => ({
+        ok: true,
+        answer: `answer to ${job.slice(0, 12)}`,
+        error: '',
+      }),
+    }),
+    onProgress: (data) => seen.push(data),
+  })
+  /* the first event carries all three rows, before any harness exists */
+  assert.equal(seen[0].total, 3)
+  assert.deepEqual(
+    seen[0].rows.map((row) => row.status),
+    ['queued', 'queued', 'queued'],
+  )
+  assert.equal(seen[0].rows[0].share, '1/3')
+  assert.equal(seen[0].rows[1].name, 'py-agent')
+  /* then each run reports running, and finally the whole set is answered */
+  assert.ok(seen.some((data) => data.rows.filter((row) => row.status === 'running').length === 3))
+  const last = seen[seen.length - 1]
+  assert.deepEqual(
+    last.rows.map((row) => row.status),
+    ['ok', 'ok', 'ok'],
+  )
+  assert.match(last.rows[2].answer, /^answer to write a poem/)
+})
+
+test('a stopped turn starts no queued run', async () => {
+  const record = workspace()
+  let runs = 0
+  await mention.rewrite(record, 'spawn 3 @py-agent write a poem', {
+    deps: deps({
+      runEntity: async () => {
+        runs += 1
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+    stopped: () => true,
+  })
+  assert.equal(runs, 0)
+})
+
+test('every delegated harness is handed to the caller, so Stop can reach it', async () => {
+  const record = workspace()
+  let given = 0
+  await mention.rewrite(record, '@py-agent fix it', {
+    deps: deps({
+      runEntity: async (_record, _entity, _job, options) => {
+        assert.equal(typeof options.onChild, 'function')
+        given += 1
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+    onChild: () => {},
+  })
+  assert.equal(given, 1)
+})
+
 test('the parent is told what ran, never the raw fan-out sentence', async () => {
   const record = workspace()
   const out = await mention.rewrite(record, 'spawn 2 @py-agent write a poem', { deps: deps() })
