@@ -2,7 +2,7 @@
 
 # Machines
 
-<picture><source srcset="assets/readme-features/machines.webp" type="image/webp" /><img src="assets/readme-features/machines.poster.jpg" alt="A machine list with the harness and model inventory stored for one workspace" width="820" /></picture>
+<picture><source srcset="assets/readme-features/machines.webp" type="image/webp" /><img src="assets/readme-features/machines.poster.jpg" alt="A machine list with the sweep badge, and the harness and model inventory stored for one workspace" width="820" /></picture>
 
 Two rules make the scope coherent:
 
@@ -51,6 +51,23 @@ each CLI reports, and the configured default.
 
 No private key and no ssh config enters the workspace, and the inventory is not a
 secret. A host that disappears from `~/.ssh/config` simply stops appearing in the list.
+
+## The machine that sweeps
+
+Artifact retention runs on exactly one machine per workspace, because two clones
+sweeping one shared shelf would race each other's moves. The Machines page shows a
+`sweep` tag on the card that runs it and a **Run the sweep here** button on the others
+— the local card, a pinned `machine`, or the `host` that serves the shared workspace.
+
+- The **owner's** first signed-in machine takes it until somebody picks another.
+- A sync host runs it with no desktop open, so it gets a card of its own.
+- Every other clone stands down: `The artifact sweep runs on <label>; this machine
+  does not sweep it.`
+- The executor's **local clock** is the deadline's clock. A sync host in a container
+  usually runs UTC, so its `03:00` is not your `03:00`.
+
+The rule, the forecast and the two clocks are in
+[Artifacts → the archive shelf](artifacts.md#the-archive-shelf).
 
 ## The terminal follows the thread
 

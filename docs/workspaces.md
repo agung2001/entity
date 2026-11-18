@@ -20,7 +20,13 @@ the app.
     mcp.json                    the workspace MCP servers (mode 0600)
     machine-facts.json          harness/model inventory from an explicit ssh test
     chats/<threadId>.json       one conversation per file, private to its account
-    artifacts/<path>            documents, screenshots and other deliverables
+    artifacts/<path>            shared deliverables — exported and synced
+    artifacts/.scope.json       who shared which file
+    artifacts/.archive/         archived deliverables, still on disk
+    artifacts/.opened.json      last-opened stamps for the archive sweep
+    .personal/<account>/artifacts/  your own shelf, never shared or synced
+    artifact-retention.json     this machine's sweep position (the rule is in workspace.json)
+    retention.json              chat-retention rule
     runs/<runId>.jsonl          append-only run log
     audit.jsonl                 one line per agent-initiated write
 ```
@@ -68,9 +74,11 @@ they belong to the workspace, so every entity gets all of them and an entity can
 narrow the list. Its problems are its own — an unknown harness, a `dir` that is not
 there — and the file stays readable and the run is still allowed.
 
-Nothing is seeded behind your back: a new workspace is empty, and the sample roles
-are a checkbox in the create form — each one listed so you choose which files to
-write. A fresh entity can also start from one of those roles, or from a blank brief.
+Nothing is seeded behind your back. The first room from the welcome wizard starts with
+the three roles it names — `chief-of-staff`, `writer` and `secretary` — and the
+**New workspace** form in the picker is empty unless you tick **Start with sample
+entities** and choose which files to write. A fresh entity can also start from one of
+those roles, or from a blank brief.
 
 ## Learning from conversations
 
@@ -120,8 +128,9 @@ archives itself, and when it is gone.
 - **Answering an archived thread brings it back** into the working list, so a
   conversation somebody still uses can never be counting days toward deletion.
 
-The rule lives in `<workspace>/retention.json`, so it travels with a backup or a remote
-copy. A workspace that has never had this tab opened is never swept.
+The rule lives in `<workspace>/retention.json`, so it travels with a backup. It is
+not part of a remote clone's metadata: each machine keeps its own chat sweep until the
+connection carries it. A workspace that has never had this tab opened is never swept.
 
 ## Moving in from another tool
 

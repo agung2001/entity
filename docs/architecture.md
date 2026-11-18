@@ -14,12 +14,12 @@ flowchart TB
 
   subgraph main["Main process — electron/"]
     T["One call table<br/>rpc.cjs"]
-    ST["Stores<br/>workspace · entity · chat · artifact<br/>harness · mcp · terminal · remote-sync"]
+    ST["Stores<br/>workspace · entity · chat · artifact<br/>artifact-retention · backup<br/>harness · mcp · terminal · remote-sync"]
     CH["Child registry<br/>process groups + pid journal"]
   end
 
   subgraph disk["~/.entity/workspaces/&lt;id&gt;/"]
-    F["entities · chats · artifacts<br/>skills · runs · mcp.json"]
+    F["entities · chats · artifacts · .personal<br/>skills · runs · mcp.json"]
   end
 
   subgraph harness["A run is a real process"]

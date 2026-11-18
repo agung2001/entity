@@ -25,9 +25,10 @@ end — milliseconds, not a re-upload.
 | syncs | does not |
 | --- | --- |
 | `entities/**`, `artifacts/**` | chats and run logs |
+| the artifact scope index (`artifacts/.scope.json`) | personal shelves under `.personal/` |
 | attached skill **bodies** under `skills/` | machine capability snapshots (they describe local machines) |
 | the MCP set, with every secret replaced by `***` | any MCP secret |
-| workspace metadata: label, context, strictness, members | the workspace id and path |
+| workspace metadata: label, context, strictness, members, the artifact-retention rule | the workspace id and path, archive dates and opened stamps |
 
 ## The rules that keep it honest
 
@@ -49,7 +50,25 @@ end — milliseconds, not a re-upload.
   shows the excerpt. Approving binds to the exact `sha256`.
 - **Second opinion (opt-in).** The connect dialog can run one installed CLI over the
   pulled bytes with a strict JSON brief. If that evaluator cannot run, the sync stops
-  with an error rather than pretending it was checked.
+  with an error rather than pretending it was checked. See
+  [the sync evaluator](#the-sync-evaluator).
+
+### The sync evaluator
+
+Configured under **Sync evaluator**: a checkbox, a harness chosen from the installed
+ones, and a model (labelled *Evaluator model*, placeholder *harness default*).
+
+- A pi model name that matches more than one provider is refused:
+  `The evaluator model "<m>" matches more than one provider: a, b. Save it as
+  provider/model, e.g. a/<m>.` The panel offers the providers as buttons —
+  `pi reports these providers:` — and the choices survive a runtime refusal, so a
+  connect that failed after saving can be fixed without retyping the model.
+- A resolved provider-qualified model is stored that way, so the next pass cannot
+  silently pick a different provider.
+- A missing CLI is stated, not swallowed: `The sync evaluator is set to X, but its CLI
+  is not installed on this machine.` The pass fails closed.
+- `ENTITY_GUARD_TIMEOUT_MS` bounds the reviewer (120 s by default);
+  `ENTITY_SYNC_INTERVAL_MS` moves the six-hour poll.
 
 ## What a pass shows
 

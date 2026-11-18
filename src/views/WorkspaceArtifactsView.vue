@@ -263,8 +263,8 @@ onBeforeUnmount(() => {
         Everything on this workspace's <b>shared</b> artifacts shelf, by how long it has
         been since anyone opened it. ① decides what moves into the archive; ② decides what
         leaves this machine for good. An archived file is out of the shelf's list, not off
-        the disk. A personal shelf (<code class="mono">artifacts/.personal/</code>) is one
-        account's own and is never swept.
+        the disk. A personal shelf (<code class="mono">.personal/&lt;account&gt;/artifacts/</code>)
+        is one account's own and is never swept.
       </p>
 
       <div v-if="!canEdit" class="role-line">
@@ -813,7 +813,8 @@ onBeforeUnmount(() => {
   artifacts/               {{ plural(meta?.files || 0, 'file') }} · {{ mb(meta?.bytes) }}
   artifacts/.archive/      {{ plural(meta?.archived || 0, 'file') }} · {{ mb(meta?.archivedBytes) }}
   artifacts/.opened.json   the last time each file was opened
-  artifact-retention.json  the rule on this card</pre>
+  workspace.json           the rule on this card
+  artifact-retention.json  this machine's sweep position</pre>
 
       <p class="mnote">
         <b>Restore</b> — move the file back out of
@@ -850,8 +851,8 @@ onBeforeUnmount(() => {
         runs the pass are workspace configuration: one owner or admin sets them and every
         clone reads them. The archive, its dates and the opened map stay on the machine
         that runs the pass. A personal shelf
-        (<code class="mono">artifacts/.personal/</code>) is private to one account and is
-        outside this rule.
+        (<code class="mono">.personal/&lt;account&gt;/artifacts/</code>) is private to one account
+        and is outside this rule.
       </p>
       <p class="mnote">
         <b>The archive date</b> — stamped once, the moment a file moves in. ② counts from

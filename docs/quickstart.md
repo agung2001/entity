@@ -25,6 +25,7 @@ here; [Onboarding](onboarding.md) walks through the three steps.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Renderer only, in a browser at http://localhost:5183 |
+| `npm run dev:lan` | The same, bound to `0.0.0.0` so another machine on your network can open it |
 | `npm run dev:desktop` | Vite **and** Electron, pointed at the dev server |
 | `npm run build` | Builds the renderer into `dist/` |
 | `npm run start` | Runs Electron against the existing `dist/` build |
@@ -43,6 +44,9 @@ here; [Onboarding](onboarding.md) walks through the three steps.
 
 - The dev server uses **5183** so it does not collide with projects that grab Vite's
   default 5173. Override with `VITE_DEV_PORT=6000`.
+- `npm run dev:lan` binds to `0.0.0.0`: open it by **IP address**, not a hostname —
+  Vite only auto-allows `localhost` and literal IPs, so `http://my-mac.local:5183` is a
+  blocked host until that name is added to `server.allowedHosts`.
 - `ENTITY_HOME` moves the whole profile — account, workspaces, run logs — which is
   handy for a scratch hub:
 

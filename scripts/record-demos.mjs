@@ -59,11 +59,11 @@ const clips = [
     name: 'readme-hero',
     async run(page) {
       await page.goto(`${BASE}/${WORKSPACE}/overview`, { waitUntil: 'networkidle' })
-      await wait(page, 1600)
-      await page.mouse.move(900, 420)
-      await page.mouse.wheel(0, 420)
-      await wait(page, 1100)
-      await page.mouse.wheel(0, 380)
+      await wait(page, 1500)
+      await page.mouse.move(700, 330)
+      await page.mouse.wheel(0, 300)
+      await wait(page, 1300)
+      await page.mouse.wheel(0, 300)
       await wait(page, 1400)
     },
   },
@@ -231,12 +231,20 @@ async function main() {
   const loginContext = await browser.newContext({ viewport: VIEW })
   const loginPage = await loginContext.newPage()
   await loginPage.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
-  await loginPage.fill('input[autocomplete="username"]', ACCOUNT.email)
-  await loginPage.fill('input[autocomplete="current-password"]', ACCOUNT.password)
-  await Promise.all([
-    loginPage.waitForURL(/\/workspaces/, { timeout: 20000 }),
-    loginPage.click('button[type="submit"]'),
-  ])
+  /* A profile that finished first run holds the account on disk: the screen
+     offers one click instead of a form. Fall back to the form on a cold hub. */
+  const resume = loginPage.getByRole('button', { name: /continue as owner/i })
+  if (await resume.count()) {
+    await resume.click()
+    await loginPage.waitForURL(/\/overview|\/workspaces/, { timeout: 20000 })
+  } else {
+    await loginPage.fill('input[autocomplete="username"]', ACCOUNT.email)
+    await loginPage.fill('input[autocomplete="current-password"]', ACCOUNT.password)
+    await Promise.all([
+      loginPage.waitForURL(/\/workspaces/, { timeout: 20000 }),
+      loginPage.click('button[type="submit"]'),
+    ])
+  }
   const storage = await loginContext.storageState()
   await loginContext.close()
 

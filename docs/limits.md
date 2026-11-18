@@ -8,7 +8,8 @@ plan around it; if it were hidden, you would find out mid-task.
 ## Runtime
 
 - **A run dies with the app.** There is no daemon; nothing keeps working while the
-  window is closed.
+  window is closed. The archive sweep is a timer in the main process, so it also stops
+  with the window and catches up within a minute of the next launch.
 - **Remote chat is one ssh turn at a time.** A thread pinned to a machine stages a
   temporary workspace, runs the installed harness there and streams the answer
   back. The remote directory is deleted after the turn; entity *runs* still execute
@@ -55,8 +56,10 @@ plan around it; if it were hidden, you would find out mid-task.
   a turn and as tokens, but contributes nothing to the dollar total; the charts never
   estimate a price.
 - **`audit.jsonl` has no window yet.** It is written and readable from the CLI.
-- **Export** carries entities, chats, artifacts, copied skills and the MCP pool.
-  Machine capability facts and run logs are deliberately left out.
+- **Export** carries entities, chats, **shared** artifacts, copied skills and the MCP
+  pool. A personal shelf (`.personal/`), workspace metadata, machine capability facts
+  and run logs are deliberately left out. A local ZIP backup is a snapshot of the
+  whole folder, so it does carry `.personal/` and `workspace.json`.
 
 ## Voice
 

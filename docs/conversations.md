@@ -107,6 +107,8 @@ the chat header opens a drawer with that residue, newest first:
 | --- | --- |
 | `@release-captain cut the branch` | that entity **runs** the job first; its answer is injected into this turn |
 | `@artifact:q3-usage.csv` | a file on this workspace's shelf, as `artifact://…` plus its path |
+| `@thread:t_abc123` | another conversation in this workspace: its title, questions and last answer, injected as context |
+| `@file:notes/brief.md` | a file under the thread's base folder, resolved to a real path |
 | `@maka:atlas:plan` | notes found through the Maka MCP server (vault, then query) |
 | `@youtrack:AC:login bug` | issues through the YouTrack MCP server, scoped to `project: AC` |
 | `@orca:Atlas:src/app.ts` | an absolute path inside an Orca project |
@@ -160,6 +162,10 @@ with that entity, linked to this one.
   by the app, not by a remote host), and nothing about them is stored beyond the thread
   itself.
 
+A delegated run is given an hour (`ENTITY_MENTION_TIMEOUT_MS`), not the two minutes a
+search would need: a job that has to *finish* gets a fix round and a screenshot. It is
+still bounded, and **Stop** cancels it and keeps the answers that already landed.
+
 **One instruction, several sessions.** Start the message with `spawn N` and the mention
 runs N times, in parallel — N answers, N cards, N sessions:
 
@@ -203,7 +209,7 @@ runs handle the rest"). Two rules come with it:
 Routing is a first-message affair: the worktree exists after that turn, and the delegatee's
 own rule sends every follow-up to the same terminal.
 
-## Usage and activity## Usage and activity
+## Usage and activity
 
 <picture><source srcset="assets/readme-features/usage.webp" type="image/webp" /><img src="assets/readme-features/usage.poster.jpg" alt="The overview's spend chart and a calendar heatmap of active days" width="820" /></picture>
 

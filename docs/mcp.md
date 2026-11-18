@@ -2,7 +2,7 @@
 
 # MCP servers
 
-<picture><source srcset="assets/readme-features/mcp.webp" type="image/webp" /><img src="assets/readme-features/mcp.poster.jpg" alt="The workspace MCP servers with transports, commands and the entities that name each server" width="820" /></picture>
+<picture><source srcset="assets/readme-features/mcp.webp" type="image/webp" /><img src="assets/readme-features/mcp.poster.jpg" alt="The workspace MCP set with the Workspace / On this machine scope switch, transports and the entities that name each server" width="820" /></picture>
 
 A workspace has one set of servers (`<ws>/mcp.json`) and **every entity gets all of
 them**. Add a server once — on the MCP page, or by **attaching** one a harness
@@ -22,6 +22,51 @@ left in an older entity file is ignored by the reader and dropped by the next wr
 A definition that can only work on the machine that wrote it — a loopback URL, or a
 command inside a home directory — is still shared with a teammate but lands parked,
 with the reason. See [Remote workspaces](remote-sync.md).
+
+## The server page
+
+A row — in either rail scope — opens one page for one server. It states each fact
+once, in the rail, instead of repeating it in a table:
+
+- **Status** — `attached`, `parked` or `not attached`.
+- **Transport** — `remote · http` or `local · stdio`; an HTTP server is never called
+  “sse” here, because the word describes the definition, not the experience.
+- **URL**, **Command**, **Args**, **Headers** (key names only) and the tool count.
+- `every entity` in the header, so the no-per-entity rule is visible where somebody
+  would look for the exception.
+- **Environment** lists env *keys*, never values: values are handed to the harness
+  when the turn starts and are never returned by a read.
+- **Defined in** lists `this workspace` (`mcp.json`) and every harness file,
+  `N of M places`. When a name exists twice the page says the turn reads the file it
+  runs from, so the copies can drift. **Edit** opens a masked view — headers and env
+  as `•••` — beside a full-value editor.
+
+**Attach** copies a harness's definition verbatim (a two-click arm; tokens differ); if
+the harness already has a copy, the page names which harness defined it. **Detach**
+removes it from the workspace and every harness. **Park** keeps the definition and
+takes it out of every turn; a server parked by a sync says which reason it came with.
+
+### The tool list
+
+`N from the server · R read · W write`. The list searches the tool's name and its
+description (`Search N tools — name, or what it does`), and the `All / Read / Write`
+segments recompute their counts after the search. The keyboard guide's **Search this
+server's tools** shortcut puts the caret in the field. `read`/`write` is a guess from the
+tool's leading verb, not a permission claim. Empty states are explicit — a server that
+reported no tools says so, including the token-missing case for an HTTP server — and a
+failure is the raw sentence, not a spinner.
+
+### Two scopes in the rail
+
+The rail's MCP section carries a **Workspace _n_** / **Harness _n_** switch, and the
+section stays mounted while a server page is open (the current row gets
+`aria-current="page"`). Workspace rows show the transport, the `parked` state and a
+drift chip naming any other harness that declares the same name; harness rows show the
+harness, the command and `in pool` / `attach`. Both open the same page. The search
+survives the switch — comparing one server across lists is the point — while the
+harness chip resets. `Esc` clears the filter before it closes the rail. A harness that
+declares nothing gets no chip; a failed scan says `Could not read harness configs.`
+with **Try again** and leaves the pool intact.
 
 ## How the set reaches each harness
 

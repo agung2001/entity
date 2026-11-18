@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="https://github.com/agung2001/entity"><img src="docs/assets/icon.svg" alt="Entity" width="64" valign="middle" /></a> Entity
+  <a href="https://github.com/agung2001/entity"><picture><source srcset="docs/assets/entity-logo.webp" type="image/webp" /><img src="docs/assets/entity-logo.poster.jpg" alt="Entity" width="64" valign="middle" /></picture></a> Entity
 </h1>
 
 <p align="center">
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <picture><source srcset="docs/assets/readme-hero.webp" type="image/webp" /><img src="docs/assets/readme-hero.poster.jpg" alt="A studio workspace overview: eight assistants, the year's spend chart and a calendar of the days they worked" width="1000" /></picture>
+  <picture><source srcset="docs/assets/readme-hero.webp" type="image/webp" /><img src="docs/assets/readme-hero.poster.jpg" alt="A studio workspace overview: six assistants, the year's spend chart and a calendar of the days they worked" width="1000" /></picture>
 </p>
 
 ## What it is
@@ -53,8 +53,10 @@ the harness actually reported. Nothing is synced to a service you did not choose
 ### Conversations you can re-read
 
 Ask in plain language. Long turns fold into steps you can open: what the assistant
-thought, what it ran, what came back. Every answer can be retried, copied, shared
-with a link, or saved into the workspace as a file.
+thought, what it ran, what came back. A mention does more than answer here — it leaves a
+**session** you can continue, and `spawn N` or `spawn per` can hand one instruction to
+several runs at once. Every answer can be retried, copied, shared with a link, or saved
+into the workspace as a file.
 
 </td>
 <td width="50%">
@@ -93,11 +95,28 @@ server so a team can share it.
 <tr>
 <td width="50%" valign="middle">
 
+### A shelf that keeps itself
+
+Every save lands on **your** shelf first — an upload, a file a turn wrote, the render
+you dragged in. Share one with the room and it becomes everyone's; the rest never
+leaves your machine. Two clocks then archive and delete what nobody opened, on the one
+machine you choose, and a file a live conversation still names is held back.
+
+</td>
+<td width="50%">
+  <a href="docs/artifacts.md"><picture><source srcset="docs/assets/readme-features/artifacts.webp" type="image/webp" /><img src="docs/assets/readme-features/artifacts.poster.jpg" alt="A shared poster artifact on its detail page, with the Personal / Shared scope switch in the rail and its metadata" width="100%" /></picture></a>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
 ### Skills and tools that travel
 
 A skill is a recipe you can hand to any assistant with `/` — the workspace's own
 first, then every library on this machine. Add an MCP server once and every assistant
-in the room can use it; secrets stay on disk and are never sent back to the window.
+in the room can use it; its page states the transport, the command or URL and the tools
+the server actually reported, searchable and split read/write. Secrets stay on disk and
+are never sent back to the window.
 
 </td>
 <td width="50%">
@@ -115,7 +134,7 @@ workspace. A thread can be pinned there, terminal included.
 
 </td>
 <td width="50%">
-  <a href="docs/machines.md"><picture><source srcset="docs/assets/readme-features/machines.webp" type="image/webp" /><img src="docs/assets/readme-features/machines.poster.jpg" alt="A machine list with the harness and model inventory stored for one workspace" width="100%" /></picture></a>
+  <a href="docs/machines.md"><picture><source srcset="docs/assets/readme-features/machines.webp" type="image/webp" /><img src="docs/assets/readme-features/machines.poster.jpg" alt="A machine list with the sweep badge, and the harness and model inventory stored for one workspace" width="100%" /></picture></a>
 </td>
 </tr>
 <tr>
@@ -135,11 +154,13 @@ assistant gets its own calendar and bill.
 </table>
 
 **Also in the box:** an execution timeline per answer · a links-and-paths drawer
-derived from each thread · `@entity`, `@artifact:`, `@maka:`, `@youtrack:` and
-`@orca:` mentions resolved before the agent sees them · a folder-per-thread base
-directory with `/project:` skills · a terminal beside the chat (``Ctrl+` ``) · voice
-with barge-in and read-aloud · ZIP backups on a rolling schedule · one-verb agent CLI
-with an audit log · two-way sync with a shared server · a command palette and a
+derived from each thread · delegation cards and a session tree behind `spawn N` /
+`spawn per` · `@entity`, `@thread:`, `@artifact:`, `@maka:`, `@youtrack:` and
+`@orca:` mentions resolved before the agent sees them · personal and shared artifact
+shelves with a two-clock archive sweep · a folder-per-thread base directory with
+`/project:` skills · a terminal beside the chat (``Ctrl+` ``) · voice with barge-in and
+read-aloud · ZIP backups on a rolling schedule · one-verb agent CLI with an audit log ·
+two-way sync with a shared server, evaluator included · a command palette and a
 keyboard guide that cannot drift from the handlers.
 
 ## Use cases
@@ -151,6 +172,8 @@ keyboard guide that cannot drift from the handlers.
 | **Keep research you can cite** | `@maka:` pulls notes from your vault, `@youtrack:` scopes issues to a project, and the links drawer collects every reference the thread touched |
 | **Give a coding agent a home** | one entity per repo with `dir:` and its own skill set, `@file:` mention for files, a terminal in the same folder, spend per repo in the charts |
 | **Share assistants with a team** | connect a workspace to a server, members sign in as themselves, MCP servers and skills travel with the workspace, and the guard scans everything before it is written |
+| **Keep a shelf without hoarding** | saves land personal, one click shares a file with the room, and two clocks archive then delete by last opened — while a live thread keeps the files it still names |
+| **Fan one instruction across a list** | `spawn per @youtrack:… @coder fix it` turns every matching issue into its own session, card and continuation, with the rows painted as they run |
 | **Keep the office on your machines** | pin a thread to an ssh host and the harness runs there, inventories from one read-only scan, nothing installed on the server |
 
 ## Supported assistants
@@ -181,12 +204,15 @@ npm install
 npm run dev:desktop      # Vite + Electron, HMR included
 ```
 
-On a fresh profile the app lands on **Create a workspace**. Prefer a scratch profile?
+On a fresh profile the app lands on a three-step **welcome** card: name the room, pick
+an agent CLI, say hello. It creates the machine-local owner on the way in, so there is
+no sign-in form to fill. Prefer a scratch profile?
 `ENTITY_HOME=/tmp/entity-scratch npm run dev:desktop`.
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Renderer only, in a browser at http://localhost:5183 |
+| `npm run dev:lan` | The same, bound to `0.0.0.0` so another machine on your network can open it |
 | `npm run dev:desktop` | Vite **and** Electron, pointed at the dev server |
 | `npm run test` | Unit tests + the static UI contract |
 | `npm run test:gate` | Unit + smoke — the release gate |
@@ -199,16 +225,16 @@ Full command list, ports, test packs and release builds:
 
 | Document | What is in it |
 | --- | --- |
-| [Quickstart](docs/quickstart.md) | requirements, every `npm` command, ports, profiles, test packs, tagged releases |
+| [Quickstart](docs/quickstart.md) | requirements, every `npm` command, ports, LAN dev, profiles, test packs, tagged releases |
 | [Onboarding](docs/onboarding.md) | the first run: three steps, the silent owner account, and the return launch |
-| [Workspaces and entities](docs/workspaces.md) | the folder tree, the entity file, Learning, moving in from another tool |
-| [Conversations](docs/conversations.md) | transcripts, timeline, mentions, base directories, links/paths, usage and activity |
+| [Workspaces and entities](docs/workspaces.md) | the folder tree, the entity file, Learning, chat retention, moving in from another tool |
+| [Conversations](docs/conversations.md) | transcripts, timeline, mentions, delegation sessions and fan-out, base directories, usage and activity |
 | [Skills](docs/skills.md) | how `/project:`, `/workspace:` and `/<harness>:` resolve, attach versus link |
-| [MCP servers](docs/mcp.md) | one set per workspace, how each harness receives it, the agent-facing endpoint |
-| [Artifacts and backups](docs/artifacts.md) | the shelf, `artifact://`, ZIP snapshots and retention |
-| [Machines](docs/machines.md) | `~/.ssh/config`, test & scan, pinned threads, the terminal |
+| [MCP servers](docs/mcp.md) | one set per workspace, the server page and its tool list, how each harness receives it, the agent-facing endpoint |
+| [Artifacts and backups](docs/artifacts.md) | personal versus shared shelves, share and unshare, the archive sweep, `artifact://`, ZIP snapshots |
+| [Machines](docs/machines.md) | `~/.ssh/config`, test & scan, the machine that sweeps, pinned threads, the terminal |
 | [Voice](docs/voice.md) | barge-in, transcription engines, privacy, sound cues |
-| [Remote workspaces](docs/remote-sync.md) | two-way sync, the three-way diff, the guard before any write |
+| [Remote workspaces](docs/remote-sync.md) | two-way sync, the three-way diff, the guard and its evaluator, the artifact scope index |
 | [Agent CLI](docs/agent-cli.md) | the verbs an entity can call on its own workspace |
 | [Deploy the server](docs/deploy.md) | Docker, GHCR image, reverse proxy, hardening |
 | [Architecture](docs/architecture.md) | layers, the one call table, child processes, the server |
@@ -216,7 +242,7 @@ Full command list, ports, test packs and release builds:
 | [Limits](docs/limits.md) | what it deliberately does not do |
 | [Status](docs/status.md) | what "growing" means here, and what is out of scope |
 | [Migrating from Multica](docs/migrating-from-multica.md) | a real 8-agent port, step by step |
-| [README media](docs/assets/README.md) | how the demos are recorded, encoded and checked |
+| [README media](docs/assets/README.md) | how the demos and the animated mark are recorded, encoded and checked |
 | [`DESIGN.md`](DESIGN.md) | the interface contract every UI change is held to |
 
 <p align="center">

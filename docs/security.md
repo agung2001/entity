@@ -64,9 +64,11 @@ flowchart LR
 
 - Every call, and the event stream, requires a session. Membership is enforced per
   workspace; host-level actions are owner/admin only.
-- Sync paths are scoped to `entities/`, `artifacts/` and `skills/`, re-checked
-  against the workspace root. Dotfiles, `..`, absolute paths and files over 25 MB
-  are refused or skipped; a nested symlink is not followed.
+- Sync paths are scoped to `entities/`, `artifacts/` and `skills/`, plus the one
+  scope index `artifacts/.scope.json`. Every other dotfile, `..`, absolute path and
+  file over 25 MB is refused or skipped; a nested symlink is not followed. The
+  personal shelf (`.personal/<account>/artifacts/`) is outside the manifest, so it
+  never leaves this machine unless a file is explicitly shared.
 - Workspace-owned skills under `skills/` travel as real files, **including execute
   bits and only execute bits**. A skill attached from a harness library is
   dereferenced on the way out, so the receiving machine never gets a link into

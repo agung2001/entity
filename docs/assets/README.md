@@ -12,6 +12,8 @@ no poster, no `<picture>`, just an `<img>` pointing at the file.
 ```
 docs/assets/
   readme-hero.webp           readme-hero.poster.jpg
+  entity-logo.webp           entity-logo.poster.jpg
+  icon.svg                   the still mark, when an SVG is wanted
   readme-features/
     chat.webp                chat.poster.jpg
     entity.webp              entity.poster.jpg
@@ -40,6 +42,16 @@ A still is a plain `<img>`, and the alt text carries the whole description:
 name field with the live folder preview under it" width="820" />
 ```
 
+The title mark follows the same rule at 64 px. It is small enough that the hop is a
+detail, not a performance:
+
+```html
+<picture>
+  <source srcset="docs/assets/entity-logo.webp" type="image/webp" />
+  <img src="docs/assets/entity-logo.poster.jpg" alt="Entity" width="64" />
+</picture>
+```
+
 In the README each demo is also a link to the page that explains it:
 
 ```html
@@ -61,7 +73,8 @@ aliases from there.
 ```bash
 node scripts/demo-profile.mjs --force            # → /tmp/entity-demo
 HOME=/tmp/entity-demo ENTITY_HOME=/tmp/entity-demo/.entity \
-  VITE_DEV_PORT=5299 npm run dev                 # sign in: studio@northwind.example
+  VITE_DEV_PORT=5299 \
+  NODE_OPTIONS=--require=./scripts/demo-hostname.cjs npm run dev
 node scripts/record-demos.mjs --url http://localhost:5299 [--only chat,mcp]
 ```
 
@@ -73,9 +86,11 @@ npm run media:encode -- .tmp/demo-clips/chat.webm chat
 ```
 
 The interface prints `os.hostname()` in the composer and on the machines page. The
-recorder is started with a tiny `NODE_OPTIONS=--require …` stub that answers
-`studio-mini`, which is why those screenshots show a demo machine rather than the
-recorder's laptop.
+dev server is started with `NODE_OPTIONS=--require=./scripts/demo-hostname.cjs`, a
+tiny stub that answers `studio-mini`, which is why those screenshots show a demo
+machine rather than the recorder's laptop. `record-demos.mjs` signs in with the demo
+account `studio@northwind.example`, or with the **Continue as owner** button when the
+profile already finished first run.
 
 ### Recording by hand
 
@@ -106,11 +121,19 @@ ffmpeg -i recording.mov \
   docs/assets/readme-features/chat.webp
 ```
 
-One command does the same thing, and writes the poster from a settled frame:
+One command does the same thing, and writes the poster from a settled frame halfway
+through the clip:
 
 ```bash
 npm run media:encode -- recording.mov chat             # → features/chat.webp + poster
 npm run media:encode -- recording.mov readme-hero --hero  # → assets/readme-hero.webp
+```
+
+A clip whose middle is still moving — the hero scrolls — can name its poster frame
+instead, so the fallback is the frame you meant:
+
+```bash
+npm run media:encode -- .tmp/demo-clips/readme-hero.webm readme-hero --hero --poster 1.2
 ```
 
 A clip longer than twelve seconds is trimmed to twelve, so a stalled interaction
@@ -118,6 +141,22 @@ cannot turn into a 6 MB loop.
 
 `ffmpeg` needs the `libwebp_anim` encoder (Homebrew's build has it). If a recording is
 replaced, re-run the encoder; if only the poster is missing, `npm run media:posters`.
+
+## The logo
+
+The mark at the top of the README is not a screen recording and not `icon.svg` wearing
+a CSS class. `scripts/logo-animation.mjs` draws the same 9 × 9 squircle as
+`icon.svg`, wraps it in the app's own brand motion — a breath, a hard two-step blink
+and a squash-and-stretch hop — and steps that timeline one frame at a time in Chrome,
+so the loop is deterministic instead of whatever the recorder caught.
+
+```bash
+npm run media:logo        # → assets/entity-logo.webp + poster (6 s, 12 fps)
+```
+
+`icon.svg` stays the still: the same drawing without motion, and the file to reach for
+when an SVG is wanted (the app's own favicon is a copy in `public/`). The poster is the
+first frame on the tile's own cream, so the rounded corners do not turn black in a JPEG.
 
 ## Budgets and the check
 

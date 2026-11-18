@@ -52,6 +52,28 @@ function run(cmd, args) {
 
 const kb = (bytes) => `${(bytes / 1024).toFixed(0)} KB`
 
+/** Seconds in a recording, so the poster can be taken from a settled frame. */
+function durationOf(input) {
+  try {
+    const out = run('ffprobe', [
+      '-v', 'error', '-show_entries', 'format=duration',
+      '-of', 'default=nokey=1:noprint_wrappers=1', input,
+    ])
+    const seconds = Number.parseFloat(out.trim())
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : 0
+  } catch {
+    return 0
+  }
+}
+
+/* Halfway through, because the first frames of a recording are the page
+   loading: a settled frame is the one worth falling back to. */
+function settledAt(source) {
+  const seconds = durationOf(source)
+  if (!seconds) return 0.3
+  return Math.max(0.8, Math.min(seconds * 0.5, seconds - 0.6))
+}
+
 function isAnimated(file) {
   try {
     return readFileSync(file).includes(Buffer.from('ANIM'))
@@ -66,7 +88,7 @@ function posterFor(name) {
     : path.join(ASSETS, `${name}.webp`)
   if (!existsSync(source)) throw new Error(`no webp called ${name}`)
   const target = source.replace(/\.webp$/, '.poster.jpg')
-  run('ffmpeg', ['-v', 'error', '-y', '-i', source, '-frames:v', '1', '-q:v', String(POSTER_QUALITY), target])
+  run('ffmpeg', ['-v', 'error', '-y', '-ss', settledAt(source).toFixed(2), '-i', source, '-frames:v', '1', '-q:v', String(POSTER_QUALITY), target])
   return { target, source }
 }
 
@@ -82,7 +104,7 @@ function posters({ force = false } = {}) {
     if (!isAnimated(file)) continue
     const poster = file.replace(/\.webp$/, '.poster.jpg')
     if (existsSync(poster) && !force) continue
-    run('ffmpeg', ['-v', 'error', '-y', '-i', file, '-frames:v', '1', '-q:v', String(POSTER_QUALITY), poster])
+    run('ffmpeg', ['-v', 'error', '-y', '-ss', settledAt(file).toFixed(2), '-i', file, '-frames:v', '1', '-q:v', String(POSTER_QUALITY), poster])
     built += 1
     const animated = isAnimated(file) ? 'animated' : 'still'
     console.log(`  ${path.relative(ROOT, file)}  ${animated}  →  ${path.basename(poster)} (${kb(statSync(poster).size)})`)
@@ -91,7 +113,7 @@ function posters({ force = false } = {}) {
 }
 
 /** `media:encode` — one recording becomes the pair a document expects. */
-function encode({ input, name, width = MAX_WIDTH, hero = false }) {
+function encode({ input, name, width = MAX_WIDTH, hero = false, posterAt = null }) {
   if (!existsSync(input)) throw new Error(`no recording at ${input}`)
   const base = hero ? ASSETS : FEATURES
   const target = path.join(base, `${name}.webp`)
@@ -109,9 +131,11 @@ function encode({ input, name, width = MAX_WIDTH, hero = false }) {
     '-f', 'webp',
     target,
   ])
-  /* A beat in, so the poster is not a fade-in from black. */
+  /* Halfway through, because the first frames of a recording are the page
+     loading: a settled frame is the one worth falling back to. */
+  const at = Number.isFinite(posterAt) ? posterAt : settledAt(input)
   run('ffmpeg', [
-    '-v', 'error', '-y', '-ss', '0.3', '-i', input,
+    '-v', 'error', '-y', '-ss', at.toFixed(2), '-i', input,
     '-frames:v', '1', '-q:v', String(POSTER_QUALITY),
     poster,
   ])
@@ -207,8 +231,10 @@ try {
   } else if (command === 'encode') {
     const input = rest[0]
     const name = rest[1]
-    if (!input || !name) throw new Error('usage: media:encode -- <recording.mov> <feature-name> [--hero]')
-    encode({ input, name, hero: rest.includes('--hero') })
+    if (!input || !name) throw new Error('usage: media:encode -- <recording.mov> <feature-name> [--hero] [--poster <seconds>]')
+    const posterIndex = rest.indexOf('--poster')
+    const posterAt = posterIndex >= 0 ? Number(rest[posterIndex + 1]) : null
+    encode({ input, name, hero: rest.includes('--hero'), posterAt })
   } else if (command === 'check') {
     process.exit(check() ? 0 : 1)
   } else {
