@@ -1,12 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AreaStage from '@/components/AreaStage.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import {
   DEFAULT_ACCOUNT_EMAIL,
   DEFAULT_ADMIN,
   adoptWorkspaceOwner,
   credentials,
+  initials,
   loadAccount,
   registerAccount,
   setPassword,
@@ -40,6 +42,13 @@ const pendingRole = ref('')
 const bootstrap = ref(false)
 const accountHint = ref('')
 const identPlaceholder = ref('admin')
+/* a machine that finished first run holds a local account: the profile on disk
+   is the credential, and the form below is one click away for anyone who wants
+   an email instead */
+const resume = ref(false)
+const resumeForm = ref(false)
+/* where a remembered profile lands: the hub, not the picker */
+const landing = ref(null)
 
 const identEl = ref(null)
 const pwEl = ref(null)
@@ -47,31 +56,6 @@ const newEl = ref(null)
 const confirmEl = ref(null)
 
 const year = new Date().getFullYear()
-
-/* Deterministic pixel field: no random layout on every mount. */
-function starStyle(n) {
-  const x = (n * 37 + 11) % 100
-  const y = (n * 29 + 7) % 62
-  const size = n % 9 === 0 ? 3 : n % 4 === 0 ? 2 : 1
-  return {
-    left: `${x}%`,
-    top: `${y}%`,
-    width: `${size}px`,
-    height: `${size}px`,
-    animationDelay: `${(n % 11) * 0.31}s`,
-    animationDuration: `${2.6 + (n % 5) * 0.7}s`,
-  }
-}
-
-function dustStyle(n) {
-  const x = (n * 43 + 5) % 100
-  return {
-    left: `${x}%`,
-    '--drift': `${(n % 2 ? 1 : -1) * (8 + (n % 5) * 5)}px`,
-    animationDelay: `${(n % 9) * 0.9}s`,
-    animationDuration: `${7 + (n % 6) * 1.5}s`,
-  }
-}
 
 const credLabel = computed(() => (done.value ? 'Signed in' : busy.value ? 'Signing in…' : 'Sign in'))
 const changeLabel = computed(() => (busy.value ? 'Saving…' : 'Update password'))
@@ -101,6 +85,9 @@ onMounted(async () => {
     /* Deliberately generic: the account email is not a login hint. */
     identPlaceholder.value = 'Email or handle'
     accountHint.value = `Credentials are stored on this machine in ${status.displayPath || status.path || 'auth.json'}.`
+    /* One account, one workspace, no session: this is the second launch of a
+       machine that already finished first run. */
+    resume.value = workspaces.items.length > 0
     return
   }
 
@@ -134,6 +121,24 @@ onMounted(async () => {
   accountHint.value = `This machine still uses the default account. Password ${DEFAULT_ADMIN.password}.`
 })
 
+function continueAsOwner() {
+  if (busy.value || done.value) return
+  const account = credentials()
+  pendingUser.value = account.username
+  pendingEmail.value = account.email || ''
+  pendingRole.value = account.role || 'owner'
+  /* the second launch opens the room it was in, not the workspace picker */
+  let remembered = ''
+  try {
+    remembered = localStorage.getItem('entity.workspace') || ''
+  } catch {
+    remembered = ''
+  }
+  const target = workspaces.items.find((item) => item.id === remembered) || workspaces.items[0]
+  landing.value = target ? { name: 'overview', params: { workspace: target.id } } : null
+  finish()
+}
+
 function finish() {
   busy.value = true
   signIn(
@@ -152,7 +157,8 @@ function finish() {
   clearTimeout(timer)
   timer = setTimeout(() => {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    router.push(redirect && redirect !== '/' ? redirect : '/workspaces')
+    if (landing.value) router.push(landing.value)
+    else router.push(redirect && redirect !== '/' ? redirect : '/workspaces')
   }, 140)
 }
 
@@ -267,30 +273,7 @@ function backToSignIn() {
 
 <template>
   <main class="auth login">
-    <div class="a51" aria-hidden="true">
-      <div class="a51-stars">
-        <i v-for="n in 34" :key="`star-${n}`" :style="starStyle(n)"></i>
-      </div>
-      <div class="a51-sun"></div>
-      <div class="a51-ufo">
-        <span class="a51-dome"></span>
-        <span class="a51-saucer"></span>
-        <span class="a51-light a51-light--1"></span>
-        <span class="a51-light a51-light--2"></span>
-        <span class="a51-light a51-light--3"></span>
-        <span class="a51-beam"></span>
-      </div>
-      <div class="a51-ridge a51-ridge--far"></div>
-      <div class="a51-grid"></div>
-      <div class="a51-ridge a51-ridge--near"></div>
-      <div class="a51-dust">
-        <i v-for="n in 12" :key="`dust-${n}`" :style="dustStyle(n)"></i>
-      </div>
-      <div class="a51-search a51-search--left"></div>
-      <div class="a51-search a51-search--right"></div>
-      <div class="a51-scan"></div>
-      <span class="a51-stamp">Area 51 · local only</span>
-    </div>
+    <AreaStage />
 
     <div class="stack">
       <div class="bouncer">
@@ -300,7 +283,25 @@ function backToSignIn() {
       <section class="auth-card">
         <p class="kicker">entity</p>
 
-        <template v-if="step === 'credentials'">
+        <template v-if="resume && step === 'credentials' && !resumeForm">
+          <h1>Welcome back 👋</h1>
+          <p class="sub">Signed in on this machine. Pick up where you left off.</p>
+          <div class="resume-who">
+            <span class="mk" aria-hidden="true">{{ initials(credentials().username) }}</span>
+            <span class="who">
+              <b>{{ credentials().username }}</b>
+              <span>{{ credentials().email || 'local profile' }} · local profile</span>
+            </span>
+          </div>
+          <button class="btn-primary" type="button" :disabled="busy || done" @click="continueAsOwner">
+            Continue as owner
+          </button>
+          <p class="alt">
+            <button type="button" @click="resumeForm = true">Use an email and password instead</button>
+          </p>
+        </template>
+
+        <template v-else-if="step === 'credentials'">
           <h1>Sign in</h1>
           <p class="sub">
             Continue to your hub. The first workspace creator owns this account; your agents,

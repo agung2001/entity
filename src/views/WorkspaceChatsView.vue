@@ -222,7 +222,9 @@ watch(
   () => loadRetention({ force: true }),
 )
 
-onMounted(() => loadRetention())
+/* Forced: a cadence changed on the Artifacts card is the same schedule, and the
+   cache in this store would still hold the previous one. */
+onMounted(() => loadRetention({ force: true }))
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
 })
@@ -242,6 +244,15 @@ onBeforeUnmount(() => {
         leaves the rail's working list; ② decides what is removed for good. Archived
         threads stay one group down, and come back with one click.
       </p>
+
+      <div v-if="state && !state.sharedSchedule && hub.workspaceKind === 'remote'" class="role-line">
+        <span class="role-badge">unset</span>
+        <span>
+          The sweep schedule is not set for this workspace yet — the cadence below is this
+          machine's alone until an owner or admin saves one here or on Artifacts, and then
+          every clone reads the same schedule.
+        </span>
+      </div>
 
       <div class="acct-sep">
         Chat history
@@ -462,7 +473,11 @@ onBeforeUnmount(() => {
 
       <div class="acct-sep">
         When it runs
-        <small>On this machine's clock, and within a minute of the next launch</small>
+        <small>
+          The same schedule as Artifacts — one workspace has one sweep schedule, set on
+          either card. On this machine's clock: chats never sync, so every machine sweeps
+          its own.
+        </small>
       </div>
 
       <div class="rule-rows sched">

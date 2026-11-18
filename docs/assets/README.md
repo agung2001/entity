@@ -6,6 +6,9 @@ Every demo in the README and in `docs/` is one **animated WebP** plus a **poster
 JPEG** beside it. The animation shows the real interface moving; the poster is the
 still a client falls back to when it cannot play it.
 
+A still screenshot has nothing to fall back from, so it ships as the **`.webp` alone** —
+no poster, no `<picture>`, just an `<img>` pointing at the file.
+
 ```
 docs/assets/
   readme-hero.webp           readme-hero.poster.jpg
@@ -17,9 +20,10 @@ docs/assets/
 
 ## The markup
 
-Always ship the pair, and let `<picture>` pick the animation. A bare `<img>` pointing
-at the `.webp` works in most browsers but shows nothing at all where animated WebP is
-not supported, which is why the poster is the `img` and the animation is the `source`.
+For an animation, always ship the pair, and let `<picture>` pick the animation. A bare
+`<img>` pointing at the `.webp` works in most browsers but shows nothing at all where
+animated WebP is not supported, which is why the poster is the `img` and the animation
+is the `source`.
 
 ```html
 <picture>
@@ -27,6 +31,13 @@ not supported, which is why the poster is the `img` and the animation is the `so
   <img src="docs/assets/readme-features/chat.poster.jpg" alt="A launch note answer
   with an attached brief and three follow-ups" width="820" />
 </picture>
+```
+
+A still is a plain `<img>`, and the alt text carries the whole description:
+
+```html
+<img src="assets/onboarding/step-1-name.webp" alt="Step 1 of the wizard: a Workspace
+name field with the live folder preview under it" width="820" />
 ```
 
 In the README each demo is also a link to the page that explains it:
@@ -116,8 +127,8 @@ replaced, re-run the encoder; if only the poster is missing, `npm run media:post
 | `.poster.jpg` | 220 KB | it is a fallback, not the feature |
 
 ```bash
-npm run media:posters     # build any missing poster from its webp
-npm run media:check       # every referenced asset exists, is paired, fits the budget
+npm run media:posters     # build any missing poster for an animated webp
+npm run media:check       # every referenced asset exists, is paired when animated, fits the budget
 ```
 
 `media:check` also prints `is a still — record it for a demo` for every screenshot that

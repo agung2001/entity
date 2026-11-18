@@ -27,6 +27,11 @@ const crypto = require('node:crypto')
 
 const SCOPES = ['entities', 'artifacts', 'skills']
 const VIRTUAL = ['workspace.json', 'mcp.json', 'skills.json']
+/* The one hidden file the manifest carries. It is workspace config, not shelf
+   content: the artifact store hides it from `walk()` so it never lists as an
+   artifact, and an export or a sync that dropped it would turn every shared
+   file back into Personal on the other machine. */
+const SCOPE_REL = 'artifacts/.scope.json'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 const MAX_FILES = 20_000
 const REDACTED = '***'
@@ -72,7 +77,10 @@ function safeRel(value) {
   const parts = rel.split('/').filter(Boolean)
   if (!parts.length) return null
   if (parts.some((part) => part === '.' || part === '..')) return null
-  if (parts.some((part) => part.startsWith('.'))) return null
+  /* Every dot-prefixed name stays off the wire — that is what keeps
+     `.remote.token` and an agent's own scratch files out. The artifact scope
+     index is the single exception, by exact path. */
+  if (parts.some((part) => part.startsWith('.')) && parts.join('/') !== SCOPE_REL) return null
   if (parts.length > 32) return null
   const joined = parts.join('/')
   if (joined.length > 1024) return null
@@ -87,6 +95,33 @@ function safeRel(value) {
 
 function isVirtual(rel) {
   return VIRTUAL.includes(String(rel || ''))
+}
+
+/**
+ * Two scope indexes, one shelf. A share is additive, so a clash on this file is
+ * a union, not a keep-both copy: each machine's shares survive. Per id the
+ * newer `at` wins (local on a tie) because a file has one owner and the later
+ * share is the one that happened.
+ *
+ * `ponytail:` an un-share leaves no tombstone, so a peer that never saw it can
+ * bring the entry back on its next push. The ceiling is one stale machine, and
+ * the upgrade path is a `personal: { id: at }` map compared here.
+ */
+function mergeScopeIndex(localText, remoteText) {
+  const entries = (text) => {
+    try {
+      const raw = JSON.parse(String(text || ''))
+      return raw && raw.schema === 1 && raw.shared && typeof raw.shared === 'object' ? raw.shared : {}
+    } catch {
+      return {}
+    }
+  }
+  const merged = entries(remoteText)
+  for (const [id, entry] of Object.entries(entries(localText))) {
+    const other = merged[id]
+    if (!other || String(entry?.at || '') >= String(other?.at || '')) merged[id] = entry
+  }
+  return `${JSON.stringify({ schema: 1, shared: merged }, null, 2)}\n`
 }
 
 function absoluteFor(root, rel) {
@@ -182,14 +217,68 @@ function normaliseOwner(owner) {
   return { name, email }
 }
 
+/**
+ * The shared shape of the artifact sweep's rule.
+ *
+ * It travels because it is workspace configuration — an owner or admin sets the
+ * thresholds once and every clone reads them. Unknown keys never leave the
+ * machine, and an unconfigured workspace sends nothing at all (`null`), so a
+ * clone cannot seed a rule its owner never set.
+ */
+function normaliseRetention(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const PAIRS = { archiveAfter: { n: 30, unit: 'days' }, deleteAfter: { n: 90, unit: 'days' } }
+  const pair = (value, fallback) => {
+    const n = Number(value?.n)
+    return {
+      n: Number.isFinite(n) ? Math.min(3650, Math.max(0, Math.round(n))) : fallback.n,
+      unit: ['days', 'weeks', 'months', 'never'].includes(value?.unit) ? value.unit : fallback.unit,
+    }
+  }
+  const every = (value, fallback) => (['day', 'week', 'month', 'manual'].includes(value) ? value : fallback)
+  const clock = (value, fallback) =>
+    /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(value || '')) ? String(value) : fallback
+  const text = (value, max = 120) => String(value || '').slice(0, max)
+  const executor = raw.executor && typeof raw.executor === 'object' ? raw.executor : {}
+  const last = raw.last && typeof raw.last === 'object' ? raw.last : {}
+  return {
+    schema: 1,
+    archiveAfter: pair(raw.archiveAfter, PAIRS.archiveAfter),
+    deleteAfter: pair(raw.deleteAfter, PAIRS.deleteAfter),
+    archiveEvery: every(raw.archiveEvery, 'day'),
+    archiveBy: clock(raw.archiveBy, '03:00'),
+    deleteEvery: every(raw.deleteEvery, 'week'),
+    deleteBy: clock(raw.deleteBy, '03:00'),
+    whenIdle: raw.whenIdle === undefined ? true : Boolean(raw.whenIdle),
+    protectReferenced: raw.protectReferenced === undefined ? true : Boolean(raw.protectReferenced),
+    executor: {
+      kind: ['owner', 'machine', 'host'].includes(executor.kind) ? executor.kind : 'owner',
+      member: text(executor.member),
+      hostname: text(executor.hostname),
+      claimedAt: text(executor.claimedAt, 40),
+    },
+    last: {
+      at: text(last.at, 40),
+      createdAt: text(last.createdAt, 40),
+      archiveAt: text(last.archiveAt, 40),
+      deleteAt: text(last.deleteAt, 40),
+      archived: Math.max(0, Number(last.archived) || 0),
+      deleted: Math.max(0, Number(last.deleted) || 0),
+      error: text(last.error, 400),
+    },
+  }
+}
+
 /** The part of workspace.json that is shared. `id` stays machine-local. */
 function canonicalMeta(record, extra = {}) {
+  const retention = normaliseRetention(record?.artifactRetention ?? extra.artifactRetention)
   return {
     label: String(record?.label || ''),
     context: String(record?.context ?? extra.context ?? ''),
     mcpStrict: (record?.mcpStrict ?? extra.mcpStrict) !== false,
     owner: normaliseOwner(record?.owner ?? extra.owner),
     members: sortMembers(record?.members ?? extra.members),
+    ...(retention ? { artifactRetention: retention } : {}),
   }
 }
 
@@ -393,7 +482,8 @@ async function walkDir(base, diskRel, manifestRel, files, skipped, depth, follow
     return
   }
   for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue
+    /* one hidden file travels: the artifact scope index (see `safeRel`) */
+    if (entry.name.startsWith('.') && `${manifestRel}/${entry.name}` !== SCOPE_REL) continue
     const diskChild = diskRel ? path.join(diskRel, entry.name) : entry.name
     const rel = `${manifestRel}/${entry.name}`
     const full = path.join(base, diskChild)
@@ -499,6 +589,7 @@ function recordInputs(record) {
       mcpStrict: raw.mcpStrict ?? record.mcpStrict,
       owner: raw.owner ?? record.owner,
       members: Array.isArray(raw.members) ? raw.members : record.members,
+      artifactRetention: raw.artifactRetention ?? record.artifactRetention ?? null,
     },
     skills: readAttachedSkills(record.path),
     mcpRaw: readJson(path.join(record.path, 'mcp.json'), { schema: 1, servers: {} }),
@@ -528,6 +619,8 @@ function writeAtomic(file, buffer, { mode } = {}) {
 module.exports = {
   SCOPES,
   VIRTUAL,
+  SCOPE_REL,
+  mergeScopeIndex,
   MAX_FILE_BYTES,
   MAX_FILES,
   REDACTED,
@@ -540,6 +633,7 @@ module.exports = {
   manifestForRecord,
   recordInputs,
   canonicalMeta,
+  normaliseRetention,
   sanitizeMcp,
   machineBoundReason,
   machineBoundNote,

@@ -264,7 +264,8 @@ async function deleteOne(record) {
   try {
     await removeWorkspace(record.id)
     toast(`${record.label} deleted`)
-    if (!workspaces.items.length) router.push('/setup')
+    /* the last room is gone: the wizard is the surface that makes one */
+    if (!workspaces.items.length) router.push('/welcome')
   } catch (error) {
     toast(error?.message || 'The workspace could not be deleted.')
   } finally {

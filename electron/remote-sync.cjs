@@ -160,6 +160,7 @@ function publicState(record, state) {
     missingSkills: state.missingSkills || state.lastSummary?.missingSkills || [],
     mcpDiverged: state.mcpDiverged || [],
     guard: normaliseGuard(state.guard, { validate: false }),
+    guardModelChoices: state.guardModelChoices || [],
     pendingConflicts: state.pendingConflicts || [],
     auto: state.auto !== false,
     intervalMs: state.intervalMs || DEFAULT_INTERVAL_MS,
@@ -296,6 +297,19 @@ async function remoteWorkspaceList(serverUrl, token) {
 
 /* ── local workspace helpers ──────────────────────────────────────── */
 
+/**
+ * The server owns the sweep's rule; the newer `last` report wins from either
+ * side, because the machine that just swept is usually this one.
+ */
+function mergeLocalRetention(local, remote) {
+  if (!remote || typeof remote !== 'object') return local || null
+  const next = manifest.normaliseRetention(remote)
+  if (!next) return local || null
+  const before = String(local?.last?.at || '')
+  const after = String(next.last?.at || '')
+  return { ...next, last: before > after ? local.last : next.last }
+}
+
 function updateLocalMeta(record, meta) {
   const file = path.join(record.path, 'workspace.json')
   const raw = readJson(file, {}) || {}
@@ -309,6 +323,7 @@ function updateLocalMeta(record, meta) {
       members.unshift({ name: owner.name || owner.email, email: owner.email || '', role: 'owner' })
     }
   }
+  const retention = mergeLocalRetention(raw.artifactRetention, meta.artifactRetention)
   const next = {
     ...raw,
     schema: 1,
@@ -320,6 +335,7 @@ function updateLocalMeta(record, meta) {
     context: String(meta.context || ''),
     ...(owner ? { owner } : {}),
     members,
+    ...(retention ? { artifactRetention: retention } : {}),
   }
   writeJson(file, next)
   mergeMembers(record, next.owner, next.members)
@@ -586,6 +602,19 @@ function applyPull(record, rel, buffer, { conflict, executable } = {}) {
     }
     return { quarantined: [], diverged: [], ...applyRemoteSkills(record, parsed) }
   }
+  if (rel === manifest.SCOPE_REL) {
+    /* Shares from both machines belong on the shelf: union them instead of
+       choosing a winner, and let the merge be the conflict resolution. */
+    let localText = ''
+    try {
+      localText = fs.readFileSync(manifest.absoluteFor(record.path, rel), 'utf8')
+    } catch {
+      /* first sync of this workspace: nothing local to keep */
+    }
+    const merged = manifest.mergeScopeIndex(localText, buffer.toString('utf8'))
+    manifest.writeAtomic(manifest.absoluteFor(record.path, rel), Buffer.from(merged, 'utf8'))
+    return { quarantined: [] }
+  }
   if (conflict) {
     /* Preserve the local bytes before the remote version takes the path. */
     try {
@@ -733,6 +762,11 @@ async function deleteRemote(record, state, rel, baseSha) {
 
 function guardPayload(entry) {
   if (entry.path === 'skills.json') return null
+  /* The scope index is a map of ids to owners, read by the shelf only — skipped
+     for the same reason skills.json is: a display name is not an instruction a
+     harness reads, and scanning it would let one member's name block every
+     sync pass. */
+  if (entry.path === manifest.SCOPE_REL) return null
   if (entry.path === 'mcp.json') {
     try {
       const parsed = JSON.parse(entry.buffer.toString('utf8'))
@@ -1182,6 +1216,7 @@ await mapWithConcurrency(plan.deleteRemote, TRANSFER_CONCURRENCY, async (entry) 
     lastRev: remote.rev || '',
     lastReason: reason || 'manual',
     lastError: '',
+    guardModelChoices: [],
     blocked: null,
     base: nextBase,
     lastSummary: summarise(plan, applied),
@@ -1212,7 +1247,7 @@ function normaliseGuard(value, { validate = false } = {}) {
   if (!value || typeof value !== 'object') return { ...DEFAULT_GUARD }
   const enabled = Boolean(value.enabled)
   const harness = String(value.harness || '').trim()
-  const model = String(value.model || '').trim().slice(0, 160)
+  let model = String(value.model || '').trim().slice(0, 160)
   if (enabled) {
     const meta = harnessStore.META.find((entry) => entry.id === harness)
     if (!meta) {
@@ -1227,6 +1262,19 @@ function normaliseGuard(value, { validate = false } = {}) {
         throw new Error(
           `The sync evaluator is set to ${meta.label}, but its CLI is not installed on this machine.`,
         )
+      }
+      /* An ambiguous name only fails later, inside the evaluator, where the
+         remedy is buried in CLI stderr. Refuse it here instead. */
+      if (harness === 'pi' && model) {
+        const resolved = harnessStore.resolvePiModel(model)
+        if (resolved.status === 'ambiguous') {
+          const error = new Error(
+            `The evaluator model "${model}" matches more than one provider: ${resolved.providers.join(', ')}. Save it as provider/model, e.g. ${resolved.providers[0]}/${model}.`,
+          )
+          error.choices = resolved.providers.map((name) => `${name}/${model}`)
+          throw error
+        }
+        if (resolved.status === 'resolved') model = resolved.model
       }
     }
   }
@@ -1387,7 +1435,7 @@ async function sync({ id, reason = 'manual' } = {}, { emit = () => {} } = {}) {
       const current = readState(record) || state
       writeState(record, { ...current, ...patch })
     }
-    mark({ status: 'syncing', lastReason: reason, lastError: '' })
+    mark({ status: 'syncing', lastReason: reason, lastError: '', guardModelChoices: [] })
     emit({ kind: 'remote-sync', workspace: record.id, status: 'syncing', reason })
     try {
       const result = await performSync(record, readState(record) || state, reason, {
@@ -1418,6 +1466,7 @@ async function sync({ id, reason = 'manual' } = {}, { emit = () => {} } = {}) {
       mark({
         status: unauthorized ? 'unauthorized' : 'error',
         lastError: String(error?.message || error),
+        guardModelChoices: Array.isArray(error?.choices) ? error.choices : [],
       })
       emit({
         kind: 'remote-sync',
@@ -1444,7 +1493,13 @@ function setGuard({ id, guard: value } = {}) {
   const state = readState(record)
   if (!state) throw new Error('This workspace is not connected to a remote server.')
   const next = normaliseGuard(value, { validate: true })
-  writeState(record, { ...state, guard: next, lastError: '', status: state.status === 'error' ? 'idle' : state.status })
+  writeState(record, {
+    ...state,
+    guard: next,
+    lastError: '',
+    guardModelChoices: [],
+    status: state.status === 'error' ? 'idle' : state.status,
+  })
   return publicState(record, readState(record))
 }
 

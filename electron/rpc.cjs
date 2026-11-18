@@ -35,9 +35,71 @@ const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
 const backups = require('./backup-store.cjs')
 const retention = require('./retention-store.cjs')
+const artifactRetention = require('./artifact-retention-store.cjs')
 const voice = require('./voice.cjs')
 const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
+
+/**
+ * The files a live conversation still points at: `artifact://<id>` in a message, a
+ * tool call's input, or a tool result. This lives here, not in the shelf's store,
+ * because it reads the chat store's data — the shelf only receives the answer. A
+ * reference is matched by its exact path; a folder reference (`artifact://design/`)
+ * names no single file and protects none.
+ */
+const ARTIFACT_REF = /artifact:\/\/([^\s)"'`<>]+)/g
+
+function collectRefs(text, found) {
+  for (const hit of String(text || '').matchAll(ARTIFACT_REF)) {
+    found.add(hit[1].replace(/[.,;:]+$/, ''))
+  }
+}
+
+function referencedArtifacts({ workspace } = {}) {
+  const found = new Set()
+  let threads = []
+  try {
+    threads = chats.list({ workspace })
+  } catch {
+    return found
+  }
+  for (const summary of threads) {
+    if (summary.archived) continue
+    let thread = null
+    try {
+      thread = chats.read({ workspace, id: summary.id })
+    } catch {
+      continue
+    }
+    for (const message of thread?.messages || []) {
+      collectRefs(message?.text, found)
+      for (const step of message?.steps || []) {
+        collectRefs(step?.content, found)
+        collectRefs(step?.output, found)
+        if (step?.input && typeof step.input === 'object') collectRefs(JSON.stringify(step.input), found)
+      }
+    }
+  }
+  return found
+}
+
+/**
+ * The OS Trash only exists in the desktop shell. In the Vite server (plain Node)
+ * `require('electron')` is not the Electron API, so the pass falls back to the
+ * workspace's own `.trash` folder and the card says which one it used.
+ */
+function systemTrash() {
+  try {
+    const electron = require('electron')
+    const shell = electron && electron.shell
+    if (shell && typeof shell.trashItem === 'function') {
+      return (file) => shell.trashItem(file)
+    }
+  } catch {
+    /* no Electron shell in this build */
+  }
+  return null
+}
 
 function createRpc({
   emit = () => {},
@@ -51,6 +113,10 @@ function createRpc({
      in the desktop app and on the dev server, and it is a remote-code-execution
      hole in the shared server, so it is opt-in and off unless asked for. */
   terminal = false,
+  /* True when this process *is* the sync host (`server/index.cjs`). The shelf's
+     sweep can be assigned to that host, and it is the only executor that never
+     waits for a person, so it is the only one whose idle switch means nothing. */
+  host = false,
 } = {}) {
   const runner = createRunner({ emit })
   /* A six-hour poll plus a debounce after the watcher reports a local edit.
@@ -67,6 +133,19 @@ function createRpc({
      passes the signed-in server user instead, so the same call table writes the
      right owner without a second implementation. */
   const currentUser = () => (typeof identity === 'function' ? identity() : auth.get())
+  /* The artifact shelf is the same rule again, applied to files. Its providers
+     are wired here because none of them belongs to the store: `referenced` reads
+     the live transcripts, `trash` is a promise only the desktop build can keep,
+     `busy` is the quiet signal a desktop can actually see, and `identity` is the
+     account the owner's machine claim is matched against. */
+  artifactRetention.configure({
+    referenced: referencedArtifacts,
+    trash: systemTrash(),
+    busy: () => chats.activeCount() + runner.activeCount(),
+    identity: () => currentUser(),
+    host,
+  })
+  artifactRetention.start({ log: (line) => console.log(`[entity] ${line}`) })
   /* One shell per panel, owned by this process. Absent in the server build. */
   const terminals = terminal ? createTerminal({ emit }) : null
   const shellOnly = () => {
@@ -140,6 +219,9 @@ function createRpc({
         limit: Number.isFinite(limit) ? limit : 10,
         offset: Number.isFinite(offset) ? offset : 0,
         dir: String(dir || ''),
+        /* `@thread:` offers this workspace's conversations, through the store
+           that already enforces who may read them */
+        deps: { threads: { list: () => chats.list({ workspace }) } },
       }),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
@@ -162,10 +244,16 @@ function createRpc({
     'mcp.tools': (args) => mcpTools.tools(args),
     'harness.list': () => harnesses.list(),
     'harness.models': (args) => harnesses.models(args),
+    'harness.resolvePiModel': (args) =>
+      harnesses.resolvePiModel(String(args?.model || ''), {
+        binaryPath: harnesses.resolvedPath('pi'),
+      }),
     'harness.setPath': (args) => harnesses.setPath(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
+    'artifact.share': (args) => artifacts.share(args),
+    'artifact.unshare': (args) => artifacts.unshare(args),
     'artifact.read': (args) => artifacts.read(args),
     'artifact.download': (args) => artifacts.download(args),
     'artifact.upload': (args) => artifacts.upload(args),
@@ -340,6 +428,13 @@ function createRpc({
       return retention.analyse(args)
     },
     'chat.runRetention': (args) => retention.run(args),
+    /* the shelf's own rule: the same three calls, on files instead of threads */
+    'artifact.retention': (args) => artifactRetention.analyse(args),
+    'artifact.setRetention': (args) => {
+      artifactRetention.save(args)
+      return artifactRetention.analyse(args)
+    },
+    'artifact.runRetention': (args) => artifactRetention.run(args),
     'chat.cancel': (args) => chats.cancel(args),
     'chat.suggest': (args) => suggestions.suggest(args),
 

@@ -39,6 +39,7 @@ const WORKSPACE_TABS = [
   { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
   { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
   { id: 'chats', label: 'Chats', hint: 'silence, archiving and removal' },
+  { id: 'artifacts', label: 'Artifacts', hint: 'shelf age, archiving and removal' },
   { id: 'activity', label: 'Activity', hint: 'recent workspace events' },
 ]
 
