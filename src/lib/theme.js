@@ -3,9 +3,9 @@ import { playSfx } from './sfx'
 
 /**
  * One window preference, stored beside the other UI settings. The root data
- * attribute drives the token overrides in app.css; the tiny `theme-init.js`
- * applies the same value before the app module loads so dark mode does not
- * flash white on a cold open.
+ * attribute drives the token overrides in `styles/tokens.css`; the tiny
+ * `theme-init.js` applies the same value before the app module loads so dark mode
+ * does not flash white on a cold open.
  */
 const THEME_KEY = 'entity.theme'
 

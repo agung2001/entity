@@ -32,6 +32,57 @@ const FILES = walk(SRC).map((file) => ({
   text: fs.readFileSync(file, 'utf8'),
 }))
 
+/* ── stylesheets ──────────────────────────────────────────────────────────
+   Styling is split by surface: `src/styles/app.css` is a list of @imports, one
+   per file, and that list is the cascade order. The contract reads the sheet the
+   app actually loads — app.css with its imports flattened, in that same order —
+   so a rule moving to another file never changes what these tests see. */
+const STYLES = path.join(SRC, 'styles')
+const SHARED_SHEETS = ['login.css', 'skill.css', 'welcome.css']
+const SHEETS = [...fs.readFileSync(path.join(STYLES, 'app.css'), 'utf8').matchAll(/@import '\.\/([\w-]+\.css)'/g)].map(
+  (match) => match[1],
+)
+
+function allStyles() {
+  assert.ok(SHEETS.length >= 20, 'app.css should import the per-surface sheets')
+  for (const name of SHARED_SHEETS) {
+    assert.ok(SHEETS.includes(name), `${name} is no longer imported`)
+  }
+  return SHEETS.map((name) => fs.readFileSync(path.join(STYLES, name), 'utf8')).join('\n')
+}
+
+/** Each sheet with its comments and its token declarations removed: only what a
+    surface actually paints, which is what the ladders below are about. */
+function paintedSheets() {
+  return SHEETS.map((name) => ({
+    name,
+    css: fs
+      .readFileSync(path.join(STYLES, name), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '') /* a commented-out rule is not a rule */
+      .replace(/:root(\[[^\]]*\])?\s*\{[^}]*\}/g, '') /* a ladder declares itself */,
+  }))
+}
+
+/** The steps of one ladder, read from the `:root` block in tokens.css. */
+function ladder(prefix, label, minSteps) {
+  const tokens = fs.readFileSync(path.join(STYLES, 'tokens.css'), 'utf8')
+  const root = tokens.match(/:root \{[\s\S]*?\n\}/)
+  assert.ok(root, 'tokens.css has no :root block to declare the ladders in')
+  const steps = [...root[0].matchAll(new RegExp(`(${prefix}(?:-[a-z0-9]+)?):\\s*([^;]+);`, 'g'))]
+    .map(([, name, value]) => ({ name, value: value.trim() }))
+  assert.ok(steps.length >= minSteps, `the ${label} ladder lost its steps (${steps.length})`)
+  for (const step of steps) {
+    assert.match(step.value, /^\d+(\.\d+)?px$/, `${step.name} is not a plain px step: ${step.value}`)
+  }
+  /* ascending, and no two steps on the same number: a duplicate is a step that
+     was added next to an existing one instead of reused */
+  const px = steps.map((step) => Number.parseFloat(step.value))
+  for (let i = 1; i < px.length; i += 1) {
+    assert.ok(px[i] > px[i - 1], `the ${label} ladder is out of order at ${steps[i].name}`)
+  }
+  return new Set(steps.map((step) => step.name))
+}
+
 test('the composer keeps attachments below the prompt and documents them', () => {
   const composer = fs.readFileSync(path.join(SRC, 'components', 'SlashComposer.vue'), 'utf8')
   const help = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
@@ -187,7 +238,7 @@ test('the shortcut catalog is well formed and unique', () => {
 })
 
 test('the composer ceiling lives in CSS, not in the component', () => {
-  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const css = allStyles()
   const composer = fs.readFileSync(path.join(SRC, 'components/SlashComposer.vue'), 'utf8')
   const rule = css.match(/\.slash-input\s*\{[^}]*max-height:\s*([^;]+);/)
   assert.ok(rule, '.slash-input has no max-height')
@@ -208,7 +259,7 @@ test('the composer ceiling lives in CSS, not in the component', () => {
    height hides the first line of the thread. */
 
 test('the chat header floats over the thread with three zones of glass', () => {
-  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const css = allStyles()
   const view = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
 
   const rule = css.match(/\n\.cp-head \{[^}]*\}/)
@@ -294,7 +345,7 @@ test('a code artifact is editable with the lazy code editor', () => {
 
 test('workspace members are people with an avatar, not a row of fields', () => {
   const view = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceView.vue'), 'utf8')
-  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const css = allStyles()
   assert.match(view, /from '@\/lib\/gravatar'/, 'members do not show a Gravatar')
   assert.match(view, /class="member-avatar"/, 'the member row has no avatar')
   assert.match(view, /aria-label="Member email/, 'the email field is unlabelled')
@@ -307,7 +358,7 @@ test('workspace members are people with an avatar, not a row of fields', () => {
 
 test('the artifact page reuses the chat glass bar and edits Markdown', () => {
   const view = fs.readFileSync(path.join(SRC, 'views', 'ArtifactDetailView.vue'), 'utf8')
-  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const css = allStyles()
   const store = fs.readFileSync(path.join(SRC, 'stores', 'artifacts.js'), 'utf8')
   const backend = fs.readFileSync(path.join(ROOT, 'electron', 'artifact-store.cjs'), 'utf8')
 
@@ -317,12 +368,16 @@ test('the artifact page reuses the chat glass bar and edits Markdown', () => {
   assert.match(store, /artifact\.writeText/, 'the renderer has an in-place text write')
   assert.match(backend, /function writeText\(/, 'the main process writes the same artifact')
   assert.match(css, /\.artifact-bar \{[^}]*backdrop-filter:\s*blur\(/, 'the bar is not glass')
-  assert.doesNotMatch(css, /\.media-top \{[\s\S]{0,400}?border-radius:\s*14px/, 'the floating card came back')
+  assert.doesNotMatch(
+    css,
+    /\.media-top \{[\s\S]{0,400}?border-radius:\s*(14px|var\(--r-lg\))/,
+    'the floating card came back',
+  )
 })
 
 test('a popover inside a dialog is a teleported, measured layer', () => {
   const input = fs.readFileSync(path.join(SRC, 'components', 'ModelInput.vue'), 'utf8')
-  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const css = allStyles()
   assert.match(input, /<Teleport to="body">/, 'model suggestions are clipped by the dialog')
   assert.match(input, /positionMenu/, 'the layer is measured from the field')
   assert.match(input, /window\[method\]\('scroll'/, 'the layer does not follow its field')
@@ -333,12 +388,69 @@ test('a popover inside a dialog is a teleported, measured layer', () => {
 })
 
 test('the terminal sheet is a closed card, not a flap', () => {
-  const css = fs.readFileSync(path.join(SRC, 'styles/app.css'), 'utf8')
+  const css = allStyles()
   const rule = css.match(/\n\.term-panel \{[^}]*\}/)
   assert.ok(rule, '.term-panel has no base rule')
   assert.doesNotMatch(rule[0], /border-bottom:\s*0/, 'the sheet is drawn open at the bottom')
   assert.match(rule[0], /border:\s*1px solid/, 'the sheet has no border of its own')
-  assert.match(rule[0], /border-radius:\s*12px/, 'the sheet is not rounded on all four corners')
+  assert.match(rule[0], /border-radius:\s*var\(--r-md\)/, 'the sheet is not rounded on all four corners')
+})
+
+/* ── one ladder each ─────────────────────────────────────────────────────
+   A radius is a step on the scale in tokens.css, and so is an absolute type
+   size. Twenty-six raw radii and forty-seven raw sizes used to live in the
+   sheets — one sheet carried nine micro sizes — so the rule that keeps either
+   from growing back is worth a test. Shapes and relative sizes stay literal:
+   `50%` is a circle, and `em`, `%`, `clamp()` and `inherit` are supposed to
+   follow their context. */
+
+test('every corner is a step on one ladder, declared once', () => {
+  const declared = ladder('--r', 'corner', 4)
+  const allowed = new Set([...declared].map((name) => `var(${name})`))
+  for (const literal of ['0', '50%', 'inherit']) allowed.add(literal)
+
+  const problems = []
+  for (const { name: sheet, css } of paintedSheets()) {
+    for (const [, raw] of css.matchAll(/border-radius:\s*([^;}]+)/g)) {
+      for (const corner of raw.trim().split(/\s+/)) {
+        if (!allowed.has(corner)) problems.push(`${sheet}: border-radius: ${raw.trim()}`)
+      }
+    }
+    /* a typo in a step name would silently fall back to a square corner */
+    for (const [, name] of css.matchAll(/var\((--r(?:-[a-z0-9]+)?)\)/g)) {
+      if (!declared.has(name)) problems.push(`${sheet}: var(${name}) is not on the corner ladder`)
+    }
+  }
+
+  assert.deepEqual(
+    [...new Set(problems)],
+    [],
+    'corners must come from the ladder in tokens.css, not from a number at the surface',
+  )
+})
+
+test('every absolute type size is a step on the type ladder', () => {
+  const declared = ladder('--fs', 'type', 6)
+  const RELATIVE = /^(inherit|initial|unset|revert|0|-?[\d.]+(em|rem|%|vw|vh|vmin|vmax|ch|ex)|(clamp|min|max|calc)\(.*)$/
+
+  const problems = []
+  for (const { name: sheet, css } of paintedSheets()) {
+    for (const [, raw] of css.matchAll(/font-size:\s*([^;}]+)/g)) {
+      const value = raw.trim().replace(/\s*!important$/, '')
+      if (/^var\(--fs(?:-[a-z0-9]+)?\)$/.test(value)) continue
+      if (RELATIVE.test(value)) continue
+      problems.push(`${sheet}: font-size: ${raw.trim()}`)
+    }
+    for (const [, name] of css.matchAll(/var\((--fs(?:-[a-z0-9]+)?)\)/g)) {
+      if (!declared.has(name)) problems.push(`${sheet}: var(${name}) is not on the type ladder`)
+    }
+  }
+
+  assert.deepEqual(
+    [...new Set(problems)],
+    [],
+    'type sizes come from the ladder in tokens.css; only relative sizes may be written at the surface',
+  )
 })
 
 /* ── loading budget ────────────────────────────────────────────────────────

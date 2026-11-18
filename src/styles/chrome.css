@@ -1,0 +1,108 @@
+/* ── rail header: brand and the fold control share the top line ───────── */
+.rail-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 16px;
+}
+.rail-top .brand {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rail-top .brand:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}
+.rail[data-collapsed='1'] .rail-top {
+  padding: 0 0 16px;
+}
+.rail[data-collapsed='1'] .rail-top .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+/* ── topbar theme control ─────────────────────────────────────────────── */
+.topbar-theme {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+}
+.topbar-theme:hover {
+  background: var(--surface);
+  border-color: var(--muted);
+  color: var(--ink);
+}
+.topbar-theme svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.7;
+}
+
+/* ── workspace tabs: embedded working sections ───────────────────────── */
+.sk-tabs .mark {
+  width: 18px;
+  height: 18px;
+}
+.ws-embed {
+  max-width: none;
+}
+.ws-activity {
+  max-width: none;
+}
+
+/* a workspace card is a settings shortcut; its menu must not follow the card */
+.wsl-card {
+  cursor: pointer;
+}
+.wsl-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (max-width: 820px) {
+  .rail-top {
+    flex: none;
+    padding: 0;
+    gap: 0;
+  }
+  .rail-top .brand {
+    padding: 0 8px 0 0;
+  }
+}
+
+/* ── yellow primary action ──────────────────────────────────────────────── */
+.btn-yellow {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 78%, #000);
+  color: #2b1d05;
+  font-weight: 600;
+}
+.btn-yellow:hover {
+  background: color-mix(in oklch, var(--accent) 90%, #000);
+  border-color: color-mix(in oklch, var(--accent) 82%, #000);
+  color: #2b1d05;
+}
+.topbar-new {
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--fs-secondary);
+}
+.topbar-new .btn-kbd {
+  border-color: color-mix(in srgb, #2b1d05 30%, transparent);
+  opacity: 0.65;
+}

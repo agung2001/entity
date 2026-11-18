@@ -1,0 +1,621 @@
+/* ── page primitives ──────────────────────────────────────────── */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.eyebrow .sep {
+  opacity: 0.5;
+}
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+.page-head h1 {
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  margin: 0 0 8px;
+}
+.lede {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--ink-2);
+  max-width: 52ch;
+}
+.entity-head {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+}
+.entity-head .mk-btn {
+  width: 52px;
+  height: 52px;
+}
+.entity-head .mk-btn .mark {
+  width: 44px;
+  height: 44px;
+}
+.entity-head .eyebrow {
+  margin-bottom: 6px;
+}
+.machine-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.machine-title .machine-icon {
+  color: var(--muted);
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-top: 22px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+.btn:hover {
+  background: var(--surface);
+  border-color: var(--muted);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 78%, #000);
+  color: var(--on-accent);
+  font-family: var(--font);
+  font-weight: 600;
+}
+.btn-primary:hover {
+  background: color-mix(in oklch, var(--accent) 90%, #000);
+  border-color: color-mix(in oklch, var(--accent) 82%, #000);
+}
+.btn-ink {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.btn-ink:hover {
+  background: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  color: var(--bg);
+}
+.btn-kbd {
+  margin-left: 2px;
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  border-radius: var(--r-xs);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  line-height: 1.25;
+  opacity: 0.55;
+}
+.btn-ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn-ghost:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink);
+}
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn-sm {
+  height: 28px;
+  padding: 0 9px;
+  font-size: var(--fs-secondary);
+  border-radius: var(--r-sm);
+}
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 12px;
+}
+.sec-head h2 {
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.sec-head .meta {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+/* ── compact context picks ────────────────────────────────────── */
+.pickwrap {
+  position: relative;
+  display: inline-flex;
+}
+.pickbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink-2);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.pickbtn .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickbtn > .harness-icon,
+.pickbtn > .machine-icon {
+  flex: none;
+  opacity: 0.68;
+}
+.pickopt > .harness-icon,
+.pickopt > .machine-icon {
+  flex: none;
+  opacity: 0.68;
+}
+.pickwrap[data-locked='1'] .pickbtn {
+  cursor: default;
+  opacity: 0.78;
+}
+.pickwrap[data-locked='1'] .pickbtn:hover {
+  background: none;
+  border-color: transparent;
+  color: var(--ink-2);
+}
+.pickwrap[data-locked='1'] .pickbtn .ch {
+  opacity: 0.4;
+}
+.pickbtn .ct {
+  flex: none;
+  font-size: var(--fs-label);
+  letter-spacing: 0;
+  color: var(--muted);
+  transition: color 0.12s ease;
+}
+.pickbtn .ch {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.14s ease, color 0.12s ease;
+}
+.pickbtn:hover {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--ink);
+}
+.pickbtn:hover .ct,
+.pickwrap[data-open='1'] .pickbtn .ct {
+  color: var(--ink-2);
+}
+.pickbtn:hover .ch {
+  color: var(--ink-2);
+}
+.pickbtn:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  color: var(--ink);
+}
+.pickwrap[data-open='1'] .pickbtn {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.pickwrap[data-open='1'] .ch {
+  transform: rotate(180deg);
+  color: var(--ink);
+}
+.pickmenu {
+  /* Teleported to <body>: a picker inside a scrolling dialog must not be
+     clipped by that dialog's overflow. Coordinates come from PickMenu. */
+  position: fixed;
+  z-index: 110;
+  display: block;
+  min-width: 200px;
+  max-width: 292px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  box-shadow: 0 12px 30px -10px rgba(10, 10, 10, 0.28), 0 2px 6px -2px rgba(10, 10, 10, 0.07);
+}
+.pickmenu .ph {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 5px 8px 4px;
+}
+.psearch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 4px;
+  padding: 0 7px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.psearch:focus-within {
+  border-color: var(--ink);
+  background: var(--bg);
+}
+.psearch svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.psearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-label);
+  color: var(--ink);
+}
+.psearch input::placeholder {
+  color: var(--muted);
+}
+.pempty {
+  margin: 0;
+  padding: 9px 8px 7px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.pickopt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+}
+.pickopt .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickopt .mt {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  flex: none;
+}
+.pickopt .ck {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  color: var(--ink);
+  opacity: 0;
+}
+.pickopt[aria-selected='true'] .ck {
+  opacity: 1;
+}
+.pickopt:hover,
+.pickopt[data-on='1'] {
+  background: var(--surface);
+}
+.pickopt:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+/* ── talk to entity ───────────────────────────────────────────── */
+.ask {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  padding: 15px 15px 13px;
+  margin-bottom: 26px;
+}
+.ask-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+.ask-head .eyebrow {
+  margin: 0;
+}
+.ask-thread {
+  margin-top: 12px;
+  padding: 12px;
+  height: 174px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ask-thread .msg {
+  max-width: 86%;
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  padding: 8px 10px;
+}
+.ask-sys {
+  align-self: center;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 1px 0;
+}
+.ask-compose {
+  position: relative;
+  margin-top: 10px;
+}
+.ask form,
+.cpanel form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The chat composer is one card: the dock draws the border, the textarea is
+   flush inside it, and the only button is a round arrow in the corner. */
+.slash-form,
+.cp-dock .slash-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+}
+.slash-input {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  /* A long problem deserves to be readable in full: the box grows to nearly half
+     the window (~19 lines on a 900px screen) and only then scrolls, because the
+     transcript below it reserves the height it actually took. The component reads
+     this value, so there is one ceiling, not two. */
+  max-height: min(46vh, 400px);
+  padding: 4px 3px 2px;
+  border: 0;
+  outline: 0;
+  background: none;
+  resize: none;
+  overflow-y: hidden;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--ink);
+}
+.slash-input::placeholder {
+  color: var(--muted);
+}
+.slash-input:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.slash-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  padding-left: 2px;
+}
+.slash-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.slash-hint kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  color: var(--ink-2);
+}
+.slash-hint-sep {
+  opacity: 0.55;
+}
+/* the second half of the hint is a hint too: it names the terminal shortcut
+   without turning the composer row into a legend */
+.slash-hint-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.go {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+.go svg {
+  width: 15px;
+  height: 15px;
+}
+.go:hover {
+  background: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
+}
+.go:active {
+  transform: translateY(1px);
+}
+.go[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+.cpanel .slash-form .go {
+  color: var(--bg);
+}
+.ask-foot,
+.cp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 9px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.ask-foot kbd {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  color: var(--ink-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  padding: 2px 4px;
+  background: var(--bg);
+}
+
+.ask-cmdbox {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  display: none;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  box-shadow: 0 18px 36px rgba(10, 10, 10, 0.1);
+  padding: 5px;
+  max-height: 196px;
+  overflow: auto;
+}
+.ask-cmdbox[data-open='1'] {
+  display: block;
+}
+.ask-cmd {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.ask-cmd[data-on='1'] {
+  background: var(--surface-2);
+}
+.ask-cmd .name {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--ink);
+  flex: none;
+}
+.ask-cmd .desc {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ask-cmd .k {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 1px 4px;
+}

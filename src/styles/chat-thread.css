@@ -1,0 +1,518 @@
+/* ── chat: keyboard hints + message actions ───────────────────── */
+.panel-kbd,
+.trace-kbd {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 2px 4px;
+  background: var(--bg);
+  white-space: nowrap;
+}
+.panel-kbd {
+  margin-left: 2px;
+}
+.trace-kbd {
+  margin-left: 1px;
+  border-color: color-mix(in oklab, var(--border) 75%, transparent);
+}
+.msg-body {
+  min-width: 0;
+}
+.msg-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Markdown is the harness's native voice; the bubble is the document. */
+.msg-md {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: inherit;
+  line-height: inherit;
+}
+.msg-md > :first-child {
+  margin-top: 0;
+}
+.msg-md > :last-child {
+  margin-bottom: 0;
+}
+.msg-md p {
+  margin: 0 0 8px;
+}
+.msg-md h1,
+.msg-md h2,
+.msg-md h3,
+.msg-md h4,
+.msg-md h5,
+.msg-md h6 {
+  margin: 14px 0 6px;
+  font-family: var(--font);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.msg-md h1 { font-size: var(--fs-h5); }
+.msg-md h2 { font-size: var(--fs-h6); }
+.msg-md h3 { font-size: var(--fs-body); }
+.msg-md h4,
+.msg-md h5,
+.msg-md h6 { font-size: var(--fs-small); }
+.msg-md ul,
+.msg-md ol {
+  margin: 6px 0 9px;
+  padding-left: 20px;
+}
+.msg-md li {
+  margin: 3px 0;
+}
+.msg-md li > p {
+  margin: 0 0 4px;
+}
+.msg-md blockquote {
+  margin: 8px 0;
+  padding: 4px 0 4px 11px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted);
+}
+.msg-md code {
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.84em;
+}
+.msg-md pre {
+  margin: 8px 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  line-height: 1.5;
+}
+.msg-md pre code {
+  padding: 0;
+  background: none;
+  font-size: var(--fs-meta);
+  white-space: pre;
+}
+.msg-md a {
+  color: var(--accent-ink);
+  text-underline-offset: 2px;
+}
+.msg-md strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.msg-md hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.msg-md table {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--fs-label);
+}
+.msg-md th,
+.msg-md td {
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.msg-md th {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.msg-md img {
+  max-width: 100%;
+  border-radius: var(--r-sm);
+}
+/* The account bubble is ink; keep inline code and links legible on it. */
+.msg[data-who='me'] .msg-md code {
+  background: rgba(255, 255, 255, 0.14);
+}
+.msg[data-who='me'] .msg-md a {
+  color: inherit;
+}
+.msg[data-who='me'] .msg-md strong {
+  color: inherit;
+}
+.msg[data-who='me'] .msg-md pre {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.16);
+}
+.msg[data-who='me'] .msg-md th,
+.msg[data-who='me'] .msg-md td {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.msg[data-who='me'] .msg-md th {
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+}
+.msg-image {
+  display: block;
+  max-width: 100%;
+  max-height: 460px;
+  margin-top: 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  object-fit: contain;
+  background: var(--bg);
+}
+.msg-artifact {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.msg-artifact-name {
+  word-break: break-all;
+}
+.msg-artifact-note {
+  color: var(--muted);
+}
+.msg-artifact-dl {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Files produced during a turn sit with the answer, not on a separate page. */
+.msg-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.msg-artifacts--sys {
+  align-self: center;
+  justify-content: center;
+  width: min(80%, 440px);
+  margin-top: -2px;
+}
+.msg-artifacts--turn {
+  max-width: 80%;
+  margin-top: -2px;
+}
+.msg-artifacts--turn[data-who='agent'] {
+  align-self: flex-start;
+  margin-left: 36px;
+}
+.msg-artifacts--turn[data-who='me'] {
+  align-self: flex-end;
+  margin-right: 36px;
+}
+.msg-artifacts--turn .msg-attach {
+  max-width: min(440px, 100%);
+}
+.msg-attach {
+  margin: 0;
+  min-width: 0;
+  max-width: min(440px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.msg-attach-img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--surface);
+  cursor: zoom-in;
+}
+.msg-attach-img img {
+  display: block;
+  width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+}
+.msg-attach-ph {
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  padding: 14px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.msg-attach-ph[data-error='1'] {
+  color: var(--danger);
+}
+.msg-attach figcaption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-top: 1px solid var(--border);
+}
+.msg-attach-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.msg-attach-meta {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+/* One action row per artifact card, decided by the file's extension: reveal
+   and the artifact page always, an editor for text, a browser for a page. */
+.msg-attach-acts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+  margin-left: auto;
+}
+.msg-attach-acts--row {
+  justify-content: flex-end;
+  margin-left: 0;
+  padding: 0 6px 6px;
+}
+.msg-attach-acts .msg-act {
+  width: 22px;
+  height: 22px;
+  /* the artifact page is a router-link, not a button */
+  text-decoration: none;
+}
+.msg-artifact-modal-foot .msg-attach-acts {
+  gap: 3px;
+}
+.msg-artifact-modal-foot .msg-act {
+  color: rgba(255, 255, 255, 0.85);
+}
+.msg-artifact-modal-foot .msg-act:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.msg-attach-dl {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg-attach-dl:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.msg-attach-file {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 230px;
+  padding: 10px;
+}
+/* The name is the target: opening the file is the whole point of the card. */
+button.msg-attach-copy {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+button.msg-attach-copy:hover b {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg-attach-ext {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--accent-ink);
+}
+.msg-attach-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.msg-attach-copy b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  color: var(--ink);
+}
+.msg-attach-copy span {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.msg-artifact-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(15, 13, 7, 0.72);
+  backdrop-filter: blur(3px);
+}
+.msg-artifact-modal img {
+  max-width: min(1400px, 94vw);
+  max-height: 86vh;
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+.msg-artifact-modal-x {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--r-sm);
+  background: rgba(20, 18, 12, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+.msg-artifact-modal-x svg {
+  width: 14px;
+  height: 14px;
+}
+.msg-artifact-modal-foot {
+  position: fixed;
+  right: 24px;
+  bottom: 20px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: rgba(255, 255, 255, 0.82);
+}
+.msg-artifact-modal-foot .msg-attach-dl {
+  color: #ffe6a3;
+}
+.msg-artifact-modal-note {
+  margin: 0;
+  color: #fff;
+  font-size: var(--fs-small);
+}
+@media (max-width: 700px) {
+  .msg-attach {
+    max-width: 100%;
+  }
+  .msg-artifact-modal {
+    padding: 12px;
+  }
+  .msg-artifact-modal-x {
+    top: 10px;
+    right: 10px;
+  }
+  .msg-artifact-modal-foot {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+  }
+}
+.msg-foot {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: -3px;
+  min-height: 22px;
+  color: var(--muted);
+  opacity: 0.68;
+  transition: opacity 0.12s ease;
+}
+.c-thread .msg:hover + .msg-foot,
+.c-thread .msg-trace:hover + .msg-foot,
+.msg-foot:hover,
+.msg-foot:focus-within {
+  opacity: 1;
+}
+.msg-replied {
+  margin-right: 3px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+}
+.msg-act {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.msg-act:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+.msg-act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.msg-act[data-on='1'] {
+  border-color: color-mix(in oklab, var(--mk) 42%, var(--border));
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.msg-act svg {
+  width: 12.5px;
+  height: 12.5px;
+}

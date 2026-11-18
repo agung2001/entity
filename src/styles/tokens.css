@@ -1,0 +1,187 @@
+
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../assets/fonts/geist.woff2') format('woff2');
+}
+
+/* ── tokens ───────────────────────────────────────────────────── */
+:root {
+  --bg: #ffffff;
+  --surface: #f9f8f5;
+  --surface-2: #f3f1ec;
+  --ink: #0a0a0a;
+  --ink-2: #3d3f42;
+  --muted: #6b6e73;
+  --border: #e3e2dd;
+  --border-strong: #d3d1c9;
+  --accent: #f8b956;
+  --accent-soft: #ffeed1;
+  --accent-ink: #7a5005;
+  /* The accent is the only fill in the app that carries a label, so it gets the
+     only label token: `--ink` on it is 1.5:1 in the dark theme. */
+  --on-accent: #0a0a0a;
+  /* the character's own colour — separate from the UI accent so the mark can
+     be re-coloured without repainting buttons, dots or tags */
+  --mk: var(--accent);
+  --mk-h: 78;
+  --danger: oklch(52% 0.19 27);
+  --danger-soft: oklch(96.5% 0.025 27);
+  --ok: oklch(58% 0.13 152);
+  /* The boundary a control is allowed to keep. `--border-strong` measures
+     1.53:1 against `--bg`, well under the 3:1 a control edge needs. */
+  --field-edge: #8a7a55;
+  /* The primary button's label. `--ink` on `--accent` is 10.53:1 in daylight
+     but 1.50:1 at night, where it flips to near-white — so the fill pins its
+     own ink instead of inheriting. */
+  --on-accent: #2a2208;
+  /* ── the corner ladder ────────────────────────────────────────────────
+     One radius scale for the whole app, drawn from what the sheets actually
+     used: a hairline step, a chip, a control, a card, a pill. A surface picks a
+     step; it does not invent a number. `50%` is a shape (a circle), not a step,
+     and stays literal. */
+  --r-2xs: 2px;
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r: 10px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+  --font: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial,
+    sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  /* ── the type ladder ──────────────────────────────────────────────────
+     One absolute scale. Before it, the sheets carried two: integers 9–14 and a
+     half-pixel set 8.5–13.5, and one sheet used nine of them. A surface picks a
+     step; it does not tune a size by eye. The band ≤14.5 is label and reading
+     type, the six above it are display; `em`, `%`, `clamp()` and `inherit` stay
+     relative and are not steps here. */
+  --fs-micro: 9px; /* kbd hints, table keys, stamps */
+  --fs-meta: 10px; /* run metadata, counters, key/value keys */
+  --fs-label: 11px; /* uppercase labels, tabs, filters */
+  --fs-secondary: 12px; /* secondary copy, card subtitles */
+  --fs-small: 13px; /* small body, dense rows */
+  --fs-body: 14.5px; /* the reading size — `body` */
+  --fs-h6: 16px;
+  --fs-h5: 18px;
+  --fs-h4: 20px;
+  --fs-h3: 23px;
+  --fs-h2: 26px;
+  --fs-h1: 30px;
+  --rail: 228px;
+  --rail-bg: #f7f5ef;
+
+  color-scheme: light;
+}
+
+/* A warm dark surface, not a blue-black developer theme. The mark, accent and
+   semantic colours stay recognisably the same; only the paper changes. */
+:root[data-theme='dark'] {
+  --bg: #151411;
+  --surface: #1d1b17;
+  --surface-2: #27241e;
+  --ink: #f2eee4;
+  --ink-2: #c7c2b6;
+  --muted: #948d80;
+  --border: #33302a;
+  --border-strong: #4c463c;
+  --accent: #f8b956;
+  --accent-soft: #3a2e17;
+  --accent-ink: #ffd88a;
+  --on-accent: #0a0a0a;
+  --danger: oklch(70% 0.17 27);
+  --danger-soft: #331b18;
+  --ok: oklch(70% 0.13 152);
+  --field-edge: #827a6b;
+  --on-accent: #171407;
+  --rail-bg: #191813;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+img,
+svg {
+  display: block;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+::selection {
+  background: var(--accent-soft);
+}
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* ── shell ────────────────────────────────────────────────────── */
+.app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.main-scroll--flush {
+  overflow: hidden;
+  display: flex;
+}
+
+.view {
+  padding: 34px 28px 80px;
+  max-width: 1060px;
+  width: 100%;
+  margin: 0 auto;
+}
+.view--chat {
+  padding: 0;
+  max-width: none;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}

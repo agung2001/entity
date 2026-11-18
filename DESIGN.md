@@ -376,7 +376,7 @@ the composer already does: mention another entity.
 | A copy lands as `x-2` but still declares `name: x` | Rewrite the declared name, or the roster shows two identical rows and the slash reference resolves to neither | `npm test` (`workspace-skills`) |
 | A sheet's footer scrolls out of reach with its body | The footer is a sibling of the scrolling body, not a child of it | `SkillCopyDialog` |
 | A whole table row is a link with buttons inside it | Make the name the link and keep the row a container | Review |
-| A settings card overflows a phone and the page does not scroll | The grid track is `1fr` (which is `minmax(auto, 1fr)`) and grows to the card's min-content; use `minmax(0, 1fr)` | `app.css` (`.acct-page` ≤980) |
+| A settings card overflows a phone and the page does not scroll | The grid track is `1fr` (which is `minmax(auto, 1fr)`) and grows to the card's min-content; use `minmax(0, 1fr)` | `responsive.css` (`.acct-page` ≤980) |
 | A retention legend and the rule effects disagree | Both read one `region` object; the forecast reads `outcome`, and only it describes the pass | `npm test` (`retention`) |
 | The shelf rule never archives anything twice, and never deletes at all | The archive is a folder the shelf walk skips: analyse `artifacts/.archive/` as its own population, and stamp the archive date once on the way in | `npm test` (`artifact-retention`) |
 | A per-machine schedule on a shared shelf archives files out of every teammate's list on the next sync | The rule is workspace configuration and exactly one machine executes it; the archive is local, so a second sweeper reads as "the file was deleted" | `npm test` (`artifact-retention`) |
@@ -384,12 +384,12 @@ the composer already does: mention another entity.
 | A rename writes `archived: false` into a thread that never had it | Reads answer true/false; `writeThread` strips the pair when it is false | `npm test` (`chat-archive`) |
 | A reply leaves the thread in the archive | Un-archive as its own write, before the turn's metadata baseline | `tests/e2e/full/19-retention.spec.js` |
 | A recursive copy of an unreadable directory kills the process | `fs.cpSync({ recursive })` aborts on a permission error instead of throwing; walk the tree with `readdirSync` first and fail with a message | `npm test` (`workspace-skills`) |
-| A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `app.css` (`.rchat-menu-item[disabled]`) |
+| A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `chat-rail-rows.css` (`.rchat-menu-item[disabled]`) |
 | A popover floats off screen because its height was hardcoded | Measure `offsetHeight` after render and flip from the measurement | `ChatHistoryRail.openRowMenu` |
 | Unsent text disappears when you switch threads (or reload) | Drafts are per thread in the store, persisted through `src/lib/drafts.js`; the composer reports every change and adopts the new thread's text | `tests/e2e/full/15-drafts.spec.js` |
 | A finished turn switches the conversation you are reading | Store the result and update the rail row; `active` moves only from a click, a deep link, a new thread or a delete | `tests/e2e/full/14-turn-settles.spec.js` |
 | Scrolling up during a turn snaps back to the newest chunk | A programmatic scroll to the bottom arms the follow flag; the live watchers are not exempt | `tests/e2e/full/13-scroll-follow.spec.js` |
-| The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `app.css` (`.jump-live`) |
+| The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `chat-minimap.css` (`.jump-live`) |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
 | A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
 | An attachment is typed into the prompt instead of the chip row | Prompts stay prompts; file/MCP attachments live in chips below | Review |
@@ -795,6 +795,41 @@ transcript, and a typed field for when speech is not there.
   The same text is available afterwards: every agent message has a read-aloud
   action beside copy, share and save.
 
+## Stylesheets are split by surface
+
+`src/styles/app.css` is a list of `@import`s and nothing else, and **that list is
+the cascade order**. Each sheet beside it owns one area of the interface. The
+split is order-preserving by construction: the sheets in import order rebuild the
+single file this used to be, so a rule may move between them without changing
+what wins.
+
+| Sheet | Owns |
+| --- | --- |
+| `tokens.css` | `:root` — the palette, the type stacks, the corner and type ladders — and the dark override |
+| `brand.css` | the character's mark and the mark picker |
+| `rail.css`, `chat-rail.css`, `chat-rail-rows.css`, `rail-two-tier.css` | the rails, in the order they were built |
+| `chat.css`, `chat-thread.css`, `chat-history.css`, `chat-minimap.css` | the thread: page, turns, history, jump pill |
+| `surfaces.css`, `responsive.css` | dialogs, palette, toast, and every breakpoint |
+| `messages.css`, `context.css`, `inventory.css`, `cards.css` | the primitives a page is assembled from |
+| everything else | one screen family each: `directory.css`, `dashboard.css`, `wizards.css`, `forms.css`, `backdrops.css`, `account-*.css`, … |
+
+Rules that keep it that way:
+
+1. **A rule lives with the surface it paints**, not with the screen that happened
+   to add it. A new sheet means a new `@import` in `app.css`, in the place that
+   matches where its rules sit in the cascade.
+2. **`border-radius` and `font-size` are steps on a ladder**, never a number:
+   corners `--r-2xs` 2px → `--r-xl` 20px → `--r-pill` 999px; type `--fs-micro`
+   9px, `--fs-meta` 10px, `--fs-label` 11px, `--fs-secondary` 12px, `--fs-small`
+   13px, `--fs-body` 14.5px, then `--fs-h6` 16px → `--fs-h1` 30px. Two values stay
+   literal on purpose because they are not steps: `50%` (a circle, not a corner)
+   and any relative size (`em`, `%`, `clamp()`, `inherit`) — those are meant to
+   follow their context. `npm test` fails on a raw number or a `var(--r-…)` /
+   `var(--fs-…)` that is not declared; a typo in a step name would silently fall
+   back to a square corner or an inherited size.
+3. **Find a selector with `grep`, not by guessing the sheet**: rule names are the
+   stable thing, file names are the map.
+
 ## When you add a surface or a key
 
 1. New dialog/drawer/popover: add the close button, the scrim, and
@@ -818,3 +853,6 @@ transcript, and a typed field for when speech is not there.
 11. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.
+12. Styles go in the sheet for the surface (see **Stylesheets are split by
+   surface**), and a corner and a type size come from the ladders in
+   `tokens.css`.

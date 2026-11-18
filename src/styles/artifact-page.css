@@ -1,0 +1,799 @@
+/* ── artifact detail page ──────────────────────────────────────────────── */
+.artifact-detail {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* the same horizontal inset as `.topbar`, so the bar and the page agree with
+     the breadcrumb above them */
+  --pad: 28px;
+}
+.artifact-state {
+  margin: 34px 28px;
+}
+/* The same glass recipe as the chat header: the file scrolls beneath the bar,
+   so the tint has something to prove itself against. */
+.artifact-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  /* The bar gives up detail before it crushes the title; what it gives up
+     hangs off its own width, not the window's — the rail takes 190–360 px of
+     the window, so the bar is what actually runs out of room. */
+  container-type: inline-size;
+  container-name: abar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 6px var(--pad);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  background: color-mix(in oklab, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  backdrop-filter: blur(16px) saturate(1.8);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 30%, transparent);
+}
+.artifact-titles {
+  flex: 1;
+  min-width: 0;
+}
+.artifact-titles .eyebrow {
+  margin: 0 0 1px;
+}
+.artifact-titles h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artifact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.artifact-unsaved {
+  color: var(--accent-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.artifact-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.artifact-actions .btn {
+  height: 30px;
+  font-size: var(--fs-secondary);
+}
+
+/* ── the bar's share control ─────────────────────────────────────────────
+   The primary button, the state that replaces it in the same 30 px slot, and
+   the two popovers that hang off them. Nothing here is a modal: the shelf
+   beside the page is where the counts move. */
+.share-anchor,
+.more-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+/* the hairline between what this page adds and the shipped row */
+.sep-v {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  margin: 0 3px;
+  border-left: 1px solid var(--border);
+}
+.scope-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.scope-state svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.scope-state .chev {
+  width: 9px;
+  height: 9px;
+  opacity: 0.6;
+}
+.scope-state[data-mine='1'] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.scope-state b {
+  font-weight: 500;
+}
+.share-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 322px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 15px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  box-shadow: 0 26px 60px -22px rgba(10, 10, 10, 0.42), 0 2px 6px rgba(10, 10, 10, 0.06);
+  /* 8 px of travel, and the reduced-motion rule at the end of this file
+     collapses it — the popover still appears, it just does not move. */
+  animation: share-pop-in 0.14s ease-out;
+}
+@keyframes share-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.share-pop h3 {
+  margin: 0 0 6px;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.share-pop p {
+  margin: 0 0 10px;
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.share-pop p:last-of-type {
+  margin-bottom: 13px;
+}
+.share-pop code {
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.share-pop-note {
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.share-people {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.share-people .stack {
+  display: flex;
+}
+.share-people .stack span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.share-people .stack span:first-child {
+  margin-left: 0;
+}
+.share-people .stack span[data-you='1'] {
+  border-color: color-mix(in oklab, var(--accent) 62%, var(--border-strong));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent-ink);
+}
+.share-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 11px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--danger) 38%, var(--border));
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  color: var(--danger);
+}
+.share-err svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 2px;
+}
+.share-err code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+/* The consequence is the sentence; the store's reason is the second line, so a
+   name clash on the shelf is not a failed share with no explanation. */
+.share-why {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  opacity: 0.85;
+}
+/* The shipped `.mo-foot` recipe: quiet button first, acting button last. */
+.share-pop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.share-pop-foot .btn {
+  height: 30px;
+  font-size: var(--fs-secondary);
+}
+/* Both bar popovers are anchored to their trigger, never measured: the trigger
+   sits at the top of the window, so there is no side to flip to. */
+.scope-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 248px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--bg);
+  box-shadow: 0 22px 48px -20px rgba(10, 10, 10, 0.4);
+}
+.scope-menu-sep {
+  display: block;
+  height: 1px;
+  margin: 4px 5px;
+  background: var(--border);
+}
+.scope-menu .rchat-menu-note {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.scope-menu-hint {
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+  color: var(--muted);
+}
+/* The narrow bar's overflow home; task 4's container tier reveals it. */
+.more-wrap {
+  display: none;
+}
+.actions-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.actions-more svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The shipped icon-only recipe (formerly hostage to `@media (max-width: 760px)`,
+   which this window can never satisfy — it floors at 900 px), promoted to the
+   bar's own width. Same treatment, scoped to the three hand-offs so the share
+   button keeps the one label that never goes. */
+@container abar (max-width: 1120px) {
+  .artifact-actions .btn-handoff {
+    width: 30px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+  .artifact-actions .btn-handoff svg {
+    width: 14px;
+    height: 14px;
+  }
+  .artifact-actions .btn-kbd {
+    display: none;
+  }
+}
+/* Below this the actions themselves go: the hand-offs into one menu, and the
+   title keeps its room. `.actions-more` is the home they go to. The child
+   combinator matters — the share popover's own buttons live in this row too. */
+@container abar (max-width: 780px) {
+  .artifact-actions > .btn:not(.btn-primary),
+  .artifact-actions > .sep-v {
+    display: none;
+  }
+  .artifact-actions .more-wrap {
+    display: inline-flex;
+  }
+  .artifact-meta span:nth-last-child(-n + 2) {
+    display: none;
+  }
+}
+.artifact-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: calc(var(--abar-h, 56px) + 18px) var(--pad) 72px;
+}
+.artifact-doc {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+/* ── HTML artifacts: the page, and a floating review dock ────────────── */
+.artifact-mode {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.artifact-mode button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+.artifact-mode button.on {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.artifact-html {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.annotate-warn {
+  margin: 0;
+  padding: 8px var(--pad);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+/* The dock floats over the page, like a review tool: the preview keeps the
+   whole surface and the notes stay beside the pointer. */
+.annotate-dock {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 92;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 52px));
+}
+.annotate-card {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  box-shadow: 0 18px 44px rgba(10, 10, 10, 0.18);
+}
+.annotate-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.annotate-card-head b {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.annotate-styles {
+  margin: 4px 0 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.annotate-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-secondary);
+  resize: vertical;
+}
+.annotate-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+.annotate-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.annotate-card--list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 10px 12px;
+  list-style: none;
+  max-height: 220px;
+  overflow: auto;
+}
+.annotate-card--list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-secondary);
+}
+.annotate-card--list b {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+.annotate-card--list span {
+  color: var(--muted);
+}
+.annotate-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: -2px -4px 0 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.annotate-x:hover {
+  color: var(--danger);
+}
+.annotate-x svg {
+  width: 11px;
+  height: 11px;
+}
+.annotate-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  box-shadow: 0 12px 30px rgba(10, 10, 10, 0.16);
+}
+.annotate-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-secondary);
+  cursor: pointer;
+}
+.annotate-toggle:hover {
+  background: var(--surface);
+}
+.annotate-toggle[data-on='1'] {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  color: var(--ink);
+}
+.annotate-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+.annotate-toggle kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.annotate-dot {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+.annotate-link {
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+.annotate-link:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+.annotate-send {
+  padding: 6px 12px;
+  border: 1px solid var(--ink);
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  cursor: pointer;
+}
+.annotate-send:hover {
+  opacity: 0.88;
+}
+/* The preview is the artifact's own document: the frame is the surface. */
+.artifact-preview {
+  flex: 1;
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  background: #fff;
+}
+.artifact-preview[data-annotating='1'] {
+  cursor: crosshair;
+}
+
+/* ── The artifact page as a dialog over the conversation ─────────────── */
+.artifact-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+}
+.artifact-dialog-scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, #0a0a0a 42%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+.artifact-dialog-panel {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  background: var(--bg);
+}
+/* The dialog's X is `.x` — the app's close control: transparent, 28 px, the
+   hover paints the box. It sits in the action row, so the bar's own flex
+   aligns it and nothing needs an offset. */
+.artifact-close {
+  margin-left: 2px;
+}
+.artifact-close svg {
+  width: 13px;
+  height: 13px;
+}
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+/* An image an answer points at is a button that opens the artifact page. */
+.msg-image-button {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+/* The editor is the surface, not a box on a page: it starts at the glass bar
+   and fills the column to the bottom. No side gutters, no rounded frame, no
+   dead white strip under a short document. */
+.artifact-scroll--document {
+  display: flex;
+  overflow: hidden;
+  padding: var(--abar-h, 56px) 0 0;
+}
+.artifact-scroll--document .artifact-doc {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  display: flex;
+}
+.artifact-scroll--document .md-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+}
+.artifact-scroll--document .md-bar {
+  flex: none;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.artifact-scroll--document .md-input {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  padding: 16px 18px;
+  resize: none;
+}
+.artifact-scroll--document .md-preview {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 18px 22px;
+  overflow: auto;
+}
+/* A plain text artifact is a surface too: no box, no side gutter, and it fills
+   the column to the bottom. */
+.artifact-scroll--document .artifact-text {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 16px 18px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  overflow: auto;
+}
+.artifact-scroll--document .code-editor {
+  flex: 1;
+  min-height: 0;
+}
+.code-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.code-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor-host .cm-editor {
+  height: 100%;
+}
+.code-editor-error {
+  margin: 12px 18px;
+  color: var(--danger);
+}
+.artifact-detail-head .lede {
+  overflow-wrap: anywhere;
+}
+.artifact-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-right: 0;
+}
+.artifact-detail-meta span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.artifact-detail-meta em {
+  font-style: normal;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.artifact-detail-preview {
+  padding-top: 18px;
+}
+.artifact-detail-preview .artifact-image {
+  display: block;
+  max-width: 100%;
+  max-height: 72vh;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.artifact-detail-preview .artifact-text {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.artifact-detail-preview .artifact-pdf {
+  width: 100%;
+  height: 72vh;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+/* buttons that look like text links */
+button.empty-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.stat-card {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}

@@ -1,0 +1,453 @@
+/* ── brand mark ─────────────────────────────────────────────────
+   A character, not a letterform: a 9 × 9 field of square cells standing on
+   two shaded depth layers, so the block reads solid from the front. Built at
+   runtime from a face map and driven channel by channel — breathing on a
+   sine, eyes tracking on a spring, blinks in two hard pixel steps, and on the
+   sign-in screen a squash-and-stretch hop. No keyframes, no library. */
+.mark {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 0;
+  transform-origin: 50% 100%;
+  display: inline-block;
+}
+.mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mark .bd {
+  transform: scale(var(--sx, 1), var(--sy, 1));
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.mark .hd {
+  transform: rotate(var(--tilt, 0deg));
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.mark .ey {
+  transform: translate(var(--ex, 0), var(--ey, 0));
+}
+.mark .lid {
+  fill: var(--mk);
+  transform: scaleY(var(--lida, 0));
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+}
+.mark .lid.b {
+  transform: scaleY(var(--lidb, 0));
+}
+.mark .eye {
+  fill: var(--ink);
+}
+.mark .glint {
+  fill: var(--mk);
+}
+.mark .fc {
+  fill: var(--mk);
+}
+/* the lit face and the three depth steps are all derived from --mk at the same
+   hue, so the block stays solid when the colour changes */
+.mark .hi {
+  fill: color-mix(in oklab, var(--mk) 50%, white);
+}
+.mark .sh {
+  fill: color-mix(in oklab, var(--mk) 74%, oklch(46% 0.09 var(--mk-h)));
+}
+.mark .dx1 {
+  fill: color-mix(in oklab, var(--mk) 52%, oklch(34% 0.08 var(--mk-h)));
+}
+.mark .dx2 {
+  fill: color-mix(in oklab, var(--mk) 26%, oklch(26% 0.06 var(--mk-h)));
+}
+.mark--hop {
+  transform: translateY(var(--lift, 0)) scale(var(--sxf, 1), var(--syf, 1));
+}
+.cell-agent .mark {
+  width: 34px;
+  height: 34px;
+}
+.cell-agent .mark .mood {
+  right: -7px;
+  bottom: -6px;
+  min-width: 20px;
+  height: 20px;
+  font-size: var(--fs-body);
+}
+.log .who .mark,
+.hrow .mark {
+  width: 20px;
+  height: 20px;
+}
+/* a 1-cell glint would eat a third of the eye at 20px, so xs keeps it solid ink */
+.mark--xs .glint {
+  display: none;
+}
+
+/* the mood indicator — a floating sticker at the block's extruded corner, so
+   both the character and the emoji stay readable at every size. It never
+   covers the eyes and never changes the mark's box. */
+.mark .mood {
+  position: absolute;
+  right: -6px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  font-size: var(--fs-secondary);
+  line-height: 1;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  box-shadow: 0 1px 4px rgba(10, 10, 10, 0.18);
+  pointer-events: none;
+}
+.mark .mood:empty {
+  display: none;
+}
+.mk-btn .mark .mood {
+  right: -5px;
+  bottom: -4px;
+  min-width: 19px;
+  height: 19px;
+  font-size: var(--fs-small);
+}
+.mkpop .pv .mark .mood {
+  right: -8px;
+  bottom: -7px;
+  min-width: 27px;
+  height: 27px;
+  padding: 0 4px;
+  font-size: var(--fs-h5);
+  border-width: 2px;
+  border-color: var(--border-strong);
+  background: var(--surface);
+  box-shadow: 0 3px 10px rgba(10, 10, 10, 0.2);
+}
+.mark--xs .mood {
+  display: none;
+}
+/* the chat history row is the one small mark that must keep its emoji: it is
+   the quickest way to recognise a thread when titles are similar */
+.hrow .mark--xs .mood {
+  display: grid;
+  right: -5px;
+  bottom: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  font-size: var(--fs-micro);
+  line-height: 1;
+  border-width: 1px;
+  box-shadow: 0 1px 3px rgba(10, 10, 10, 0.16);
+}
+
+/* ── mark picker ────────────────────────────────────────────────
+   The drawer's character is the control: clicking it opens the two things it
+   owns — which mood it wears, and what colour it is. */
+.mk-wrap {
+  position: relative;
+  flex: none;
+}
+.mk-btn {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.mk-btn:hover {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.mk-btn[aria-expanded='true'] {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+.mk-btn .mark {
+  width: 32px;
+  height: 32px;
+}
+.mkpop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -4px;
+  z-index: 95;
+  display: none;
+  width: min(344px, calc(94vw - 32px));
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: 0 18px 44px rgba(10, 10, 10, 0.14), 0 2px 6px rgba(10, 10, 10, 0.06);
+  text-align: left;
+  cursor: default;
+}
+.mkpop[data-open='1'] {
+  display: block;
+}
+.mkpop .pv {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 1px 1px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mkpop .pv .mark {
+  width: 64px;
+  height: 64px;
+}
+.mkpop .pv h3 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.mkpop .pv p {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mkpop .lbl {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 12px 1px 7px;
+}
+.mk-mood-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 1px 7px;
+}
+.mk-mood-head .lbl {
+  margin: 0;
+}
+.mk-finder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.mk-finder-btn:hover,
+.mk-finder-btn[aria-expanded='true'] {
+  color: var(--ink);
+  border-color: var(--muted);
+  background: var(--surface);
+}
+/* moods are emoji, not motion: six generous tiles, so the whole shortlist
+   reads at a glance and the emoji are legible without squinting */
+.mk-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.mk-mood {
+  display: grid;
+  place-items: center;
+  height: 46px;
+  padding: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  font-family: inherit;
+  font-size: var(--fs-h3);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease,
+    color 0.12s ease;
+}
+.mk-mood:hover {
+  background: var(--surface);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+.mk-mood[aria-checked='true'] {
+  background: var(--surface-2);
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.mk-mood svg {
+  display: block;
+}
+.mk-glyph {
+  display: block;
+  transform: translateY(1px);
+}
+
+/* the drawer: search first, then a browsable grouped grid */
+.mk-finder {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.mk-find {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 33px;
+  padding: 0 9px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+}
+.mk-find:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.mk-find svg {
+  flex: none;
+}
+.mk-find input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+}
+.mk-clear {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  background: var(--surface-2);
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mk-clear:hover {
+  color: var(--ink);
+}
+.mk-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+.mk-cat {
+  height: 22px;
+  padding: 0 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mk-cat:hover,
+.mk-cat[aria-pressed='true'] {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.mk-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 3px;
+  max-height: 172px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.mk-emoji {
+  height: 33px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: var(--fs-h5);
+  line-height: 1;
+  cursor: pointer;
+}
+.mk-emoji:hover {
+  background: var(--bg);
+  border-color: var(--border);
+}
+.mk-emoji[aria-checked='true'] {
+  background: var(--bg);
+  border-color: var(--ink);
+}
+.mk-none {
+  margin: 8px 0 0;
+  font-size: var(--fs-label);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.mk-sw {
+  display: flex;
+  gap: 7px;
+}
+.mk-dot {
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  background: var(--mk);
+  border: 1px solid rgba(10, 10, 10, 0.14);
+  box-shadow: inset 0 -5px 0 rgba(10, 10, 10, 0.16), inset 0 4px 0 rgba(255, 255, 255, 0.34);
+  transition: transform 0.12s ease;
+}
+.mk-dot:hover {
+  transform: translateY(-1px);
+}
+.mk-dot[aria-checked='true'] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.mkpop .note {
+  margin: 11px 1px 0;
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  line-height: 1.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mark .lid {
+    opacity: 0;
+  }
+}

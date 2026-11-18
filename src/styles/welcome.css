@@ -54,7 +54,7 @@
   padding: 34px 18px 40px;
   display: grid;
   place-items: center;
-  font-size: 15px;
+  font-size: var(--fs-h6);
   line-height: 1.55;
 }
 /* one warm wash, printed faintly behind the card */
@@ -159,10 +159,10 @@
 /* the wizard names a file inline, which the sign-in card never had to */
 .auth.welcome .auth-card .sub code {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-secondary);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   padding: 1px 4px;
 }
 
@@ -182,9 +182,9 @@
 .auth.welcome .steps li {
   padding: 4px 9px;
   border: 1px solid transparent;
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -223,7 +223,7 @@
 .auth.welcome .mnote {
   margin: 7px 0 0;
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: var(--fs-label);
   letter-spacing: 0;
   min-height: 0;
   color: var(--muted);
@@ -238,7 +238,7 @@
   white-space: nowrap;
   vertical-align: bottom;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--ink-2);
 }
 :root[data-theme='dark'] .auth.welcome .slot .msg {
@@ -246,7 +246,7 @@
 }
 .auth.welcome .slot .msg code {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-label);
 }
 
 /* ── footer ──────────────────────────────────────────────────────── */
@@ -298,7 +298,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r);
   background: var(--surface);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   cursor: pointer;
   transition:
     border-color 0.14s ease,
@@ -342,14 +342,14 @@
 }
 .auth.welcome .hrow .who b {
   display: block;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 .auth.welcome .hrow .who span {
   display: block;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -359,13 +359,13 @@
 .auth.welcome .hrow .ico {
   width: 16px;
   height: 16px;
-  border-radius: 5px;
+  border-radius: var(--r-xs);
   background: var(--surface-2);
 }
 .auth.welcome .sk {
   display: block;
   height: 9px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--surface-2);
 }
 .auth.welcome .sk--short {
@@ -379,10 +379,10 @@
   gap: 5px;
   padding: 3px 8px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   background: var(--bg);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -412,13 +412,13 @@
 }
 .auth.welcome .none h3 {
   margin: 0 0 6px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .auth.welcome .none p {
   margin: 0 0 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-secondary);
   color: var(--ink-2);
 }
 .auth.welcome .cmds {
@@ -431,10 +431,10 @@
 }
 .auth.welcome .cmds li {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   padding: 3px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--ink-2);
 }
@@ -450,10 +450,10 @@
 }
 .auth.welcome .chips button {
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-secondary);
   padding: 7px 11px;
   border: 1px solid var(--border-strong);
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   background: var(--bg);
   color: var(--ink-2);
   cursor: pointer;
@@ -491,7 +491,7 @@
   border: 0;
   background: none;
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: var(--fs-secondary);
   color: var(--muted);
 }
 .auth.welcome .turn {
@@ -510,7 +510,7 @@
 }
 .auth.welcome .turn .body {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   color: var(--ink);
   overflow-wrap: break-word;
@@ -524,7 +524,7 @@
   flex: none;
   margin-bottom: 3px;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -533,7 +533,7 @@
    actionable. */
 .auth.welcome .turn--err .body {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-label);
   color: var(--danger);
   white-space: pre-wrap;
 }
@@ -575,10 +575,10 @@
   display: grid;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--r);
   background: var(--surface-2);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   text-transform: uppercase;
   color: var(--ink-2);
 }
@@ -587,7 +587,7 @@
 }
 .resume-who b {
   display: block;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -596,7 +596,7 @@
 .resume-who .who span {
   display: block;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -643,7 +643,7 @@
     text-align: center;
   }
   .auth.welcome .chips button {
-    font-size: 12px;
+    font-size: var(--fs-secondary);
     padding: 8px 10px;
   }
   .auth.welcome .log {
@@ -659,7 +659,7 @@
     padding: 28px 20px 22px;
   }
   .auth.welcome .auth-card h1 {
-    font-size: 23px;
+    font-size: var(--fs-h3);
   }
   .auth.welcome .brand-mark.brand-mark--lg {
     width: 64px;
