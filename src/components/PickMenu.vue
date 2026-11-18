@@ -114,6 +114,9 @@ function toggle() {
   afterOpen()
 }
 
+/* A dialog can open its pickers by shortcut without reaching into the trigger. */
+defineExpose({ toggle })
+
 function pick(id) {
   if (props.disabled) return
   open.value = false

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import MarkPicker from '@/components/MarkPicker.vue'
 import HarnessPaths from '@/components/HarnessPaths.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
@@ -192,6 +193,21 @@ onMounted(() => {
 
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
+const chatKey = shortcutLabel('entity-chat')
+
+/* The entity-chat key is this page's, not the hub's: the capture listener takes
+   it before the generic new-thread handler can open an empty dialog over it. */
+function onEntityKey(event) {
+  if (!matchesShortcut('entity-chat', event)) return
+  if (!agent.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  chat()
+}
+
+onMounted(() => window.addEventListener('keydown', onEntityKey, true))
+onBeforeUnmount(() => window.removeEventListener('keydown', onEntityKey, true))
+
 async function chat() {
   if (!agent.value) return
   try {
@@ -245,6 +261,7 @@ async function copyPath() {
               <path d="M2.2 3.6h11.6v7.2H8l-3.2 2.4v-2.4H2.2z" />
             </svg>
             Chat
+            <kbd class="btn-kbd">{{ chatKey }}</kbd>
           </button>
         </div>
       </div>

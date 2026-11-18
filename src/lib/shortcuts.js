@@ -68,28 +68,20 @@ export const SHORTCUT_GROUPS = [
         browser: ['mod', 'enter'],
       },
       {
+        id: 'entity-chat',
+        label: 'Chat with this entity',
+        desc: 'On an entity page, open a conversation with that entity.',
+        desktop: ['alt', 'shift', 'N'],
+        browser: ['alt', 'shift', 'N'],
+      },
+      {
         id: 'inventory-search',
         label: 'Search the list',
-        desc: 'Put the caret in the search field of the inventory on this page.',
+        desc: 'Put the caret in the search field of this page’s list — the conversations rail, the skills roster, the tool list.',
         desktop: ['/'],
         browser: ['/'],
       },
-      {
-        id: 'tool-search',
-        label: 'Search this server’s tools',
-        desc: 'On an MCP server page, put the caret in the tool list’s search field.',
-        /* The same combo as `rail-search`, which has nothing to focus on that
-           page: its second-tier rail is the Overview list, and has no search. */
-        desktop: ['alt', 'shift', 'F'],
-        browser: ['alt', 'shift', 'F'],
-      },
-      {
-        id: 'rail-search',
-        label: 'Focus rail search',
-        desc: 'Jump into the search field of the active second-tier rail.',
-        desktop: ['alt', 'shift', 'F'],
-        browser: ['alt', 'shift', 'F'],
-      },
+
       {
         id: 'theme',
         label: 'Switch light and dark',
@@ -156,8 +148,18 @@ export const SHORTCUT_GROUPS = [
         id: 'timeline',
         label: 'Execution timeline',
         desc: 'See every step of the last turn on one clock.',
+        /* `T` in a browser tab: the Option variant of `Shift+E` belongs to
+           `thread-search`, and both variants are accepted at runtime, so two
+           items may not share one. */
         desktop: ['mod', 'shift', 'E'],
-        browser: ['alt', 'shift', 'E'],
+        browser: ['alt', 'shift', 'T'],
+      },
+      {
+        id: 'thread-search',
+        label: 'Search this thread',
+        desc: 'Put the caret in the thread search field and find a phrase in the transcript.',
+        desktop: ['alt', 'shift', 'F'],
+        browser: ['alt', 'shift', 'F'],
       },
       {
         id: 'metadata',
@@ -165,6 +167,27 @@ export const SHORTCUT_GROUPS = [
         desc: 'Show the links and paths this conversation mentions.',
         desktop: ['mod', '/'],
         browser: ['alt', '/'],
+      },
+      {
+        id: 'pick-entity',
+        label: 'Pick the entity',
+        desc: 'In the New thread dialog: open the entity picker.',
+        desktop: ['alt', 'shift', '1'],
+        browser: ['alt', 'shift', '1'],
+      },
+      {
+        id: 'pick-machine',
+        label: 'Pick the machine',
+        desc: 'In the New thread dialog: open the machine picker.',
+        desktop: ['alt', 'shift', '2'],
+        browser: ['alt', 'shift', '2'],
+      },
+      {
+        id: 'pick-harness',
+        label: 'Pick the harness',
+        desc: 'In the New thread dialog: open the harness picker.',
+        desktop: ['alt', 'shift', '3'],
+        browser: ['alt', 'shift', '3'],
       },
       {
         id: 'prev-chat',
@@ -272,6 +295,15 @@ function comboMatches(event, combo) {
 
   if (special === 'enter') return event.key === 'Enter'
   if (special === 'esc') return event.key === 'Escape'
+  /* A digit never survives a modifier: ⌥⇧1 is "!" (and ⌥1 is "¡") on macOS, so
+     the character is useless here and the physical key is the truth. */
+  if (letter && /^[0-9]$/.test(letter)) {
+    return (
+      event.key === letter ||
+      event.code === `Digit${letter}` ||
+      event.code === `Numpad${letter}`
+    )
+  }
   if (symbol) {
     const codes = {
       '[': 'BracketLeft',

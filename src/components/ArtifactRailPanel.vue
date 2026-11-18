@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import NavIcon from '@/components/NavIcon.vue'
+import ArtifactIcon from '@/components/ArtifactIcon.vue'
 import { matchesQuery } from '@/composables/search'
+import { shortcutLabel } from '@/lib/shortcuts'
 import { ago, hub, toast } from '@/stores/hub'
 import { artifacts, loadArtifacts, ownsArtifact, uploadArtifact } from '@/stores/artifacts'
 
@@ -10,6 +11,7 @@ import { artifacts, loadArtifacts, ownsArtifact, uploadArtifact } from '@/stores
 const route = useRoute()
 const router = useRouter()
 const search = ref('')
+const searchKey = shortcutLabel('inventory-search')
 const ext = ref('all')
 const sort = ref('newest')
 const uploading = ref(false)
@@ -133,6 +135,7 @@ defineExpose({ pickUpload })
           <path d="M10.4 10.4L14 14" />
         </svg>
         <input v-model="search" type="search" placeholder="Search artifacts" aria-label="Search artifacts" autocomplete="off" />
+        <kbd v-if="!search" class="search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
       </label>
       <button
         class="rail-filter-btn"
@@ -233,7 +236,9 @@ defineExpose({ pickUpload })
         :aria-current="route.name === 'artifact' && route.params.id === item.id ? 'page' : undefined"
         @click="open(item)"
       >
-        <span class="rail-t2-ic"><NavIcon name="artifact" /></span>
+        <span class="rail-t2-ic">
+          <ArtifactIcon :kind="item.kind" :ext="item.ext" />
+        </span>
         <span class="t">
           <b>{{ item.name }}</b>
           <span class="m">

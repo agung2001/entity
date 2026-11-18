@@ -8,7 +8,8 @@ import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesQuery } from '@/composables/search'
 import { shareHref } from '@/lib/share-url'
 import { copyText } from '@/lib/clipboard'
-import { isDesktopApp } from '@/lib/shortcuts'
+import { isDesktopApp, matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { isEditable } from '@/lib/dom'
 import { playSfx } from '@/lib/sfx'
 import {
   ago,
@@ -49,6 +50,8 @@ const menuItem = ref(null)
 const menuPos = ref({ top: 0, left: 0 })
 const hmenu = ref(null)
 const query = ref('')
+const searchEl = ref(null)
+const searchKey = shortcutLabel('inventory-search')
 const range = ref('all')
 const RANGE_OPTIONS = [
   { id: 'all', label: 'Any time' },
@@ -585,9 +588,23 @@ function onWorkspaceEvent(event) {
   }
 }
 
+/* A bare `/` puts the caret in this rail's search — the same key the rosters use,
+   because it means "the list on this page". It yields to any field, so typing a
+   slash in the composer still opens the skill menu. */
+function onKey(event) {
+  if (!matchesShortcut('inventory-search', event)) return
+  if (isEditable(event.target)) return
+  const field = searchEl.value
+  if (!field) return
+  event.preventDefault()
+  field.focus()
+  field.select()
+}
+
 onMounted(() => {
   ensureChats()
   document.addEventListener('click', onDocumentClick)
+  window.addEventListener('keydown', onKey, true)
   unsubscribe = onRunEvent(onWorkspaceEvent)
   window.addEventListener('focus', refreshHistory)
 })
@@ -605,6 +622,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey, true)
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('focus', refreshHistory)
   clearTimeout(reloadTimer)
@@ -636,6 +654,7 @@ defineExpose({ newThread })
             <path d="M10.5 10.5L14 14" />
           </svg>
           <input
+            ref="searchEl"
             v-model="query"
             type="search"
             placeholder="Search threads"
@@ -644,6 +663,7 @@ defineExpose({ newThread })
             spellcheck="false"
           />
           <button v-if="query" type="button" aria-label="Clear search" @click="query = ''">×</button>
+          <kbd v-if="!query" class="search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
         </label>
         <button
           class="rchat-filter-btn"

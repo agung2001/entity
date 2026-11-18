@@ -365,7 +365,7 @@ the composer already does: mention another entity.
   question stays in the transcript. A hold is in memory, so a reload reads `Interrupted`
   and nothing was ever started.
 
-## Common mistakes## Common mistakes
+## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
 | --- | --- | --- |
@@ -377,6 +377,9 @@ the composer already does: mention another entity.
 | A dialog has no dimmed backdrop / cannot be clicked away | A modal is scrim + dialog + close button + `Esc` | `RemoteConnectDialog`, `RemoteSyncPanel` for the pattern |
 | A tooltip says `⌘K` but the handler was changed | Combo comes from `shortcutLabel(id)` | `npm test` (forbids `⌘` / `Ctrl+` in `.vue`) |
 | Typing `?` in the composer opens the help guide | Check `isEditable(event.target)` before a bare-key shortcut | `HubLayout.onKey` |
+| A rail's search has no hint while the chat rail does | `.search-kbd` with `shortcutLabel('inventory-search')`, one class for every searchable list | `DESIGN.md` → *Every searchable list says `/`* |
+| Two surfaces invent a second key for the same "search this list" | One id (`inventory-search`), one meaning per surface | `src/lib/shortcuts.js` |
+| A digit shortcut never fires, though the handler looks right | Match digits by `event.code` (`Digit1`), not by `event.key`: Option+Shift+1 is `!` | `matchesShortcut` |
 | A new page has a key handler that fires while typing | Guard `INPUT`, `TEXTAREA`, `SELECT`, `contentEditable` | `AppRail`, `HubLayout` |
 | Two surfaces open and both close on one `Esc` | One stack entry per surface, last opened is top | `useDialog.js` |
 | A new shortcut exists but is not in `?` | Add it to `SHORTCUT_GROUPS`; render the guide from the catalog | Review + guide |
@@ -498,6 +501,35 @@ the composer already does: mention another entity.
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
 | Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
+
+## Every searchable list says `/`, in the same pill
+
+A rail or a roster that can be searched carries the key in the field itself:
+`<kbd class="search-kbd">{{ shortcutLabel('inventory-search') }}</kbd>`, one class,
+one look (control border, mono, micro type), hidden on `:focus-within` because the
+key has done its job by then. The conversations rail set the pattern; the artifact
+rail, the entity rail, the skills roster and an MCP server's tool list all wear it.
+
+One key, one meaning, whichever list is on screen — the **conversations rail**, a
+second-tier **rail**, the **skills roster**, the **tool list**. The id is always
+`inventory-search`; a surface owns the handler only if it owns the field:
+
+| surface | handler | target |
+| --- | --- | --- |
+| conversations rail | `ChatHistoryRail` | `.rchat-search input` |
+| second-tier rails (artifacts, entities, …) | `HubLayout` | `.rail-t2 input[type="search"]` |
+| skills roster | `SkillsView` | the roster's search |
+| MCP server tools | `McpServerView` | the tool list's search |
+
+Bare-key rule: `/` is a character a person types, so every one of those handlers
+returns early on `isEditable(event.target)` — inside the composer a `/` still opens
+the skill menu, and a `/` in a path still types.
+
+The other two keys that name a *place* rather than a list: `thread-search`
+(Option+Shift+F) puts the caret in **this thread's** search, `entity-chat`
+(Option+Shift+N) opens a chat with the entity whose page you are on. A digit
+combo is matched by its **physical key** (`event.code`), because Option+Shift+1
+produces `!` on a Mac — the character never survives the modifier.
 
 ## The guide in the top bar
 

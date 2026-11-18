@@ -65,6 +65,13 @@
 .rchat-search input {
   font-size: var(--fs-secondary);
 }
+/* The `/` pill (`.search-kbd`) leaves when the field is in use: the key has done
+   its job by then. */
+.rchat-search:focus-within .search-kbd,
+.rail-search:focus-within .search-kbd,
+.sksearch:focus-within .search-kbd {
+  opacity: 0;
+}
 .rchat-search button {
   width: 18px;
   height: 18px;

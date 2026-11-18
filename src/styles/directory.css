@@ -732,11 +732,18 @@
 .entp-view {
   max-width: 1180px;
 }
+/* The detail pages open with a toolbar that is the page's own top edge: it
+   bleeds past the gutter, sits flush under the top bar, and keeps its contents
+   on the column below. */
+.view.entp-view {
+  padding-top: 0;
+}
 .entp-bar {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding-bottom: 14px;
+  margin: 0 calc(-1 * var(--view-pad)) 20px;
+  padding: 8px var(--view-pad);
   border-bottom: 1px solid var(--border);
 }
 .entp-bar .back {

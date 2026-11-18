@@ -53,7 +53,7 @@ const tools = ref({ loading: false, error: '', list: [] })
 const query = ref('')
 const searchEl = ref(null)
 const kind = ref('all')
-const searchKey = shortcutLabel('tool-search')
+const searchKey = shortcutLabel('inventory-search')
 const editing = ref(false)
 const draft = ref('')
 const draftError = ref('')
@@ -255,10 +255,10 @@ function focusSearch() {
   field.select()
 }
 
-/* The catalog's tool-search combo focuses the tool search — but only when the
+/* The catalog's list-search combo focuses the tool search — but only when the
    caret is not already in a field, so typing a path or a command still types. */
 function onKey(event) {
-  if (!matchesShortcut('tool-search', event)) return
+  if (!matchesShortcut('inventory-search', event)) return
   if (isEditable(event.target)) return
   event.preventDefault()
   focusSearch()
@@ -474,7 +474,7 @@ watch(name, async () => {
                     aria-label="Search this server's tools by name or description"
                     spellcheck="false"
                   />
-                  <kbd class="sksearch-key" aria-hidden="true">{{ searchKey }}</kbd>
+                  <kbd class="sksearch-key search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
                 </label>
                 <div class="mcpp-seg" role="group" aria-label="Filter tools by kind">
                   <button

@@ -1023,17 +1023,14 @@
   color: var(--muted);
   pointer-events: none;
 }
+/* Positioning only: the look is `.search-kbd` in context.css, shared with the
+   conversations rail and the artifact/entity rails. */
 .sksearch-key {
   position: absolute;
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  line-height: 1.4;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
+  margin-left: 0;
   padding: 1px 4px;
   background: var(--surface);
   pointer-events: none;

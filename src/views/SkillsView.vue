@@ -245,7 +245,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           aria-label="Search skills in this workspace"
           spellcheck="false"
         />
-        <kbd class="sksearch-key" aria-hidden="true">{{ searchKey }}</kbd>
+        <kbd class="sksearch-key search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
       </label>
 
       <div class="sk-tabs" role="tablist" aria-label="Skill scope">

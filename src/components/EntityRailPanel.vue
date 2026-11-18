@@ -5,12 +5,14 @@ import EntityActions from '@/components/EntityActions.vue'
 import EntityCreateDialog from '@/components/EntityCreateDialog.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import { matchesQuery } from '@/composables/search'
+import { shortcutLabel } from '@/lib/shortcuts'
 import { ensureChats, hub } from '@/stores/hub'
 
 /** The entity directory lives in the second tier; a row opens the detail page. */
 const route = useRoute()
 const router = useRouter()
 const search = ref('')
+const searchKey = shortcutLabel('inventory-search')
 const adding = ref(false)
 const filtersOpen = ref(false)
 const FILTERS = ['all', 'running', 'idle', 'sleep', 'error']
@@ -66,6 +68,7 @@ defineExpose({
           <path d="M10.4 10.4L14 14" />
         </svg>
         <input v-model="search" type="search" placeholder="Search entities" aria-label="Search entities" autocomplete="off" />
+        <kbd v-if="!search" class="search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
       </label>
       <button
         class="rail-filter-btn"

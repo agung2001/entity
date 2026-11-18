@@ -172,7 +172,10 @@ main {
 }
 
 .view {
-  padding: 34px 28px 80px;
+  /* The gutter is a token so a page-wide bar can bleed past it and still line
+     its contents up with the column below. */
+  --view-pad: 28px;
+  padding: 34px var(--view-pad) 80px;
   max-width: 1060px;
   width: 100%;
   margin: 0 auto;

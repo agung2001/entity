@@ -137,12 +137,17 @@ function onKey(e) {
     openPalette()
     return
   }
-  if (matchesShortcut('new-thread', e)) {
+  /* On an entity page the entity-chat key is "chat with this entity" (its own
+     handler, capture phase), so the generic new-thread does not also open a
+     dialog over it. */
+  if (matchesShortcut('new-thread', e) && !isEntity.value) {
     e.preventDefault()
     openNewThread()
     return
   }
-  if (matchesShortcut('rail-search', e)) {
+  /* `/` — the same key the conversations rail, the skills roster and the tool
+     list use. One key, one meaning: the search field of the list on this page. */
+  if (matchesShortcut('inventory-search', e)) {
     if (hub.palette.open) return
     e.preventDefault()
     const input = document.querySelector('.rail-t2 input[type="search"]')

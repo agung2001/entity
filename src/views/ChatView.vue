@@ -220,6 +220,7 @@ const spawnParentTitle = computed(() => {
    long conversation is navigated by finding the line that said the thing, not
    by scrolling until it appears. */
 const threadQuery = ref('')
+const threadSearchEl = ref(null)
 const hitAt = ref(0)
 
 const hitIndices = computed(() => {
@@ -527,6 +528,18 @@ function onChatKey(event) {
     mcpOpen.value ||
     tagOpen.value
   ) {
+    return
+  }
+  if (matchesShortcut('thread-search', event)) {
+    const field = threadSearchEl.value
+    /* The header folds the search away on a narrow window: a key that focuses
+       an invisible field is worse than one that does nothing. */
+    if (field && field.offsetParent) {
+      event.preventDefault()
+      event.stopPropagation()
+      field.focus()
+      field.select()
+    }
     return
   }
   if (matchesShortcut('prev-chat', event)) {
@@ -1215,6 +1228,7 @@ watch(
                   <path d="M10.4 10.4L14 14" />
                 </svg>
                 <input
+                  ref="threadSearchEl"
                   v-model="threadQuery"
                   type="search"
                   placeholder="Search this thread"

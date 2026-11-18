@@ -25,6 +25,16 @@ const emit = defineEmits(['close', 'created'])
 
 const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: '', dir: '' })
 const startKey = shortcutLabel('start-thread')
+/* One digit per picker: the dialog is three choices and a button, and reaching
+   for the mouse to make any of them is the slow part. */
+const pickKeys = {
+  entity: shortcutLabel('pick-entity'),
+  machine: shortcutLabel('pick-machine'),
+  harness: shortcutLabel('pick-harness'),
+}
+const entityPick = ref(null)
+const machinePick = ref(null)
+const harnessPick = ref(null)
 /* The dialog is now fully keyboard-driven: it opens on the first picker, each
    picker takes arrows and Enter, and the combo below files the thread without
    reaching for the mouse. */
@@ -281,9 +291,23 @@ watch(
  */
 function onKey(event) {
   if (!props.open || busy.value) return
-  if (!matchesShortcut('start-thread', event)) return
-  event.preventDefault()
-  submit()
+  if (matchesShortcut('start-thread', event)) {
+    event.preventDefault()
+    submit()
+    return
+  }
+  const pickers = [
+    ['pick-entity', entityPick],
+    ['pick-machine', machinePick],
+    ['pick-harness', harnessPick],
+  ]
+  for (const [id, target] of pickers) {
+    if (!matchesShortcut(id, event)) continue
+    /* a disabled picker is the machine refusing the choice, not a key to eat */
+    event.preventDefault()
+    target.value?.toggle()
+    return
+  }
 }
 
 onMounted(() => window.addEventListener('keydown', onKey, true))
@@ -340,8 +364,9 @@ async function submit() {
 
     <form ref="body" class="mo-body thread-body newthread-body" @submit.prevent="submit">
       <div class="fld">
-        <span class="lbl">Entity</span>
+        <span class="lbl">Entity <kbd v-if="!busy" class="fld-key">{{ pickKeys.entity }}</kbd></span>
         <PickMenu
+          ref="entityPick"
           class="field-select"
           head="Entity"
           icons="entity"
@@ -353,8 +378,9 @@ async function submit() {
       </div>
 
       <div class="fld">
-        <span class="lbl">Machine</span>
+        <span class="lbl">Machine <kbd v-if="!busy" class="fld-key">{{ pickKeys.machine }}</kbd></span>
         <PickMenu
+          ref="machinePick"
           class="field-select"
           head="Machine"
           icons="machine"
@@ -369,8 +395,9 @@ async function submit() {
       </div>
 
       <div class="fld">
-        <span class="lbl">Harness</span>
+        <span class="lbl">Harness <kbd v-if="!busy" class="fld-key">{{ pickKeys.harness }}</kbd></span>
         <PickMenu
+          ref="harnessPick"
           class="field-select"
           head="Harness"
           icons="harness"
