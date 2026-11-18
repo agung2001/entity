@@ -847,3 +847,158 @@ test('a name with no job is a reference, and punctuation is not part of the name
   assert.match(out.text, /named only; no job was given/)
   assert.doesNotMatch(out.text, /no answer/)
 })
+
+/* A row's verdict is the *last* thing it said, so a head-only digest showed the
+   setup and never the ending. Short answers stay byte-identical (`:243` above). */
+test('a long answer keeps its tail in the digest, which is where a row ends', async () => {
+  const record = workspace()
+  const setup = 'read the fixture and noted what changed. '.repeat(20)
+  const answer = `${setup}still running: nothing.`
+  assert.ok(answer.length > 400, 'the fixture must be long enough to be cut')
+  const out = await mention.rewrite(record, '@py-agent fix the failing test', {
+    deps: deps({ runEntity: async () => ({ ok: true, answer, error: '' }) }),
+  })
+  /* the ending survives the cut … */
+  assert.match(out.text, /still running: nothing\./)
+  /* … and the head is still the head */
+  assert.match(out.text, /→ answer: read the fixture and noted/)
+  /* the digest stays bounded: head 240 + ' … ' + tail 160 */
+  const digest = out.text.split('→ answer: ')[1].split('\n')[0].trim()
+  assert.equal(digest.length, 403)
+  assert.ok(digest.includes(' … '))
+  /* the whole answer is untouched — the session, not the card, is the report */
+  assert.equal(out.mentions[0].answer, answer)
+})
+
+/* ── the plan gate ────────────────────────────────────────────────────
+   A message that delegates sends as always; the runs wait for an answer. The
+   seam is one awaited promise, so everything below is the same rewrite with a
+   different answer — no second code path to keep in step. */
+
+test('a hold sees the plan before any harness exists, and Run keeps the turn', async () => {
+  const record = workspace()
+  const ran = []
+  const plans = []
+  const out = await mention.rewrite(record, '@py-agent fix the failing test', {
+    hold: async (plan) => {
+      plans.push(plan)
+      assert.deepEqual(ran, [], 'the gate must open before a run starts')
+      return { action: 'run' }
+    },
+    deps: deps({
+      runEntity: async (_record, entity) => {
+        ran.push(entity.name)
+        return { ok: true, answer: 'the fixture was stale', error: '' }
+      },
+    }),
+  })
+  assert.deepEqual(ran, ['py-agent'])
+  assert.equal(plans.length, 1, 'one plan per turn')
+  const plan = plans[0]
+  assert.deepEqual(plan.reads, [], 'nothing was read, so nothing is claimed')
+  assert.equal(plan.rows.length, 1)
+  assert.deepEqual(
+    { name: plan.rows[0].name, job: plan.rows[0].job, harness: plan.rows[0].harness },
+    { name: 'py-agent', job: 'fix the failing test', harness: 'claude' },
+  )
+  /* the folder is the one the harness would start in, shown the way a person
+     reads it — and `~` is what most entities have */
+  assert.equal(plan.rows[0].dir, os.homedir())
+  assert.equal(plan.rows[0].shownDir, '~')
+  assert.equal(plan.shownDir, '~')
+  assert.ok(plan.timeoutMs > 0, 'the ceiling travels with the plan')
+  /* and the turn is byte-identical to one that was never gated */
+  assert.match(out.text, /→ answer: the fixture was stale/)
+})
+
+test('reads resolve before the hold, because the gate covers work that has not happened', async () => {
+  const record = workspace()
+  let readsAtHold = null
+  const out = await mention.rewrite(
+    record,
+    '@youtrack:AC:login bug then @py-agent fix it',
+    {
+      hold: async (plan) => {
+        readsAtHold = plan.reads
+        return { action: 'run' }
+      },
+      deps: deps({
+        mcpCall: async () => ({
+          data: { issuesPage: [{ id: 'AC-361', summary: 'Login loops', url: 'https://yt/issue/AC-361' }] },
+        }),
+        runEntity: async () => ({ ok: true, answer: 'done', error: '' }),
+      }),
+    },
+  )
+  assert.equal(readsAtHold.length, 1)
+  assert.equal(readsAtHold[0].kind, 'youtrack')
+  assert.equal(readsAtHold[0].count, 1)
+  assert.match(readsAtHold[0].detail, /AC-361/)
+  /* the read is in the block the parent reads, not only in the plan */
+  assert.match(out.text, /AC-361 — Login loops/)
+})
+
+test('a cancelled plan starts nothing and says which plan it was', async () => {
+  const record = workspace()
+  let ran = 0
+  await assert.rejects(
+    mention.rewrite(record, '@py-agent fix the failing test', {
+      hold: async () => ({ action: 'cancel', reason: 'cancelled' }),
+      deps: deps({
+        runEntity: async () => {
+          ran += 1
+          return { ok: true, answer: 'should not happen', error: '' }
+        },
+      }),
+    }),
+    (error) => {
+      assert.equal(
+        error.message,
+        'Delegation cancelled — nothing was sent to @py-agent.',
+        'the sentence names the target, not the harness',
+      )
+      assert.equal(error.hold, 'cancelled', 'the caller needs to know why, to settle the card')
+      return true
+    },
+  )
+  assert.equal(ran, 0, 'Cancel means nothing started')
+})
+
+test('an expired plan says so, and a refused message never reaches the gate', async () => {
+  const record = workspace()
+  let opened = false
+  await assert.rejects(
+    mention.rewrite(record, '@py-agent fix the failing test', {
+      hold: async () => ({ action: 'cancel', reason: 'expired' }),
+      deps: deps(),
+    }),
+    (error) => {
+      assert.equal(error.message, 'The plan expired before it was answered — nothing was started.')
+      assert.equal(error.hold, 'expired')
+      return true
+    },
+  )
+  /* an unknown entity throws before a plan exists: a gate after a refusal would
+     train people to click Run on messages that cannot run */
+  await assert.rejects(
+    mention.rewrite(record, '@ghost fix it', {
+      hold: async () => {
+        opened = true
+        return { action: 'run' }
+      },
+      deps: deps(),
+    }),
+    /is not an entity in this workspace/,
+  )
+  assert.equal(opened, false, 'no gate behind a refusal')
+  /* a reference mention is not a delegation either */
+  let referenceOpened = false
+  await mention.rewrite(record, 'I want to delete @py-agent.', {
+    hold: async () => {
+      referenceOpened = true
+      return { action: 'run' }
+    },
+    deps: deps(),
+  })
+  assert.equal(referenceOpened, false, 'a name with no job runs nothing, so it asks nothing')
+})

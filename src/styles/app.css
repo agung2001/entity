@@ -1831,6 +1831,37 @@ kbd {
 .msg-delegation-meta + .msg-delegation-open {
   margin-left: 0;
 }
+/* The worktree the row worked in, as it is now: a dot and one word. It sits
+   before the meta so `.msg-delegation-meta + .msg-delegation-open` stays the
+   adjacent pair that shares `margin-left: auto`. */
+.msg-delegation-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.msg-delegation-worktree::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.msg-delegation-worktree[data-state='clean']::before {
+  background: var(--ok);
+}
+.msg-delegation-worktree[data-state='dirty']::before {
+  background: var(--accent);
+}
+/* Hollow on purpose: `gone` is read from absence, so it must not look like a
+   filled statement about the worktree. */
+.msg-delegation-worktree[data-state='gone']::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
 .msg-delegation-open:hover {
   border-color: var(--border-strong);
   color: var(--fg);
@@ -1848,6 +1879,8 @@ kbd {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* The card is a glance, the session is the report: Continue opens the whole
+   stored answer, so six lines hide height without hiding access. */
 .msg-delegation-answer {
   margin: 5px 0 0;
   font-size: 12.3px;
@@ -1855,6 +1888,13 @@ kbd {
   color: var(--ink-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+  /* If pre-wrap and the box ever disagree, this clamps instead:
+     6 × 1.55 line-height at 12.3px. `overflow: hidden` above still applies. */
+  max-height: 9.3em;
 }
 /* ── the same card, still running ───────────────────────────────────
    A fan-out is the turn while it runs: its rows sit in the live bubble with the
@@ -1887,6 +1927,186 @@ kbd {
   background: var(--accent-ink);
   vertical-align: 1px;
   animation: rchat-blink 1.2s ease-in-out infinite;
+}
+/* ── a plan waiting for its person ──────────────────────────────────
+   The message is already sent and every read inside it already ran; only the
+   runs wait. Drawn in the live bubble, in the delegation card's own grammar, so
+   nothing changes shape when Run is pressed. */
+.hold {
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--ink);
+  border-radius: var(--r);
+  background: var(--bg);
+  padding: 10px 11px;
+  /* `.msg` is pre-wrap for prose; a card's own whitespace is layout */
+  white-space: normal;
+  transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+.hold[data-settled='1'] {
+  border-left-color: var(--border-strong);
+  background: var(--surface);
+}
+.hold-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 1px 8px;
+}
+.hold-kicker {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.hold[data-settled='1'] .hold-kicker {
+  color: var(--muted);
+}
+.hold-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.hold[data-settled='1'] .hold-title {
+  color: var(--ink-2);
+}
+.hold-tag {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+}
+/* What already happened. The gate only ever covers work that has not. */
+.hold-reads {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.hold-reads b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.hold .msg-delegations {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* Four rows at the card's own rhythm; the fade says "more", a cut does not. */
+.msg-delegations--scroll {
+  max-height: 292px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}
+.msg-delegation[data-hold='1'] {
+  border-left-color: var(--ink);
+}
+.msg-delegation[data-settled='1'] {
+  border-left-color: var(--border-strong);
+  background: var(--surface);
+}
+/* The row is what a fan-out is about, so a held row names it in the accent. */
+.msg-delegation-job .row {
+  display: block;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.msg-delegation[data-hold='1'] .msg-delegation-job {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.msg-delegation[data-hold='1'] .msg-delegation-job .text {
+  display: block;
+  margin-top: 4px;
+}
+.hold-where {
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+/* `~` is true for most entities: say it in the accent, not in a footnote. */
+.hold-where[data-warn='1'] {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.hold-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+.hold-summary {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.hold-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.hold-actions .btn {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+/* A disabled primary keeps a readable label: the app's `opacity: .5` on the ink
+   button composites to about 3.9:1 on white. The flat fill is the state; the
+   label stays above 4.5:1 in both themes. */
+.hold-actions .btn-ink[disabled] {
+  opacity: 1;
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--ink-2);
+}
+.hold-actions .btn-kbd {
+  border: 0;
+  padding: 0;
+  opacity: 0.6;
+}
+/* A settled plan is read back from the turn's own row, outside the bubble. */
+.hold--settled {
+  align-self: flex-start;
+  width: 100%;
+  max-width: 84%;
+  margin: 2px 0 7px;
+}
+@media (max-width: 480px) {
+  .hold-actions {
+    width: 100%;
+  }
+  .hold-actions .btn {
+    flex: 1;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hold {
+    transition: none;
+  }
 }
 /* The cards carry the presence, so the bubble stops doubling as a frame. */
 .msg--live[data-delegating='1'] {

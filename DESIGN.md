@@ -321,6 +321,36 @@ the composer already does: mention another entity.
 - **The count and the rows must agree.** `activeSummaryCount`, the rail's rows, its
   status counts and its filters all exclude sessions; a count that includes an invisible
   row lies in the one number people compare against the list.
+- **The card is a glance; the session is the report.** The whole answer is stored per run
+  and painted whole in the session **Continue** opens, so the card clamps its own copy at
+  six lines — height removed, access untouched. A "Show more" on the card would be a
+  second answer view competing with the one way out.
+- **The reply above keeps both ends of a row.** A row's verdict (`still running: …`,
+  `unverified: …`) is the last line it wrote, so the digest is head 240 + tail 160: a
+  head-only cut showed seven setups and none of the seven endings.
+- **A card may say where the worktree is, never guess.** One `mention.worktree` call on
+  mount matches the row's ticket key against `orca worktree list` and runs `git status`
+  only on a path Orca itself returned; a cwd outside every checkout narrows nothing
+  rather than hiding the chip. `gone` needs evidence in the row's own record, because
+  Orca forgets a removed worktree and absence alone cannot tell "merged and removed"
+  from "never created".
+- **Send is not the confirmation; the runs wait.** A message that plans a run is sent as
+  always — its reads resolve, and only the runs hold — so `@coder <job>` goes from keystroke
+  to running with one extra keystroke, and a seven-row fan-out is reviewed (count, target,
+  folder) before anything starts. **Run** is the one action; the block is the live bubble,
+  and it becomes the fan-out's own cards on Run. Never a modal, a second composer or a
+  pre-send dialog.
+- **The gate never opens behind a refusal.** An unknown name, a cap, an empty list or a
+  skill in front of a fan-out throws before a plan exists, and a reference mention (`@coder`
+  with no job) plans nothing. A confirmation asked after a refusal teaches people to click
+  Run on what cannot run.
+- **A run that delegates again cannot ask.** A spawned session is headless and told not to
+  ask, so it starts immediately and inherits the answer it was given: one gate per turn, at
+  the top — a hold inside a run is a hang nobody can see.
+- **A settled plan is still a row.** Cancel, Stop and the ten-minute expiry land in one
+  grammar — `Nothing started`, the rows that never ran, the app's own **Retry** — and the
+  question stays in the transcript. A hold is in memory, so a reload reads `Interrupted`
+  and nothing was ever started.
 
 ## Common mistakes## Common mistakes
 
@@ -413,6 +443,9 @@ the composer already does: mention another entity.
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |
 | A count says 4 and the rail paints 2 | Counts, filters and groups all exclude sessions; only the tree shows them | `hub.activeSummaryCount` |
+| A card says a worktree is gone, or clean, when nobody said so | A state read from absence is not a state: require evidence from the row's own record, and let the tooltip hedge what cannot be known | `DelegationCard.vue` (`hadWorktree`), `mention-ref.cjs` (`worktreeState`) |
+| Delegated runs start before the person can see them | The message is sent, the reads resolve, and the runs wait: one hold per turn with Run/Cancel, and Stop, Esc and the expiry settle it the same way | `DelegationHold.vue`, `mention-ref.cjs` (`hold`), `npm test` (`chat-cancel`) |
+| A cancelled plan paints the thread as failed | A settled plan is not a harness failure: keep the Retry row, and keep `failed` off the summary | `chat-store.cjs` (`summarise`) |
 | A breadcrumb in the meta line renders zero-width | The header's meta track is ~157px; put the crumb on its own line above the title and clip it | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread title is one character per line on a phone | A hidden grid item keeps its track's `minmax` floor: size the middle track from the box (`auto` + `width: clamp()`), not from a fixed minimum | `ChatView` header |
 | The renderer names the path the main process opens | `thread.pathAction` re-derives the metadata and accepts only a member of it | `electron/rpc.cjs` |
@@ -449,6 +482,7 @@ the composer already does: mention another entity.
 | Thread tags | `src/components/ThreadTagsDialog.vue` | Esc, scrim, Cancel (guarded while saving) |
 | Artifact document editor | `src/views/ArtifactDetailView.vue` | page surface; Save button and the catalog `save` shortcut |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
+| Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
 
 ## The guide in the top bar

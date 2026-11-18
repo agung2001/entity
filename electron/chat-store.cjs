@@ -48,6 +48,12 @@ const inFlight = new Map()
 const mentionChildren = new Map()
 /** thread ids the person explicitly stopped; close is not a harness failure */
 const canceling = new Set()
+/* threadId → the plan a person has not answered yet. In memory on purpose: a
+   reload or a quit leaves the turn interrupted, and nothing starts. */
+const holds = new Map()
+/* Ten minutes. A turn that can wait forever is a leaked promise and a card that
+   lies about still thinking; a seven-row fan-out takes less than that to read. */
+const HOLD_MS = 10 * 60_000
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g
 
 const clean = (value) => String(value || '').replace(ANSI, '').trim()
@@ -68,6 +74,57 @@ function chatsDir(record) {
 
 function now() {
   return new Date().toISOString()
+}
+
+/* ── the plan gate ────────────────────────────────────────────────── */
+
+/**
+ * One promise per turn, resolved by the window (`chat.delegate`) or the clock.
+ * `emitHold` paints the plan; nothing here decides anything itself.
+ */
+function openHold(threadId, plan, emitHold) {
+  return new Promise((resolve) => {
+    const settle = (decision) => {
+      const held = holds.get(threadId)
+      if (!held) return
+      holds.delete(threadId)
+      if (held.timer) clearTimeout(held.timer)
+      resolve(decision)
+    }
+    /* `unref` so a held turn never keeps a CLI process alive on its own */
+    const timer = setTimeout(() => settle({ action: 'cancel', reason: 'expired' }), HOLD_MS)
+    try {
+      timer.unref?.()
+    } catch {
+      /* not a Node timer (a test double) */
+    }
+    holds.set(threadId, { plan, timer, settle })
+    try {
+      emitHold(plan)
+    } catch {
+      /* the window may be gone; the turn waits for its ten minutes regardless */
+    }
+  })
+}
+
+/** The plan a thread is waiting on, if any. */
+function heldPlan(threadId) {
+  return holds.get(threadId)?.plan || null
+}
+
+/**
+ * Run or cancel a held turn. Returns `none` when nothing is held — a reloaded
+ * window asking about a turn that died with its plan, or a double click.
+ */
+function decideHold({ workspace, id, action } = {}) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  const held = holds.get(id)
+  if (!held) return { decided: 'none' }
+  const wanted = action === 'cancel' ? 'cancel' : 'run'
+  held.settle(wanted === 'run' ? { action: 'run' } : { action: 'cancel', reason: 'cancelled' })
+  return { decided: wanted, runs: held.plan.rows.length }
 }
 
 /* The desktop resolves the account from `auth.json`. The server build has a
@@ -223,6 +280,32 @@ function normaliseArtifact(raw) {
   }
 }
 
+/**
+ * A settled plan, kept on the turn's error row so the block still says *what*
+ * never started after a reload. No answers: nothing ran.
+ */
+function normaliseHold(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const settled = ['cancelled', 'expired', 'interrupted'].includes(raw.settled)
+    ? raw.settled
+    : ''
+  const rows = (Array.isArray(raw.rows) ? raw.rows : [])
+    .filter((row) => row && typeof row === 'object')
+    .slice(0, 12)
+    .map((row) => ({
+      name: String(row.name || '').slice(0, 80),
+      row: String(row.row || '').slice(0, 200),
+      job: String(row.job || '').slice(0, 400),
+      share: String(row.share || '').slice(0, 40),
+      harness: String(row.harness || '').slice(0, 40),
+      model: String(row.model || '').slice(0, 80),
+      shownDir: String(row.shownDir || row.dir || '').slice(0, 300),
+      note: String(row.note || '').slice(0, 80),
+    }))
+  if (!settled || !rows.length) return null
+  return { settled, rows }
+}
+
 function normaliseMessage(message) {
   if (!message || typeof message !== 'object') return null
   const who = ['me', 'agent', 'sys'].includes(message.who) ? message.who : 'sys'
@@ -235,6 +318,7 @@ function normaliseMessage(message) {
   const linkedArtifacts = Array.isArray(message.artifacts)
     ? message.artifacts.map(normaliseArtifact).filter(Boolean)
     : []
+  const hold = normaliseHold(message.hold)
   return {
     who,
     text,
@@ -247,6 +331,9 @@ function normaliseMessage(message) {
       ? { sent: message.sent }
       : {}),
     ...(message.error ? { error: true } : {}),
+    /* a held turn that nobody answered: the block says which outcome, and which
+       rows never ran */
+    ...(hold ? { hold } : {}),
     ...(steps.length ? { steps } : {}),
     ...(execution ? { execution } : {}),
     ...(Array.isArray(message.mentions)
@@ -455,7 +542,9 @@ function summarise(thread) {
     replies,
     messageCount: queries + replies,
     working: sending.has(thread.id),
-    failed: Boolean(lastMessage?.who === 'sys' && lastMessage.error),
+    /* A plan that was cancelled or expired is the person's decision, not a
+       failure: the row keeps its Retry, the rail does not paint it red. */
+    failed: Boolean(lastMessage?.who === 'sys' && lastMessage.error && !lastMessage.hold),
     /* the rail labels the child and the parent counts its children from this,
        in the same list the window already subscribes to */
     spawnedFrom: thread.spawnedFrom || null,
@@ -1670,6 +1759,10 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
 
   const retryTurn = Boolean(retry)
   let turnMentions = []
+  /* The plan the window is holding, kept here so the settled row can still say
+     what never ran after the turn is written to disk. */
+  let turnPlan = null
+  let appliedText = ''
   const message = String(text || '').trim()
   if (!retryTurn && !message) throw new Error('Write a message first.')
   if (sending.has(thread.id)) throw new Error('This thread is already answering.')
@@ -1762,35 +1855,75 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
           })
     /* `@…` mentions resolve after the skill reference, so the block lands above
        the prompt and the `/skill` rewrite keeps its anchor at the start */
-    const mentioned = await mentionRef.rewrite(record, applied.text, {
-      entity,
-      machine: thread.machine,
-      localOnly: thread.machine !== 'local',
-      threadId: thread.id,
-      /* `@thread:` reads through the store's own list/read, so `canAccess` and
-         the entity filter are the whole privacy story — mention-ref never opens
-         a chat file itself. */
-      deps: {
-        threads: {
-          list: () => list({ workspace: record.id }),
-          read: (id) => {
-            const found = read({ workspace: record.id, id })
-            /* the auto title is derived, not stored; a digest is useless without
-               it, so it is filled in here as the history list already does */
-            return found && !found.title ? { ...found, title: titleOf(found) } : found
+    appliedText = applied.text
+    let mentioned
+    try {
+      mentioned = await mentionRef.rewrite(record, applied.text, {
+        entity,
+        machine: thread.machine,
+        localOnly: thread.machine !== 'local',
+        threadId: thread.id,
+        /* `@thread:` reads through the store's own list/read, so `canAccess` and
+           the entity filter are the whole privacy story — mention-ref never opens
+           a chat file itself. */
+        deps: {
+          threads: {
+            list: () => list({ workspace: record.id }),
+            read: (id) => {
+              const found = read({ workspace: record.id, id })
+              /* the auto title is derived, not stored; a digest is useless without
+                 it, so it is filled in here as the history list already does */
+              return found && !found.title ? { ...found, title: titleOf(found) } : found
+            },
           },
         },
-      },
-      /* rows as they are queued, start and settle — the window paints the
-         delegation cards from these, so seven runs never look like a hang */
-      onProgress: (data) => emitTurn('delegating', data),
-      onChild: (child) => {
-        const held = mentionChildren.get(thread.id) || new Set()
-        held.add(child)
-        mentionChildren.set(thread.id, held)
-      },
-      stopped: () => canceling.has(thread.id),
-    })
+        /* rows as they are queued, start and settle — the window paints the
+           delegation cards from these, so seven runs never look like a hang */
+        onProgress: (data) => emitTurn('delegating', data),
+        /* The gate, and only for a person's own turn: a spawned session belongs to
+           a run that is headless and told not to ask, so it inherits the answer it
+           was given and starts immediately — a hold there is a hang. */
+        hold: thread.spawnedFrom
+          ? null
+          : (plan) => {
+              turnPlan = plan
+              return openHold(thread.id, plan, (data) => emitTurn('hold', data))
+            },
+        onChild: (child) => {
+          const held = mentionChildren.get(thread.id) || new Set()
+          held.add(child)
+          mentionChildren.set(thread.id, held)
+        },
+        stopped: () => canceling.has(thread.id),
+      })
+    } catch (error) {
+      /* A plan nobody ran still ends the turn, in the transcript: the question,
+         the settled block, and the app's own Retry — the same grammar a stopped
+         turn uses. Every other mention error keeps its behaviour (a refusal is a
+         toast and nothing written). */
+      if (!error?.hold) throw error
+      const at = now()
+      thread.messages.push({
+        who: 'me',
+        id: `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        text: message,
+        at,
+        ...(appliedText && appliedText !== message ? { sent: appliedText } : {}),
+      })
+      const settled = {
+        who: 'sys',
+        id: messageId,
+        text: String(error.message),
+        at,
+        error: true,
+        ...(turnPlan ? { hold: { settled: error.hold, rows: turnPlan.rows } } : {}),
+      }
+      thread.messages.push(settled)
+      thread.updatedAt = at
+      saveTurn(record, thread, baseline)
+      emitTurn('done', { message: settled })
+      return readThread(record, thread.id)
+    }
     mentionChildren.delete(thread.id)
     turnMentions = mentioned.mentions
     /* Stopped while the runs were going: the turn ends here, with the same row
@@ -1938,12 +2071,29 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
         }
     thread.messages.push(turnMessage)
   } catch (error) {
+    /* A plan that nobody ran still keeps its question: the runs never started,
+       and a message that vanishes from the transcript on reload is worse than
+       the note that explains it. A retry already has its question. */
+    if (error?.hold && !retryTurn) {
+      thread.messages.push({
+        who: 'me',
+        id: `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        text: message,
+        at: now(),
+        ...(appliedText && appliedText !== message ? { sent: appliedText } : {}),
+      })
+    }
     turnMessage = {
       who: 'sys',
       id: messageId,
-      text: `Harness error: ${error?.message || error}`,
+      /* a held plan's sentence is the whole story — no harness ran, so the
+         harness-error prefix would blame the wrong thing */
+      text: error?.hold ? String(error.message) : `Harness error: ${error?.message || error}`,
       at: now(),
       error: true,
+      ...(error?.hold && turnPlan
+        ? { hold: { settled: error.hold, rows: turnPlan.rows } }
+        : {}),
       steps: [],
       execution: { ...baseExecution, status: 'error', endedAt: now() },
     }
@@ -1973,6 +2123,13 @@ function cancel({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  /* A held turn has no process to kill and no child to reach: Cancel and Stop
+     are the same act, so both answer the plan and start nothing. */
+  const held = holds.get(thread.id)
+  if (held) {
+    held.settle({ action: 'cancel', reason: 'cancelled' })
+    return { canceled: true, held: true }
+  }
   const child = inFlight.get(thread.id)
   const kids = mentionChildren.get(thread.id)
   if (!child && !(kids && kids.size)) return { canceled: false, reason: 'not running' }
@@ -2004,11 +2161,19 @@ module.exports = {
   remove,
   send,
   cancel,
+  /* the plan gate's one answer, from the window */
+  decideHold,
+  /** A held turn, for the tests that pin the plan and the clock. */
+  heldPlan,
   /** A delegated mention's own thread; exported for the tests that pin it. */
   spawnMentionSession,
   summarise,
   /** Quitting with an answer in flight must not leave the harness running. */
   closeAll: () => {
+    /* A held plan is in memory: answering it as interrupted is what lets the
+       turn write its own row instead of vanishing with the process. */
+    for (const held of [...holds.values()]) held.settle({ action: 'cancel', reason: 'interrupted' })
+    holds.clear()
     for (const child of inFlight.values()) killTree(child, 'SIGTERM')
     for (const kids of mentionChildren.values()) {
       for (const kid of kids) killTree(kid, 'SIGTERM')

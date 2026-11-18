@@ -36,6 +36,7 @@ import {
   cancelChat,
   chatDraft,
   chatSend,
+  decideDelegation,
   ensureChats,
   harnessById,
   hub,
@@ -47,6 +48,7 @@ import {
   renameThread,
   selectThread,
   setChatDraft,
+  setHeldRuns,
   setThreadContext,
   setThreadTags,
   snippet,
@@ -841,16 +843,30 @@ function onLiveEvent(event) {
     return
   }
 
+  /* A held plan: the runs exist, nothing has started, and the card is the
+     question. It replaces the queued rows for as long as it is unanswered. */
+  if (event.phase === 'hold') {
+    if (stale) return
+    const plan = event.data || {}
+    hub.chat.live = { ...hub.chat.live, [id]: { ...base, hold: plan } }
+    setHeldRuns(id, Array.isArray(plan.rows) ? plan.rows.length : 0)
+    return
+  }
+
   /* A fan-out announces its rows before the first harness exists, then each row
      as it starts and settles. They live on the live entry, so the transcript's
      live bubble paints them above the text the parent has not written yet. */
   if (event.phase === 'delegating') {
     if (stale) return
     const rows = Array.isArray(event.data?.rows) ? event.data.rows : []
+    /* Rows arriving after a hold mean it was answered (here or in another
+       window): the plan block belongs to the held state only. */
+    if (base.hold) setHeldRuns(id, 0)
     hub.chat.live = {
       ...hub.chat.live,
       [id]: {
         ...base,
+        hold: null,
         delegations: rows,
         execution: {
           ...base.execution,
@@ -899,12 +915,14 @@ function onLiveEvent(event) {
       const nextLive = { ...hub.chat.live }
       delete nextLive[id]
       hub.chat.live = nextLive
+      setHeldRuns(id, 0)
       if (hub.chat.sending[id]) {
         const nextSending = { ...hub.chat.sending }
         delete nextSending[id]
         hub.chat.sending = nextSending
       }
-      playSfx(message?.error ? 'error' : 'receive')
+      /* a settled plan is a decision, not a harness failure */
+      playSfx(message?.error && !message?.hold ? 'error' : 'receive')
     }
     if (message && !message.error) {
       /* Stale chips under a brand-new reply would be worse than none; clear
@@ -1261,6 +1279,7 @@ watch(
             @followup="sendFollowup"
             @suggest="suggestFollowups"
             @open-thread="openChild"
+            @delegate="decideDelegation($event)"
           />
 
           <TerminalPanel

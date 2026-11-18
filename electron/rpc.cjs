@@ -210,6 +210,11 @@ function createRpc({
     },
     /* Orca project names for the composer's `@` menu; cached in main for a minute */
     'mention.sources': () => mentionRef.sources(),
+    /* the worktree a delegated row works in, *now* — the renderer sends a
+       ticket key and the run's cwd, and only a path Orca itself returned is
+       ever stat-ed. Read-only, and cached in main like the repo list. */
+    'mention.worktree': ({ cwd, ticket } = {}) =>
+      mentionRef.worktreeState({ cwd: String(cwd || ''), ticket: String(ticket || '') }),
     /* what the composer offers while an `@kind:` is being typed */
     'mention.search': ({ workspace, kind, fields, limit, offset, dir }) =>
       mentionRef.search({
@@ -436,6 +441,10 @@ function createRpc({
     },
     'artifact.runRetention': (args) => artifactRetention.run(args),
     'chat.cancel': (args) => chats.cancel(args),
+    /* the plan gate's one answer: `run` starts the held runs, `cancel` starts
+       nothing. A held turn is in memory, so a stale window gets `none` and the
+       card stays as it was. */
+    'chat.delegate': (args) => chats.decideHold(args),
     'chat.suggest': (args) => suggestions.suggest(args),
 
     /* spend and activity, folded from the thread files */

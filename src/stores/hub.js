@@ -340,6 +340,8 @@ export const hub = reactive({
     stopping: {},
     /* threadId → the live trace while its turn runs */
     live: {},
+    /* threadId → how many runs a plan is holding, so the rail can say it */
+    holding: {},
     filters: { entity: 'all', machine: 'all', harness: 'all' },
     last: { entity: '', machine: 'local', harness: 'claude', model: '' },
   },
@@ -408,6 +410,7 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
   hub.chat.sending = {}
   hub.chat.stopping = {}
   hub.chat.live = {}
+  hub.chat.holding = {}
   hub.chat.filters = { entity: 'all', machine: 'all', harness: 'all' }
   hub.chat.last = {
     entity: agents[0]?.id || '',
@@ -871,6 +874,15 @@ export const threadStarted = (thread = activeThread()) =>
 /** Turn state is per thread: a second conversation must not be blocked by one. */
 export const isSending = (id = hub.chat.active) => Boolean(hub.chat.sending[id])
 export const isStopping = (id = hub.chat.active) => Boolean(hub.chat.stopping[id])
+/** Runs a plan is holding for `id`; 0 when nothing is waiting. */
+export const heldRuns = (id = hub.chat.active) => Number(hub.chat.holding[id]) || 0
+export function setHeldRuns(id, count) {
+  if (!id) return
+  const holding = { ...hub.chat.holding }
+  if (count > 0) holding[id] = count
+  else delete holding[id]
+  hub.chat.holding = holding
+}
 
 /**
  * Wait for a thread's turn to finish.
@@ -1282,6 +1294,29 @@ export async function cancelChat() {
     delete stopping[thread.id]
     hub.chat.stopping = stopping
     toast(error?.message || 'The turn could not be stopped.')
+  }
+}
+
+/**
+ * Answer a held plan: `run` starts the runs, `cancel` starts nothing. The block
+ * goes the moment it is answered — a Run that stays on screen reads as "nothing
+ * happened" while the first harness warms up, and the rows take over from there.
+ */
+export async function decideDelegation(action = 'run') {
+  const thread = activeThread()
+  if (!thread) return null
+  const wanted = action === 'cancel' ? 'cancel' : 'run'
+  setHeldRuns(thread.id, 0)
+  try {
+    return await call('chat.delegate', {
+      workspace: hub.workspace,
+      id: thread.id,
+      action: wanted,
+    })
+  } catch (error) {
+    hub.chat.error = error?.message || 'The plan could not be answered.'
+    toast(hub.chat.error)
+    return null
   }
 }
 

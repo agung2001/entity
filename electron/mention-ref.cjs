@@ -29,6 +29,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { execFile } = require('node:child_process')
+const { tilde } = require('./frontmatter.cjs')
 const { spawnTracked, killTree } = require('./child-registry.cjs')
 const entities = require('./entity-store.cjs')
 const harnesses = require('./harness-store.cjs')
@@ -334,6 +335,82 @@ async function orcaRepos({ force = false } = {}) {
   const repos = parsed?.result?.repos || parsed?.repos || []
   orcaCache = { at: Date.now(), repos }
   return repos
+}
+
+let worktreeCache = { at: 0, list: [] }
+
+/** Child and main worktrees Orca knows, cached like the repo list. */
+async function orcaWorktrees({ force = false } = {}) {
+  if (!force && Date.now() - worktreeCache.at < ORCA_CACHE_MS) return worktreeCache.list
+  const raw = await execFileText(orcaBinary(), ['worktree', 'list', '--json'], ORCA_TIMEOUT_MS)
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('orca worktree list did not return JSON.')
+  }
+  const list = parsed?.result?.worktrees || parsed?.worktrees || []
+  worktreeCache = { at: Date.now(), list }
+  return list
+}
+
+/**
+ * clean | dirty | gone | none — the worktree a delegated row works in, as it is
+ * *now*. A field stored at run time would freeze at "clean, exists" and lie in
+ * exactly the case this exists for: the row was merged and the worktree removed.
+ * The renderer sends a ticket key and the run's cwd; every path this reads or
+ * stats came out of `orca worktree list`, never out of the message.
+ */
+async function worktreeState({ cwd = '', ticket = '' } = {}) {
+  const key = String(ticket || '').trim().toLowerCase()
+  /* No key: nothing was said about a worktree, so nothing is claimed. */
+  if (!key) return { state: 'none' }
+  const dir = cwd ? path.resolve(String(cwd)) : ''
+  const inside = (root, at) => {
+    if (!at) return false
+    const base = path.resolve(String(root || '.'))
+    return at === base || at.startsWith(base + path.sep)
+  }
+  /* The cwd *narrows* the search when it names a repo, and only when it does:
+     an entity whose `dir` is `~` runs outside every checkout, and returning
+     `none` there would hide the chip for exactly the rows that have a worktree.
+     Narrowing is a nicety (one repo's keys), not the boundary — the boundary is
+     that `hit.path` below is Orca's word, and `git` is run against nothing else. */
+  const worktrees = await orcaWorktrees()
+  const repos = await orcaRepos()
+  let scope = repos.find((entry) => inside(entry.path, dir))
+  if (!scope) {
+    /* a run pointed *at* a child worktree names its repo the same way */
+    const at = worktrees.find((worktree) => inside(worktree.path, dir))
+    if (at) scope = repos.find((entry) => entry.id === at.repoId)
+  }
+  const mine = worktrees
+    .filter((worktree) => !worktree.isMainWorktree && (!scope || worktree.repoId === scope.id))
+    .sort((a, b) => Number(b.lastActivityAt || 0) - Number(a.lastActivityAt || 0))
+  /* The same match the `orca-worktree` skill uses to reuse a child workspace:
+     the ticket key in its branch or display name. */
+  const hit = mine.find((worktree) =>
+    `${worktree.branch || ''} ${worktree.displayName || ''}`.toLowerCase().includes(key),
+  )
+  if (!hit || !fs.existsSync(String(hit.path))) return { state: 'gone' }
+  let files = 0
+  try {
+    files = String(
+      await execFileText('git', ['-C', String(hit.path), 'status', '--porcelain'], ORCA_TIMEOUT_MS),
+    )
+      .split('\n')
+      .filter(Boolean).length
+  } catch {
+    /* `execFileText` says "orca is not installed" on ENOENT, which is not what
+       went wrong for git — swallow it rather than paint a project state. */
+    return { state: 'unknown' }
+  }
+  return {
+    state: files ? 'dirty' : 'clean',
+    files,
+    path: String(hit.path),
+    branch: String(hit.branch || '').replace(/^refs\/heads\//, ''),
+  }
 }
 
 /** Project names for the composer's `@` menu. */
@@ -1188,8 +1265,16 @@ function blockFor(segments, notes) {
         )
         continue
       }
+      /* Both ends, because a row's verdict ("still running: …", "unverified:
+         …") is the last thing it said: a head-only digest showed seven setups
+         and none of the seven endings. */
+      const flat = String(mention.answer || '')
+        .replace(/\s+/g, ' ')
+        .trim()
       const answer = mention.answer
-        ? mention.answer.replace(/\s+/g, ' ').slice(0, 400)
+        ? flat.length <= 400
+          ? flat
+          : `${flat.slice(0, 240)} … ${flat.slice(-160)}`
         : mention.note || 'no answer'
       /* A row is what a run is about, and the only label that tells seven
          answers apart; without one, the share is. */
@@ -1241,6 +1326,96 @@ function blockFor(segments, notes) {
   ].join('\n')
 }
 
+/* ── the plan a person approves ───────────────────────────────────── */
+
+/**
+ * What a held turn would do, read *before* any of it happens: every run the
+ * message plans, where it would start, and every read that already ran.
+ *
+ * The folder is `entities.resolveDir`, the same call `runEntity` makes, so the
+ * card cannot name a directory the harness will not start in. A row whose
+ * entity has no folder says so instead of throwing here — its run still fails
+ * the way it always has.
+ */
+function planFor(ctx, segments) {
+  const rows = ctx.runs.map((segment, index) => {
+    const mentioned = ctx.entities.get(String(segment.name || '').toLowerCase()) || null
+    let dir = ''
+    let note = ''
+    try {
+      dir = mentioned ? entities.resolveDir(mentioned) : ''
+    } catch {
+      note = 'no folder set'
+    }
+    return {
+      index,
+      total: ctx.runs.length,
+      name: segment.runName || segment.name || '',
+      row: segment.row || '',
+      job: instructionOf(segment),
+      share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
+      harness: String(mentioned?.harness || ''),
+      model: String(mentioned?.model || ''),
+      dir,
+      shownDir: tilde(dir),
+      note,
+      status: 'queued',
+      answer: '',
+      ms: 0,
+    }
+  })
+  /* A read is what makes the gate credible: it names work that already happened
+     so the hold only ever covers work that has not. */
+  const reads = segments
+    .filter((segment) => segment.mention && segment.mention.kind !== 'entity')
+    .map((segment) => {
+      const mention = segment.mention
+      const items = Array.isArray(mention.items) ? mention.items : []
+      return {
+        token: String(segment.token || segment.raw || ''),
+        kind: String(mention.kind || ''),
+        count: items.length,
+        detail: String(
+          items[0]?.label || items[0]?.path || mention.digest?.title || '',
+        ).slice(0, 90),
+      }
+    })
+  const dirs = [...new Set(rows.map((row) => row.dir).filter(Boolean))]
+  const dir = dirs.length === 1 ? dirs[0] : ''
+  return {
+    rows,
+    reads,
+    dir,
+    shownDir: dir ? tilde(dir) : '',
+    /* one folder stated once when every run agrees; otherwise each row says its
+       own */
+    dirMixed: dirs.length > 1,
+    timeoutMs: ctx.timeoutMs,
+  }
+}
+
+/**
+ * Nothing started, and the turn ends the way a stopped one does: a note and the
+ * app's own **Retry**. `hold` on the error is what lets the caller write the
+ * sentence without the harness-error prefix, and what the transcript keeps so
+ * the settled block can say which of the three it was.
+ */
+function holdError(decision, ctx) {
+  const reason = ['expired', 'interrupted'].includes(decision?.reason)
+    ? decision.reason
+    : 'cancelled'
+  const who = [...new Set(ctx.runs.map((segment) => `@${segment.runName || segment.name}`))]
+  const message =
+    reason === 'expired'
+      ? 'The plan expired before it was answered — nothing was started.'
+      : reason === 'interrupted'
+        ? 'The window closed before the plan was answered — nothing was started.'
+        : `Delegation cancelled — nothing was sent to ${who.join(', ')}.`
+  const error = new Error(message)
+  error.hold = reason
+  return error
+}
+
 /**
  * Resolve every mention in `text` and return the prompt to send.
  *
@@ -1260,6 +1435,8 @@ async function rewrite(
     onProgress = null,
     onChild = null,
     stopped = null,
+    /* the plan gate: present only for a person's own top-level turn */
+    hold = null,
   } = {},
 ) {
   const source = String(text || '')
@@ -1353,6 +1530,10 @@ async function rewrite(
     seenThreads: new Set(),
     onChild,
     stopped,
+    hold,
+    /* the plan's ceiling is the run's ceiling, not a second number the card
+       could disagree with */
+    timeoutMs: ENTITY_TIMEOUT_MS,
     /* the entity segments of this message, in order: what a progress row is
        about, and what the window paints while they run */
     runs: [],
@@ -1454,12 +1635,55 @@ async function rewrite(
     (segment) =>
       segment.kind !== 'unknown' && segment !== listSegment && !skipped.includes(segment),
   )
-  ctx.runs = runNow.filter((segment) => segment.kind === 'entity')
+  ctx.runs = runNow.filter(
+    (segment) =>
+      segment.kind === 'entity' &&
+      /* A name with no job after it is a reference, not a delegation: the
+         sentence may be *about* the entity ("delete @x"), so it asks nothing
+         and must never open a gate. */
+      Boolean(String(segment.job || '').trim()),
+  )
+  /* A name that does not exist is a refusal, and a gate behind a refusal trains
+     people to click Run on messages that cannot run: it is an error here, before
+     a plan is drawn, exactly as it would have been after the run. */
+  for (const segment of ctx.runs) {
+    if (!ctx.entities.get(String(segment.name || '').toLowerCase())) {
+      ctx.errors.push(`@${segment.name} is not an entity in this workspace.`)
+    }
+  }
+  if (ctx.errors.length) {
+    throw new Error(
+      `${ctx.errors.join('\n')}\nFix the mention or remove it — nothing was sent.`,
+    )
+  }
   /* Before the first harness exists: the window shows every row as queued, so a
      fan-out that takes minutes never looks like a hang. */
   ctx.report()
 
-  await Promise.all(runNow.map((segment) => resolveOne(ctx, segment)))
+  /* Reads first, and entirely: the card's "Read:" line has to be true before a
+     person approves anything, and a read that throws is the turn's existing hard
+     error, which must never open a gate behind it. */
+  const reads = runNow.filter((segment) => segment.kind !== 'entity')
+  const entityNow = runNow.filter((segment) => segment.kind === 'entity')
+  await Promise.all(reads.map((segment) => resolveOne(ctx, segment)))
+  if (ctx.errors.length) {
+    throw new Error(
+      `${ctx.errors.join('\n')}\nFix the mention or remove it — nothing was sent.`,
+    )
+  }
+
+  /* The hold: one awaited promise per turn, answered by the window (Run /
+     Cancel / Stop / expiry). Absent — tests, the CLI, a spawned child session —
+     every run starts as it always has, which is what keeps a headless run from
+     asking a question nobody can see. */
+  if (ctx.hold && ctx.runs.length) {
+    const decision = await ctx.hold(planFor(ctx, segments))
+    if (!decision || decision.action !== 'run') throw holdError(decision, ctx)
+  }
+
+  /* `entityNow` includes the references: they resolve here and run nothing, and
+     their row in the block still says the name went nowhere. */
+  await Promise.all(entityNow.map((segment) => resolveOne(ctx, segment)))
 
   if (ctx.errors.length) {
     throw new Error(
@@ -1498,6 +1722,8 @@ module.exports = {
   sources,
   search,
   orcaRepos,
+  orcaWorktrees,
+  worktreeState,
   resolveArtifact,
   blockFor,
   listProjectFiles,

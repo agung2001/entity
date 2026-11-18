@@ -4,6 +4,7 @@ import EntityMark from '@/components/EntityMark.vue'
 import ThreadMinimap from '@/components/ThreadMinimap.vue'
 import MessageBody from '@/components/MessageBody.vue'
 import DelegationCard from '@/components/DelegationCard.vue'
+import DelegationHold from '@/components/DelegationHold.vue'
 import ChatArtifacts from '@/components/ChatArtifacts.vue'
 import TraceDigest from '@/components/TraceDigest.vue'
 import { saveTextArtifact } from '@/stores/artifacts'
@@ -32,7 +33,7 @@ const props = defineProps({
   searchHits: { type: Array, default: () => [] },
   searchActive: { type: Number, default: -1 },
 })
-const emit = defineEmits(['chip', 'retry', 'followup', 'suggest', 'open-thread'])
+const emit = defineEmits(['chip', 'retry', 'followup', 'suggest', 'open-thread', 'delegate'])
 
 /* Follow-ups belong to the newest completed reply, not to an empty thread and
    not while a turn is streaming. */
@@ -95,9 +96,12 @@ const liveText = computed(() => {
 })
 
 /* Rows the fan-out has announced, with answers as they land. The card grammar is
-   the one the finished answer uses, so nothing changes shape mid-turn. */
-const liveDelegations = computed(() =>
-  (props.live?.delegations || []).map((row) => ({
+   the one the finished answer uses, so nothing changes shape mid-turn. A held
+   plan paints its own rows; the queued event that preceded it must not double
+   them. */
+const liveDelegations = computed(() => {
+  if (props.live?.hold) return []
+  return (props.live?.delegations || []).map((row) => ({
     kind: 'entity',
     name: row.name,
     row: row.row,
@@ -108,8 +112,8 @@ const liveDelegations = computed(() =>
     note: row.note,
     ms: row.ms,
     live: true,
-  })),
-)
+  }))
+})
 
 const liveProgress = computed(() => {
   const rows = props.live?.delegations || []
@@ -142,12 +146,20 @@ const liveAction = computed(() => {
 
 /* While rows are delegated the cards are the status — each one says Working or
    keeps its answer — so the foot carries the count and the clock, not another
-   sentence about the same thing. */
-const liveStatus = computed(() =>
-  [liveProgress.value ? liveProgress.value : liveAction.value, liveElapsed.value]
+   sentence about the same thing. A held plan has no progress yet: the block says
+   what is waiting, so the foot keeps only the clock. */
+const liveStatus = computed(() => {
+  const plan = props.live?.hold
+  /* A held plan has not started: the foot says what is waiting, not what is
+     happening. */
+  if (plan) {
+    const n = Array.isArray(plan.rows) ? plan.rows.length : 0
+    return `held · ${n} ${n === 1 ? 'run' : 'runs'} · 0 started`
+  }
+  return [liveProgress.value ? liveProgress.value : liveAction.value, liveElapsed.value]
     .filter(Boolean)
-    .join(' · '),
-)
+    .join(' · ')
+})
 
 /* The bubble belongs to the signed-in account; the entity owns the reply. */
 const accountEmail = computed(() => hub.session?.email || credentials().email || '')
@@ -575,6 +587,11 @@ function traceSummary(message) {
     <template v-for="(m, i) in messages" :key="m.id || i">
       <template v-if="i >= firstShown">
       <template v-if="m.who === 'sys'">
+        <DelegationHold
+          v-if="m.hold"
+          class="hold--settled"
+          :settled="m.hold"
+        />
         <div
           :id="`chat-msg-${i}`"
           class="ask-sys"
@@ -716,8 +733,16 @@ function traceSummary(message) {
       v-if="live"
       class="msg msg--live"
       data-who="agent"
-      :data-delegating="liveDelegations.length ? '1' : '0'"
+      :data-delegating="liveDelegations.length || live.hold ? '1' : '0'"
     >
+      <!-- A held plan: the runs are ready, nothing has started, and Run is the
+           one action. Same bubble, same rows — only the state word changes. -->
+      <DelegationHold
+        v-if="live.hold"
+        :plan="live.hold"
+        @run="emit('delegate', 'run')"
+        @cancel="emit('delegate', 'cancel')"
+      />
       <!-- A fan-out is the turn: its rows are painted here, queued then
            running then answered, so minutes of work never read as a hang. -->
       <div v-if="liveDelegations.length" class="msg-delegations" aria-label="Delegated work in progress">
@@ -731,7 +756,7 @@ function traceSummary(message) {
         <div v-if="liveText" class="msg-live-text">
           {{ liveText }}<span class="msg-live-caret" aria-hidden="true"></span>
         </div>
-        <div v-else-if="!liveDelegations.length" class="msg-live-status">
+        <div v-else-if="!liveDelegations.length && !live.hold" class="msg-live-status">
           <span class="msg-live-dot" aria-hidden="true"></span>{{ liveAction }}…
         </div>
       </div>

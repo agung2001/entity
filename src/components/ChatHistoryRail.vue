@@ -14,6 +14,7 @@ import {
   ago,
   archiveThread,
   ensureChats,
+  heldRuns,
   hub,
   isSending,
   liveSummaries,
@@ -305,6 +306,9 @@ const activeRoot = computed(() => {
 })
 
 function stateOf(thread) {
+  /* A held plan is a person's turn, not a machine's: say what is waiting. */
+  const held = heldRuns(thread.id)
+  if (held) return `${held} ${held === 1 ? 'run' : 'runs'} waiting for you`
   if (isWorking(thread)) return 'Working…'
   if (!thread.queries) return 'New'
   return `${thread.queries} ${thread.queries === 1 ? 'query' : 'queries'} · ${ago(thread.updatedAt)}`
