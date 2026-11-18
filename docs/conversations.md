@@ -198,7 +198,10 @@ the turn, so the button kills every child harness, keeps the answers that alread
 leaves `Stopped by you.` Each run is told which row is its own ("do only that row — the other six
 runs handle the rest"). Two rules come with it:
 
-- **Eight rows, one row per run** — the reply above reads at most eight rows, and a
+- **The rows can be typed** when nothing can resolve them: `spawn per [a, b, c] @entity <job>`,
+  comma or newline separated. Same rules — one run per row, the row is the session title — and the
+  same cap, so a list that is really a file's array can be fanned out without a selector syntax.
+- **Twelve rows, one row per run** — the reply above reads at most twelve rows, and a
   fan-out may not silently lose an answer. More rows is a hard error before anything runs;
   narrow the query.
 - **The skill belongs inside the job.** A fan-out routes each *run*, not the message, so

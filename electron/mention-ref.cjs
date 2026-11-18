@@ -40,7 +40,7 @@ const { createParser } = require('./chat-transcript.cjs')
 const KINDS = new Set(['orca', 'artifact', 'maka', 'youtrack', 'thread'])
 
 const MAX_PER_SOURCE = 3
-const MAX_BLOCK_ROWS = 8
+const MAX_BLOCK_ROWS = 12
 const ORCA_TIMEOUT_MS = 10_000
 const ORCA_CACHE_MS = 60_000
 /* A delegated job is real work — reading a brief, editing files, running the
@@ -55,10 +55,11 @@ const MAX_ENTITY_RUNS = 2
    so its own cap is what the person wrote — still bounded, because a typo is not
    a reason to start forty harnesses. */
 const MAX_SPAWN_RUNS = 5
-/* `spawn per` is one run for each row the list resolved. Eight, because the
-   block the reply reads holds eight rows and each run owns one: a ninth answer
-   would be dropped by a ceiling nobody chose. */
-const MAX_FANOUT_ROWS = 8
+/* `spawn per` is one run for each row the list resolved or the member typed.
+   Twelve, because a real catalogue slice was ten ("the first 10 scenes") and a
+   ceiling nobody chose is how a row goes missing. It stays paired with
+   `MAX_BLOCK_ROWS`, which is what the reply above can read. */
+const MAX_FANOUT_ROWS = 12
 /* What one delegated run may report back. The card and the session show this
    text; the parent's prompt gets a digest of it. */
 const MAX_DELEGATION_ANSWER = 8_000
@@ -74,6 +75,10 @@ const MENTION_AT = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/g
    the backlog" stays prose. */
 const SPAWN_PREFIX = /^\s*spawn\s+(\d{1,2})\s+(?=@)/
 const SPAWN_PER = /^\s*spawn\s+per\s+(?=@)/i
+/* `spawn per [a, b, c] @entity …` — the rows are written out. A catalogue that
+   lives in a JSON file has no mention that can enumerate it, and copying ten
+   names is shorter than any selector syntax. */
+const SPAWN_ROWS = /^\s*spawn\s+per\s+\[([^\]]*)\]\s+(?=@)/i
 /* `skill-ref` replaces a leading `/workspace:x` with this line before we see the
    prompt, so a skill at the front of a fan-out arrives as a prologue. */
 const SKILL_PROLOGUE = /^use this skill \S+\s*\n+/i
@@ -81,6 +86,14 @@ const SPAWN_AFTER_SKILL = /^\s*spawn\s+(?:per\b|\d{1,2}\s+@)/i
 
 function spawnPrefix(source) {
   const text = String(source || '')
+  const rows = text.match(SPAWN_ROWS)
+  if (rows) {
+    const list = rows[1]
+      .split(/[,\n]/)
+      .map((row) => row.trim())
+      .filter(Boolean)
+    return { kind: 'rows', rows: list, count: list.length, end: rows[0].length }
+  }
   const per = text.match(SPAWN_PER)
   if (per) return { kind: 'per', count: 0, end: per[0].length }
   const match = text.match(SPAWN_PREFIX)
@@ -128,6 +141,11 @@ function expandFanout(segments, target, items) {
   const out = [...segments]
   out.splice(out.indexOf(target), 1, ...copies)
   return out
+}
+
+/** The run's own instruction: its row first, then the person's words. */
+function instructionOf(segment) {
+  return segment.row ? `${segment.row}\n\n${segment.job}` : segment.job
 }
 
 /** What one run of a fan-out is told about its place in it. */
@@ -1005,7 +1023,7 @@ async function resolveOne(ctx, segment) {
           raw: segment.raw,
           token: tokenOf(segment),
           name: mentioned.name,
-          job: segment.row ? `${segment.row}\n\n${segment.job}` : segment.job,
+          job: instructionOf(segment),
           ...(segment.row ? { row: segment.row } : {}),
           items: [],
           answer: '',
@@ -1017,7 +1035,7 @@ async function resolveOne(ctx, segment) {
       }
       segment.runStatus = 'running'
       ctx.report()
-      const instruction = segment.row ? `${segment.row}\n\n${segment.job}` : segment.job
+      const instruction = instructionOf(segment)
       /* The skill is resolved on the person's words, not on the row-prefixed
          instruction: `use this skill <path>` has to stay the first line for the
          harness to load it. The row reaches the run through the note below. */
@@ -1267,6 +1285,25 @@ async function rewrite(
   let segments = parsed.segments
   let listSegment = null
   let target = null
+  if (spawn?.kind === 'rows') {
+    target = segments.find((segment) => segment.kind === 'entity' && segment.start >= spawn.end)
+    if (!target) {
+      throw new Error(
+        'spawn per needs an entity to run: `spawn per [row, row] @designer <job>`. ' +
+          'Nothing was sent.',
+      )
+    }
+    if (!spawn.rows.length) {
+      throw new Error('spawn per has an empty row list: `[a, b, c]`. Nothing was sent.')
+    }
+    if (spawn.rows.length > MAX_FANOUT_ROWS) {
+      throw new Error(
+        `spawn per lists ${spawn.rows.length} rows and runs one per row, at most ` +
+          `${MAX_FANOUT_ROWS}. Nothing was sent — split the list across two messages.`,
+      )
+    }
+  }
+
   if (spawn?.kind === 'per') {
     target = segments.find((segment) => segment.kind === 'entity' && segment.start >= spawn.end)
     if (!target) {
@@ -1293,8 +1330,11 @@ async function rewrite(
     }
   }
   if (spawn?.kind === 'repeat') segments = expandSpawn(segments, spawn)
+  const rowsUntilRun =
+    spawn?.kind === 'rows' ? expandFanout(segments, target, spawn.rows.map((label) => ({ label }))) : null
+  if (spawn?.kind === 'rows') segments = rowsUntilRun
   const runCap =
-    spawn?.kind === 'per'
+    spawn?.kind === 'per' || spawn?.kind === 'rows'
       ? MAX_FANOUT_ROWS
       : spawn?.kind === 'repeat'
         ? Math.max(MAX_ENTITY_RUNS, spawn.count)
@@ -1332,7 +1372,9 @@ async function rewrite(
           total: ctx.runs.length,
           name: segment.runName || segment.name || '',
           row: segment.row || '',
-          job: segment.row ? segment.job : segment.job || '',
+          /* the live card must name the row, or ten runs of one instruction
+             read as ten identical lines until they settle */
+          job: instructionOf(segment),
           share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
           status: segment.runStatus || 'queued',
           answer: String(segment.mention?.answer || ''),

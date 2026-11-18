@@ -396,8 +396,8 @@ test('spawn per runs once for every row the list resolved', async () => {
       deps: deps({
         mcpCall: async ({ tool, arguments: args }) => {
           assert.equal(tool, 'search_issues')
-          /* the fan-out asks for more rows than an ordinary mention */
-          assert.equal(args.limit, 8)
+          /* the fan-out asks for as many rows as it may run */
+          assert.equal(args.limit, 12)
           return {
             data: {
               issuesPage: [
@@ -456,6 +456,58 @@ test('a fan-out runs all its rows, past the two-mention ceiling', async () => {
   assert.equal(runs, 7)
   assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 7)
   assert.doesNotMatch(out.text, /skipped/)
+})
+
+test('a typed row list fans out — a catalogue in a file has no mention', async () => {
+  const record = workspace()
+  const jobs = []
+  const out = await mention.rewrite(
+    record,
+    'spawn per [scenes/horizontal/card-list, scenes/horizontal/hero, scenes/horizontal/broll] ' +
+      '@py-agent improve this scene base',
+    {
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(jobs.length, 3)
+  assert.match(jobs[0], /^improve this scene base\n\n\(Run 1 of 3: your row is "scenes\/horizontal\/card-list"/)
+  assert.match(jobs[2], /broll/)
+  /* the row is the session title, and it is the path, not the shared instruction */
+  assert.deepEqual(
+    out.mentions.filter((row) => row.kind === 'entity').map((row) => row.row),
+    ['scenes/horizontal/card-list', 'scenes/horizontal/hero', 'scenes/horizontal/broll'],
+  )
+  /* no list mention exists, so the block is exactly one line per run */
+  assert.doesNotMatch(out.text, /@youtrack|nothing found/)
+})
+
+test('a typed row list is capped like a resolved one, and nothing is sent over it', async () => {
+  const record = workspace()
+  let runs = 0
+  const thirteen = Array.from({ length: 13 }, (_, i) => `scene-${i}`).join(', ')
+  await assert.rejects(
+    () =>
+      mention.rewrite(record, `spawn per [${thirteen}] @py-agent improve`, {
+        deps: deps({
+          runEntity: async () => {
+            runs += 1
+            return { ok: true, answer: 'ok', error: '' }
+          },
+        }),
+      }),
+    /lists 13 rows and runs one per row, at most 12/,
+  )
+  assert.equal(runs, 0)
+  /* an empty bracket is a mistake, not a zero-run fan-out */
+  await assert.rejects(
+    () => mention.rewrite(record, 'spawn per [ ] @py-agent improve', { deps: deps() }),
+    /empty row list/,
+  )
 })
 
 test('an empty list spawns nothing and says so', async () => {
@@ -621,16 +673,16 @@ test('the parent is told what ran, never the raw fan-out sentence', async () => 
   assert.match(out.text, /do not run them again and do not do their work yourself/)
 })
 
-test('the block stops at eight rows and says how many it dropped', async () => {
+test('the block stops at twelve rows and says how many it dropped', async () => {
   const record = workspace()
-  const many = Array.from({ length: 12 }, (_, i) => `note-${i}`)
+  const many = Array.from({ length: 15 }, (_, i) => `note-${i}`)
   const out = await mention.rewrite(record, many.map((name) => `@artifact:${name}`).join(' '), {
     deps: deps(),
   })
   /* nothing matches, so every mention is "nothing found" — one row each */
   const rows = out.text.split('\n').filter((line) => line.startsWith('- @artifact:'))
-  assert.equal(rows.length, 8)
-  assert.match(out.text, /\(\+4 more resolved\)/)
+  assert.equal(rows.length, 12)
+  assert.match(out.text, /\(\+3 more resolved\)/)
 })
 
 test('the composer gets pickable inserts for every kind', async () => {

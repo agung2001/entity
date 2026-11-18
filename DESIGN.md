@@ -301,7 +301,9 @@ the composer already does: mention another entity.
   `spawn per @<list> @entity <job>` resolves the list first, copies the entity once per
   row, and titles each session with its row — seven issues read as seven sessions, not
   seven copies of one instruction. The cap is the reply's own row budget (eight): one run
-  per row, one row per answer, no answer silently dropped. A list that resolves nothing
+  per row, one row per answer, no answer silently dropped. When no mention can enumerate the
+  list, the rows are typed: `spawn per [a, b, c] @entity <job>` — one run per bracketed row, the
+  same cap, and the row is still the session title. A list that resolves nothing
   runs nothing — a delegatee holding the instruction but no row would pick one.
 - **In a fan-out the skill belongs to each run, not to the message.** `/workspace:…` goes
   after the entity, so every run is routed; a skill at the front is a hard error that says
