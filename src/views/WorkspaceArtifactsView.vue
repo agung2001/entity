@@ -826,8 +826,10 @@ onBeforeUnmount(() => {
         </template>
       </p>
       <p class="mnote">
-        <b>Where it runs</b> — this machine, where the files are. A workspace opened
-        elsewhere sweeps its own copy, on its own clock.
+        <b>Where it runs</b> — the one machine named in
+        <code class="mono">artifactRetention.executor</code>, anywhere the files are. The
+        deadline is that machine's local time: a sync host in a container usually runs UTC,
+        so its 03:00 is 03:00 UTC, not yours.
       </p>
       <p class="mnote">
         <b>Age</b> — days since this machine last opened or read the file.
