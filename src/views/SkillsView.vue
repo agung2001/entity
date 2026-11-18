@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import SkillCopyDialog from '@/components/SkillCopyDialog.vue'
 import { call } from '@/composables/localBridge'
-import { isEditable } from '@/lib/dom'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import {
@@ -146,11 +145,10 @@ function focusSearch() {
   field.select()
 }
 
-/* A bare `/` focuses the search — but only when the caret is not already in a
-   field, so typing a path or a command still types. */
+/* The list-search key focuses this roster's search. It carries a modifier, so
+   it cannot collide with a `/` a person is typing. */
 function onKey(event) {
   if (!matchesShortcut('inventory-search', event)) return
-  if (isEditable(event.target)) return
   event.preventDefault()
   focusSearch()
 }

@@ -535,6 +535,11 @@
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* The `/` pill is shared with every other searchable list (`.search-kbd`); the
+   arrow steps take its place once there is a query. */
+.cp-search:focus-within .search-kbd {
+  opacity: 0;
+}
 .cp-search > svg {
   width: 12px;
   height: 12px;

@@ -221,6 +221,7 @@ const spawnParentTitle = computed(() => {
    by scrolling until it appears. */
 const threadQuery = ref('')
 const threadSearchEl = ref(null)
+const searchKey = shortcutLabel('thread-search')
 const hitAt = ref(0)
 
 const hitIndices = computed(() => {
@@ -1237,6 +1238,7 @@ watch(
                   spellcheck="false"
                   @keydown.enter.prevent="stepHit($event.shiftKey ? -1 : 1)"
                 />
+                <kbd v-if="!threadQuery" class="search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
                 <span v-if="threadQuery" class="cp-search-count" role="status">
                   {{ hitIndices.length ? Math.min(hitAt + 1, hitIndices.length) : 0 }}/{{ hitIndices.length }}
                 </span>

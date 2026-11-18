@@ -729,22 +729,47 @@
 }
 
 /* ── entity profile ───────────────────────────────────────────── */
-.entp-view {
-  max-width: 1180px;
-}
 /* The detail pages open with a toolbar that is the page's own top edge: it
-   bleeds past the gutter, sits flush under the top bar, and keeps its contents
-   on the column below. */
-.view.entp-view {
-  padding-top: 0;
+   spans the *whole* content area — not the 1180px reading measure — sits flush
+   under the top bar, and still lines its contents up with the column below.
+   Percentages resolve against the content area, so this is right with the rail
+   open, folded, or on a 1920px monitor; `100vw` was not (it is the window, and
+   the page starts after the rail).
+   It is **sticky and glass**, the same material as the thread header: not a
+   card of its own, and the page scrolls underneath it. */
+.detail-view {
+  max-width: none;
+  width: 100%;
+  /* no gutter of its own: the bar pays it, so a bar edge is a window edge */
+  padding: 0 0 80px;
 }
+.detail-view > :not(.entp-bar) {
+  /* the reading measure, inset by the same gutter the bar pads with */
+  width: min(100% - (2 * var(--view-pad)), 1180px);
+  margin: 20px auto 0;
+}
+/* The second bar is the top bar's sibling, so it uses the top bar's own
+   geometry: same 56px, same `0 var(--view-pad)` gutter, no measure of its own,
+   no margin of its own. Centring its contents to 1180px put the breadcrumb 192px
+   right of the crumb directly above it on a 1920px screen — that is what made
+   it read as a separate container rather than the page's top edge. */
 .entp-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 0 calc(-1 * var(--view-pad)) 20px;
-  padding: 8px var(--view-pad);
-  border-bottom: 1px solid var(--border);
+  width: 100%;
+  height: 56px;
+  padding: 0 var(--view-pad);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  /* the thread header's material, so the two bars read as the same surface */
+  background: color-mix(in oklab, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  backdrop-filter: blur(16px) saturate(1.8);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 30%, transparent);
 }
 .entp-bar .back {
   display: inline-flex;

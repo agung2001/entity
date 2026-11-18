@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { call } from '@/composables/localBridge'
 import { copyText } from '@/lib/clipboard'
-import { isEditable } from '@/lib/dom'
 import { commandLine, definitionOf, envNames, transportOf } from '@/lib/mcp'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
@@ -259,7 +258,6 @@ function focusSearch() {
    caret is not already in a field, so typing a path or a command still types. */
 function onKey(event) {
   if (!matchesShortcut('inventory-search', event)) return
-  if (isEditable(event.target)) return
   event.preventDefault()
   focusSearch()
 }
@@ -383,7 +381,7 @@ watch(name, async () => {
 </script>
 
 <template>
-  <div class="view entp-view">
+  <div class="view detail-view">
     <div class="entp-bar">
       <button class="back" type="button" @click="back">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7.5 2.5L4 6l3.5 3.5" /></svg>

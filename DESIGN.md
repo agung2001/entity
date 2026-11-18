@@ -377,7 +377,9 @@ the composer already does: mention another entity.
 | A dialog has no dimmed backdrop / cannot be clicked away | A modal is scrim + dialog + close button + `Esc` | `RemoteConnectDialog`, `RemoteSyncPanel` for the pattern |
 | A tooltip says `⌘K` but the handler was changed | Combo comes from `shortcutLabel(id)` | `npm test` (forbids `⌘` / `Ctrl+` in `.vue`) |
 | Typing `?` in the composer opens the help guide | Check `isEditable(event.target)` before a bare-key shortcut | `HubLayout.onKey` |
-| A rail's search has no hint while the chat rail does | `.search-kbd` with `shortcutLabel('inventory-search')`, one class for every searchable list | `DESIGN.md` → *Every searchable list says `/`* |
+| A bare-key shortcut fires while someone is typing a URL or a path | A `search`/`focus` key carries a modifier (`⌘/`), or guards `isEditable` | `src/lib/shortcuts.js` |
+| A detail page wraps its breadcrumb row in a card, or sizes it to the reading measure | The bar is the page's top edge: sticky, glass, spanning the content area (`.detail-view` + `.entp-bar`) | `npm run build` + the entity page at two widths |
+| A rail's search has no hint while the chat rail does | `.search-kbd` with `shortcutLabel('inventory-search')`, one class for every searchable list | `DESIGN.md` → *Every searchable list says ⌘/* |
 | Two surfaces invent a second key for the same "search this list" | One id (`inventory-search`), one meaning per surface | `src/lib/shortcuts.js` |
 | A digit shortcut never fires, though the handler looks right | Match digits by `event.code` (`Digit1`), not by `event.key`: Option+Shift+1 is `!` | `matchesShortcut` |
 | A new page has a key handler that fires while typing | Guard `INPUT`, `TEXTAREA`, `SELECT`, `contentEditable` | `AppRail`, `HubLayout` |
@@ -494,6 +496,7 @@ the composer already does: mention another entity.
 | MCP add / pool JSON | `src/views/McpView.vue` | Esc, scrim, Cancel (guarded while saving) |
 | Remote connect / status | `RemoteConnectDialog.vue`, `RemoteSyncPanel.vue` | Esc, scrim, X (connect guarded while busy) |
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
+| Entity / MCP detail toolbar (`.detail-view` + `.entp-bar`) | `EntityDetailView.vue`, `McpServerView.vue` | Sticky glass in the thread header's material — not a card: spans the content area, flush under the top bar, page scrolls beneath it |
 | Entity learning review | `src/components/EntityLearnDialog.vue` | Esc, scrim, Cancel (guarded while applying); `entity.learn` writes nothing |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
 | Thread tags | `src/components/ThreadTagsDialog.vue` | Esc, scrim, Cancel (guarded while saving) |
@@ -502,7 +505,7 @@ the composer already does: mention another entity.
 | Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
 
-## Every searchable list says `/`, in the same pill
+## Every searchable list says ⌘/ (⌥/ in a tab), in the same pill
 
 A rail or a roster that can be searched carries the key in the field itself:
 `<kbd class="search-kbd">{{ shortcutLabel('inventory-search') }}</kbd>`, one class,
@@ -521,9 +524,13 @@ second-tier **rail**, the **skills roster**, the **tool list**. The id is always
 | skills roster | `SkillsView` | the roster's search |
 | MCP server tools | `McpServerView` | the tool list's search |
 
-Bare-key rule: `/` is a character a person types, so every one of those handlers
-returns early on `isEditable(event.target)` — inside the composer a `/` still opens
-the skill menu, and a `/` in a path still types.
+**A search key carries a modifier, never a bare character.** It began as a bare
+`/` and that was wrong in the only way that matters: a bare key fires wherever the
+caret is, so typing `http://…` into *any* field jumped to the rail and ate the
+slash. `⌘/` (Option+/ in a browser tab) cannot be typed by accident, which also
+means the handlers no longer needs an `isEditable` guard — a `/` inside the
+composer is still the skill menu, a `/` in a path still types.
+`metadata` moved to `⌘⇧/` because one combo may not answer two questions.
 
 The other two keys that name a *place* rather than a list: `thread-search`
 (Option+Shift+F) puts the caret in **this thread's** search, `entity-chat`
@@ -634,6 +641,31 @@ text passes under it.
   them. It never rewrites the Markdown or hides context.
 - The tint is roughly two-thirds of `--bg` over `blur(16px) saturate(1.8)`. Keep
   it light enough that a line of text under the bar stays readable as a smudge.
+
+### A detail page reuses the thread's header, material and all
+
+`.entp-bar` (entity and MCP detail pages) is not a container: it is the page's
+own top edge, the same 56px sticky pane of frosted glass as `.cp-head` — the
+same tint, the same `blur(16px) saturate(1.8)`, the same hairline. The page
+scrolls *beneath* it, which is what proves it is glass.
+
+- **`position: sticky; top: 0`** on the bar, `z-index: 3`; nothing else needs to
+  know its height, because it is in the flow and the page's own scroll container
+  starts after it.
+- **The top bar's geometry, exactly.** Same 56px, same `padding: 0 var(--view-pad)`,
+  no margin, no measure of its own. A bar that centres its contents to the 1180px
+  reading column puts the breadcrumb 192px to the right of the crumb directly
+  above it on a 1920px screen — that is what makes it read as a separate
+  container instead of the page's top edge. Verify by comparing
+  `.entp-bar .back` with `.topbar .crumbs` x at **1920**, not just at 1280: they
+  coincide at 1280 by accident.
+- **Percentages, never `100vw`.** The page starts after the rail: `100vw` is the
+  window, and a bar built from it overlaps the rail by its width.
+- **The body keeps its measure.** Only the bar is full-bleed; `.detail-view > :not(.entp-bar)`
+  is `min(100% - 2 * var(--view-pad), 1180px)`, centred, with the bar's height as
+  its only top gap.
+- Never a card. A bordered box around a breadcrumb and a button is furniture the
+  top bar already provides.
 
 ## Thread tags are metadata, not a second title
 

@@ -9,7 +9,6 @@ import { matchesQuery } from '@/composables/search'
 import { shareHref } from '@/lib/share-url'
 import { copyText } from '@/lib/clipboard'
 import { isDesktopApp, matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
-import { isEditable } from '@/lib/dom'
 import { playSfx } from '@/lib/sfx'
 import {
   ago,
@@ -588,12 +587,12 @@ function onWorkspaceEvent(event) {
   }
 }
 
-/* A bare `/` puts the caret in this rail's search — the same key the rosters use,
-   because it means "the list on this page". It yields to any field, so typing a
-   slash in the composer still opens the skill menu. */
+/* The list-search key puts the caret in this rail's field — the same combo the
+   rosters use, because it means "the list on this page". It carries a modifier,
+   so it cannot be typed by accident: the old bare `/` fired from any field, and
+   a URL typed into the composer landed here. */
 function onKey(event) {
   if (!matchesShortcut('inventory-search', event)) return
-  if (isEditable(event.target)) return
   const field = searchEl.value
   if (!field) return
   event.preventDefault()

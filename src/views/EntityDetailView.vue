@@ -246,7 +246,7 @@ async function copyPath() {
 
 
 <template>
-  <div class="view entp-view">
+  <div class="view detail-view">
     <template v-if="agent">
       <div class="entp-bar">
         <button class="back" type="button" @click="goEntities">

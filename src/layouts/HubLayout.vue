@@ -145,8 +145,10 @@ function onKey(e) {
     openNewThread()
     return
   }
-  /* `/` — the same key the conversations rail, the skills roster and the tool
-     list use. One key, one meaning: the search field of the list on this page. */
+  /* The list-search key — the same combo the conversations rail, the skills
+     roster and the tool list use. One key, one meaning: the search field of the
+     list on this page. It carries a modifier, so nothing here has to guard
+     against a `/` someone is typing. */
   if (matchesShortcut('inventory-search', e)) {
     if (hub.palette.open) return
     e.preventDefault()

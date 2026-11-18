@@ -78,8 +78,10 @@ export const SHORTCUT_GROUPS = [
         id: 'inventory-search',
         label: 'Search the list',
         desc: 'Put the caret in the search field of this page’s list — the conversations rail, the skills roster, the tool list.',
-        desktop: ['/'],
-        browser: ['/'],
+        /* A modifier, not a bare `/`: a bare key fires wherever the caret is,
+           and typing a URL into any field would land in the rail. */
+        desktop: ['mod', '/'],
+        browser: ['alt', '/'],
       },
 
       {
@@ -165,8 +167,10 @@ export const SHORTCUT_GROUPS = [
         id: 'metadata',
         label: 'Thread metadata',
         desc: 'Show the links and paths this conversation mentions.',
-        desktop: ['mod', '/'],
-        browser: ['alt', '/'],
+        /* `⌘/` and `⌥/` belong to `inventory-search` on this same page; both
+           variants are accepted at runtime, so two items may not share one. */
+        desktop: ['mod', 'shift', '/'],
+        browser: ['alt', 'shift', '/'],
       },
       {
         id: 'pick-entity',
