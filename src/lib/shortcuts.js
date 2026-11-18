@@ -75,6 +75,15 @@ export const SHORTCUT_GROUPS = [
         browser: ['/'],
       },
       {
+        id: 'tool-search',
+        label: 'Search this server’s tools',
+        desc: 'On an MCP server page, put the caret in the tool list’s search field.',
+        /* The same combo as `rail-search`, which has nothing to focus on that
+           page: its second-tier rail is the Overview list, and has no search. */
+        desktop: ['alt', 'shift', 'F'],
+        browser: ['alt', 'shift', 'F'],
+      },
+      {
         id: 'rail-search',
         label: 'Focus rail search',
         desc: 'Jump into the search field of the active second-tier rail.',
