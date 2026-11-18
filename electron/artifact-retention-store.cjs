@@ -642,8 +642,14 @@ function evaluate({ workspace, now = new Date() } = {}) {
 
   const rows = []
   let shelf = []
+  let personal = 0
   try {
-    shelf = artifacts.list({ workspace }).items
+    const listed = artifacts.list({ workspace })
+    personal = Number(listed.counts?.personal) || 0
+    /* The sweep is a workspace policy about the workspace's shelf. A personal
+       artifact lives under `.personal/`, syncs nowhere and belongs to one
+       account, so it is not this rule's population — the card says so. */
+    shelf = listed.items.filter((item) => item.scope !== 'personal')
   } catch {
     shelf = []
   }
@@ -742,6 +748,7 @@ function evaluate({ workspace, now = new Date() } = {}) {
       archived: archivedRows.length,
       archivedBytes: sum(archivedRows, 'bytes'),
       opened: rows.filter((row) => opened[row.id]).length,
+      personal,
     },
     bands,
     legend,

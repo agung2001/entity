@@ -260,10 +260,11 @@ onBeforeUnmount(() => {
       </div>
 
       <p class="ret-intro">
-        Everything an entity or you saved to this workspace's artifacts folder, by how
-        long it has been since anyone opened it. ① decides what moves into the archive;
-        ② decides what leaves this machine for good. An archived file is out of the
-        shelf's list, not off the disk.
+        Everything on this workspace's <b>shared</b> artifacts shelf, by how long it has
+        been since anyone opened it. ① decides what moves into the archive; ② decides what
+        leaves this machine for good. An archived file is out of the shelf's list, not off
+        the disk. A personal shelf (<code class="mono">artifacts/.personal/</code>) is one
+        account's own and is never swept.
       </p>
 
       <div v-if="!canEdit" class="role-line">
@@ -306,7 +307,11 @@ onBeforeUnmount(() => {
         The shelf, by age
         <small v-if="meta">
           {{ plural(meta.files, 'file') }} · {{ mb(meta.bytes) }} on the shelf ·
-          {{ plural(meta.archived, 'file') }} · {{ mb(meta.archivedBytes) }} in the archive
+          {{ plural(meta.archived, 'file') }} · {{ mb(meta.archivedBytes) }} in the archive<template
+            v-if="meta.personal"
+          >
+            · {{ meta.personal }} personal, not swept</template
+          >
         </small>
       </div>
 
@@ -844,7 +849,9 @@ onBeforeUnmount(() => {
         <b>Shared with the team</b> — the thresholds, the cadences and the machine that
         runs the pass are workspace configuration: one owner or admin sets them and every
         clone reads them. The archive, its dates and the opened map stay on the machine
-        that runs the pass.
+        that runs the pass. A personal shelf
+        (<code class="mono">artifacts/.personal/</code>) is private to one account and is
+        outside this rule.
       </p>
       <p class="mnote">
         <b>The archive date</b> — stamped once, the moment a file moves in. ② counts from

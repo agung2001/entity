@@ -4,7 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import ArtifactHtmlPreview from '@/components/ArtifactHtmlPreview.vue'
 import CodeEditor from '@/components/CodeEditor.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
-import { shortcutLabel, matchesShortcut } from '@/lib/shortcuts'
+import { call } from '@/composables/localBridge'
+import { useDialogDismiss } from '@/composables/useDialog'
+import { copyText } from '@/lib/clipboard'
+import { shareHref } from '@/lib/share-url'
+import { shortcutLabel, matchesShortcut, isDesktopApp } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import {
   artifacts,
@@ -12,8 +16,11 @@ import {
   loadArtifacts,
   readArtifact,
   openArtifact,
+  ownsArtifact,
   removeArtifact,
   revealArtifact,
+  shareArtifact,
+  unshareArtifact,
   writeArtifactText,
 } from '@/stores/artifacts'
 
@@ -52,6 +59,25 @@ const barHeight = ref(56)
 let barObserver = null
 let token = 0
 
+/* ── sharing ───────────────────────────────────────────────────────────
+   Three popovers hang off the bar: the share confirm, the shared state's
+   menu, and the narrow bar's overflow. One is open at a time, and every one
+   of them registers with `useDialogDismiss` so a single Esc closes the top
+   surface and leaves the shelf behind it alone. */
+const shareControl = ref(null)
+const shareOpen = ref(false)
+const sharing = ref(false)
+const shareError = ref('')
+const shareAct = ref(null)
+const scopeOpen = ref(false)
+const confirmingBack = ref(false)
+const moreOpen = ref(false)
+/* The roster is read from the workspace record when a popover needs it — the
+   confirm says how many people will see the file, and the menu needs the
+   caller's role. The server decides both for real; this only labels them. */
+const members = ref([])
+const desktopApp = isDesktopApp()
+
 /* A media artifact gets a stage, not a thumbnail in a box: the bytes are often
    a screenshot or a screen recording, and reading them is the whole point. */
 const stage = ref(null)
@@ -67,6 +93,199 @@ const mediaKind = computed(() => {
 
 const id = computed(() => String(props.id || route.params.id || ''))
 const item = computed(() => artifacts.items.find((entry) => entry.id === id.value) || null)
+const shared = computed(() => item.value?.scope === 'shared')
+const isMine = computed(() => ownsArtifact(item.value))
+const workspaceLabel = computed(() => hub.workspaceLabel || hub.workspace || 'this workspace')
+const ownerName = computed(() => item.value?.owner?.name || 'someone')
+const myEmail = () => String(hub.account?.email || hub.session?.email || '').toLowerCase()
+const myRole = computed(() => {
+  const email = myEmail()
+  const member = members.value.find((entry) => String(entry.email || '').toLowerCase() === email)
+  return member?.role || 'member'
+})
+const canUnshare = computed(
+  () => isMine.value || myRole.value === 'owner' || myRole.value === 'admin',
+)
+const scopeAction = computed(() => (isMine.value ? 'Move back to Personal' : 'Remove from workspace'))
+const scopeHint = computed(() => {
+  if (isMine.value) return 'It leaves the workspace shelf and goes back to yours. Nothing is deleted.'
+  /* Taking a file off the team's shelf puts it on *your* shelf — the file is not
+     deleted, but it does leave everyone else's. Say so before the click. */
+  if (canUnshare.value) return 'It leaves the shelf for everyone and lands on yours. Nothing is deleted.'
+  return "Only the file's owner or a workspace owner/admin can move that file back."
+})
+/* At 1 member it is "the other member"; with no roster to read, the sentence
+   names the workspace instead of inventing a number. */
+const shareAudience = computed(() => {
+  const count = members.value.length
+  if (count === 1) return 'the other member'
+  if (count > 1) return `all ${count} members`
+  return `everyone in ${workspaceLabel.value}`
+})
+const stack = computed(() => {
+  const mine = myEmail()
+  const rows = [...members.value]
+  rows.sort(
+    (a, b) =>
+      Number(String(b.email || '').toLowerCase() === mine) -
+      Number(String(a.email || '').toLowerCase() === mine),
+  )
+  return rows.slice(0, 3)
+})
+function initials(person) {
+  const parts = String(person?.name || person?.email || '').split(/[\s@._-]+/).filter(Boolean)
+  const first = parts[0]?.[0] || ''
+  const second = parts[1]?.[0] || parts[0]?.[1] || ''
+  return (first + second).toLowerCase() || '?'
+}
+
+async function loadMembers() {
+  if (members.value.length) return
+  try {
+    const record = await call('workspace.open', { id: hub.workspace })
+    members.value = Array.isArray(record?.members) ? record.members : []
+  } catch {
+    /* the confirm and the menu fall back to what they can say without a roster */
+  }
+}
+
+function focusShareControl() {
+  nextTick(() => shareControl.value?.querySelector('button')?.focus())
+}
+
+function closeOthers() {
+  shareOpen.value = false
+  shareError.value = ''
+  scopeOpen.value = false
+  confirmingBack.value = false
+  moreOpen.value = false
+}
+
+function openShare() {
+  if (sharing.value) return
+  if (shareOpen.value) {
+    closeShare()
+    return
+  }
+  closeOthers()
+  loadMembers()
+  shareOpen.value = true
+  nextTick(() => shareAct.value?.focus())
+}
+
+/* Cancel, Esc and a click outside are one path: the confirm leaves and focus
+   goes back to whatever now sits in the share slot. */
+function closeShare() {
+  if (sharing.value) return
+  shareOpen.value = false
+  shareError.value = ''
+  focusShareControl()
+}
+
+async function confirmShare() {
+  const current = item.value
+  if (!current || sharing.value || shared.value) return
+  sharing.value = true
+  shareError.value = ''
+  try {
+    await shareArtifact(current.id)
+    shareOpen.value = false
+    focusShareControl()
+  } catch (error) {
+    /* nothing was written, so the file is still on the Personal shelf */
+    shareError.value = error?.message || ''
+  } finally {
+    sharing.value = false
+  }
+}
+
+function toggleScope() {
+  if (scopeOpen.value) {
+    scopeOpen.value = false
+    confirmingBack.value = false
+    return
+  }
+  closeOthers()
+  loadMembers()
+  scopeOpen.value = true
+}
+
+function closeScope() {
+  scopeOpen.value = false
+  confirmingBack.value = false
+}
+
+async function unshare() {
+  const current = item.value
+  if (!current || busy.value || !canUnshare.value) return
+  /* Two clicks, like the shipped Delete: taking a file off the team's shelf is
+     not a hover action. */
+  if (!confirmingBack.value) {
+    confirmingBack.value = true
+    return
+  }
+  busy.value = 'unshare'
+  try {
+    await unshareArtifact(current.id)
+    closeScope()
+    focusShareControl()
+  } catch (error) {
+    toast(error?.message || 'The file could not be moved back.')
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function copyLink() {
+  const current = item.value
+  closeScope()
+  if (!current) return
+  const href = router.resolve({
+    name: 'artifact',
+    params: { workspace: hub.workspace, id: current.id },
+  }).href
+  const url = desktopApp ? '' : shareHref(href, hub.workspace)
+  const copied = await copyText(url || current.id)
+  toast(
+    copied
+      ? url
+        ? 'Artifact link copied'
+        : 'Artifact id copied'
+      : 'The artifact could not be copied.',
+  )
+}
+
+function toggleMore() {
+  if (moreOpen.value) {
+    moreOpen.value = false
+    return
+  }
+  closeOthers()
+  moreOpen.value = true
+}
+
+function onDocumentClick(event) {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (!target.closest('.share-anchor')) {
+    if (shareOpen.value) closeShare()
+    if (scopeOpen.value) closeScope()
+  }
+  if (moreOpen.value && !target.closest('.more-wrap')) moreOpen.value = false
+}
+
+useDialogDismiss({
+  active: () => shareOpen.value,
+  close: () => closeShare(),
+  guard: () => sharing.value,
+})
+useDialogDismiss({ active: () => scopeOpen.value, close: () => closeScope() })
+useDialogDismiss({
+  active: () => moreOpen.value,
+  close: () => {
+    moreOpen.value = false
+  },
+})
 const isMarkdown = computed(() => {
   const name = item.value?.name || previewData.value?.name || ''
   const mime = item.value?.mime || previewData.value?.mime || ''
@@ -258,6 +477,10 @@ async function loadPreview() {
 }
 
 async function boot() {
+  /* The share menu's enabled state and the confirm's audience both come from
+     the roster. Reading it once here keeps a menu item from flashing disabled
+     before it becomes legal; the server still decides. */
+  loadMembers()
   if (!artifacts.loaded || !artifacts.items.some((entry) => entry.id === id.value)) {
     await loadArtifacts()
   }
@@ -388,12 +611,14 @@ function watchBar() {
 onMounted(() => {
   boot()
   window.addEventListener('keydown', onKey)
+  document.addEventListener('click', onDocumentClick)
 })
 onBeforeUnmount(() => {
   token += 1
   barObserver?.disconnect()
   barObserver = null
   window.removeEventListener('keydown', onKey)
+  document.removeEventListener('click', onDocumentClick)
 })
 </script>
 
@@ -421,7 +646,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         <div class="artifact-titles">
-          <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }}</p>
+          <p class="eyebrow">Artifact · {{ hub.workspaceLabel || hub.workspace }} · {{ shared ? 'Shared' : 'Personal' }}</p>
           <h1 :title="item.id">{{ item.name }}</h1>
           <p class="artifact-meta">
             <span>{{ item.mime || item.ext || 'file' }}</span>
@@ -433,6 +658,114 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div class="artifact-actions">
+          <!-- The page's only accent fill, and the state that replaces it in the
+               same slot. Everything below the hairline is the shipped row. -->
+          <div ref="shareControl" class="share-anchor">
+            <button
+              v-if="!shared"
+              class="btn btn-sm btn-primary"
+              type="button"
+              aria-haspopup="dialog"
+              :aria-expanded="shareOpen ? 'true' : 'false'"
+              @click="openShare"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <circle cx="6" cy="5.6" r="2.6" />
+                <path d="M2.2 13.4a3.8 3.8 0 017.6 0" />
+                <path d="M10.4 3.4a2.4 2.4 0 010 4.5M11.6 13.4a3.6 3.6 0 00-1.2-2.6 3.4 3.4 0 013.4 2.6" />
+              </svg>
+              Share with workspace
+            </button>
+            <button
+              v-else
+              class="scope-state"
+              type="button"
+              :data-mine="isMine ? '1' : '0'"
+              aria-haspopup="menu"
+              :aria-expanded="scopeOpen ? 'true' : 'false'"
+              @click="toggleScope"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <circle cx="6" cy="5.6" r="2.6" />
+                <path d="M2.2 13.4a3.8 3.8 0 017.6 0" />
+                <path d="M10.4 3.4a2.4 2.4 0 010 4.5M11.6 13.4a3.6 3.6 0 00-1.2-2.6 3.4 3.4 0 013.4 2.6" />
+              </svg>
+              <b>Shared · {{ ownerName }}</b>
+              <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M4 6.4L8 10.4l4-4" />
+              </svg>
+            </button>
+
+            <!-- Attached to its trigger, not a modal: the shelf beside it is
+                 where the counts move, so the page behind stays live. -->
+            <div v-if="shareOpen" class="share-pop" role="dialog" aria-labelledby="share-h" @click.stop>
+              <h3 id="share-h">Share with workspace?</h3>
+              <div class="share-people">
+                <span v-if="stack.length" class="stack" aria-hidden="true">
+                  <span
+                    v-for="person in stack"
+                    :key="person.email || person.name"
+                    :data-you="String(person.email || '').toLowerCase() === myEmail() ? '1' : undefined"
+                  >{{ initials(person) }}</span>
+                </span>
+                <span>everyone in {{ workspaceLabel }} sees it</span>
+              </div>
+              <p v-if="!shareError">
+                <code>{{ item.name }}</code> moves from your shelf to the workspace shelf, where
+                {{ shareAudience }} can preview and download it. It is not copied — one file, one
+                place.
+              </p>
+              <div v-else class="share-err" role="alert">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M8 5v3.6M8 11h.01" />
+                </svg>
+                <span>Could not share <code>{{ item.name }}</code>. Nothing was moved.<em v-if="shareError" class="share-why">{{ shareError }}</em></span>
+              </div>
+              <p v-if="!shareError" class="share-pop-note">
+                You can move it back to Personal at any time.
+              </p>
+              <div class="share-pop-foot">
+                <button class="btn btn-sm btn-ghost" type="button" :disabled="sharing" @click="closeShare">
+                  Cancel
+                </button>
+                <button
+                  ref="shareAct"
+                  class="btn btn-sm btn-primary"
+                  type="button"
+                  :disabled="sharing"
+                  @click="confirmShare"
+                >
+                  {{ sharing ? 'Sharing…' : shareError ? 'Try again' : 'Share with workspace' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="scopeOpen" class="scope-menu" role="menu" aria-label="Shared file">
+              <button class="rchat-menu-item" type="button" role="menuitem" @click="copyLink">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M6.4 9.6l3.2-3.2M5.2 10.8l-1 .9a2.2 2.2 0 01-3.1-3.1l2-2a2.2 2.2 0 013.1 0" />
+                  <path d="M10.8 5.2l1-.9a2.2 2.2 0 013.1 3.1l-2 2a2.2 2.2 0 01-3.1 0" />
+                </svg>
+                Copy link
+              </button>
+              <span class="scope-menu-sep" aria-hidden="true"></span>
+              <button
+                class="rchat-menu-item rchat-menu-danger rchat-menu-note"
+                type="button"
+                role="menuitem"
+                :class="{ confirming: confirmingBack }"
+                :disabled="!canUnshare || Boolean(busy)"
+                :title="scopeHint"
+                @click="unshare"
+              >
+                <span>{{ confirmingBack ? 'Click again to confirm' : scopeAction }}</span>
+                <span class="scope-menu-hint">{{ scopeHint }}</span>
+              </button>
+            </div>
+          </div>
+          <span class="sep-v" aria-hidden="true"></span>
+
           <div v-if="isHtml" class="artifact-mode" role="group" aria-label="How to show this file">
             <button
               type="button"
@@ -469,7 +802,14 @@ onBeforeUnmount(() => {
             </svg>
             {{ busy === 'download' ? 'Preparing…' : 'Download' }}
           </button>
-          <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="reveal">
+          <button
+            class="btn btn-sm btn-handoff"
+            type="button"
+            :disabled="Boolean(busy)"
+            title="Reveal"
+            aria-label="Reveal"
+            @click="reveal"
+          >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
               <path d="M1.8 5.8v-2h4" />
@@ -478,10 +818,11 @@ onBeforeUnmount(() => {
           </button>
           <button
             v-if="can('editor')"
-            class="btn btn-sm"
+            class="btn btn-sm btn-handoff"
             type="button"
             :disabled="Boolean(busy)"
-            :title="`Open ${item.name} in VS Code`"
+            title="Open in VS Code"
+            aria-label="Open in VS Code"
             @click="openWith('editor')"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -491,10 +832,11 @@ onBeforeUnmount(() => {
           </button>
           <button
             v-if="can('browser')"
-            class="btn btn-sm"
+            class="btn btn-sm btn-handoff"
             type="button"
             :disabled="Boolean(busy)"
-            :title="`Open ${item.name} in your browser`"
+            title="Open in the browser"
+            aria-label="Open in the browser"
             @click="openWith('browser')"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -503,7 +845,10 @@ onBeforeUnmount(() => {
             </svg>
             {{ busy === 'browser' ? 'Opening…' : 'Browser' }}
           </button>
+          <!-- Delete is absent, not disabled, on a file you did not put there:
+               a control you can never use is noise. -->
           <button
+            v-if="isMine"
             class="btn btn-sm ws-danger"
             type="button"
             :class="{ confirming: confirming === item.id }"
@@ -530,6 +875,95 @@ onBeforeUnmount(() => {
               <path d="M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" />
             </svg>
           </button>
+          <!-- The narrow bar's home for the actions it gives up. Same menu
+               grammar as the shared state, so nothing here is a new pattern. -->
+          <div class="more-wrap">
+            <button
+              class="actions-more"
+              type="button"
+              title="More actions"
+              aria-label="More actions"
+              aria-haspopup="menu"
+              :aria-expanded="moreOpen ? 'true' : 'false'"
+              @click="toggleMore"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <circle cx="3.4" cy="8" r="1.2" />
+                <circle cx="8" cy="8" r="1.2" />
+                <circle cx="12.6" cy="8" r="1.2" />
+              </svg>
+            </button>
+            <div v-if="moreOpen" class="scope-menu scope-menu--more" role="menu" aria-label="Artifact actions">
+              <button
+                v-if="canEditText && dirty"
+                class="rchat-menu-item"
+                type="button"
+                role="menuitem"
+                :disabled="saving || Boolean(busy)"
+                @click="moreOpen = false; save()"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M3 3h8.2L13 4.8V13H3z" />
+                  <path d="M5.4 3v3.2h5V3M5.4 13v-3.6h5.2V13" />
+                </svg>
+                {{ saving ? 'Saving…' : 'Save' }}
+              </button>
+              <button class="rchat-menu-item" type="button" role="menuitem" :disabled="Boolean(busy)" @click="moreOpen = false; reveal()">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
+                  <path d="M1.8 5.8v-2h4" />
+                </svg>
+                Reveal
+              </button>
+              <button
+                v-if="can('editor')"
+                class="rchat-menu-item"
+                type="button"
+                role="menuitem"
+                :disabled="Boolean(busy)"
+                @click="moreOpen = false; openWith('editor')"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M5.6 4.4L2.6 8l3 3.6M10.4 4.4l3 3.6-3 3.6" />
+                </svg>
+                VS Code
+              </button>
+              <button
+                v-if="can('browser')"
+                class="rchat-menu-item"
+                type="button"
+                role="menuitem"
+                :disabled="Boolean(busy)"
+                @click="moreOpen = false; openWith('browser')"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M2 8h12M8 2c1.8 1.7 2.8 3.7 2.8 6S9.8 12.3 8 14c-1.8-1.7-2.8-3.7-2.8-6S6.2 3.7 8 2z" />
+                </svg>
+                Browser
+              </button>
+              <button class="rchat-menu-item" type="button" role="menuitem" :disabled="Boolean(busy)" @click="moreOpen = false; download()">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
+                </svg>
+                Download
+              </button>
+              <button
+                v-if="isMine"
+                class="rchat-menu-item rchat-menu-danger"
+                type="button"
+                role="menuitem"
+                :class="{ confirming: confirming === item.id }"
+                :disabled="Boolean(busy)"
+                @click="remove"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M3 4.6h10M6.4 4.6V3h3.2v1.6M4.4 4.6l.6 8.4h6l.6-8.4M6.8 7v4M9.2 7v4" />
+                </svg>
+                {{ confirming === item.id ? 'Confirm delete' : 'Delete' }}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 

@@ -219,6 +219,9 @@ function createRpc({
         limit: Number.isFinite(limit) ? limit : 10,
         offset: Number.isFinite(offset) ? offset : 0,
         dir: String(dir || ''),
+        /* `@thread:` offers this workspace's conversations, through the store
+           that already enforces who may read them */
+        deps: { threads: { list: () => chats.list({ workspace }) } },
       }),
     'workspace.sources': () => localData.skillSources(),
     'workspace.home': () => ({ root: workspaces.ROOT, workspaces: workspaces.WORKSPACES_DIR }),
@@ -245,6 +248,8 @@ function createRpc({
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
+    'artifact.share': (args) => artifacts.share(args),
+    'artifact.unshare': (args) => artifacts.unshare(args),
     'artifact.read': (args) => artifacts.read(args),
     'artifact.download': (args) => artifacts.download(args),
     'artifact.upload': (args) => artifacts.upload(args),

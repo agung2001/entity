@@ -638,6 +638,20 @@ async function handle(req, res, url) {
           return true
         }
         applySkills(record, parsed)
+      } else if (rel === manifest.SCOPE_REL) {
+        /* A push is a union, not a replace: two members sharing different files
+           is the normal case, and last-writer-wins would drop a machine's
+           shares the moment two people shared anything between syncs. */
+        let local = ''
+        try {
+          local = fs.readFileSync(manifest.absoluteFor(record.path, rel), 'utf8')
+        } catch {
+          /* nothing shared on this side yet */
+        }
+        manifest.writeAtomic(
+          manifest.absoluteFor(record.path, rel),
+          Buffer.from(manifest.mergeScopeIndex(local, body.toString('utf8')), 'utf8'),
+        )
       } else {
         if (rel.startsWith('skills/')) workspaces.materialiseSkillLinks(record)
         /* A workspace-owned skill may ship an executable script. Only the

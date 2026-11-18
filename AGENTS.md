@@ -31,11 +31,42 @@ never touches `fs`: every local read and write goes through the one call table
 in `electron/rpc.cjs` (IPC in Electron, `POST /__entity/call` in the dev
 server). Keep it that way when adding a feature.
 
+## Sample data is fictional — this repository is public
+
+Every fixture, doc snippet, comment and commit message here is read by strangers
+and indexed by search engines. **A real colleague's name in a test is a leak even
+when the test passes.** Write examples nobody can mistake for a real profile.
+
+- **Reserved domains only.** `example.test` and `example.com` (RFC 2606: they can
+  never be registered), or anything under `.example`. Never a company or product
+  domain and never a plausible mailbox: `avery@example.test`, not
+  `avery@<company>.test`.
+- **Placeholder people and workspaces.** `Ada` / `Avery` / `Blake` / `Casey` for
+  members, `acme` / `demo-workspace` / `scope-shelf` for labels. A role-shaped
+  account reads better than a plausible one anyway.
+- **Nothing copied out of a real profile.** A value taken from `~/.entity/…`,
+  `auth.json`, a workspace record, a screenshot path or a live issue gets
+  rewritten before it reaches a file: strip the username, the host, the
+  workspace id and anything token-shaped.
+- **The rule covers prose too.** PR bodies, issue text, comments and `docs/`
+  examples are published, and a branch that never merges still sits on the
+  remote.
+- **What is not a leak.** The project's own GitHub URL, the ghcr image path and
+  the copyright line name the maintainer on purpose. Leave those alone.
+
+Check before you commit — a hit means a real identity reached a file:
+
+```bash
+git grep -nE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- tests docs src electron server \
+  | grep -vE '(@example\.)|(\.example\b)'
+```
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Renderer only, in a browser at http://localhost:5183 |
+| `npm run dev:lan` | The same, bound to `0.0.0.0` so another machine on your network can open it at `http://<your-ip>:5183` |
 | `npm run dev:desktop` | Vite + Electron with HMR |
 | `npm test` | Unit tests + the UI contract above (`tests/unit/`) |
 | `npm run test:smoke` | Playwright smoke pack, including real `opencode` and `pi` turns |
@@ -47,6 +78,12 @@ server). Keep it that way when adding a feature.
 
 Use `ENTITY_HOME=/tmp/…` for a scratch profile when testing, so real workspaces
 are never touched.
+
+`npm run dev:lan` is `npm run dev` with `--host 0.0.0.0`: Vite's dev middleware
+in `vite.config.js` has no host or origin check, so the call table answers a LAN
+client the same way. Open it by **IP address**, not a hostname — Vite only
+auto-allows `localhost` and literal IPs, so `http://my-mac.local:5183` comes back
+as a blocked host until that name is added to `server.allowedHosts`.
 
 ## Do not commit or push without an explicit go-ahead
 
@@ -60,3 +97,18 @@ An implementation request is **not** permission to publish it.
 
 If a previous instruction said "commit and push", a later instruction to test
 manually first wins.
+
+## This repository and its pull requests are public: no tracker links
+
+Never publish the private issue tracker. That means no tracker URL, no hostname,
+no screenshot of it and no webhook — in a PR title or body, a commit message, a
+branch name, a code comment, a doc, a test fixture or an error string.
+
+An issue key on its own is fine: `ENTITY-23` names the work without handing
+anyone the route to it. **Write the key, never a link** — and do not lean on a
+link to get GitHub's auto-linking; `#123` is the only reference that is already
+public here.
+
+Paid for once: the `@thread:` PR body opened with a tracker link. Nobody caught
+it until the repository owner did. When a body seems to need more context than
+the key, write the context — do not link out.

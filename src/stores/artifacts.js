@@ -13,6 +13,10 @@ export const artifacts = reactive({
   workspace: '',
   path: '',
   items: [],
+  /* The rail's filter, in the store rather than in the panel: the artifact page
+     is a route, so pressing a scope would otherwise reset it on navigation. */
+  scope: 'personal',
+  counts: { personal: 0, shared: 0 },
 })
 
 /* Read-once cache. A thread renders its attached screenshots and documents
@@ -37,6 +41,7 @@ export function resetArtifacts() {
   artifacts.workspace = ''
   artifacts.path = ''
   artifacts.items = []
+  artifacts.counts = { personal: 0, shared: 0 }
   reads.clear()
 }
 
@@ -56,6 +61,7 @@ export async function loadArtifacts(workspace = hub.workspace) {
     artifacts.workspace = workspace
     artifacts.path = data?.path || ''
     artifacts.items = data?.items || []
+    artifacts.counts = data?.counts || { personal: 0, shared: 0 }
     artifacts.loaded = true
     return artifacts.items
   } catch (error) {
@@ -121,6 +127,39 @@ export async function removeArtifact(id) {
   forgetRead(hub.workspace, id)
   await loadArtifacts()
   return result
+}
+
+/** Both scope moves are the same shape: write the index, then re-read the shelf
+ *  so the counts and the row's place come from the store, not from here. */
+async function moveScope(channel, id) {
+  const item = await call(channel, { workspace: hub.workspace, id })
+  forgetRead(hub.workspace, id)
+  await loadArtifacts()
+  return item
+}
+
+export async function shareArtifact(id) {
+  return moveScope('artifact.share', id)
+}
+
+export async function unshareArtifact(id) {
+  return moveScope('artifact.unshare', id)
+}
+
+/**
+ * Whether a row is the signed-in member's own. A personal file always is; a
+ * shared one answers with the owner the store stamped, compared to the account
+ * this window is signed in as. Used by the shelf's row and the artifact bar so
+ * the two cannot disagree about who owns a file.
+ */
+export function ownsArtifact(item) {
+  if (!item || item.scope !== 'shared') return true
+  const owner = item.owner || {}
+  const email = String(owner.email || '').toLowerCase()
+  const mine = String(hub.account?.email || hub.session?.email || '').toLowerCase()
+  if (email && mine) return email === mine
+  const username = String(hub.account?.username || hub.session?.user || '').toLowerCase()
+  return Boolean(username) && String(owner.name || '').toLowerCase() === username
 }
 
 /**
