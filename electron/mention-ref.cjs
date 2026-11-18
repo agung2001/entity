@@ -211,31 +211,46 @@ function parseMention(raw) {
      and failed the message before it was sent. */
   if (head === 'thread') return { kind: 'thread', id: rest.trim().split(/\s+/)[0] || '', local }
 
-  const parts = rest.split(':')
-  const first = (parts[0] || '').trim()
-  const tail = parts.slice(1).join(':').trim()
-  /* The structured field is ONE word: `@orca:maka tell me about it` is the maka
-     project plus a sentence, not a project called "maka tell me about it". */
-  const word = first.split(/\s+/)[0] || ''
-  const afterWord = first.slice(word.length).trim()
+  /* A structured field's colon has to TOUCH its first word. `@orca:maka tell me
+     about it` is the maka project plus a sentence; and `@orca:entity this is my
+     workflow : https://example.com/a?b=c` is the entity project plus a
+     sentence — counting colons anywhere made the whole sentence a project name
+     and failed the message before it was sent. */
+  const body2 = String(rest || '').replace(/^\s+/, '')
+  /* the first token, or the first token *before* the colon when the colon
+     touches it (`@youtrack:AC:login bug` → AC) */
+  const word = body2.split(/[\s:]+/)[0] || ''
+  const after = body2.slice(word.length)
+  const structured = after.startsWith(':')
+  const tail = structured ? after.slice(1).trim() : ''
+  /* everything after the head, word included, and everything after the word */
+  const whole = body2.trim()
+  const prose = after.replace(/^\s+/, '')
 
   if (head === 'orca') {
-    return { kind: 'orca', project: parts.length > 1 ? first : word, file: tail, local }
+    /* the file is one path token: `@orca:one:src/App.vue the bug is elsewhere` */
+    return {
+      kind: 'orca',
+      project: word,
+      /* a file path may contain spaces; it may not contain a new line */
+      file: structured ? tail.split('\n')[0].trim() : '',
+      local,
+    }
   }
 
   if (head === 'maka') {
     /* `@maka:plan` is a query; `@maka:one:plan` is a vault and a query */
-    return parts.length > 1
-      ? { kind: 'maka', vault: first, query: tail, local }
-      : { kind: 'maka', vault: '', query: rest.trim(), local }
+    return structured
+      ? { kind: 'maka', vault: word, query: tail, local }
+      : { kind: 'maka', vault: '', query: whole, local }
   }
 
   /* youtrack: a project key is short and upper-case; the rest is the query */
-  if (parts.length > 1) return { kind: 'youtrack', project: first, query: tail, local }
+  if (structured) return { kind: 'youtrack', project: word, query: tail, local }
   if (/^[A-Z][A-Z0-9]{1,9}$/.test(word)) {
-    return { kind: 'youtrack', project: word, query: afterWord, local }
+    return { kind: 'youtrack', project: word, query: prose, local }
   }
-  return { kind: 'youtrack', project: '', query: rest.trim(), local }
+  return { kind: 'youtrack', project: '', query: whole, local }
 }
 
 /** The mention as it would be written on its own — no trailing instruction. */

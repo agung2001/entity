@@ -136,6 +136,31 @@ test('a colon inside the job does not turn an entity into a namespace', () => {
   assert.equal(segment.job, job)
 })
 
+test('a colon in the sentence is prose, not the start of a file field', async () => {
+  /* this exact message was refused with "@orca:entity this is how I usually
+     develop features quickly is not a project Orca knows" — the colon inside
+     `https://` made the whole sentence a project name */
+  const [orca] = mention.parse(
+    '@orca:entity this is how I develop features quickly :\nhttp://localhost:5183/x?y=z\n\ncheck it',
+  ).segments
+  assert.equal(orca.project, 'entity')
+  assert.equal(orca.file, '')
+
+  /* and a real file field still wins when its colon touches the name */
+  const [file] = mention.parse('@orca:One:src/my file.ts').segments
+  assert.equal(file.project, 'One')
+  assert.equal(file.file, 'src/my file.ts')
+
+  /* the same shape, resolved for real */
+  const record = workspace()
+  const out = await mention.rewrite(
+    record,
+    '@orca:One this is my workflow : https://example.com/a?b=c',
+    { deps: deps() },
+  )
+  assert.equal(out.mentions[0].items[0].label, path.join(ORCA_ONE))
+})
+
 test('an unknown namespace is a hard error, not silently dropped', async () => {
   const record = workspace()
   await assert.rejects(
