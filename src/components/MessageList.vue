@@ -33,7 +33,16 @@ const props = defineProps({
   searchHits: { type: Array, default: () => [] },
   searchActive: { type: Number, default: -1 },
 })
-const emit = defineEmits(['chip', 'retry', 'followup', 'suggest', 'open-thread', 'delegate'])
+const emit = defineEmits([
+  'chip',
+  'retry',
+  'retry-session',
+  'retry-sessions',
+  'followup',
+  'suggest',
+  'open-thread',
+  'delegate',
+])
 
 /* Follow-ups belong to the newest completed reply, not to an empty thread and
    not while a turn is streaming. */
@@ -540,6 +549,28 @@ function delegations(message) {
   return rows.filter((mention) => mention?.kind === 'entity')
 }
 
+/**
+ * A delegated row that is failing *now*.
+ *
+ * The mention in the message records what that turn did — a failure among them
+ * is history. The session row records what is true since, and a retry that has
+ * answered makes the card a success story; counting the stored status would keep
+ * the red bar up forever. The stored status is the fallback for a row the list
+ * has not seen yet.
+ */
+function failingRows(rows) {
+  return rows.filter((mention) => {
+    if (!mention?.threadId) return false
+    const row = (hub.chat.summaries || []).find((entry) => entry.id === mention.threadId)
+    return row ? Boolean(row.failed) : mention.status === 'error'
+  })
+}
+
+/** The ids a container-level retry acts on. */
+function failingIds(rows) {
+  return failingRows(rows).map((mention) => mention.threadId)
+}
+
 function traceKey(message, index) {
   return message.id || `msg-${message.at || index}`
 }
@@ -633,11 +664,33 @@ function traceSummary(message) {
           class="msg-delegations"
           aria-label="Delegated work"
         >
+          <!-- One line over the cards: how many runs failed, and the one action
+               that re-runs all of them. A fan-out of ten with six timeouts is a
+               list you cannot fix one card at a time without losing your place. -->
+          <div
+            v-if="failingIds(delegations(m)).length"
+            class="msg-delegations-alert"
+            role="status"
+          >
+            <span class="msg-delegations-alert-text">
+              <b>{{ failingIds(delegations(m)).length }}</b> of
+              {{ delegations(m).length }}
+              {{ delegations(m).length === 1 ? 'session' : 'sessions' }} failed
+            </span>
+            <button
+              class="msg-delegations-retry"
+              type="button"
+              @click="emit('retry-sessions', failingIds(delegations(m)))"
+            >
+              Retry {{ failingIds(delegations(m)).length }} failed
+            </button>
+          </div>
           <DelegationCard
             v-for="(mention, j) in delegations(m)"
             :key="`${mention.token || mention.name || 'mention'}-${mention.share || j}`"
             :mention="mention"
             @open-thread="emit('open-thread', $event)"
+            @retry="emit('retry-session', $event)"
           />
         </div>
         <MessageBody :text="m.text" />
@@ -746,10 +799,23 @@ function traceSummary(message) {
       <!-- A fan-out is the turn: its rows are painted here, queued then
            running then answered, so minutes of work never read as a hang. -->
       <div v-if="liveDelegations.length" class="msg-delegations" aria-label="Delegated work in progress">
+        <div v-if="failingIds(liveDelegations).length" class="msg-delegations-alert" role="status">
+          <span class="msg-delegations-alert-text">
+            <b>{{ failingIds(liveDelegations).length }}</b> of {{ liveDelegations.length }} runs failed
+          </span>
+          <button
+            class="msg-delegations-retry"
+            type="button"
+            @click="emit('retry-sessions', failingIds(liveDelegations))"
+          >
+            Retry {{ failingIds(liveDelegations).length }} failed
+          </button>
+        </div>
         <DelegationCard
           v-for="(mention, j) in liveDelegations"
           :key="`${mention.row || mention.name || 'run'}-${mention.index ?? j}`"
           :mention="mention"
+          @retry="emit('retry-session', $event)"
         />
       </div>
       <div class="msg-body">

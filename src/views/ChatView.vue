@@ -46,6 +46,8 @@ import {
   machineById,
   parentOf,
   renameThread,
+  retrySession,
+  retrySessions,
   selectThread,
   setChatDraft,
   setHeldRuns,
@@ -622,6 +624,17 @@ async function retryFailed(message) {
     return
   }
   await chatSend(question.text, { retry: true })
+}
+
+/* A delegated run failed after its turn landed; the retry belongs to the session
+   it left behind, not to this transcript. The card and the fan-out's own bar
+   both come through here, so the rule lives in one place. */
+function retryChildSession(threadId) {
+  retrySession(threadId)
+}
+
+function retryChildSessions(threadIds) {
+  retrySessions(threadIds)
 }
 
 function onCreated(created) {
@@ -1279,6 +1292,8 @@ watch(
             @followup="sendFollowup"
             @suggest="suggestFollowups"
             @open-thread="openChild"
+            @retry-session="retryChildSession"
+            @retry-sessions="retryChildSessions"
             @delegate="decideDelegation($event)"
           />
 

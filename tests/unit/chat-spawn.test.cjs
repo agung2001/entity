@@ -105,6 +105,31 @@ test('a failed delegation leaves the reason, not an empty answer', () => {
   assert.match(read.messages[1].text, /not signed in/)
 })
 
+/* What the window's Retry button stands on. A retry re-runs the question already
+   in the thread, so `chat.send` with `retry` refuses anything whose last row is
+   not an error with a question above it — and that is the same pair the rail
+   derives `failed` from. One fact, two readers. */
+test('a failed session is exactly what a retry can pick up', () => {
+  const record = workspaceWith()
+  const parent = parentIn(record)
+  const session = chats.spawnMentionSession(
+    record,
+    parent,
+    mentionOf({ status: 'error', answer: '', note: '@secretary failed: not signed in' }),
+  )
+  const read = chats.read({ workspace: record.id, id: session.id })
+  const last = read.messages[read.messages.length - 1]
+  assert.equal(last.who, 'sys')
+  assert.equal(last.error, true, 'the error row is what a retry replaces')
+  assert.equal(last.hold, undefined, 'a held plan is a decision, not a failure')
+  assert.ok(
+    read.messages.some((entry) => entry.who === 'me'),
+    'the question above it is what a retry re-asks',
+  )
+  const row = chats.list({ workspace: record.id }).find((entry) => entry.id === session.id)
+  assert.equal(row.failed, true, 'the rail row says what the retry needs')
+})
+
 test('a reference or a non-entity mention is not a conversation', () => {
   const record = workspaceWith()
   const parent = parentIn(record)

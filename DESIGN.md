@@ -347,6 +347,19 @@ the composer already does: mention another entity.
 - **A run that delegates again cannot ask.** A spawned session is headless and told not to
   ask, so it starts immediately and inherits the answer it was given: one gate per turn, at
   the top — a hold inside a run is a hang nobody can see.
+- **A failed session is retried where it happened.** The question lives in the session,
+  so `Retry` re-runs *that* thread: the card keeps the history it painted, and the answer
+  lands where `Continue` already points. Every surface that can show the failure carries
+  the action — the card retries its own run, the fan-out's own line (`7 of 10 sessions
+  failed`) retries them all, and the tree's footer does the same for every session it
+  lists. A bulk retry is the fix, not the reason a dialog exists, so it is not the yellow
+  primary.
+- **A failure outlives its turn, so the row is the truth.** The mention stored in the
+  message records what that turn did; the session row records what is true since. A card
+  whose session has answered says `retried` and drops its red border, and the fan-out's
+  line goes with the last one — a count that keeps counting a fixed failure teaches
+  people to ignore the count. The rail's `spawned N · M failed` is how a person finds out
+  about a fan-out they left behind, and it opens the tree where the retry is.
 - **A settled plan is still a row.** Cancel, Stop and the ten-minute expiry land in one
   grammar — `Nothing started`, the rows that never ran, the app's own **Retry** — and the
   question stays in the transcript. A hold is in memory, so a reload reads `Interrupted`
@@ -390,6 +403,7 @@ the composer already does: mention another entity.
 | A finished turn switches the conversation you are reading | Store the result and update the rail row; `active` moves only from a click, a deep link, a new thread or a delete | `tests/e2e/full/14-turn-settles.spec.js` |
 | Scrolling up during a turn snaps back to the newest chunk | A programmatic scroll to the bottom arms the follow flag; the live watchers are not exempt | `tests/e2e/full/13-scroll-follow.spec.js` |
 | The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `chat-minimap.css` (`.jump-live`) |
+| `Failed` is painted on a card with no way to fix it | A failure carries its own action: retry the session it left behind, and put the count on the surface that holds the whole fan-out | `npm test` (delegation retry contract) |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
 | A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
 | An attachment is typed into the prompt instead of the chip row | Prompts stay prompts; file/MCP attachments live in chips below | Review |

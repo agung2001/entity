@@ -143,6 +143,104 @@
   width: 9px;
   height: 9px;
 }
+/* A failed run keeps its card and gains the one action that fixes it: the session
+   re-asks its own question, so the answer lands where Continue already points.
+   Same pill as Continue, in the failure's own colour. */
+.msg-delegation-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--border));
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msg-delegation-retry:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+/* Retrying is not a failure state: the run is alive again, so the button reads
+   as a wait rather than a second problem. */
+.msg-delegation-retry:disabled {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: progress;
+}
+.msg-delegation-retry svg {
+  width: 9px;
+  height: 9px;
+}
+/* The reason, on its own line: a red border says "something is wrong" and
+   leaves the person to open the session to find out what. */
+.msg-delegation-fail {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+/* The record said failed; the session has answered since. One quiet word, so the
+   card does not stay red for a failure somebody already fixed. */
+.msg-delegation-retried {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid color-mix(in oklab, var(--ok) 42%, var(--border));
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--ok) 10%, var(--bg));
+  color: color-mix(in oklab, var(--ok) 74%, var(--ink));
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+/* ── a fan-out that partly failed ──────────────────────────────────────
+   The cards carry their own reasons; this line carries the count and the one
+   action that re-runs them all. Six timeouts in ten should not cost six trips
+   into six sessions. */
+.msg-delegations-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in oklab, var(--danger) 26%, var(--border));
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+}
+.msg-delegations-alert-text {
+  margin-right: auto;
+}
+.msg-delegations-alert-text b {
+  font-weight: 600;
+}
+.msg-delegations-retry {
+  flex: none;
+  padding: 2px 9px;
+  border: 1px solid color-mix(in oklab, var(--danger) 42%, var(--border));
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msg-delegations-retry:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
 .msg-delegation-job {
   margin: 4px 0 0;
   font-family: var(--mono);

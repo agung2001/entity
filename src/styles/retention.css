@@ -1139,6 +1139,45 @@
 .spawn-tree-pill[data-status='failed'] i {
   background: var(--danger);
 }
+/* The tree is the only place every session of a fan-out is on one screen, so it
+   is where a bulk retry belongs: one click re-runs each failed session's own
+   question, in its own thread. */
+.spawn-tree-retry {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--border));
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.spawn-tree-retry:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.spawn-tree-retry svg {
+  width: 9px;
+  height: 9px;
+}
+/* left, next to the count it acts on; Close keeps the right edge. Not the
+   yellow primary: the purpose of this dialog is to look, and re-running seven
+   agents is the fix, not the reason the surface exists. */
+.spawn-tree-retry-all {
+  margin-right: auto;
+  border-color: color-mix(in oklab, var(--danger) 38%, var(--border));
+  color: var(--danger);
+}
+.spawn-tree-retry-all:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
 .spawn-tree-go {
   display: grid;
   place-items: center;

@@ -10,6 +10,7 @@
 import { computed, onMounted, ref } from 'vue'
 import EntityMark from './EntityMark.vue'
 import { call } from '@/composables/localBridge'
+import { hub, isSending } from '@/stores/hub'
 
 const props = defineProps({
   mention: { type: Object, required: true },
@@ -30,7 +31,36 @@ const jobText = computed(() => {
   return job.startsWith(jobRow.value) ? job.slice(jobRow.value.length).trim() : job
 })
 
-defineEmits(['open-thread'])
+defineEmits(['open-thread', 'retry'])
+
+/* A failure outlives the turn that recorded it: the session it left behind may
+   have been retried since. The stored mention is what happened then; the row is
+   what is true now, and the card is the glance. */
+const childRow = computed(() =>
+  props.mention.threadId
+    ? (hub.chat.summaries || []).find((row) => row.id === props.mention.threadId) || null
+    : null,
+)
+const retrying = computed(
+  () => Boolean(props.mention.threadId) && isSending(props.mention.threadId),
+)
+/** Failed in the record, answered since: the red border is no longer true. */
+const recovered = computed(
+  () =>
+    props.mention.status === 'error' &&
+    Boolean(childRow.value) &&
+    !childRow.value.failed &&
+    childRow.value.replies > 0,
+)
+/** Nothing to retry into means no button: a run that never got a session. */
+const retryable = computed(
+  () => props.mention.status === 'error' && Boolean(props.mention.threadId) && !recovered.value,
+)
+const failedNote = computed(() =>
+  props.mention.status === 'error' && !recovered.value
+    ? props.mention.note || 'This run failed.'
+    : '',
+)
 
 const label = () => props.mention.token || `@${props.mention.name || 'entity'}`
 
@@ -100,6 +130,7 @@ onMounted(async () => {
 /* A live card says where it is instead of claiming an answer it does not have. */
 function statusText() {
   const mention = props.mention
+  if (retrying.value) return 'Retrying…'
   if (mention.answer) return mention.answer
   if (mention.note) return mention.note
   if (mention.status === 'running') return 'Working…'
@@ -111,7 +142,7 @@ function statusText() {
 <template>
   <div
     class="msg-delegation"
-    :data-error="mention.status === 'error' ? '1' : '0'"
+    :data-error="mention.status === 'error' && !recovered ? '1' : '0'"
     :data-live="mention.live ? mention.status || 'queued' : null"
     :data-hold="hold ? '1' : null"
     :title="mention.job || mention.raw || ''"
@@ -138,6 +169,12 @@ function statusText() {
         >
           {{ worktree.state === 'dirty' ? `${worktree.files} changed` : worktree.state }}
         </span>
+        <span
+          v-if="recovered"
+          class="msg-delegation-retried"
+          title="This session has answered since the failure this card recorded"
+          >retried</span
+        >
         <span v-if="meta()" class="msg-delegation-meta">{{ meta() }}</span>
         <!-- The run is a session, not a dead end: continue it as a real
              conversation with that entity. -->
@@ -153,6 +190,23 @@ function statusText() {
             <path d="M5.5 3h7.5v7.5M13 3L6.5 9.5" />
           </svg>
         </button>
+        <!-- A failed run is retried where it happened: the session re-asks its own
+             question, so the card keeps the history it painted and the answer
+             lands in the session the button beside this one opens. -->
+        <button
+          v-if="retryable"
+          class="msg-delegation-retry"
+          type="button"
+          :disabled="retrying"
+          :title="retrying ? 'This session is answering again' : 'Run this session’s question again'"
+          @click="$emit('retry', mention.threadId)"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <path d="M12.8 6.4A5 5 0 1 0 13 9" />
+            <path d="M12.8 2.6v3.8H9" />
+          </svg>
+          {{ retrying ? 'Retrying…' : 'Retry' }}
+        </button>
       </div>
       <p v-if="mention.job" class="msg-delegation-job">
         <span v-if="jobRow" class="row">{{ jobRow }}</span><span
@@ -165,6 +219,7 @@ function statusText() {
       <p v-if="hold && hold.where" class="hold-where" :data-warn="hold.warn ? '1' : '0'">
         {{ hold.where }}
       </p>
+      <p v-if="!hold && failedNote" class="msg-delegation-fail">{{ failedNote }}</p>
       <p v-if="!hold" class="msg-delegation-answer">{{ statusText() }}</p>
     </div>
   </div>

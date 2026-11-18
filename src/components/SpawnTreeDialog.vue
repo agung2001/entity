@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
-import { ago, harnessById, hub, isSending } from '@/stores/hub'
+import { ago, harnessById, hub, isSending, retrySession, retrySessions } from '@/stores/hub'
 
 /**
  * The sessions one conversation started, as a tree.
@@ -57,7 +57,24 @@ function statusOf(row) {
   return { id: 'done', label: 'Done' }
 }
 
-const answered = computed(() => tree.value.filter((entry) => entry.row.replies).length)
+/** Sessions whose last row is an error, and that are not answering now. */
+const failed = computed(() => tree.value.filter((entry) => statusOf(entry.row).id === 'failed'))
+
+/* Rows with no answer that have not failed: still queued or working. A failed
+   session has no reply either, and counting it twice reads as two problems. */
+const outstanding = computed(
+  () => tree.value.filter((entry) => !entry.row.replies && statusOf(entry.row).id !== 'failed').length,
+)
+
+function retry(row) {
+  retrySession(row.id)
+}
+
+/* The tree can nest, so "all failed" is the rows it is showing, not just the
+   root's direct children — a session of a session fails the same way. */
+function retryAll() {
+  retrySessions(failed.value.map((entry) => entry.row.id))
+}
 </script>
 
 <template>
@@ -78,7 +95,8 @@ const answered = computed(() => tree.value.filter((entry) => entry.row.replies).
       <p v-if="root">
         {{ tree.length }} session{{ tree.length === 1 ? '' : 's' }} started from
         <b>#{{ root.title || 'this conversation' }}</b>
-        <template v-if="answered < tree.length"> · {{ tree.length - answered }} still unanswered</template>
+        <template v-if="failed.length"> · {{ failed.length }} failed</template>
+        <template v-if="outstanding"> · {{ outstanding }} still unanswered</template>
       </p>
       <button class="x mo-x" aria-label="Close" @click="emit('close')">
         <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
@@ -122,6 +140,22 @@ const answered = computed(() => tree.value.filter((entry) => entry.row.replies).
           <span class="spawn-tree-pill" :data-status="statusOf(entry.row).id">
             <i aria-hidden="true"></i>{{ statusOf(entry.row).label }}
           </span>
+          <!-- The session is where a failed run is retried: same question, same
+               thread, and the row above is where the answer lands. -->
+          <button
+            v-if="statusOf(entry.row).id === 'failed'"
+            class="spawn-tree-retry"
+            type="button"
+            :title="`Run ${entry.row.title || entry.row.entity} again`"
+            :aria-label="`Retry ${entry.row.title || entry.row.entity}`"
+            @click="retry(entry.row)"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M12.8 6.4A5 5 0 1 0 13 9" />
+              <path d="M12.8 2.6v3.8H9" />
+            </svg>
+            Retry
+          </button>
           <button
             class="spawn-tree-go"
             type="button"
@@ -138,6 +172,14 @@ const answered = computed(() => tree.value.filter((entry) => entry.row.replies).
     </div>
 
     <div class="mo-foot">
+      <button
+        v-if="failed.length"
+        class="btn spawn-tree-retry-all"
+        type="button"
+        @click="retryAll"
+      >
+        Retry {{ failed.length }} failed
+      </button>
       <button class="btn" type="button" @click="emit('close')">Close</button>
     </div>
   </div>

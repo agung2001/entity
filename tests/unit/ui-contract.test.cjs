@@ -453,6 +453,50 @@ test('every absolute type size is a step on the type ladder', () => {
   )
 })
 
+/* ── a failure carries its one action ─────────────────────────────────────
+   `@entity` runs settle in the transcript, and a run can fail after its turn
+   landed — a timeout, a missing binary, a provider 500. The card said "Failed"
+   and offered Continue only, so a ten-run fan-out with six timeouts meant six
+   sessions opened and six jobs retyped. The session is the thing that knows the
+   question, so every retry re-runs it there, and every surface that can show a
+   failure has to offer the fix. */
+
+test('a failed session is retried from the card, the fan-out and the tree', () => {
+  const card = fs.readFileSync(path.join(SRC, 'components', 'DelegationCard.vue'), 'utf8')
+  const list = fs.readFileSync(path.join(SRC, 'components', 'MessageList.vue'), 'utf8')
+  const tree = fs.readFileSync(path.join(SRC, 'components', 'SpawnTreeDialog.vue'), 'utf8')
+  const rail = fs.readFileSync(path.join(SRC, 'components', 'ChatHistoryRail.vue'), 'utf8')
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'hub.js'), 'utf8')
+
+  /* the card: the failure has a reason and an action, and both disappear when a
+     retry has answered — a card stays red only while it is still a failure */
+  assert.match(card, /msg-delegation-retry/, 'a failed card offers no retry')
+  assert.match(card, /\$emit\('retry', mention\.threadId\)/, 'the card retry does not name its session')
+  assert.match(card, /msg-delegation-fail/, 'a failed card does not say why it failed')
+  assert.match(card, /recovered/, 'the card cannot tell a retried session from a dead one')
+  assert.match(card, /hub\.chat\.summaries/, 'the card reads the stored failure, not the session')
+
+  /* the fan-out: one line with the count and the bulk action */
+  assert.match(list, /msg-delegations-alert/, 'a fan-out with failures says nothing about them')
+  assert.match(list, /msg-delegations-retry/, 'the fan-out cannot retry its failures')
+  assert.match(list, /emit\('retry-sessions'/, 'the fan-out retry is not wired out')
+  assert.match(list, /emit\('retry-session'/, 'the per-card retry is not wired out')
+  assert.match(list, /hub\.chat\.summaries/, 'the alert counts the stored status, not the sessions')
+
+  /* the tree: a row can be retried, and the footer takes the whole tree */
+  assert.match(tree, /spawn-tree-retry/, 'a failed row in the tree offers no retry')
+  assert.match(tree, /retrySessions\(failed\.value\.map/, 'the bulk retry is not the whole tree')
+
+  /* the rail: a fan-out that failed while you were elsewhere says so */
+  assert.match(rail, /failingKidsOf/, 'the rail does not know which sessions failed')
+  assert.match(allStyles(), /\[data-failing='1'\]/, 'the rail indicator has no style of its own')
+
+  /* the store: one retry path, guarded by the row, not awaited */
+  assert.match(store, /export function retrySession/, 'there is no single-session retry')
+  assert.match(store, /retry: true/, 'a session retry does not use the retry turn')
+  assert.match(store, /!row\?\.failed \|\| row\.working/, 'a retry can start on top of a live turn')
+})
+
 /* ── loading budget ────────────────────────────────────────────────────────
    The app is a desktop shell around local files; a screen that is never
    opened should never be downloaded. These checks keep the entry chunk from

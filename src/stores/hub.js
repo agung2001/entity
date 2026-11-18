@@ -1320,6 +1320,58 @@ export async function decideDelegation(action = 'run') {
   }
 }
 
+/* ── failed sessions ──────────────────────────────────────────────────────
+   A spawned session can fail after the turn that started it has landed: the
+   harness times out, the binary is gone, the provider 500s. The card and the
+   tree both said "Failed" and offered only Continue, so a ten-run fan-out with
+   six timeouts meant opening six sessions and retyping the job in each. The
+   turn already knows how to be retried — `chat.send` with `retry` drops the
+   error row and asks the question again — so these are the missing handle. */
+
+/**
+ * Retry one spawned session's failed turn, in its own thread.
+ *
+ * The run happens where the answer belongs — the session — so the transcript
+ * keeps the history it painted and the card stops claiming the session is dead.
+ * `text` is empty on purpose: a retry re-runs the question already in that
+ * thread. It is deliberately not awaited: a turn can take an hour, and the card
+ * has to say "Retrying…" now. The event stream carries the rest.
+ */
+export function retrySession(threadId) {
+  const id = String(threadId || '')
+  const row = (hub.chat.summaries || []).find((entry) => entry.id === id)
+  /* Only a failed row with nothing running: a retry of a live turn would open a
+     second harness on top of the first. */
+  if (!row?.failed || row.working || isSending(id)) return false
+  hub.chat.sending = { ...(hub.chat.sending || {}), [id]: true }
+  call('chat.send', { workspace: hub.workspace, id, text: '', retry: true })
+    .then(async (updated) => {
+      /* Content only: a retry started from the parent's transcript must not move
+         the reader into the session it retried. */
+      if (updated?.id) store(updated)
+      await refreshChatList()
+    })
+    .catch((error) => toast(error?.message || 'That session could not be retried.'))
+    .finally(() => {
+      if (!(hub.chat.sending || {})[id]) return
+      const sending = { ...hub.chat.sending }
+      delete sending[id]
+      hub.chat.sending = sending
+    })
+  return true
+}
+
+/** Retry a set of sessions; answers how many actually started. */
+export function retrySessions(ids = []) {
+  const started = [...new Set(ids.filter(Boolean))].filter((id) => retrySession(id)).length
+  if (!started) {
+    toast('Nothing to retry: those sessions are not failed any more.')
+    return 0
+  }
+  toast(`Retrying ${started} session${started === 1 ? '' : 's'}…`)
+  return started
+}
+
 export const threadCounts = (thread) => {
   if (!thread) return { q: 0, r: 0 }
   const messages = thread.messages || []

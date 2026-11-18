@@ -274,16 +274,39 @@ const spawnIndex = computed(() => {
   const byId = new Map(rows.map((row) => [row.id, row]))
   const parentOf = new Map()
   const kids = new Map()
+  /* Children whose last row is an error. The rail is where a person finds out
+     that a fan-out they left failed — they are not reading that transcript. */
+  const failing = new Map()
   for (const row of rows) {
     const from = row.spawnedFrom?.id
     if (!from) continue
     parentOf.set(row.id, from)
-    if (!row.archived) kids.set(from, (kids.get(from) || 0) + 1)
+    if (row.archived) continue
+    kids.set(from, (kids.get(from) || 0) + 1)
+    if (row.failed && !row.working) failing.set(from, (failing.get(from) || 0) + 1)
   }
-  return { byId, parentOf, kids }
+  return { byId, parentOf, kids, failing }
 })
 
 const kidsOf = (id) => spawnIndex.value.kids.get(id) || 0
+const failingKidsOf = (id) => spawnIndex.value.failing.get(id) || 0
+
+/* "spawned 10 chats" already fills the row's second line at the default rail
+   width; the failure count has to fit in what is left, so the tally is written
+   once: `spawned 10 · 7 failed`. */
+function kidsLabel(id) {
+  const total = kidsOf(id)
+  const failing = failingKidsOf(id)
+  if (failing) return `spawned ${total} · ${failing} failed`
+  return `spawned ${total} ${total === 1 ? 'chat' : 'chats'}`
+}
+
+function kidsTitle(id) {
+  const total = kidsOf(id)
+  const failing = failingKidsOf(id)
+  const base = `Show the ${total} session${total === 1 ? '' : 's'} this conversation started`
+  return failing ? `${base} — ${failing} failed` : base
+}
 
 /**
  * The row a session belongs to. A child is not a row, so opening one must still
@@ -787,14 +810,15 @@ defineExpose({ newThread })
                       v-if="kidsOf(thread.id)"
                       class="rchat-kids"
                       type="button"
-                      :title="`Show the ${kidsOf(thread.id)} session${kidsOf(thread.id) === 1 ? '' : 's'} this conversation started`"
+                      :data-failing="failingKidsOf(thread.id) ? '1' : '0'"
+                      :title="kidsTitle(thread.id)"
                       @click.stop="openTree(thread)"
                     >
                       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                         <path d="M3 4v4.4h10V12" />
                         <path d="M10.6 9.6L13 12l-2.4 2.4" />
                       </svg>
-                      spawned {{ kidsOf(thread.id) }} {{ kidsOf(thread.id) === 1 ? 'chat' : 'chats' }}
+                      {{ kidsLabel(thread.id) }}
                     </button>
                     <template v-else>
                       <span class="rchat-entity">{{ thread.entity }}</span>

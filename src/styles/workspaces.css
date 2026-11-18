@@ -643,6 +643,15 @@ label.pick:has(input:focus-visible) {
   height: 10px;
   flex: none;
 }
+/* The rail is where a person finds out that a fan-out they left behind failed:
+   the count turns into a warning rather than staying a neutral tally. */
+.rchat-kids[data-failing='1'] {
+  color: var(--danger);
+}
+.rchat-kids[data-failing='1'] .rchat-kids-fail {
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
 
 .modal-timeline {
   width: min(820px, 94vw);
