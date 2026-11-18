@@ -25,9 +25,10 @@
  *      `fs.rmSync` and therefore honours every protection, and only ever touches
  *      threads that are *already archived*.
  *
- * The settings live in the workspace (`<ws>/retention.json`), not in a machine
- * preference: a thread is workspace data, and a workspace opened on another
- * machine should not inherit this one's idea of when its history ends.
+ * The thresholds live in the workspace (`<ws>/retention.json`). The **schedule**
+ * is shared with the artifact shelf's rule in `workspace.json`: one workspace has
+ * one sweep schedule, and both cards read it. The executor choice does not apply
+ * here — chats never sync, so every machine sweeps its own at that schedule.
  */
 const fs = require('node:fs')
 const path = require('node:path')
@@ -189,6 +190,30 @@ function normalise(raw = {}) {
  * the first pass on a fresh install would archive every old thread at once. Until
  * a member visits the tab, the sweep leaves the workspace alone.
  */
+/** The four schedule fields one workspace has, on both cards. */
+const SHARED = ['archiveEvery', 'archiveBy', 'deleteEvery', 'deleteBy']
+
+/**
+ * The shared schedule, overlaid on a rule read from disk.
+ *
+ * The artifact rule in `workspace.json` owns it (it is the one whose executor has
+ * to know when to wake), so a change made on either card applies to both. An
+ * older workspace with only `retention.json` keeps its own value until one is
+ * written.
+ */
+function withSharedSchedule(record, settings) {
+  const shared = record.artifactRetention
+  if (!shared || typeof shared !== 'object') return settings
+  const every = (value, fallback) => (EVERY.includes(value) ? value : fallback)
+  return {
+    ...settings,
+    archiveEvery: every(shared.archiveEvery, settings.archiveEvery),
+    archiveBy: validClock(shared.archiveBy) || settings.archiveBy,
+    deleteEvery: every(shared.deleteEvery, settings.deleteEvery),
+    deleteBy: validClock(shared.deleteBy) || settings.deleteBy,
+  }
+}
+
 function read({ workspace, now = new Date() } = {}) {
   const record = workspaces.open(workspace)
   const file = settingsFile(record)
@@ -202,14 +227,14 @@ function read({ workspace, now = new Date() } = {}) {
       settings.last.createdAt = settings.last.at
       settings.last.at = ''
     }
-    return settings
+    return withSharedSchedule(record, settings)
   }
   const seeded = normalise({
     ...DEFAULTS,
     last: { createdAt: new Date(now).toISOString(), archived: 0, deleted: 0 },
   })
   writeJson(file, seeded)
-  return seeded
+  return withSharedSchedule(record, seeded)
 }
 
 /** Patch one workspace's rule. Values are validated here, not in the view. */
@@ -219,8 +244,22 @@ function save({ workspace, patch = {}, now = new Date() } = {}) {
   const next = normalise({ ...current, ...patch, last: current.last })
   if (patch.archiveAfter) next.archiveAfter = pairOf(patch.archiveAfter, current.archiveAfter)
   if (patch.deleteAfter) next.deleteAfter = pairOf(patch.deleteAfter, current.deleteAfter)
+
+  /* The schedule belongs to the workspace, not to this copy of the rule: write
+     it where the artifact card reads it, and leave that rule's clock alone so a
+     chat cadence never opts the artifact sweep in. */
+  const schedule = {}
+  for (const key of SHARED) if (key in patch) schedule[key] = next[key]
+  if (Object.keys(schedule).length) {
+    const base =
+      record.artifactRetention && typeof record.artifactRetention === 'object'
+        ? record.artifactRetention
+        : {}
+    workspaces.setArtifactRetention({ id: record.id, artifactRetention: { ...base, ...schedule } })
+  }
+
   writeJson(settingsFile(record), next)
-  return next
+  return withSharedSchedule(workspaces.open(workspace), next)
 }
 
 /* ── when a pass is due ───────────────────────────────────────────── */
@@ -455,6 +494,9 @@ function evaluate({ workspace, now = new Date() } = {}) {
   const state = {
     workspace: record.id,
     settings,
+    /* The schedule is the workspace's, on the artifact rule; a clone with no such
+       field is still scheduling this machine alone, and the card says so. */
+    sharedSchedule: Boolean(record.artifactRetention && typeof record.artifactRetention === 'object'),
     thresholds: { archiveAfterDays: arc, deleteAfterDays: del, deathDays: arc > 0 && del > 0 ? arc + del : 0 },
     meta: {
       threads: rows.length,

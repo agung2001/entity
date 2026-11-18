@@ -215,6 +215,14 @@ function readRecord(id) {
        than to any one entity. Prepended to every entity's own instructions at
        run time (electron/platform-brief.cjs), never merged into their files. */
     context: String(raw.context || ''),
+    /* The artifact sweep's rule: thresholds, cadences, the idle switch and the
+       machine that runs it. Shared configuration, so it lives in this record
+       rather than in a second file — see `electron/artifact-retention-store.cjs`
+       for what deliberately stays local. */
+    artifactRetention:
+      raw.artifactRetention && typeof raw.artifactRetention === 'object'
+        ? raw.artifactRetention
+        : null,
     owner: membersDoc.present ? membersDoc.owner : fallbackOwner,
     members: membersDoc.present ? membersDoc.members : fallbackMembers,
     membersPath: membersDoc.present ? membersFile(dir) : '',
@@ -391,6 +399,29 @@ function setContext({ id, context } = {}) {
     members: record.members,
     context,
   })
+  return withCounts(readRecord(record.id))
+}
+
+/**
+ * Write the artifact sweep's rule. It is one field on the workspace record, next
+ * to `context`, because both are scope configuration: they move with the
+ * workspace, a shared clone reads the same values, and the sync layer already
+ * knows how to merge this file (and to refuse a non-admin's write).
+ * Pass `null` to turn the rule off and leave the workspace unconfigured.
+ */
+function setArtifactRetention({ id, artifactRetention } = {}) {
+  const record = open(id)
+  const file = path.join(record.path, 'workspace.json')
+  const raw = readJson(file, {}) || {}
+  const next = { ...raw }
+  if (artifactRetention === null || artifactRetention === undefined) {
+    delete next.artifactRetention
+  } else if (typeof artifactRetention !== 'object' || Array.isArray(artifactRetention)) {
+    throw new Error('artifactRetention must be an object.')
+  } else {
+    next.artifactRetention = artifactRetention
+  }
+  writeJson(file, next)
   return withCounts(readRecord(record.id))
 }
 
@@ -1428,6 +1459,7 @@ module.exports = {
   create,
   update,
   setContext,
+  setArtifactRetention,
   claimOwner,
   samples,
   machines,

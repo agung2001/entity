@@ -203,6 +203,22 @@ async function targetSha(record, rel) {
 
 /* ── merge rules ──────────────────────────────────────────────────── */
 
+/**
+ * The artifact sweep's rule is configuration — an owner or admin sets the
+ * thresholds once and every clone reads them, which is why it travels here
+ * rather than as a file any member may write. Its `last` block is a report, not
+ * a rule: the newest one wins, so a pull after the executor swept never walks a
+ * footer backwards.
+ */
+function mergeRetention(current, incoming) {
+  if (!incoming || typeof incoming !== 'object') return current || null
+  const next = manifest.normaliseRetention(incoming)
+  if (!next) return current || null
+  const before = String(current?.last?.at || '')
+  const after = String(next.last?.at || '')
+  return { ...next, last: after >= before ? next.last : current?.last || next.last }
+}
+
 function applyMeta(record, incoming, role) {
   if (!canAdminister(role)) {
     const error = new Error('Only a workspace owner or admin can change the roster.')
@@ -222,6 +238,7 @@ function applyMeta(record, incoming, role) {
       members.unshift({ name: owner.name || owner.email, email: owner.email || '', role: 'owner' })
     }
   }
+  const artifactRetention = mergeRetention(current.artifactRetention, incoming.artifactRetention)
   const next = {
     ...current,
     schema: 1,
@@ -233,6 +250,7 @@ function applyMeta(record, incoming, role) {
     context: String(incoming.context || '').slice(0, 200_000),
     ...(owner ? { owner } : {}),
     members,
+    ...(artifactRetention ? { artifactRetention } : {}),
   }
   writeJson(path.join(record.path, 'workspace.json'), next)
   writeJson(

@@ -223,6 +223,24 @@ test('③ keeps a doomed thread that saved an artifact, and only then', () => {
   assert.deepEqual(pass.deleted.sort(), ['t_empty', 't_saved'])
 })
 
+test('one schedule drives both cards, and a chat cadence starts no artifact clock', () => {
+  const { workspace, record } = workspaceWith([{ name: 'quiet', silence: 1 }])
+  assert.equal(
+    retention.analyse({ workspace: workspace.id }).sharedSchedule,
+    false,
+    'a workspace with no artifact rule is still scheduling this machine alone',
+  )
+
+  retention.save({ workspace: workspace.id, patch: { archiveEvery: 'week', archiveBy: '04:30' } })
+
+  const shared = JSON.parse(fs.readFileSync(path.join(record.path, 'workspace.json'), 'utf8')).artifactRetention
+  assert.equal(shared.archiveEvery, 'week')
+  assert.equal(shared.archiveBy, '04:30')
+  assert.equal(shared.last?.createdAt || '', '', 'a chat cadence does not opt the artifact sweep in')
+  assert.equal(retention.read({ workspace: workspace.id }).archiveEvery, 'week')
+  assert.equal(retention.analyse({ workspace: workspace.id }).sharedSchedule, true)
+})
+
 test('a schedule is a cadence plus a deadline, and a missed one is late', () => {
   const { workspace } = workspaceWith([{ name: 'quiet', silence: 1 }])
   const now = new Date('2026-06-10T10:00:00')

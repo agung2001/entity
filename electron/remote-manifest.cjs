@@ -217,14 +217,68 @@ function normaliseOwner(owner) {
   return { name, email }
 }
 
+/**
+ * The shared shape of the artifact sweep's rule.
+ *
+ * It travels because it is workspace configuration — an owner or admin sets the
+ * thresholds once and every clone reads them. Unknown keys never leave the
+ * machine, and an unconfigured workspace sends nothing at all (`null`), so a
+ * clone cannot seed a rule its owner never set.
+ */
+function normaliseRetention(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const PAIRS = { archiveAfter: { n: 30, unit: 'days' }, deleteAfter: { n: 90, unit: 'days' } }
+  const pair = (value, fallback) => {
+    const n = Number(value?.n)
+    return {
+      n: Number.isFinite(n) ? Math.min(3650, Math.max(0, Math.round(n))) : fallback.n,
+      unit: ['days', 'weeks', 'months', 'never'].includes(value?.unit) ? value.unit : fallback.unit,
+    }
+  }
+  const every = (value, fallback) => (['day', 'week', 'month', 'manual'].includes(value) ? value : fallback)
+  const clock = (value, fallback) =>
+    /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(value || '')) ? String(value) : fallback
+  const text = (value, max = 120) => String(value || '').slice(0, max)
+  const executor = raw.executor && typeof raw.executor === 'object' ? raw.executor : {}
+  const last = raw.last && typeof raw.last === 'object' ? raw.last : {}
+  return {
+    schema: 1,
+    archiveAfter: pair(raw.archiveAfter, PAIRS.archiveAfter),
+    deleteAfter: pair(raw.deleteAfter, PAIRS.deleteAfter),
+    archiveEvery: every(raw.archiveEvery, 'day'),
+    archiveBy: clock(raw.archiveBy, '03:00'),
+    deleteEvery: every(raw.deleteEvery, 'week'),
+    deleteBy: clock(raw.deleteBy, '03:00'),
+    whenIdle: raw.whenIdle === undefined ? true : Boolean(raw.whenIdle),
+    protectReferenced: raw.protectReferenced === undefined ? true : Boolean(raw.protectReferenced),
+    executor: {
+      kind: ['owner', 'machine', 'host'].includes(executor.kind) ? executor.kind : 'owner',
+      member: text(executor.member),
+      hostname: text(executor.hostname),
+      claimedAt: text(executor.claimedAt, 40),
+    },
+    last: {
+      at: text(last.at, 40),
+      createdAt: text(last.createdAt, 40),
+      archiveAt: text(last.archiveAt, 40),
+      deleteAt: text(last.deleteAt, 40),
+      archived: Math.max(0, Number(last.archived) || 0),
+      deleted: Math.max(0, Number(last.deleted) || 0),
+      error: text(last.error, 400),
+    },
+  }
+}
+
 /** The part of workspace.json that is shared. `id` stays machine-local. */
 function canonicalMeta(record, extra = {}) {
+  const retention = normaliseRetention(record?.artifactRetention ?? extra.artifactRetention)
   return {
     label: String(record?.label || ''),
     context: String(record?.context ?? extra.context ?? ''),
     mcpStrict: (record?.mcpStrict ?? extra.mcpStrict) !== false,
     owner: normaliseOwner(record?.owner ?? extra.owner),
     members: sortMembers(record?.members ?? extra.members),
+    ...(retention ? { artifactRetention: retention } : {}),
   }
 }
 
@@ -535,6 +589,7 @@ function recordInputs(record) {
       mcpStrict: raw.mcpStrict ?? record.mcpStrict,
       owner: raw.owner ?? record.owner,
       members: Array.isArray(raw.members) ? raw.members : record.members,
+      artifactRetention: raw.artifactRetention ?? record.artifactRetention ?? null,
     },
     skills: readAttachedSkills(record.path),
     mcpRaw: readJson(path.join(record.path, 'mcp.json'), { schema: 1, servers: {} }),
@@ -578,6 +633,7 @@ module.exports = {
   manifestForRecord,
   recordInputs,
   canonicalMeta,
+  normaliseRetention,
   sanitizeMcp,
   machineBoundReason,
   machineBoundNote,

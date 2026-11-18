@@ -296,6 +296,19 @@ async function remoteWorkspaceList(serverUrl, token) {
 
 /* ── local workspace helpers ──────────────────────────────────────── */
 
+/**
+ * The server owns the sweep's rule; the newer `last` report wins from either
+ * side, because the machine that just swept is usually this one.
+ */
+function mergeLocalRetention(local, remote) {
+  if (!remote || typeof remote !== 'object') return local || null
+  const next = manifest.normaliseRetention(remote)
+  if (!next) return local || null
+  const before = String(local?.last?.at || '')
+  const after = String(next.last?.at || '')
+  return { ...next, last: before > after ? local.last : next.last }
+}
+
 function updateLocalMeta(record, meta) {
   const file = path.join(record.path, 'workspace.json')
   const raw = readJson(file, {}) || {}
@@ -309,6 +322,7 @@ function updateLocalMeta(record, meta) {
       members.unshift({ name: owner.name || owner.email, email: owner.email || '', role: 'owner' })
     }
   }
+  const retention = mergeLocalRetention(raw.artifactRetention, meta.artifactRetention)
   const next = {
     ...raw,
     schema: 1,
@@ -320,6 +334,7 @@ function updateLocalMeta(record, meta) {
     context: String(meta.context || ''),
     ...(owner ? { owner } : {}),
     members,
+    ...(retention ? { artifactRetention: retention } : {}),
   }
   writeJson(file, next)
   mergeMembers(record, next.owner, next.members)
