@@ -160,6 +160,7 @@ function publicState(record, state) {
     missingSkills: state.missingSkills || state.lastSummary?.missingSkills || [],
     mcpDiverged: state.mcpDiverged || [],
     guard: normaliseGuard(state.guard, { validate: false }),
+    guardModelChoices: state.guardModelChoices || [],
     pendingConflicts: state.pendingConflicts || [],
     auto: state.auto !== false,
     intervalMs: state.intervalMs || DEFAULT_INTERVAL_MS,
@@ -1215,6 +1216,7 @@ await mapWithConcurrency(plan.deleteRemote, TRANSFER_CONCURRENCY, async (entry) 
     lastRev: remote.rev || '',
     lastReason: reason || 'manual',
     lastError: '',
+    guardModelChoices: [],
     blocked: null,
     base: nextBase,
     lastSummary: summarise(plan, applied),
@@ -1245,7 +1247,7 @@ function normaliseGuard(value, { validate = false } = {}) {
   if (!value || typeof value !== 'object') return { ...DEFAULT_GUARD }
   const enabled = Boolean(value.enabled)
   const harness = String(value.harness || '').trim()
-  const model = String(value.model || '').trim().slice(0, 160)
+  let model = String(value.model || '').trim().slice(0, 160)
   if (enabled) {
     const meta = harnessStore.META.find((entry) => entry.id === harness)
     if (!meta) {
@@ -1260,6 +1262,19 @@ function normaliseGuard(value, { validate = false } = {}) {
         throw new Error(
           `The sync evaluator is set to ${meta.label}, but its CLI is not installed on this machine.`,
         )
+      }
+      /* An ambiguous name only fails later, inside the evaluator, where the
+         remedy is buried in CLI stderr. Refuse it here instead. */
+      if (harness === 'pi' && model) {
+        const resolved = harnessStore.resolvePiModel(model)
+        if (resolved.status === 'ambiguous') {
+          const error = new Error(
+            `The evaluator model "${model}" matches more than one provider: ${resolved.providers.join(', ')}. Save it as provider/model, e.g. ${resolved.providers[0]}/${model}.`,
+          )
+          error.choices = resolved.providers.map((name) => `${name}/${model}`)
+          throw error
+        }
+        if (resolved.status === 'resolved') model = resolved.model
       }
     }
   }
@@ -1420,7 +1435,7 @@ async function sync({ id, reason = 'manual' } = {}, { emit = () => {} } = {}) {
       const current = readState(record) || state
       writeState(record, { ...current, ...patch })
     }
-    mark({ status: 'syncing', lastReason: reason, lastError: '' })
+    mark({ status: 'syncing', lastReason: reason, lastError: '', guardModelChoices: [] })
     emit({ kind: 'remote-sync', workspace: record.id, status: 'syncing', reason })
     try {
       const result = await performSync(record, readState(record) || state, reason, {
@@ -1451,6 +1466,7 @@ async function sync({ id, reason = 'manual' } = {}, { emit = () => {} } = {}) {
       mark({
         status: unauthorized ? 'unauthorized' : 'error',
         lastError: String(error?.message || error),
+        guardModelChoices: Array.isArray(error?.choices) ? error.choices : [],
       })
       emit({
         kind: 'remote-sync',
@@ -1477,7 +1493,13 @@ function setGuard({ id, guard: value } = {}) {
   const state = readState(record)
   if (!state) throw new Error('This workspace is not connected to a remote server.')
   const next = normaliseGuard(value, { validate: true })
-  writeState(record, { ...state, guard: next, lastError: '', status: state.status === 'error' ? 'idle' : state.status })
+  writeState(record, {
+    ...state,
+    guard: next,
+    lastError: '',
+    guardModelChoices: [],
+    status: state.status === 'error' ? 'idle' : state.status,
+  })
   return publicState(record, readState(record))
 }
 

@@ -189,7 +189,101 @@ function configuredModel(id) {
   return ''
 }
 
+function configuredProvider(id) {
+  if (id !== 'pi') return ''
+  const settings = readJson(path.join(HOME, '.pi', 'agent', 'settings.json'))
+  return stringAt(settings, ['defaultProvider']) || stringAt(settings, ['provider']) || ''
+}
+
+/**
+ * pi resolves a model against every provider it has authenticated, so a bare
+ * `defaultModel` without its `defaultProvider` can be ambiguous and refuse to
+ * start. This turns a name into the single string pi can act on, without
+ * inventing a provider for a name the local listing does not know.
+ */
+function resolvePiModel(model, { binaryPath = '', provider = '', models: list = null } = {}) {
+  const text = String(model || '').trim()
+  if (!text) return { model: '', providers: [], status: 'empty' }
+
+  const byProvider = new Map()
+  for (const row of list === null ? cliModels('pi', binaryPath || resolvedPath('pi')) : list || []) {
+    const value = String(row || '')
+    const cut = value.indexOf('/')
+    if (cut <= 0) continue
+    const name = value.slice(0, cut)
+    if (!byProvider.has(name)) byProvider.set(name, new Set())
+    byProvider.get(name).add(value.slice(cut + 1))
+  }
+
+  const cut = text.indexOf('/')
+  const head = cut < 0 ? text : text.slice(0, cut)
+  if (byProvider.has(head)) return { model: text, providers: [head], status: 'qualified' }
+
+  const candidates = [...byProvider].filter(([, ids]) => ids.has(text)).map(([name]) => name).sort()
+  if (provider && candidates.includes(provider)) {
+    return { model: `${provider}/${text}`, providers: candidates, status: 'resolved' }
+  }
+  if (candidates.length === 1) {
+    return { model: `${candidates[0]}/${text}`, providers: candidates, status: 'resolved' }
+  }
+  if (candidates.length > 1) {
+    /* A listing-only answer hides providers pi would accept, so let pi name
+       them. Never used to choose a value — the input comes back unchanged. */
+    const reported = list === null ? resolverPiChoices(text, binaryPath || resolvedPath('pi')) : []
+    const providers = reported.length ? [...new Set(reported.map(providerId))].sort() : candidates
+    return { model: text, providers, status: 'ambiguous' }
+  }
+  /* A configured provider only adopts a bare id. Something already shaped as
+     `provider/model` is left alone even when the listing omits that provider. */
+  if (provider && cut < 0) return { model: `${provider}/${text}`, providers: [], status: 'resolved' }
+  return { model: text, providers: [], status: 'unknown' }
+}
+
+/** The `provider/model` names pi lists in its ambiguity error, if it is one. */
+function piModelChoices(text) {
+  /* Model ids contain dots (`deepseek-v4.1-flash`), so this stops at the
+     sentence end, not the first dot. */
+  const match = String(text || '').match(/is ambiguous across providers:\s*(.+?)\.(?:\s|$)/s)
+  if (!match) return []
+  return match[1]
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+}
+
+function providerId(qualified) {
+  const value = String(qualified || '')
+  const cut = value.indexOf('/')
+  return cut > 0 ? value.slice(0, cut) : value
+}
+
+/**
+ * pi's resolver knows providers `--list-models` omits, so the list it prints is
+ * the one a chooser has to offer. Asked only when the listing already says
+ * ambiguous: every listed provider is authenticated, so pi stops in its
+ * resolver and no turn runs.
+ */
+function resolverPiChoices(model, binaryPath) {
+  if (!binaryPath) return []
+  const plan = planSpawn(binaryPath, ['--no-session', '--model', String(model || ''), '-p', ''])
+  const result = spawnSync(plan.command, plan.args, {
+    encoding: 'utf8',
+    timeout: 8000,
+    maxBuffer: 1024 * 1024,
+    env: process.env,
+    ...plan.options,
+  })
+  if (result.error) return []
+  return piModelChoices(`${result.stderr || ''}\n${result.stdout || ''}`)
+}
+
+/** The spawn path's version: uses the cached listing, so it never spawns pi. */
+function qualifyPiModel(model) {
+  return resolvePiModel(model, { models: models({ id: 'pi' }).models }).model
+}
+
 function runModels(binaryPath, args) {
+  if (!binaryPath) return ''
   /* A Windows harness is a `.cmd` shim; `exec-plan` names the program it runs
      so the model list is not empty just because the CLI is not an `.exe`. */
   const plan = planSpawn(binaryPath, args)
@@ -237,15 +331,22 @@ function models({ id, force = false } = {}) {
 
   const found = resolvedPath(meta.id)
   const detected = []
+  let fromCli = []
   let source = 'none'
   if (found && executable(found)) {
-    const fromCli = cliModels(meta.id, found)
+    fromCli = cliModels(meta.id, found)
     if (fromCli.length) {
       detected.push(...fromCli)
       source = 'cli'
     }
   }
-  const configured = configuredModel(meta.id)
+  const raw = configuredModel(meta.id)
+  /* pi's `defaultModel` is provider-relative; prefixing it with the configured
+     `defaultProvider` is what keeps the prefill out of pi's ambiguity error. */
+  const configured =
+    meta.id === 'pi' && raw
+      ? resolvePiModel(raw, { models: fromCli, provider: configuredProvider('pi') }).model
+      : raw
   if (configured) {
     detected.unshift(configured)
     if (source !== 'cli') source = 'config'
@@ -299,6 +400,11 @@ module.exports = {
   resolvedPath,
   setPath,
   models,
+  cliModels,
+  configuredProvider,
+  resolvePiModel,
+  qualifyPiModel,
+  piModelChoices,
   snapshot,
   which,
 }

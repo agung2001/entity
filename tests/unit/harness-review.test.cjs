@@ -64,3 +64,17 @@ test('the prompt keeps paths and skips binary files', () => {
   assert.match(text, /hello/)
   assert.equal(text.includes('artifacts/logo.png'), false)
 })
+
+test('a provider ambiguity names the choices pi would accept', () => {
+  const stderr =
+    'Error: Model "deepseek/deepseek-v4.1-flash" is ambiguous across providers: commandcode/deepseek/deepseek-v4.1-flash, openrouter/deepseek/deepseek-v4.1-flash, vercel-ai-gateway/deepseek/deepseek-v4.1-flash. More than one matching provider is authenticated. Use --provider or provider/model.'
+  assert.deepEqual(review.guardModelChoices(stderr), [
+    'commandcode/deepseek/deepseek-v4.1-flash',
+    'openrouter/deepseek/deepseek-v4.1-flash',
+    'vercel-ai-gateway/deepseek/deepseek-v4.1-flash',
+  ])
+})
+
+test('an ordinary failure line offers no choices', () => {
+  assert.deepEqual(review.guardModelChoices('Error: spawn pi ENOENT'), [])
+})
