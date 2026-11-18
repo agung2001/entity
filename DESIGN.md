@@ -241,6 +241,17 @@ system.
   thresholds and stands down — its tick and its "Archive due now" refuse. A per-machine
   schedule on a shared shelf is not a schedule, it is N machines deleting one file from
   each other's list.
+- **A schedule belongs to the workspace, not to a card.** The Chats card and the Artifacts
+  card read the same cadence and deadline (the artifact rule in `workspace.json` owns them;
+  a chat-cadence edit writes there). The populations still differ: chats never sync, so
+  every machine sweeps its own at that schedule, while the artifact sweep runs only on the
+  machine that was picked.
+- **The picker lives on the machine's own card.** Workspace → Machines shows one card per
+  machine it can run on — this machine and the sync host — and the card carries the
+  "run the sweep here" action; the top of the page carries a warning only while nothing has
+  claimed the sweep. An ssh host is a run target, not a daemon: a sweep only runs where the
+  workspace is, so ssh cards have no such action, and the machine inventory has a search
+  field like every other list.
 - **The rule travels; the facts do not.** Thresholds, cadences and the executor sync.
   The archive folder, the archive date per file, the opened map and the moment this
   machine took the sweep over stay local. A machine that takes an existing sweep over

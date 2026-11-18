@@ -307,14 +307,21 @@ function read({ workspace, now = new Date(), seed = false } = {}) {
     ? record.artifactRetention
     : null
   let settings = normalise(shared || {})
-  let configured = Boolean(shared)
+  /* A field with no `createdAt` is only a shared schedule written by the Chats
+     card — the schedule is common, but the artifact sweep is still opted out. */
+  let configured = Boolean(shared?.last?.createdAt)
 
   /* `seed` is the tab's own read: it is what opts a local workspace in. The tick
      reads without seeding, so a workspace nobody has looked at stays untouched. */
   if (seed && !configured && record.kind !== 'remote') {
     settings = normalise({
-      ...DEFAULTS,
-      last: { createdAt: new Date(now).toISOString(), archived: 0, deleted: 0 },
+      ...(shared || DEFAULTS),
+      last: {
+        ...(shared?.last || {}),
+        createdAt: shared?.last?.createdAt || new Date(now).toISOString(),
+        archived: 0,
+        deleted: 0,
+      },
     })
     workspaces.setArtifactRetention({ id: record.id, artifactRetention: shareOf({ ...settings, configured: true }) })
     configured = true

@@ -28,43 +28,29 @@ onMounted(() => {
 })
 
 const busy = ref('')
+const query = ref('')
 const sweep = computed(() => artifactRetention.state)
 const sweepExecutor = computed(() => sweep.value?.executor || null)
 const sweepSaving = computed(() => artifactRetention.saving)
 /* The rule is workspace configuration: an owner or admin changes it, and the
    change reaches every clone on the next sync. A member reads it. */
 const canPickSweep = computed(() => ['owner', 'admin'].includes(String(hub.session?.role || 'owner')))
-const sweepOptions = computed(() => {
-  const options = [
-    {
-      id: 'owner',
-      label: "The owner's machine",
-      desc: 'The first machine the workspace owner opens Entity on takes the sweep; the rest stand down.',
-      tag: sweepExecutor.value?.kind === 'owner' ? sweepExecutor.value.where || 'waiting' : '',
-    },
-    {
-      id: 'machine',
-      label: 'This machine',
-      desc: `Runs the pass whenever Entity is open on ${fleet.hostname || 'this machine'}.`,
-      tag: sweepExecutor.value?.kind === 'machine' ? sweepExecutor.value.where || '' : '',
-    },
-  ]
-  /* The sync host is the only executor that never waits for a person, which is
-     what a shared workspace without an always-on desktop needs. It is offered
-     wherever this picker renders: a clone has one, and the server *is* one. */
-  options.push({
-    id: 'host',
-    label: 'The sync host',
-    desc: 'The shared copy runs the pass itself, on its own clock — no desktop has to be open.',
-    tag: sweepExecutor.value?.kind === 'host' ? 'always on' : '',
-  })
-  return options
-})
+const sweepHere = computed(() => Boolean(sweepExecutor.value?.isThis))
+const sweepPlace = computed(
+  () => sweepExecutor.value?.where || sweepExecutor.value?.label || 'no machine yet',
+)
 
 async function setSweep(kind) {
   if (!canPickSweep.value || sweepSaving.value) return
   const next = await setArtifactRetention({ executor: { kind } }, { label: kind })
-  if (next) toast(kind === 'host' ? 'The sync host runs the sweep' : kind === 'machine' ? 'This machine runs the sweep' : "The owner's machine runs the sweep")
+  if (!next) return
+  toast(
+    kind === 'host'
+      ? 'The sync host runs the sweep'
+      : kind === 'machine'
+        ? 'This machine runs the sweep'
+        : "The owner's machine runs the sweep",
+  )
 }
 
 const localHost = computed(() => ({
@@ -76,15 +62,44 @@ const localHost = computed(() => ({
   thisMachine: true,
 }))
 
+/* The shared copy of this workspace is a machine too: it is the only one that can
+   sweep without a desktop open, so it gets a card like any other. It has no ssh
+   host and nothing to scan — the actions that belong to a host are hidden. */
+const sweepHost = computed(() => ({
+  alias: 'host',
+  id: 'host',
+  label: 'the sync host',
+  spec: 'the shared copy of this workspace',
+  source: 'sync',
+  syncHost: true,
+}))
+
 const hosts = computed(() => {
   const seen = new Set()
-  return [localHost.value, ...fleet.hosts].filter((host) => {
+  const list = [localHost.value, ...fleet.hosts].filter((host) => {
     const key = host.alias || host.id
     if (!key || seen.has(key)) return false
     seen.add(key)
     return true
   })
+  if (sweepExecutor.value && sweepExecutor.value.kind !== 'local') list.push(sweepHost.value)
+  return list
 })
+
+const filteredHosts = computed(() => {
+  const q = String(query.value || '').trim().toLowerCase()
+  if (!q) return hosts.value
+  return hosts.value.filter((host) =>
+    [host.alias, host.id, host.label, host.spec, host.source].some((value) =>
+      String(value || '').toLowerCase().includes(q),
+    ),
+  )
+})
+
+/** The card that is allowed to run the pass: this machine, or the sync host. */
+const sweepPickable = (machine) => Boolean(machine.thisMachine || machine.syncHost)
+const isSweeper = (machine) =>
+  machine.syncHost ? sweepExecutor.value?.kind === 'host' : sweepHere.value
 
 const scannedCount = computed(
   () => hosts.value.filter((host) => Boolean(machineFactsFor(host.alias))).length,
@@ -96,8 +111,11 @@ const stateOf = (alias) => {
   if (state === 'ok' || state === 'fail' || state === 'testing') return state
   return machineFactsFor(alias) ? 'ok' : 'idle'
 }
+const cardState = (machine) =>
+  machine.syncHost ? (isSweeper(machine) ? 'ok' : 'idle') : stateOf(machine.alias)
 const stateLabel = (machine) => {
-  const state = stateOf(machine.alias)
+  const state = cardState(machine)
+  if (machine.syncHost) return isSweeper(machine) ? 'sweeping' : 'available'
   if (machine.thisMachine) return state === 'ok' ? 'scanned' : 'online'
   if (state === 'ok') return machineFactsFor(machine.alias) ? 'scanned' : 'reachable'
   if (state === 'fail') return 'unreachable'
@@ -154,8 +172,9 @@ async function forget(alias) {
         <h1>Machines</h1>
         <p class="lede">
           Every host in <code class="mono">{{ fleet.displayPath }}</code>, plus this
-          machine. Testing a host stores its harness and model inventory in this
-          workspace. No private key or ssh config is copied.
+          machine — and the workspace's sync host while it is shared. Testing a host
+          stores its harness and model inventory in this workspace. No private key or ssh
+          config is copied.
         </p>
       </div>
       <div class="head-actions">
@@ -170,56 +189,34 @@ async function forget(alias) {
       <span class="lib-meta">
         <b>local</b> is always available. A scan is read-only on the host.
       </span>
-      <span class="mnote">Snapshots stay on this machine; they are not synced.</span>
+      <label class="wsl-search">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" />
+          <path d="M10.4 10.4L14 14" />
+        </svg>
+        <input
+          v-model="query"
+          type="search"
+          placeholder="Search machines"
+          aria-label="Search machines"
+          autocomplete="off"
+        />
+        <span v-if="query" class="cnt">{{ filteredHosts.length }} of {{ hosts.length }}</span>
+      </label>
     </div>
 
-    <p v-if="sweepExecutor?.kind === 'local'" class="mnote" style="margin: 0 0 14px">
-      <b>Artifact sweep</b> — this workspace lives only on this machine, so this machine
-      runs the sweep, on its own clock. A shared workspace is the only case where the
-      machine can be chosen.
-    </p>
-
-    <fieldset
-      v-else-if="sweepExecutor"
-      class="bkp-fieldset"
-      :disabled="!canPickSweep || sweepSaving"
+    <div
+      v-if="sweepExecutor && sweepExecutor.kind !== 'local' && !sweepExecutor.claimed"
+      class="role-line"
+      role="status"
+      style="margin-bottom: 12px"
     >
-      <legend>Artifact sweep</legend>
-      <div class="bkp-modes" role="radiogroup" aria-label="Which machine runs the artifact sweep">
-        <label
-          v-for="option in sweepOptions"
-          :key="option.id"
-          class="bkp-mode"
-          :data-on="sweepExecutor.kind === option.id ? '1' : '0'"
-        >
-          <input
-            class="bkp-radio"
-            type="radio"
-            name="sweep-executor"
-            :value="option.id"
-            :checked="sweepExecutor.kind === option.id"
-            @change="setSweep(option.id)"
-          />
-          <span class="bkp-dot" aria-hidden="true"></span>
-          <span class="bkp-mode-copy">
-            <b>{{ option.label }}</b>
-            <span>{{ option.desc }}</span>
-          </span>
-          <span class="bkp-mode-tag">{{ option.tag }}</span>
-        </label>
-      </div>
-    </fieldset>
-
-    <p v-if="sweepExecutor && sweepExecutor.kind !== 'local'" class="mnote" style="margin: 8px 0 14px">
-      One machine runs the archive and delete passes; every other clone shows the same
-      thresholds and stands down. The rule is shared with the team — the archive dates are
-      not.
-      <template v-if="!canPickSweep">Only a workspace owner or admin can change this.</template>
-      <template v-else-if="sweepExecutor.kind === 'owner' && !sweepExecutor.claimed">
-        No owner machine has claimed the sweep yet.
-      </template>
-      <template v-else>Runs on {{ sweepExecutor.where || sweepExecutor.label }}.</template>
-    </p>
+      <span class="role-badge">sweep</span>
+      <span>
+        No machine runs the artifact sweep yet. The first machine the workspace owner opens
+        Entity on takes it — or pick a machine below.
+      </span>
+    </div>
 
     <div v-if="fleet.loading && !fleet.loaded" class="empty-note">
       <b>Reading {{ fleet.displayPath }}…</b>
@@ -230,12 +227,17 @@ async function forget(alias) {
       <button class="btn btn-sm" type="button" @click="loadFleet()">Try again</button>
     </div>
 
+    <p v-if="query && !filteredHosts.length" class="empty-note">
+      <b>No machine matches “{{ query }}”.</b>
+      <button class="btn btn-sm" type="button" @click="query = ''">Clear the search</button>
+    </p>
+
     <div class="mgrid">
       <article
-        v-for="machine in hosts"
+        v-for="machine in filteredHosts"
         :key="machine.alias"
         class="mcard"
-        :data-probe="stateOf(machine.alias)"
+        :data-probe="cardState(machine)"
       >
         <div class="top">
           <div>
@@ -243,11 +245,13 @@ async function forget(alias) {
               <MachineIcon />
               {{ machine.label }}
               <span v-if="machine.thisMachine" class="tag">this machine</span>
+              <span v-else-if="machine.syncHost" class="tag">sync host</span>
               <span v-else class="tag">ssh</span>
+              <span v-if="isSweeper(machine)" class="tag">sweep</span>
             </h3>
             <p class="spec">{{ machine.spec || machine.alias }}</p>
           </div>
-          <span class="state" :data-s="stateOf(machine.alias)">
+          <span class="state" :data-s="cardState(machine)">
             <i></i>{{ stateLabel(machine) }}
           </span>
         </div>
@@ -258,6 +262,7 @@ async function forget(alias) {
           <span v-if="factFor(machine.alias)">
             {{ harnessCount(machine.alias) }} harnesses · {{ modelCount(machine.alias) }} models
           </span>
+          <span v-else-if="machine.syncHost" class="mono">always on</span>
           <span v-else class="mono">not scanned</span>
         </div>
 
@@ -274,13 +279,38 @@ async function forget(alias) {
         </p>
 
         <div class="mcard-actions">
+          <button
+            v-if="sweepPickable(machine)"
+            class="btn btn-sm"
+            type="button"
+            :aria-pressed="isSweeper(machine) ? 'true' : 'false'"
+            :disabled="!canPickSweep || sweepSaving || isSweeper(machine)"
+            :title="
+              !canPickSweep
+                ? 'Only a workspace owner or admin changes which machine sweeps'
+                : isSweeper(machine)
+                  ? 'This machine runs the artifact sweep'
+                  : 'Run the artifact archive and delete passes on this machine'
+            "
+            @click="setSweep(machine.syncHost ? 'host' : 'machine')"
+          >
+            {{
+              sweepSaving
+                ? 'Saving…'
+                : isSweeper(machine)
+                  ? 'Sweeping here'
+                  : 'Run the sweep here'
+            }}
+          </button>
           <router-link
+            v-if="!machine.syncHost"
             class="btn btn-sm"
             :to="{ name: 'machine', params: { workspace: hub.workspace, id: machine.alias } }"
           >
             Open
           </router-link>
           <button
+            v-if="!machine.syncHost"
             class="btn btn-sm"
             type="button"
             :disabled="Boolean(busy)"
@@ -289,7 +319,7 @@ async function forget(alias) {
             {{ busy === `scan:${machine.alias}` ? 'Scanning…' : 'Test & scan' }}
           </button>
           <button
-            v-if="factFor(machine.alias)"
+            v-if="!machine.syncHost && factFor(machine.alias)"
             class="btn btn-sm"
             type="button"
             :disabled="Boolean(busy)"
@@ -304,6 +334,23 @@ async function forget(alias) {
     <p v-if="!fleet.hosts.length" class="mnote" style="margin-top: 14px">
       No Host blocks in {{ fleet.displayPath }} yet. Local still works; add a host
       there and reload to test a remote machine.
+    </p>
+
+    <p v-if="sweepExecutor && sweepExecutor.kind !== 'local'" class="mnote" style="margin-top: 14px">
+      <template v-if="sweepExecutor.claimed">
+        The artifact sweep runs on <b>{{ sweepPlace }}</b>.
+      </template>
+      The thresholds and the schedule are shared with the team; the archive dates are not.
+      An ssh host is a run target, not a daemon — a sweep only runs where the workspace is.
+      <button
+        v-if="canPickSweep && sweepExecutor.kind !== 'owner'"
+        class="btn btn-sm"
+        type="button"
+        :disabled="sweepSaving"
+        @click="setSweep('owner')"
+      >
+        Use the owner's machine
+      </button>
     </p>
   </div>
 </template>

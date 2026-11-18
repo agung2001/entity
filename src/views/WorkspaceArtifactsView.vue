@@ -242,7 +242,9 @@ watch(
   () => loadArtifactRetention({ force: true }),
 )
 
-onMounted(() => loadArtifactRetention())
+/* Forced: the schedule is shared with the Chats card, and that card may be the
+   one that changed it since this view last loaded. */
+onMounted(() => loadArtifactRetention({ force: true }))
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
 })

@@ -222,7 +222,9 @@ watch(
   () => loadRetention({ force: true }),
 )
 
-onMounted(() => loadRetention())
+/* Forced: a cadence changed on the Artifacts card is the same schedule, and the
+   cache in this store would still hold the previous one. */
+onMounted(() => loadRetention({ force: true }))
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
 })
@@ -462,7 +464,11 @@ onBeforeUnmount(() => {
 
       <div class="acct-sep">
         When it runs
-        <small>On this machine's clock, and within a minute of the next launch</small>
+        <small>
+          The same schedule as Artifacts — one workspace has one sweep schedule, set on
+          either card. On this machine's clock: chats never sync, so every machine sweeps
+          its own.
+        </small>
       </div>
 
       <div class="rule-rows sched">
