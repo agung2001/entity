@@ -58,6 +58,9 @@ const rpc = createRpc({
   emit,
   reveal: () => {},
   identity: () => als.getStore()?.user || null,
+  /* This process holds the shared copy of every workspace, so it can be the
+     machine that runs the artifact sweep. */
+  host: true,
 })
 
 /* ── shared helpers ───────────────────────────────────────────────── */

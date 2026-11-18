@@ -113,6 +113,10 @@ function createRpc({
      in the desktop app and on the dev server, and it is a remote-code-execution
      hole in the shared server, so it is opt-in and off unless asked for. */
   terminal = false,
+  /* True when this process *is* the sync host (`server/index.cjs`). The shelf's
+     sweep can be assigned to that host, and it is the only executor that never
+     waits for a person, so it is the only one whose idle switch means nothing. */
+  host = false,
 } = {}) {
   const runner = createRunner({ emit })
   /* A six-hour poll plus a debounce after the watcher reports a local edit.
@@ -125,20 +129,23 @@ function createRpc({
      deadline missed while the app was shut, then a poll. A workspace with no
      `retention.json` is never touched. */
   retention.start({ log: (line) => console.log(`[entity] ${line}`) })
-  /* The artifact shelf is the same rule again, applied to files. Its two
-     providers are wired here because neither belongs to the store: `referenced`
-     reads the live transcripts, and `trash` is a promise only the desktop build
-     can keep. `busy` is the quiet signal a desktop can actually see. */
-  artifactRetention.configure({
-    referenced: referencedArtifacts,
-    trash: systemTrash(),
-    busy: () => chats.activeCount() + runner.activeCount(),
-  })
-  artifactRetention.start({ log: (line) => console.log(`[entity] ${line}`) })
   /* The desktop app has one account in `~/.entity/auth.json`. The server build
      passes the signed-in server user instead, so the same call table writes the
      right owner without a second implementation. */
   const currentUser = () => (typeof identity === 'function' ? identity() : auth.get())
+  /* The artifact shelf is the same rule again, applied to files. Its providers
+     are wired here because none of them belongs to the store: `referenced` reads
+     the live transcripts, `trash` is a promise only the desktop build can keep,
+     `busy` is the quiet signal a desktop can actually see, and `identity` is the
+     account the owner's machine claim is matched against. */
+  artifactRetention.configure({
+    referenced: referencedArtifacts,
+    trash: systemTrash(),
+    busy: () => chats.activeCount() + runner.activeCount(),
+    identity: () => currentUser(),
+    host,
+  })
+  artifactRetention.start({ log: (line) => console.log(`[entity] ${line}`) })
   /* One shell per panel, owned by this process. Absent in the server build. */
   const terminals = terminal ? createTerminal({ emit }) : null
   const shellOnly = () => {

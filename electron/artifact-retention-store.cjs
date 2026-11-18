@@ -4,34 +4,51 @@
  *
  * This is ENTITY-20's chat rule (`electron/retention-store.cjs`) applied to a
  * different population: keep the shape, change only the words that must differ.
- * Two thresholds drawn on one histogram, a cadence plus a deadline per pass, a
- * list of protections, and a forecast of what the next pass actually costs.
+ * Two thresholds on one histogram, a cadence plus a deadline per pass, a list of
+ * protections, and a forecast of what the next pass actually costs.
  *
- * Three rules are load-bearing, and they are the chat store's three:
+ * The one thing that is not the chat rule: **a shelf can be shared.** A file is
+ * a workspace artifact, and a shared workspace exists on a sync host and on every
+ * teammate's clone, so the rule has to say *which machine sweeps* or N machines
+ * would delete the same file from each other's shelf.
+ *
+ *   - **The rule is workspace configuration.** Thresholds, cadences, the idle
+ *     switch and the executor live in `workspace.json` beside the label and the
+ *     roster, so an owner or admin sets it once (`applyMeta` on the server is the
+ *     gate) and every clone reads the same numbers.
+ *   - **The facts are this machine's.** Which files are in *this* archive, the
+ *     date each of them went in, when this machine last opened a file, and the
+ *     moment it took the sweep over are all local. A clone never inherits
+ *     another machine's `.archive/`.
+ *   - **Exactly one machine executes.** `executor.kind` is `owner` (the first
+ *     owner-signed-in machine claims it), `machine` (the machine that was picked)
+ *     or `host` (the sync host, which is always on). Every other clone shows the
+ *     rule and stands down: its tick, and its "Archive due now", refuse.
+ *
+ * Three rules remain load-bearing, exactly as in the chat store:
  *
  *   1. **The two thresholds are different clocks.** ① counts days since a file
- *      was last opened. ② counts days *in the archive* — so a file archived at
- *      30 days dies at `archiveAfter + deleteAfter` days of age, and moving ①
- *      moves both lines. Copy that says "delete after 90 days" while the line
- *      sits at 120 is the most likely bug in this feature.
- *   2. **The schedule is a cadence and a deadline, not an hour.** The app is
+ *      was last opened. ② counts days *in the archive* — so the delete line sits
+ *      at `archiveAfter + deleteAfter` days of age, and moving ① moves both lines.
+ *   2. **The schedule is a cadence and a deadline, not an hour.** The desktop is
  *      open all day and shut at night, so `every day by 03:00` means "at most a
  *      day behind, and not before 03:00"; the boot tick catches a deadline that
- *      passed while the machine was closed.
- *   3. **Nothing irreversible happens without a threshold in front of it.** The
- *      archive is a move into `artifacts/.archive/`, which is reversible with a
- *      file manager; the delete goes through the OS Trash when this build has
- *      one, and only ever touches files that are already archived.
- *
- * The settings live in the workspace (`<ws>/artifact-retention.json`), not in a
- * machine preference: a shelf is workspace data, and a workspace opened on
- * another machine should not inherit this one's idea of when its files end.
+ *      passed while the machine was closed. On the sync host the idle switch has
+ *      nothing to wait for, so it does not apply.
+ *   3. **Nothing irreversible happens without a threshold in front of it** — and
+ *      a machine that has only just been given the sweep does not inherit the
+ *      shelf's age either. A file nobody has opened counts from the later of its
+ *      modification time and the moment this machine took over, so a takeover can
+ *      never archive a shelf that was healthy elsewhere.
  */
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const workspaces = require('./workspace-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 
+/* The rule is in `workspace.json`; this file is only what cannot travel: the
+   moment this machine took the sweep over. */
 const FILE = 'artifact-retention.json'
 const SCHEMA = 1
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -56,6 +73,7 @@ const EVERY_INFO = [
 const EVERY_DAYS = { day: 1, week: 7, month: 30 }
 const UNIT_DAYS = { days: 1, weeks: 7, months: 30 }
 const UNITS = ['days', 'weeks', 'months', 'never']
+const KINDS = ['owner', 'machine', 'host']
 
 /* The chart's 14 bands, oldest last. A band is cut on its lower edge, so a file
    belongs to exactly one column; the last band is open-ended on purpose, so a
@@ -87,6 +105,7 @@ const DEFAULTS = {
   deleteBy: '03:00',
   whenIdle: true,
   protectReferenced: true,
+  executor: { kind: 'owner', member: '', hostname: '', claimedAt: '' },
   last: { at: '', createdAt: '', archiveAt: '', deleteAt: '', archived: 0, deleted: 0, error: '' },
 }
 
@@ -106,6 +125,8 @@ const clampDays = (value, fallback) => {
 const validClock = (value) =>
   /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(value || '')) ? String(value) : ''
 
+const text = (value, max = 120) => String(value || '').slice(0, max)
+
 /** Whole days since `thenMs`, floored, never negative. `0` for a file with no clock. */
 const daysBetween = (thenMs, nowMs) => {
   if (!thenMs) return 0
@@ -114,7 +135,11 @@ const daysBetween = (thenMs, nowMs) => {
 
 const sum = (rows, key) => rows.reduce((total, row) => total + (row[key] || 0), 0)
 
-function settingsFile(record) {
+function localHost() {
+  return String(os.hostname() || 'local').replace(/\.local$/i, '')
+}
+
+function runtimeFile(record) {
   return path.join(record.path, FILE)
 }
 
@@ -148,22 +173,62 @@ function readStamps(record) {
   return raw && typeof raw === 'object' ? raw : {}
 }
 
+/** An untouched workspace writes nothing until it is read or swept. */
+function readRuntime(record) {
+  const raw = readJson(runtimeFile(record), {})
+  return {
+    executorSince: timeOf(raw?.executorSince) ? String(raw.executorSince) : '',
+  }
+}
+
+function writeRuntime(record, runtime) {
+  return writeJson(runtimeFile(record), { schema: SCHEMA, ...runtime })
+}
+
 /* ── what this store cannot know by itself ────────────────────────── */
 
 /**
- * Two things are wired by the call table, not imported here: `referenced` reads
- * the live transcripts (the chat store's data — this store must not depend on
- * it) and `trash` is the OS Trash (Electron only). `busy` is the quiet signal a
- * desktop can actually see. `analyse()` reports which ones are present, so the
- * card can say what is in force instead of promising a protection it lacks.
+ * Defaults wired by the call table, not imported here, because each one is
+ * somebody else's data: `referenced` reads the live transcripts, `trash` is the
+ * OS Trash (Electron only), `busy` is the quiet signal a desktop can see, and
+ * `identity` is the signed-in account the owner claim is matched against.
+ * `host` says this process *is* the sync host, which is the only executor that
+ * never waits for a person.
  */
-const providers = { referenced: null, trash: null, busy: null }
+const providers = {
+  referenced: null,
+  trash: null,
+  busy: null,
+  identity: null,
+  host: false,
+}
 
 function configure(next = {}) {
   for (const key of Object.keys(providers)) {
     if (next[key] !== undefined) providers[key] = next[key]
   }
   return providers
+}
+
+function identityOf() {
+  try {
+    return typeof providers.identity === 'function' ? providers.identity() : null
+  } catch {
+    return null
+  }
+}
+
+/** The signed-in account is the workspace's owner (by email, then by username). */
+function isWorkspaceOwner(record) {
+  const owner = record.owner
+  if (!owner || (!owner.email && !owner.name)) return true
+  const me = identityOf()
+  if (!me) return false
+  const mail = String(me.email || '').toLowerCase()
+  const name = String(me.username || me.name || '').toLowerCase()
+  if (owner.email && mail) return String(owner.email).toLowerCase() === mail
+  if (owner.name && name) return String(owner.name).toLowerCase() === name || String(owner.name).toLowerCase() === mail
+  return false
 }
 
 /* ── the threshold pair ───────────────────────────────────────────── */
@@ -182,6 +247,16 @@ function pairOf(raw, fallback) {
   return { n: unit === 'never' ? 0 : clampDays(raw?.n, fallback.n), unit }
 }
 
+function executorOf(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    kind: KINDS.includes(source.kind) ? source.kind : DEFAULTS.executor.kind,
+    member: text(source.member),
+    hostname: text(source.hostname),
+    claimedAt: text(source.claimedAt, 40),
+  }
+}
+
 function normalise(raw = {}) {
   const every = (value, fallback) => (EVERY.includes(value) ? value : fallback)
   return {
@@ -194,40 +269,153 @@ function normalise(raw = {}) {
     deleteBy: validClock(raw.deleteBy) || DEFAULTS.deleteBy,
     whenIdle: raw.whenIdle === undefined ? true : Boolean(raw.whenIdle),
     protectReferenced: raw.protectReferenced === undefined ? true : Boolean(raw.protectReferenced),
+    executor: executorOf(raw.executor),
     last: {
       /* `at` is a pass that happened. `createdAt` is when the rule started, which
          is the clock the first deadline is measured from — a card that says "last
          pass just now" before any pass has run is the lie this field prevents. */
-      at: String(raw.last?.at || ''),
-      createdAt: String(raw.last?.createdAt || ''),
-      archiveAt: String(raw.last?.archiveAt || ''),
-      deleteAt: String(raw.last?.deleteAt || ''),
-      archived: Number(raw.last?.archived) || 0,
-      deleted: Number(raw.last?.deleted) || 0,
-      error: String(raw.last?.error || ''),
+      at: text(raw.last?.at, 40),
+      createdAt: text(raw.last?.createdAt, 40),
+      archiveAt: text(raw.last?.archiveAt, 40),
+      deleteAt: text(raw.last?.deleteAt, 40),
+      archived: Math.max(0, Number(raw.last?.archived) || 0),
+      deleted: Math.max(0, Number(raw.last?.deleted) || 0),
+      error: text(raw.last?.error, 400),
     },
   }
+}
+
+/* ── the shared rule, and this machine's part in it ───────────────── */
+
+/** The part that belongs in `workspace.json`: everything but this machine's view. */
+function shareOf(settings) {
+  const { configured, resolved, executorSince, ...shared } = settings
+  return shared
 }
 
 /**
  * Read one workspace's rule.
  *
- * A workspace that has never been opened on this tab has no file. The first read
- * **writes the defaults**, which is what starts the clock: without a `last` stamp
- * the first pass on a fresh install would archive every old file at once. Until a
- * member visits the tab, the sweep leaves the workspace alone.
+ * The rule is created by the first read *of a local workspace* — a local
+ * workspace is opted in by opening its tab, and the clock starts there. A clone
+ * of a shared workspace does not invent one: an owner or admin configures it
+ * once, and until then `configured` is false and nothing is swept.
  */
-function read({ workspace, now = new Date() } = {}) {
+function read({ workspace, now = new Date(), seed = false } = {}) {
   const record = workspaces.open(workspace)
-  const file = settingsFile(record)
-  const raw = readJson(file)
-  if (raw && typeof raw === 'object') return normalise(raw)
-  const seeded = normalise({
-    ...DEFAULTS,
-    last: { createdAt: new Date(now).toISOString(), archived: 0, deleted: 0 },
-  })
-  writeJson(file, seeded)
-  return seeded
+  const shared = record.artifactRetention && typeof record.artifactRetention === 'object'
+    ? record.artifactRetention
+    : null
+  let settings = normalise(shared || {})
+  let configured = Boolean(shared)
+
+  /* `seed` is the tab's own read: it is what opts a local workspace in. The tick
+     reads without seeding, so a workspace nobody has looked at stays untouched. */
+  if (seed && !configured && record.kind !== 'remote') {
+    settings = normalise({
+      ...DEFAULTS,
+      last: { createdAt: new Date(now).toISOString(), archived: 0, deleted: 0 },
+    })
+    workspaces.setArtifactRetention({ id: record.id, artifactRetention: shareOf({ ...settings, configured: true }) })
+    configured = true
+  }
+
+  const resolved = resolveExecutor(record, settings, { now, configured })
+  const runtime = readRuntime(record)
+  const armed = resolved.isThis
+  /* A machine that takes the sweep over starts its own clock: nothing that was
+     already old on another machine is old *here* until the threshold has passed
+     on this machine too. */
+  let executorSince = runtime.executorSince
+  if (armed && !executorSince) {
+    executorSince = new Date(now).toISOString()
+    writeRuntime(record, { executorSince })
+  } else if (!armed && executorSince) {
+    executorSince = ''
+    writeRuntime(record, { executorSince: '' })
+  }
+
+  return { ...settings, configured, resolved, executorSince }
+}
+
+/**
+ * Who sweeps this workspace.
+ *
+ * A local workspace has exactly one machine, so the answer is free. A clone of a
+ * shared one reads the shared choice: `host` is the sync host, `machine` is the
+ * machine that was picked, and `owner` is claimed by the first machine whose
+ * signed-in account is the workspace's owner.
+ */
+function resolveExecutor(record, settings, { now, configured }) {
+  const here = localHost()
+  const host = providers.host === true
+
+  /* A local workspace on a desktop has exactly one machine, so the answer is
+     free. The sync host is an exception: its copy is the shared one even though
+     it was created there, so it honours the field like every other clone. */
+  if (record.kind !== 'remote' && !host) {
+    return {
+      kind: 'local',
+      label: 'this machine',
+      where: here,
+      isThis: true,
+      alwaysOn: false,
+      claimed: true,
+    }
+  }
+
+  const claim = settings.executor
+  if (claim.kind === 'host') {
+    return { kind: 'host', label: 'the sync host', where: '', isThis: host, alwaysOn: true, claimed: true }
+  }
+  if (claim.kind === 'machine' && claim.hostname) {
+    return {
+      kind: 'machine',
+      label: claim.hostname,
+      where: claim.hostname,
+      isThis: claim.hostname === here,
+      alwaysOn: false,
+      claimed: true,
+    }
+  }
+  if (claim.kind === 'owner' && claim.hostname) {
+    /* The claim names a machine *and* the account that may use it: a second
+       signed-in account on the same laptop is not the owner. */
+    return {
+      kind: 'owner',
+      label: claim.hostname,
+      where: claim.hostname,
+      isThis: claim.hostname === here && isWorkspaceOwner(record),
+      alwaysOn: false,
+      claimed: true,
+    }
+  }
+
+  /* `owner` with no claim: the first owner-signed-in machine takes it. The sync
+     host has no person to ask, so it never claims this one. */
+  if (claim.kind === 'owner' && !host && configured && isWorkspaceOwner(record)) {
+    const me = identityOf() || {}
+    const claimed = {
+      ...settings,
+      executor: {
+        kind: 'owner',
+        member: text(me.email || me.username || ''),
+        hostname: here,
+        claimedAt: new Date(now).toISOString(),
+      },
+    }
+    workspaces.setArtifactRetention({ id: record.id, artifactRetention: shareOf({ ...claimed, configured }) })
+    return { kind: 'owner', label: here, where: here, isThis: true, alwaysOn: false, claimed: true }
+  }
+
+  return {
+    kind: claim.kind,
+    label: claim.kind === 'machine' ? 'a machine nobody has picked yet' : "the owner's machine",
+    where: '',
+    isThis: false,
+    alwaysOn: false,
+    claimed: false,
+  }
 }
 
 /** Patch one workspace's rule. Values are validated here, not in the view. */
@@ -235,10 +423,34 @@ function save({ workspace, patch = {}, now = new Date() } = {}) {
   const record = workspaces.open(workspace)
   const current = read({ workspace, now })
   const next = normalise({ ...current, ...patch, last: current.last })
+
   if (patch.archiveAfter) next.archiveAfter = pairOf(patch.archiveAfter, current.archiveAfter)
   if (patch.deleteAfter) next.deleteAfter = pairOf(patch.deleteAfter, current.deleteAfter)
-  writeJson(settingsFile(record), next)
-  return next
+
+  if (patch.executor) {
+    const wanted = KINDS.includes(patch.executor.kind) ? patch.executor.kind : next.executor.kind
+    const me = identityOf() || {}
+    /* `machine` pins the machine that asked; `owner` and `host` clear the claim,
+       so the owner's machine (or the sync host) takes it on its next read. */
+    next.executor =
+      wanted === 'machine'
+        ? {
+            kind: 'machine',
+            member: text(me.email || me.username || ''),
+            hostname: localHost(),
+            claimedAt: new Date(now).toISOString(),
+          }
+        : { kind: wanted, member: '', hostname: '', claimedAt: '' }
+  }
+
+  /* Saving is what starts the clock for a clone that had no rule yet. */
+  next.last = {
+    ...current.last,
+    createdAt: current.last.createdAt || new Date(now).toISOString(),
+  }
+
+  workspaces.setArtifactRetention({ id: record.id, artifactRetention: shareOf({ ...next, configured: true }) })
+  return analyse({ workspace, now })
 }
 
 /* ── when a pass is due ───────────────────────────────────────────── */
@@ -322,9 +534,13 @@ function archivedFiles(record) {
  * where it is", and the two answers come from this one object, so they cannot
  * disagree.
  */
-function rowFor(file, { arc, del, protect, referenced, now }) {
-  const openedMs = timeOf(file.openedAt) || timeOf(file.modifiedAt)
-  const age = daysBetween(openedMs, now)
+function rowFor(file, { arc, del, protect, referenced, now, watchingSince }) {
+  const openedMs = timeOf(file.openedAt)
+  /* Never opened here: it is as old as the later of its modification time and
+     the moment this machine took the sweep over. A takeover therefore inherits
+     no age — the clock starts when the machine starts watching. */
+  const baseMs = openedMs || Math.max(timeOf(file.modifiedAt), watchingSince || 0)
+  const age = daysBetween(baseMs, now)
   const archived = Boolean(file.archivedAt)
   const inArchive = archived ? daysBetween(timeOf(file.archivedAt), now) : 0
   const row = {
@@ -390,10 +606,18 @@ function rowFor(file, { arc, del, protect, referenced, now }) {
  */
 function evaluate({ workspace, now = new Date() } = {}) {
   const record = workspaces.open(workspace)
-  const settings = read({ workspace, now })
+  const settings = read({ workspace, now, seed: true })
+  const configured = settings.configured
   const arc = daysOf(settings.archiveAfter, 30)
   const del = daysOf(settings.deleteAfter, 90)
   const nowMs = new Date(now).getTime()
+  /* A machine that took an existing sweep over from another one inherits no age.
+     A workspace that is adopting the rule itself keeps its honest mtime ages —
+     the chart and the forecast are the warning there, and they are on screen
+     before the first pass runs. */
+  const since = timeOf(settings.executorSince)
+  const createdAt = timeOf(settings.last.createdAt)
+  const watchingSince = since && createdAt && since - createdAt > DAY_MS ? since : 0
   const opened = artifacts.openedMap({ workspace })
   const stamps = readStamps(record)
   const protect = settings.protectReferenced
@@ -426,7 +650,7 @@ function evaluate({ workspace, now = new Date() } = {}) {
           modifiedAt: item.modifiedAt,
           openedAt: opened[item.id],
         },
-        { arc, del, protect, referenced, now: nowMs },
+        { arc, del, protect, referenced, now: nowMs, watchingSince },
       ),
     )
   }
@@ -444,7 +668,7 @@ function evaluate({ workspace, now = new Date() } = {}) {
              own mtime instead of pretending it was archived today. */
           archivedAt: stamps[item.id] || item.modifiedAt,
         },
-        { arc, del, protect, referenced, now: nowMs },
+        { arc, del, protect, referenced, now: nowMs, watchingSince },
       ),
     )
   }
@@ -496,6 +720,10 @@ function evaluate({ workspace, now = new Date() } = {}) {
   const state = {
     workspace: record.id,
     settings,
+    /* A clone with no shared rule has nothing to apply: the card shows the
+       defaults to preview, never as a live promise. */
+    configured,
+    executor: settings.resolved,
     thresholds: {
       archiveAfterDays: arc,
       deleteAfterDays: del,
@@ -531,11 +759,18 @@ function evaluate({ workspace, now = new Date() } = {}) {
       })),
       total: touched.length,
     },
-    schedule: {
-      archive: scheduleInfo('archive', settings, now),
-      delete: scheduleInfo('delete', settings, now),
-      whenIdle: settings.whenIdle,
-    },
+    schedule:
+      configured
+        ? {
+            archive: scheduleInfo('archive', settings, now),
+            delete: scheduleInfo('delete', settings, now),
+            whenIdle: settings.whenIdle && !settings.resolved.alwaysOn,
+          }
+        : {
+            archive: { every: settings.archiveEvery, by: settings.archiveBy, automatic: false, late: false, dueAt: '' },
+            delete: { every: settings.deleteEvery, by: settings.deleteBy, automatic: false, late: false, dueAt: '' },
+            whenIdle: false,
+          },
     /* What the card may promise about the two things this store does not own. */
     trash: typeof providers.trash === 'function' ? 'system' : 'folder',
     references: wired,
@@ -582,6 +817,23 @@ async function removeFile(record, id) {
   fs.rmSync(source, { force: true })
 }
 
+/** The shared `last` block: one report, written by the machine that swept. */
+function stampLast(record, current, stamp, archived, deleted, failed, wants) {
+  const next = normalise({
+    ...(record.artifactRetention || current),
+    last: {
+      ...current.last,
+      at: stamp,
+      ...(wants('archive') ? { archiveAt: stamp } : {}),
+      ...(wants('delete') ? { deleteAt: stamp } : {}),
+      archived,
+      deleted,
+      error: failed[0] || '',
+    },
+  })
+  workspaces.setArtifactRetention({ id: record.id, artifactRetention: shareOf({ ...next, configured: true }) })
+}
+
 /**
  * Run one archive pass and one delete pass for a workspace.
  *
@@ -593,6 +845,12 @@ async function removeFile(record, id) {
 async function run({ workspace, now = new Date(), dryRun = false, kind = '' } = {}) {
   const record = workspaces.open(workspace)
   const { state, archiveRows, deleteRows } = evaluate({ workspace, now })
+  /* One machine sweeps. Every other clone refuses, because its archive would
+     read as a deletion of the shared shelf on the next sync. */
+  if (!state.configured) throw new Error('The artifact sweep is not configured for this workspace yet.')
+  if (!state.executor.isThis) {
+    throw new Error(`The artifact sweep runs on ${state.executor.label}; this machine does not sweep it.`)
+  }
   const wants = (which) => !kind || kind === which
   const archived = []
   const deleted = []
@@ -637,24 +895,7 @@ async function run({ workspace, now = new Date(), dryRun = false, kind = '' } = 
     }
   }
 
-  if (!dryRun) {
-    const current = read({ workspace, now })
-    writeJson(
-      settingsFile(record),
-      normalise({
-        ...current,
-        last: {
-          ...current.last,
-          at: stamp,
-          ...(wants('archive') ? { archiveAt: stamp } : {}),
-          ...(wants('delete') ? { deleteAt: stamp } : {}),
-          archived: archived.length,
-          deleted: deleted.length,
-          error: failed[0] || '',
-        },
-      }),
-    )
-  }
+  if (!dryRun) stampLast(record, state.settings, stamp, archived.length, deleted.length, failed, wants)
 
   return {
     archived,
@@ -672,13 +913,12 @@ let timer = null
 let ticking = false
 
 /**
- * Every workspace that has a rule file, once per poll.
+ * Every workspace that has a rule, once per poll.
  *
  * Unref'd timers, like the backup scheduler: retention never keeps the app
- * alive. A workspace with no `artifact-retention.json` has not opted in, so the
- * sweep leaves it alone rather than applying defaults to a shelf nobody has
- * looked at. The idle switch keeps its word where this process can see it — a
- * pass waits while a run or a chat turn is answering.
+ * alive. A workspace with no shared rule has not opted in, and a clone whose
+ * executor is another machine stands down — this is the whole reason the rule
+ * names an executor.
  */
 async function tick({ log = () => {}, now = new Date() } = {}) {
   if (ticking) return { skipped: true }
@@ -692,17 +932,19 @@ async function tick({ log = () => {}, now = new Date() } = {}) {
       busy = false
     }
     for (const item of workspaces.list()) {
-      const record = workspaces.open(item.id)
-      if (!fs.existsSync(settingsFile(record))) continue
       const settings = read({ workspace: item.id, now })
-      const archiveDue = scheduleInfo('archive', settings, now).late
+      if (!settings.configured) continue
+      if (!settings.resolved.isThis) continue
+      const due = scheduleInfo('archive', settings, now).late
       const deleteDue = scheduleInfo('delete', settings, now).late
-      if (!archiveDue && !deleteDue) continue
-      if (settings.whenIdle && busy) {
+      if (!due && !deleteDue) continue
+      /* A desktop waits for a quiet machine; the sync host has no desktop to
+         wait for, so the switch does not apply there. */
+      if (settings.whenIdle && !settings.resolved.alwaysOn && busy) {
         log(`artifact retention ${item.id}: waiting for a quiet machine`)
         continue
       }
-      const kind = archiveDue && deleteDue ? '' : archiveDue ? 'archive' : 'delete'
+      const kind = due && deleteDue ? '' : due ? 'archive' : 'delete'
       const result = await run({ workspace: item.id, now, kind })
       if (result.archived.length || result.deleted.length || result.failed.length) {
         log(
@@ -748,7 +990,7 @@ module.exports = {
   DAY_MS,
   START_DELAY_MS,
   INTERVAL_MS,
-  settingsFile,
+  runtimeFile,
   stampsFile,
   normalise,
   daysOf,

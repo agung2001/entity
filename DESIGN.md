@@ -234,6 +234,18 @@ system.
 - **Only an opted-in workspace is swept.** The rule lives in `<workspace>/retention.json`
   and the first read of the tab creates it. No file, no pass: installing the app never
   archives a history nobody has looked at.
+- **A shared shelf has one sweeper, and the rule names it.** The artifact rule is workspace
+  configuration in `workspace.json` (an owner or admin sets it once, the server refuses
+  anyone else), and its `executor` says which machine runs the pass: the owner's machine
+  by claim, the machine that was picked, or the sync host. Every other clone shows the
+  thresholds and stands down — its tick and its "Archive due now" refuse. A per-machine
+  schedule on a shared shelf is not a schedule, it is N machines deleting one file from
+  each other's list.
+- **The rule travels; the facts do not.** Thresholds, cadences and the executor sync.
+  The archive folder, the archive date per file, the opened map and the moment this
+  machine took the sweep over stay local. A machine that takes an existing sweep over
+  inherits no age — a file nobody opened counts from its mtime or the takeover, whichever
+  is later — so a hand-over cannot archive a shelf that was healthy elsewhere.
 - **A pass is idempotent and its archive date is stamped once.** A scheduler that runs
   every thirty minutes must not reset the clock a "days in the archive" rule counts.
 - **A disabled or absent control states its own state.** `only when I ask` removes the
@@ -324,6 +336,7 @@ the composer already does: mention another entity.
 | A settings card overflows a phone and the page does not scroll | The grid track is `1fr` (which is `minmax(auto, 1fr)`) and grows to the card's min-content; use `minmax(0, 1fr)` | `app.css` (`.acct-page` ≤980) |
 | A retention legend and the rule effects disagree | Both read one `region` object; the forecast reads `outcome`, and only it describes the pass | `npm test` (`retention`) |
 | The shelf rule never archives anything twice, and never deletes at all | The archive is a folder the shelf walk skips: analyse `artifacts/.archive/` as its own population, and stamp the archive date once on the way in | `npm test` (`artifact-retention`) |
+| A per-machine schedule on a shared shelf archives files out of every teammate's list on the next sync | The rule is workspace configuration and exactly one machine executes it; the archive is local, so a second sweeper reads as "the file was deleted" | `npm test` (`artifact-retention`) |
 | A scheduled pass re-stamps the date it counts from | The state write is idempotent and stamps only on the transition | `npm test` (`chat-archive`) |
 | A rename writes `archived: false` into a thread that never had it | Reads answer true/false; `writeThread` strips the pair when it is false | `npm test` (`chat-archive`) |
 | A reply leaves the thread in the archive | Un-archive as its own write, before the turn's metadata baseline | `tests/e2e/full/19-retention.spec.js` |

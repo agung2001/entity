@@ -4,6 +4,11 @@ import MachineIcon from '@/components/MachineIcon.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import { fleet, loadFleet, probeHost, probeState } from '@/stores/fleet'
 import { hub, toast } from '@/stores/hub'
+import {
+  artifactRetention,
+  loadArtifactRetention,
+  setArtifactRetention,
+} from '@/stores/artifactRetention'
 import { forgetMachineFacts, machineFactsFor, workspaces } from '@/stores/workspaces'
 
 const props = defineProps({
@@ -17,9 +22,50 @@ const props = defineProps({
  * harness/model inventory and saves that snapshot here. No key or ssh config is
  * copied into the workspace.
  */
-onMounted(loadFleet)
+onMounted(() => {
+  loadFleet()
+  loadArtifactRetention()
+})
 
 const busy = ref('')
+const sweep = computed(() => artifactRetention.state)
+const sweepExecutor = computed(() => sweep.value?.executor || null)
+const sweepSaving = computed(() => artifactRetention.saving)
+/* The rule is workspace configuration: an owner or admin changes it, and the
+   change reaches every clone on the next sync. A member reads it. */
+const canPickSweep = computed(() => ['owner', 'admin'].includes(String(hub.session?.role || 'owner')))
+const sweepOptions = computed(() => {
+  const options = [
+    {
+      id: 'owner',
+      label: "The owner's machine",
+      desc: 'The first machine the workspace owner opens Entity on takes the sweep; the rest stand down.',
+      tag: sweepExecutor.value?.kind === 'owner' ? sweepExecutor.value.where || 'waiting' : '',
+    },
+    {
+      id: 'machine',
+      label: 'This machine',
+      desc: `Runs the pass whenever Entity is open on ${fleet.hostname || 'this machine'}.`,
+      tag: sweepExecutor.value?.kind === 'machine' ? sweepExecutor.value.where || '' : '',
+    },
+  ]
+  /* The sync host is the only executor that never waits for a person, which is
+     what a shared workspace without an always-on desktop needs. It is offered
+     wherever this picker renders: a clone has one, and the server *is* one. */
+  options.push({
+    id: 'host',
+    label: 'The sync host',
+    desc: 'The shared copy runs the pass itself, on its own clock — no desktop has to be open.',
+    tag: sweepExecutor.value?.kind === 'host' ? 'always on' : '',
+  })
+  return options
+})
+
+async function setSweep(kind) {
+  if (!canPickSweep.value || sweepSaving.value) return
+  const next = await setArtifactRetention({ executor: { kind } }, { label: kind })
+  if (next) toast(kind === 'host' ? 'The sync host runs the sweep' : kind === 'machine' ? 'This machine runs the sweep' : "The owner's machine runs the sweep")
+}
 
 const localHost = computed(() => ({
   alias: 'local',
@@ -126,6 +172,54 @@ async function forget(alias) {
       </span>
       <span class="mnote">Snapshots stay on this machine; they are not synced.</span>
     </div>
+
+    <p v-if="sweepExecutor?.kind === 'local'" class="mnote" style="margin: 0 0 14px">
+      <b>Artifact sweep</b> — this workspace lives only on this machine, so this machine
+      runs the sweep, on its own clock. A shared workspace is the only case where the
+      machine can be chosen.
+    </p>
+
+    <fieldset
+      v-else-if="sweepExecutor"
+      class="bkp-fieldset"
+      :disabled="!canPickSweep || sweepSaving"
+    >
+      <legend>Artifact sweep</legend>
+      <div class="bkp-modes" role="radiogroup" aria-label="Which machine runs the artifact sweep">
+        <label
+          v-for="option in sweepOptions"
+          :key="option.id"
+          class="bkp-mode"
+          :data-on="sweepExecutor.kind === option.id ? '1' : '0'"
+        >
+          <input
+            class="bkp-radio"
+            type="radio"
+            name="sweep-executor"
+            :value="option.id"
+            :checked="sweepExecutor.kind === option.id"
+            @change="setSweep(option.id)"
+          />
+          <span class="bkp-dot" aria-hidden="true"></span>
+          <span class="bkp-mode-copy">
+            <b>{{ option.label }}</b>
+            <span>{{ option.desc }}</span>
+          </span>
+          <span class="bkp-mode-tag">{{ option.tag }}</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <p v-if="sweepExecutor && sweepExecutor.kind !== 'local'" class="mnote" style="margin: 8px 0 14px">
+      One machine runs the archive and delete passes; every other clone shows the same
+      thresholds and stands down. The rule is shared with the team — the archive dates are
+      not.
+      <template v-if="!canPickSweep">Only a workspace owner or admin can change this.</template>
+      <template v-else-if="sweepExecutor.kind === 'owner' && !sweepExecutor.claimed">
+        No owner machine has claimed the sweep yet.
+      </template>
+      <template v-else>Runs on {{ sweepExecutor.where || sweepExecutor.label }}.</template>
+    </p>
 
     <div v-if="fleet.loading && !fleet.loaded" class="empty-note">
       <b>Reading {{ fleet.displayPath }}…</b>

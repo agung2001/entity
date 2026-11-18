@@ -68,9 +68,16 @@ const arcDays = computed(() => state.value?.thresholds.archiveAfterDays ?? 0)
 const delDays = computed(() => state.value?.thresholds.deleteAfterDays ?? 0)
 const deathDays = computed(() => state.value?.thresholds.deathDays ?? 0)
 const off = computed(() => arcDays.value <= 0 && delDays.value <= 0)
-const idle = computed(() => Boolean(settings.value?.whenIdle))
+/* The idle switch is a desktop promise; the sync host has no person to wait for. */
+const idle = computed(() => Boolean(settings.value?.whenIdle) && !executor.value?.alwaysOn)
 const late = computed(() => Boolean(schedule.value?.archive.late || schedule.value?.delete.late))
-const remote = computed(() => hub.workspaceKind === 'remote')
+/* The rule is workspace configuration; the pass is one machine's job. */
+const executor = computed(() => state.value?.executor || null)
+const configured = computed(() => Boolean(state.value?.configured))
+const here = computed(() => Boolean(executor.value?.isThis))
+const executorPlace = computed(
+  () => executor.value?.where || executor.value?.label || 'another machine',
+)
 const manual = computed(
   () => settings.value?.archiveEvery === 'manual' && settings.value?.deleteEvery === 'manual',
 )
@@ -265,16 +272,26 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <div v-if="remote" class="role-line">
-        <span class="role-badge">remote</span>
+      <div v-if="state && !configured" class="role-line">
+        <span class="role-badge">unset</span>
         <span>
-          This workspace is a local clone of a shared one. The sweep runs on this
-          machine's copy and its moves sync like any other change; the other side sweeps
-          its own copy where it is opened.
+          The sweep is not configured for this workspace yet. The numbers below are the
+          defaults — nothing is archived or deleted until an owner or admin saves a value,
+          and then every clone reads the same rule.
         </span>
       </div>
 
-      <div v-if="late && !manual" class="role-line">
+      <div v-else-if="executor && !here" class="role-line">
+        <span class="role-badge">elsewhere</span>
+        <span>
+          One machine runs the sweep: {{ executorPlace }}. This page shows the shared
+          rule on that machine's clock; every other clone stands down, so the same file is
+          never archived twice.
+          <router-link :to="`/${hub.workspace}/settings?tab=machines`">Change it in Machines</router-link>
+        </span>
+      </div>
+
+      <div v-if="late && here && !manual" class="role-line">
         <span class="role-badge">waiting</span>
         <span>
           The pass due at {{ clock(settings?.archiveBy) }} has not run yet. The deadline
@@ -517,7 +534,9 @@ onBeforeUnmount(() => {
 
       <div class="acct-sep">
         When it runs
-        <small>On this machine's clock, and within a minute of the next launch</small>
+        <small v-if="executor?.alwaysOn">On the sync host's clock, which is always on</small>
+        <small v-else-if="here">On this machine's clock, and within a minute of the next launch</small>
+        <small v-else>On {{ executorPlace }}'s clock — a pass runs when that machine is open</small>
       </div>
 
       <div class="rule-rows sched">
@@ -586,7 +605,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="notif-options">
+      <div v-if="!executor?.alwaysOn" class="notif-options">
         <div class="notif-option">
           <span class="sfx-copy">
             <b>Start a pass when the machine is idle</b>
@@ -613,10 +632,12 @@ onBeforeUnmount(() => {
 
       <div class="forecast">
         <p class="forecast-head">
-          <template v-if="manual">No automatic pass</template>
-          <template v-else-if="schedule?.archive.late || schedule?.delete.late">
-            Due now — the deadline has passed
+          <template v-if="!configured">Not configured yet — nothing is swept</template>
+          <template v-else-if="!here">
+            Runs on {{ executorPlace }}<template v-if="manual"> · no automatic pass</template>
           </template>
+          <template v-else-if="manual">No automatic pass</template>
+          <template v-else-if="late">Due now — the deadline has passed</template>
           <template v-else-if="idle">
             Next pass · any quiet moment, by {{ clock(settings?.archiveBy) }}
           </template>
@@ -735,8 +756,14 @@ onBeforeUnmount(() => {
         <button
           class="btn btn-ink"
           type="button"
-          :disabled="!canEdit || saving"
-          :title="`Archives ${plural(forecast?.archive.files || 0, 'file')} and removes ${plural(forecast?.delete.files || 0, 'file')}`"
+          :disabled="!canEdit || saving || !configured || !here"
+          :title="
+            !configured
+              ? 'Set a threshold first — this workspace has no sweep yet'
+              : !here
+                ? `The sweep runs on ${executorPlace}`
+                : `Archives ${plural(forecast?.archive.files || 0, 'file')} and removes ${plural(forecast?.delete.files || 0, 'file')}`
+          "
           @click="runNow"
         >
           {{ saving && artifactRetention.pending === 'pass' ? 'Running…' : 'Archive due now' }}
@@ -758,7 +785,9 @@ onBeforeUnmount(() => {
           Last pass {{ ago(last.at) }} · {{ plural(last.archived || 0, 'file') }} archived ·
           {{ plural(last.deleted || 0, 'file') }} removed
         </template>
-        <template v-if="off"> · retention off — the pass wakes up when a day count comes back</template>
+        <template v-if="!configured"> · not configured — an owner or admin sets the rule once</template>
+        <template v-else-if="!here"> · runs on {{ executorPlace }}</template>
+        <template v-else-if="off"> · retention off — the pass wakes up when a day count comes back</template>
         <template v-else-if="manual"> · no automatic pass — press Archive due now</template>
         <template v-else-if="idle"> · next pass by {{ clock(settings?.archiveBy) }}, the first quiet moment</template>
         <template v-else> · next pass at {{ clock(settings?.archiveBy) }}</template>
@@ -801,11 +830,17 @@ onBeforeUnmount(() => {
         elsewhere sweeps its own copy, on its own clock.
       </p>
       <p class="mnote">
-        <b>Age</b> — days since Entity last opened or read the file.
+        <b>Age</b> — days since this machine last opened or read the file.
         {{ meta?.opened || 0 }} of {{ meta?.files || 0 }} files on the shelf have been
-        opened through Entity; the rest count from their modification time, which is why the
-        chart says "last opened" and not "last written": the modification time only stands
-        in until something looks.
+        opened here; the rest count from their modification time. A machine that takes an
+        existing sweep over from another one inherits no age — its clock starts when it
+        starts watching — so a takeover cannot archive a shelf that was healthy elsewhere.
+      </p>
+      <p class="mnote">
+        <b>Shared with the team</b> — the thresholds, the cadences and the machine that
+        runs the pass are workspace configuration: one owner or admin sets them and every
+        clone reads them. The archive, its dates and the opened map stay on the machine
+        that runs the pass.
       </p>
       <p class="mnote">
         <b>The archive date</b> — stamped once, the moment a file moves in. ② counts from
