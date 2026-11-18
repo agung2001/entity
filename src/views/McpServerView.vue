@@ -53,7 +53,7 @@ const tools = ref({ loading: false, error: '', list: [] })
 const query = ref('')
 const searchEl = ref(null)
 const kind = ref('all')
-const searchKey = shortcutLabel('inventory-search')
+const searchKey = shortcutLabel('tool-search')
 const editing = ref(false)
 const draft = ref('')
 const draftError = ref('')
@@ -255,10 +255,10 @@ function focusSearch() {
   field.select()
 }
 
-/* A bare `/` focuses the tool search — but only when the caret is not already
-   in a field, so typing a path or a command still types. */
+/* The catalog's tool-search combo focuses the tool search — but only when the
+   caret is not already in a field, so typing a path or a command still types. */
 function onKey(event) {
-  if (!matchesShortcut('inventory-search', event)) return
+  if (!matchesShortcut('tool-search', event)) return
   if (isEditable(event.target)) return
   event.preventDefault()
   focusSearch()
@@ -455,7 +455,7 @@ watch(name, async () => {
             <p v-if="tools.error" class="mcpp-note" data-bad="1">{{ tools.error }}</p>
             <template v-else>
               <div class="skbar">
-                <label class="sksearch">
+                <label class="sksearch mcpp-tool-search">
                   <svg
                     viewBox="0 0 16 16"
                     fill="none"

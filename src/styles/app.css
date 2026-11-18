@@ -9860,6 +9860,11 @@ button.msg-attach-copy:hover b {
 
 /* Tools: the inventory the server reported, searched and filtered in place.
    The bar is the skills roster's (`.skbar`); only the kind switch is new. */
+/* The hint in this field is a whole combo (Alt+Shift+F off a Mac), not the bare
+   `/` the roster shows: reserve the room it takes, or typed text runs under it. */
+.mcpp-tool-search input {
+  padding-right: 84px;
+}
 .mcpp-seg {
   flex: none;
   display: flex;
