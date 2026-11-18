@@ -245,6 +245,15 @@ onBeforeUnmount(() => {
         threads stay one group down, and come back with one click.
       </p>
 
+      <div v-if="state && !state.sharedSchedule && hub.workspaceKind === 'remote'" class="role-line">
+        <span class="role-badge">unset</span>
+        <span>
+          The sweep schedule is not set for this workspace yet — the cadence below is this
+          machine's alone until an owner or admin saves one here or on Artifacts, and then
+          every clone reads the same schedule.
+        </span>
+      </div>
+
       <div class="acct-sep">
         Chat history
         <small v-if="meta">

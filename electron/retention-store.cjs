@@ -494,6 +494,9 @@ function evaluate({ workspace, now = new Date() } = {}) {
   const state = {
     workspace: record.id,
     settings,
+    /* The schedule is the workspace's, on the artifact rule; a clone with no such
+       field is still scheduling this machine alone, and the card says so. */
+    sharedSchedule: Boolean(record.artifactRetention && typeof record.artifactRetention === 'object'),
     thresholds: { archiveAfterDays: arc, deleteAfterDays: del, deathDays: arc > 0 && del > 0 ? arc + del : 0 },
     meta: {
       threads: rows.length,
