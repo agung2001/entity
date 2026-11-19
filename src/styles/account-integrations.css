@@ -1,0 +1,434 @@
+/* ── account: integrations ─────────────────────────────────────────────────
+   The row grammar is Account → Harnesses', not a second one: `mark · copy ·
+   switch` on a `22px minmax(0,1fr) 44px` grid, with the disclosure on the name
+   line and its editor in a sibling row that shares the same grid. Only the
+   `.int-*` rules and the page's own box live here — `.acct-page`,
+   `.acct-card`, `.acct-card-head`, `.role-badge`, `.role-card`, `.mnote`,
+   `.ws-meta`, `.acct-input`, `.acct-error`, `.empty-note`, `.btn`,
+   `.sfx-switch`, `.undo-strip`, `.undo-btn` and the skeleton recipe are declared
+   once in their own sheets. */
+.int-page {
+  max-width: 900px;
+}
+.int-head {
+  align-items: flex-start;
+}
+.int-head .mnote {
+  line-height: 1.55;
+}
+.int-head code,
+.int-note code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+
+.int-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  overflow: hidden;
+}
+.int-list > li {
+  list-style: none;
+}
+
+/* The skeleton repeats *this* row grid, not a nearly-identical one: the shared
+   `.skel-row` padding is 12px on both sides while the real row spends 12 left
+   and 10 right (the switch's hit box already pads its own side), and two
+   pixels of track is exactly the layout shift the loading state must not have. */
+.int-skeleton .skel-row {
+  grid-template-columns: 22px minmax(0, 1fr) 44px;
+  gap: 12px;
+  padding: 9px 10px 9px 12px;
+  min-height: 56px;
+}
+.int-skeleton .skel-row:last-child {
+  border-bottom: 0;
+}
+
+/* three children, no fourth column: mark, copy, switch */
+.int-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px 9px 12px;
+  min-height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  transition: background 0.14s ease;
+}
+.int-row:hover {
+  background: var(--surface-2);
+}
+.int-row[data-busy='1'] {
+  opacity: 0.72;
+}
+.int-row[data-busy='1']:hover {
+  background: var(--surface);
+}
+.int-mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-2);
+}
+/* a brand mark keeps its own colours; only the mono one follows the row's tone */
+.int-mark-img {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  object-fit: contain;
+}
+.int-mark-svg {
+  display: block;
+  flex: none;
+}
+.int-row[data-on='0'] .int-mark {
+  color: var(--muted);
+}
+/* A brand mark carries its own palette, so `color` cannot mute it the way it
+   mutes the mono one: the off row desaturates it instead, which reads as
+   "present but not in use" without turning a logo into a different logo. */
+.int-mark-brand,
+.int-mark-img {
+  transition: filter 0.14s ease, opacity 0.14s ease;
+}
+.int-row[data-on='0'] .int-mark-brand,
+.int-row[data-on='0'] .int-mark-img {
+  filter: grayscale(1);
+  opacity: 0.78;
+}
+.int-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.int-name {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+}
+.int-name b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.int-row[data-on='0'] .int-name b {
+  color: var(--ink-2);
+}
+.int-name .id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.int-state {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* status is a word first, a colour second */
+.int-state .ok {
+  color: var(--ok-ink);
+}
+.int-state .token {
+  color: var(--accent-ink);
+}
+
+/* the disclosure is on the name line, pushed to its end, so the row keeps three
+   columns and the panel opens directly under the row it belongs to */
+.int-cfg-btn {
+  flex: none;
+  margin-left: auto;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.int-cfg-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg);
+  color: var(--ink);
+}
+.int-cfg-btn[aria-expanded='true'] {
+  border-color: color-mix(in oklab, var(--accent) 65%, #000);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.int-cfg-btn:focus-visible,
+.int-switch:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+/* the dot is redundant: the words "no permanent token" say the same thing */
+.int-cfg-btn .dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--danger);
+  vertical-align: 1px;
+}
+
+/* the panel is a sibling row on the row's own grid, so its fields align under
+   the copy column instead of under the mark */
+.int-panel {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 10px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.int-panel > .gutter {
+  width: 22px;
+}
+.int-panel > .body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fld {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.fld .lbl {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.fld-hint {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.fld-hint code {
+  color: var(--ink-2);
+}
+.int-bad {
+  color: var(--danger);
+}
+.int-good {
+  color: var(--ok-ink);
+}
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.panel-actions .sep {
+  flex: 1;
+}
+
+/* the control is the 44 × 44 box; the 38 × 22 pill inside it is paint */
+.int-switch {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+}
+.int-switch .sfx-switch {
+  pointer-events: none;
+}
+.int-switch[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+.int-switch[aria-disabled='true'] .sfx-switch {
+  opacity: 0.55;
+}
+.int-switch:active .sfx-switch[aria-checked='true'] {
+  background: color-mix(in oklab, var(--accent) 90%, #000);
+}
+
+/* the reason a write was refused, under the sentence that says nothing changed.
+   Two lines: a raw ENOENT/rename reason can be three lines of absolute path, and
+the block must not push the list off the card. The whole of it is in `title`. */
+.int-reason {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  opacity: 0.8;
+}
+
+.int-note {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  line-height: 1.55;
+}
+.int-aside-note {
+  margin: 14px 0 0;
+}
+.int-meta {
+  margin-top: 0;
+  grid-template-columns: 74px minmax(0, 1fr);
+}
+.int-meta dd code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+.int-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.int-empty p {
+  margin: 0;
+  max-width: 46ch;
+  line-height: 1.6;
+}
+.int-empty .cmd {
+  display: block;
+  margin: 0 auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  overflow-wrap: anywhere;
+}
+
+/* ≤720: the aside drops under the card; the row keeps its three columns */
+@media (max-width: 720px) {
+  .int-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .int-head {
+    flex-wrap: wrap;
+  }
+  .int-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .int-panel > .gutter {
+    display: none;
+  }
+}
+
+/* 380 px is a container query, not a media query: the same rules have to hold
+   for a real 360 px window and for a narrow card inside a wide one. */
+.int-page {
+  container-type: inline-size;
+}
+@container (max-width: 380px) {
+  .int-row {
+    grid-template-columns: 18px minmax(0, 1fr) 44px;
+    gap: 9px;
+    padding: 7px 6px 7px 9px;
+    align-items: start;
+  }
+  .int-mark {
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+  }
+  .int-mark-img {
+    width: 18px;
+    height: 18px;
+  }
+  .int-name b {
+    font-size: var(--fs-secondary);
+  }
+  .int-name {
+    gap: 4px;
+  }
+  .int-cfg-btn {
+    padding: 0 3px;
+    margin-left: 2px;
+  }
+  /* at this width `YouTrack` + `youtrack` + `Token` cannot share a line, and a
+     clipped control is worse than a missing mono echo: the label still says
+     which one it is. Rows without a disclosure keep their id. */
+  .int-name:has(.int-cfg-btn) .id {
+    display: none;
+  }
+  .int-state {
+    font-size: var(--fs-micro);
+    line-height: 1.4;
+    /* the path may ellipsise, the @token may not: wrap to two lines instead */
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .int-switch {
+    align-self: center;
+  }
+  .int-skeleton .skel-row {
+    grid-template-columns: 18px minmax(0, 1fr) 44px;
+    gap: 9px;
+    padding: 7px 6px 7px 9px;
+  }
+  .int-badge .of {
+    display: none;
+  }
+  .panel-actions {
+    gap: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .int-row {
+    transition: none;
+  }
+  .skel {
+    animation: none;
+    background: var(--skel);
+  }
+  .undo-strip {
+    transition: none;
+  }
+  .int-switch .sfx-switch,
+  .int-switch .sfx-switch span,
+  .int-cfg-btn {
+    transition: none;
+  }
+}

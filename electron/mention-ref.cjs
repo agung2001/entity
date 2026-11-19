@@ -12,6 +12,7 @@
  *   @artifact:shot-2026                a workspace artifact, as artifact://
  *   @maka:one:plan                     maka_search_notes over MCP
  *   @youtrack:AC:login bug             search_issues over MCP, scoped to AC
+ *   @github:owner/repo                 gh api repos/owner/repo → a real repo
  *   @thread:t_abc123                   another conversation in this workspace:
  *                                      its title, questions and last answer
  *
@@ -38,7 +39,7 @@ const mcpRuntime = require('./mcp-runtime.cjs')
 const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 
-const KINDS = new Set(['orca', 'artifact', 'maka', 'youtrack', 'thread'])
+const KINDS = new Set(['orca', 'artifact', 'maka', 'youtrack', 'github', 'thread'])
 
 const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 12
@@ -268,6 +269,11 @@ function parseMention(raw) {
       : { kind: 'maka', vault: '', query: whole, local }
   }
 
+  /* github: everything after the colon is the query — `owner/repo` names one
+     repository, anything else is a search. The slash is inside the word, so a
+     `:` does not scope it. */
+  if (head === 'github') return { kind: 'github', query: whole, local }
+
   /* youtrack: a project key is short and upper-case; the rest is the query */
   if (structured) return { kind: 'youtrack', project: word, query: tail, local }
   if (/^[A-Z][A-Z0-9]{1,9}$/.test(word)) {
@@ -295,6 +301,7 @@ function tokenOf(segment) {
       ? `${at}youtrack:${segment.project}${segment.query ? `:${segment.query}` : ''}`
       : `${at}youtrack:${segment.query}`
   }
+  if (segment.kind === 'github') return `${at}github:${segment.query}`
   return segment.raw
 }
 
@@ -324,6 +331,33 @@ function execFileText(bin, args, timeout) {
       resolve(String(stdout || ''))
     })
   })
+}
+
+/**
+ * `gh`, resolved once. A missing binary is a miss the mention reports rather than
+ * a silent empty list: `harnesses.which` is the same PATH walk the Harnesses
+ * page uses, so the two agree on what is installed.
+ */
+let githubBinCache = ''
+
+function githubBinary() {
+  if (process.env.ENTITY_GH_BIN) return process.env.ENTITY_GH_BIN
+  if (githubBinCache) return githubBinCache
+  githubBinCache = harnesses.which('gh') || 'gh'
+  return githubBinCache
+}
+
+async function execGithub(args) {
+  try {
+    return await execFileText(githubBinary(), args, ORCA_TIMEOUT_MS)
+  } catch (error) {
+    const message = String(error?.message || error)
+    throw new Error(
+      /not installed, or not on PATH/.test(message)
+        ? 'gh is not installed, or not on PATH.'
+        : `gh ${args[0] || ''} failed: ${message}`,
+    )
+  }
 }
 
 /** The repos Orca knows, cached for a minute: one CLI spawn per burst of mentions. */
@@ -534,6 +568,57 @@ async function resolveYoutrack(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
     detail: [row.project || segment.project, row.customFields?.State, row.url]
       .filter(Boolean)
       .join(' · '),
+  }))
+}
+
+/**
+ * `@github:` — one repository by `owner/repo`, or a repository search.
+ *
+ * ponytail: two shapes only (a repo and a search over repos), because issues and
+ * PRs already have their own MCP server surface; widening it means a third
+ * dispatch on `gh search issues` / `gh search prs` once someone asks for it.
+ *
+ * A manually typed token resolves here whatever the Account → Integrations
+ * switch says: that switch decides whether the composer *offers* the token, not
+ * whether a resolver refuses one a person wrote out in full.
+ */
+async function resolveGithub(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
+  const query = String(segment.query || '').trim()
+  if (!query) throw new Error('@github: needs a repository (owner/repo) or a search query.')
+  const run = ctx.deps.execGithub
+  /* `owner/repo` is a whole query with one slash — the shape `gh api` takes */
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(query)) {
+    const raw = await run(['api', `repos/${query}`])
+    let repo = null
+    try {
+      repo = JSON.parse(raw)
+    } catch {
+      throw new Error(`@github:${query} did not resolve to a repository Gh could read.`)
+    }
+    if (!repo?.full_name) throw new Error(`@github:${query} is not a repository Gh knows.`)
+    return [
+      {
+        id: repo.full_name,
+        label: `${repo.full_name} — ${repo.description || 'a repository'}`,
+        detail: [repo.language, repo.private ? 'private' : 'public', repo.html_url]
+          .filter(Boolean)
+          .join(' · '),
+        url: repo.html_url || `https://github.com/${repo.full_name}`,
+      },
+    ]
+  }
+  const raw = await run(['search', 'repos', '--limit', String(limit), '--json', 'fullName,description,url', query])
+  let rows = []
+  try {
+    rows = JSON.parse(raw)
+  } catch {
+    throw new Error('gh search repos did not return JSON.')
+  }
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: row.fullName || '',
+    label: `${row.fullName || ''} — ${row.description || 'a repository'}`,
+    detail: row.url || '',
+    url: row.url || '',
   }))
 }
 
@@ -999,6 +1084,22 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     }
   }
 
+  if (kind === 'github') {
+    /* The composer offers a whole query, so there is one page: the repo the
+       person named, or the first `limit` matches of `gh search repos`. */
+    const query = fields.join(':').trim()
+    if (!query) return { items: [], more: false }
+    const rows = await resolveGithub(ctx, { query }, { limit: offset + limit })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: `@github:${row.id}`,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
   return { items: [], more: false }
 }
 
@@ -1022,6 +1123,7 @@ async function search({ record, kind, fields = [], limit = 10, offset = 0, dir =
 const defaultDeps = {
   orcaRepos,
   mcpCall: mcpTools.callTool,
+  execGithub,
   runEntity,
 }
 
@@ -1259,6 +1361,13 @@ async function resolveOne(ctx, segment) {
       })
       segment.mention = { kind: 'youtrack', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`@youtrack:${segment.query} found no issue`)
+      return
+    }
+
+    if (segment.kind === 'github') {
+      const items = await resolveGithub(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
+      segment.mention = { kind: 'github', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`@github:${segment.query} matched no repository`)
     }
   } catch (error) {
     const message = String(error?.message || error)
@@ -1778,6 +1887,7 @@ module.exports = {
   search,
   orcaRepos,
   orcaWorktrees,
+  orcaBinary,
   worktreeState,
   resolveArtifact,
   blockFor,

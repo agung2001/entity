@@ -49,6 +49,11 @@ const ACCOUNT_ROWS = [
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
   { to: '/account/harnesses', label: 'Harnesses', hint: 'enable and disable agent CLIs' },
+  {
+    to: '/account/integrations',
+    label: 'Integrations',
+    hint: 'third-party services the composer can mention',
+  },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
   { to: '/account/updates', label: 'Updates', hint: 'version and releases' },
 ]
@@ -105,6 +110,7 @@ const section = computed(() => {
     name === 'account-notifications' ||
     name === 'account-mcp' ||
     name === 'account-harnesses' ||
+    name === 'account-integrations' ||
     name === 'account-backups' ||
     name === 'account-updates'
   ) {
