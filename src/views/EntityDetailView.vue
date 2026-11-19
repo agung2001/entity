@@ -12,6 +12,7 @@ import EntityLearnDialog from '@/components/EntityLearnDialog.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
+import PreferPicker from '@/components/PreferPicker.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import {
@@ -24,7 +25,13 @@ import {
   machineById,
   toast,
 } from '@/stores/hub'
-import { findEntity, loadEntities, revealEntity, saveEntity } from '@/stores/entities'
+import {
+  findEntity,
+  loadEntities,
+  revealEntity,
+  saveEntity,
+  togglePreferredSkill,
+} from '@/stores/entities'
 import { colorById, markFor } from '@/composables/entityMark'
 import { harnesses, loadHarnesses, loadModels, pickableHarnesses } from '@/stores/harnesses'
 
@@ -108,14 +115,44 @@ const statusState = computed(() =>
   agent.value?.status === 'running' ? 'live' : agent.value?.status === 'error' ? 'fail' : 'idle',
 )
 /* The entity's own bookmark order, with the workspace's answer beside each name.
-   Read-only: the file is the only place a `prefer:` line is written, and a name
-   this workspace does not have is a note, not a problem. */
+   A name the workspace does not have is a note, not a problem: `prefer:` is a
+   bookmark, so a stale entry never makes the entity wrong. */
 const preferred = computed(() =>
   (agent.value?.prefer || []).map((name) => ({
     name,
     present: hub.skills.some((skill) => skill.name === name && !skill.missing),
   })),
 )
+
+/* What the picker offers: every callable skill the workspace actually has. A
+   name the workspace cannot resolve would write a bookmark that does nothing, so
+   it is not offered — the `/` menu uses the same grammar. */
+const skillChoices = computed(() => {
+  const chosen = new Set(agent.value?.prefer || [])
+  return hub.skills
+    .filter((skill) => !skill.missing && /^[A-Za-z0-9._-]+$/.test(skill.name))
+    .map((skill) => ({
+      id: skill.name,
+      label: skill.name,
+      meta: chosen.has(skill.name) ? 'in the / menu' : '',
+      on: chosen.has(skill.name),
+    }))
+})
+
+const preferBusy = ref('')
+
+/* Both pickers write the same `prefer:` line through the same store call. */
+async function togglePrefer(name) {
+  if (!agent.value || preferBusy.value) return
+  preferBusy.value = name
+  try {
+    await togglePreferredSkill(agent.value.name, name)
+  } catch (error) {
+    toast(error?.message || 'The bookmark could not be written to the file.')
+  } finally {
+    preferBusy.value = ''
+  }
+}
 
 /* ── config diff ──────────────────────────────────────────────────── */
 const dirty = computed(
@@ -407,17 +444,33 @@ async function copyPath() {
             <div class="entp-sec-head">
               <h2>Starts from</h2>
               <span class="n">{{ preferred.length }} first · {{ hub.skills.length }} available</span>
+              <PreferPicker
+                class="entp-prefer"
+                head="Skills to start from"
+                label="Add skill"
+                :options="skillChoices"
+                :disabled="Boolean(preferBusy)"
+                @toggle="togglePrefer"
+              />
             </div>
             <div v-if="preferred.length" class="entp-chips">
-              <router-link
-                v-for="skill in preferred"
-                :key="skill.name"
-                class="entp-skchip"
-                :data-gone="skill.present ? '0' : '1'"
-                :to="{ name: 'skill', params: { workspace: route.params.workspace, name: skill.name } }"
-              >
-                <i></i>{{ skill.name }}<template v-if="!skill.present"> · gone · not in this workspace</template>
-              </router-link>
+              <span v-for="skill in preferred" :key="skill.name" class="entp-skpick">
+                <router-link
+                  class="entp-skchip"
+                  :data-gone="skill.present ? '0' : '1'"
+                  :to="{ name: 'skill', params: { workspace: route.params.workspace, name: skill.name } }"
+                >
+                  <i></i>{{ skill.name }}<template v-if="!skill.present"> · gone · not in this workspace</template>
+                </router-link>
+                <button
+                  class="entp-skx"
+                  type="button"
+                  :disabled="Boolean(preferBusy)"
+                  :aria-label="`Stop starting from ${skill.name}`"
+                  title="Remove from this entity's file"
+                  @click="togglePrefer(skill.name)"
+                >×</button>
+              </span>
             </div>
             <p class="entp-note">
               <template v-if="preferred.length">

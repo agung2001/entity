@@ -779,6 +779,9 @@ defineExpose({ focus, addFiles, addDrop, restore })
         @click="pick(c)"
       >
         <span class="name">{{ c.name }}</span>
+        <!-- The badge is what marks a bookmark: the description says the same
+             thing for every workspace skill, so the indicator cannot be text. -->
+        <span v-if="c.preferred" class="pref" title="This entity starts from this skill">Starts here</span>
         <span class="desc">{{ c.desc }}</span>
         <span class="k">{{ c.kind }}</span>
       </button>

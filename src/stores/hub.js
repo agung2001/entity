@@ -717,12 +717,15 @@ export function slashMenu(
 
   const items = []
   /* A bookmark is the one per-entity ordering: it starts the menu, then the rest
-     of the workspace group follows in the same order as before. */
+     of the workspace group follows in the same order as before. `preferred` is a
+     flag rather than a sentence in the description, because the row has a badge
+     for it and the description has to stay the same text for every row. */
   for (const name of preferred) {
     items.push({
       name: `${prefix}workspace:${name}`,
-      desc: 'Skill attached to this workspace · starts here',
+      desc: 'Skill attached to this workspace',
       kind: 'skill',
+      preferred: true,
     })
   }
 

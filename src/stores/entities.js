@@ -93,6 +93,24 @@ export async function saveEntity(entity) {
   return saved
 }
 
+/**
+ * Add or remove one skill in an entity's `prefer:` line.
+ *
+ * The bookmark lives in the entity file and nowhere else, so both pickers — the
+ * entity page naming skills and the skill page naming entities — write through
+ * this one function. Order is the file's: a new name appends, so the order the
+ * person picked in is the order the `/` menu shows.
+ */
+export async function togglePreferredSkill(entityName, skillName) {
+  const raw = findEntity(entityName)
+  if (!raw) throw new Error(`"${entityName}" is no longer in the workspace.`)
+  const current = Array.isArray(raw.prefer) ? raw.prefer : []
+  const next = current.includes(skillName)
+    ? current.filter((name) => name !== skillName)
+    : [...current, skillName]
+  return saveEntity({ ...raw, prefer: next })
+}
+
 export async function scaffoldEntity({ name, harness, model = '', description = '', mark = null }) {
   const created = await call('entity.scaffold', {
     workspace: hub.workspace,

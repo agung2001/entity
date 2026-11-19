@@ -634,6 +634,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The per-entity bookmark: the one row kind that is ordered by the entity file. */
+.ask-cmd .pref {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: var(--r-xs);
+  padding: 1px 4px;
+}
 .ask-cmd .k {
   margin-left: auto;
   flex: none;

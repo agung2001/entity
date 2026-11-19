@@ -204,6 +204,12 @@
   text-transform: uppercase;
   color: var(--muted);
 }
+/* The picker closes the heading row, so the count and the control that changes
+   it stay one line. */
+.blk h2 .blk-prefer {
+  margin-left: auto;
+  align-self: center;
+}
 .blk > p:not(.tnote) {
   margin: 0 0 14px;
   color: var(--ink-2);

@@ -1420,6 +1420,45 @@
 .entp-skchip[data-gone='1'] i {
   background: var(--muted);
 }
+/* A chip you can take off the list: the × sits beside the link, never inside it,
+   because a link cannot hold a button. */
+.entp-skpick {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.entp-skchip:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.entp-skx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  cursor: pointer;
+}
+.entp-skx:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.entp-skx[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+/* The trigger closes the section head, beside the count it changes. */
+.entp-sec-head .entp-prefer {
+  margin-left: auto;
+}
 .entp-note {
   margin: 10px 0 0;
   font-family: var(--mono);

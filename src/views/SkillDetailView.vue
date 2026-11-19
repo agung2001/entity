@@ -2,9 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import PreferPicker from '@/components/PreferPicker.vue'
 import SkillCopyDialog from '@/components/SkillCopyDialog.vue'
 import { readSkillEntry } from '@/composables/localBridge'
 import { copyText } from '@/lib/clipboard'
+import { togglePreferredSkill } from '@/stores/entities'
 import { hub, toast } from '@/stores/hub'
 import {
   attachSkill,
@@ -70,6 +72,33 @@ const starters = computed(() =>
     .filter(Boolean)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
 )
+
+/* The same picker, seen from the other side: choose the entities that should
+   name this skill first. It writes each entity's own `prefer:` line — there is
+   no skill-side record, which is why the sheet is a per-entity write. */
+const entityChoices = computed(() => {
+  const target = name.value
+  return hub.agents.map((a) => ({
+    id: a.id,
+    label: a.name,
+    meta: a.harnessLabel,
+    on: Array.isArray(a.prefer) && a.prefer.includes(target),
+  }))
+})
+
+const preferBusy = ref('')
+
+async function togglePrefer(entityName) {
+  if (!name.value || preferBusy.value) return
+  preferBusy.value = entityName
+  try {
+    await togglePreferredSkill(entityName, name.value)
+  } catch (error) {
+    toast(error?.message || 'The bookmark could not be written to the file.')
+  } finally {
+    preferBusy.value = ''
+  }
+}
 const currentFile = computed(() => files.value[fileIndex.value] || null)
 const version = computed(() => item.value?.version || '')
 /* the composer's `/` menu uses the same grammar; a name with a space is not a
@@ -285,6 +314,14 @@ async function attach() {
               <h2>
                 Who starts from it
                 <span class="k">— {{ starters.length }} of {{ hub.agents.length }} entities</span>
+                <PreferPicker
+                  class="blk-prefer"
+                  head="Entities to start from this skill"
+                  label="Add entity"
+                  :options="entityChoices"
+                  :disabled="Boolean(preferBusy)"
+                  @toggle="togglePrefer"
+                />
               </h2>
               <div v-if="starters.length" class="ents">
                 <button
