@@ -23,22 +23,31 @@ const MODEL_TTL = 60_000
    carrying a copy, so adding a CLI here is the whole change. */
 const META = [
   { id: 'claude', label: 'Claude Code', command: 'claude' },
-  { id: 'codex', label: 'Codex CLI', command: 'codex' },
-  { id: 'gemini', label: 'Gemini CLI', command: 'gemini' },
-  { id: 'opencode', label: 'opencode', command: 'opencode' },
+  { id: 'codex', label: 'Codex', command: 'codex' },
   { id: 'pi', label: 'pi', command: 'pi' },
+  { id: 'antigravity', label: 'Antigravity', command: 'agy' },
+  { id: 'hermes', label: 'Hermes Agent', command: 'hermes' },
 ]
 
 const cache = new Map()
+
+/* One shape for the whole file, so a write of either key cannot drop the other.
+   A file with no `enabled` map means every harness is on — that is what an
+   upgrade from `schema: 1` reads as, and what an unreadable file reads as. */
+function configShape(value) {
+  const paths = value?.paths && typeof value.paths === 'object' ? value.paths : {}
+  const enabled = value?.enabled && typeof value.enabled === 'object' ? value.enabled : {}
+  return { schema: 2, paths, enabled }
+}
 
 function readConfig() {
   try {
     const raw = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
     return raw && typeof raw === 'object' && raw.paths && typeof raw.paths === 'object'
-      ? raw
-      : { schema: 1, paths: {} }
+      ? configShape(raw)
+      : configShape(null)
   } catch {
-    return { schema: 1, paths: {} }
+    return configShape(null)
   }
 }
 
@@ -109,6 +118,8 @@ function list() {
       path: found ? tilde(found) : '',
       absolutePath: found,
       installed: Boolean(found) && executable(found),
+      /* a missing key is on: the file predates the preference */
+      enabled: config.enabled[meta.id] !== false,
       custom: Boolean(custom),
       customPath: custom ? tilde(expandHome(custom)) : '',
     }
@@ -130,9 +141,38 @@ function setPath({ id, path: value } = {}) {
     }
     paths[meta.id] = absolute
   }
-  writeConfig({ schema: 1, paths })
+  writeConfig({ ...configShape(config), paths })
   cache.delete(meta.id)
   return list().find((entry) => entry.id === meta.id)
+}
+
+/**
+ * The machine-wide on/off switch. Never the last one: an entity or a thread
+ * whose harness is off fails loudly on the next message, and zero enabled
+ * harnesses would make every new-thread action fail the same way.
+ */
+function setEnabled({ id, enabled } = {}) {
+  const meta = metaFor(String(id || ''))
+  if (!meta) throw new Error('Unknown harness.')
+  const config = readConfig()
+  const wanted = { ...config.enabled, [meta.id]: Boolean(enabled) }
+  const left = META.filter((entry) => wanted[entry.id] !== false)
+  if (!left.length) {
+    throw new Error(
+      `${meta.label} is the only harness on. Turn another on before turning this one off.`,
+    )
+  }
+  writeConfig({ ...configShape(config), enabled: wanted })
+  return list().find((entry) => entry.id === meta.id)
+}
+
+/** Refuses to spawn a harness this machine has turned off. `binary()` is used
+    for version probes too, so the guard lives at the three spawn sites. */
+function assertEnabled(id) {
+  const meta = metaFor(String(id || ''))
+  if (!meta) throw new Error('Unknown harness.')
+  if (readConfig().enabled[meta.id] !== false) return
+  throw new Error(`${meta.label} is turned off on this machine. Turn it on in Account → Harnesses.`)
 }
 
 function readJson(file) {
@@ -399,6 +439,8 @@ module.exports = {
   binary,
   resolvedPath,
   setPath,
+  setEnabled,
+  assertEnabled,
   models,
   cliModels,
   configuredProvider,

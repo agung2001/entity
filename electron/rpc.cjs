@@ -254,6 +254,7 @@ function createRpc({
         binaryPath: harnesses.resolvedPath('pi'),
       }),
     'harness.setPath': (args) => harnesses.setPath(args),
+    'harness.setEnabled': (args) => harnesses.setEnabled(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),

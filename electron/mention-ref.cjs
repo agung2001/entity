@@ -661,6 +661,11 @@ async function runEntity(record, mentioned, job, { onChild = null } = {}) {
   /* required here, not at the top: `runner-local` owns this module's entry
      points, and a load-time cycle would hand it an empty object */
   const { chatInvocation } = require('./runner-local.cjs')
+  try {
+    harnesses.assertEnabled(mentioned.harness)
+  } catch (error) {
+    return { ok: false, answer: '', error: String(error?.message || error) }
+  }
   const dir = entities.resolveDir(mentioned)
   const mcp = mcpRuntime.materialise({ record, harness: mentioned.harness })
   try {

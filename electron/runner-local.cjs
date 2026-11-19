@@ -291,6 +291,7 @@ function createRunner({ emit = () => {} } = {}) {
     const entity = entities.read(workspace, name)
     if (!entity) throw new Error(`No entity called "${name}" in this workspace.`)
     if (!prompt || !String(prompt).trim()) throw new Error('Write a prompt first.')
+    harnesses.assertEnabled(entity.harness)
 
     const key = `${workspace}/${entity.name}`
     if (locks.has(key)) throw new Error(`${entity.name} is already running.`)

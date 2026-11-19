@@ -1,0 +1,366 @@
+/* ── account: harnesses ───────────────────────────────────────────────────
+   Five rows, one switch each. The row is the whole grammar: mark, name + id,
+   install state, a 44 px hit box wrapping the 38 × 22 pill. Only what is new
+   here — `.acct-page`, `.acct-card`, `.acct-card-head`, `.role-badge`,
+   `.role-card`, `.mnote`, `.btn`, `.sfx-switch`, `.acct-error` and
+   `.empty-note` are declared once in their own sheets. */
+.harness-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 292px;
+  gap: 16px;
+  align-items: start;
+  max-width: 900px;
+}
+.harness-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  overflow: hidden;
+}
+.harness-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px 9px 12px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--border);
+}
+.harness-row:last-child {
+  border-bottom: 0;
+}
+.harness-mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-2);
+}
+.harness-row[data-on='0'] .harness-mark {
+  color: var(--muted);
+}
+.harness-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.harness-name {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.harness-name b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.harness-row[data-on='0'] .harness-name b {
+  color: var(--ink-2);
+}
+.harness-name .id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.harness-state {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harness-state .ok {
+  color: var(--ok-ink);
+}
+.harness-why {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+}
+.harness-why[data-tone='error'] {
+  color: var(--danger);
+}
+/* the reason a write was refused, beside the sentence that says nothing changed */
+.harness-reason {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  opacity: 0.8;
+}
+/* the empty state names the install line and the retry of a failed load */
+.harness-page .empty-note .cmd {
+  display: block;
+  margin: 0 auto 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  overflow-wrap: anywhere;
+}
+.harness-page .empty-note .btn {
+  margin-top: 10px;
+}
+
+/* the one override PATH cannot answer: a version manager, a custom prefix, an
+   app bundle. It sits on the name line so the row keeps three columns, and the
+   editor opens directly under the row it belongs to. */
+.harness-name {
+  overflow: hidden;
+}
+.harness-path-btn {
+  flex: none;
+  margin-left: auto;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.harness-path-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg);
+  color: var(--ink);
+}
+.harness-path-btn[aria-expanded='true'] {
+  border-color: color-mix(in oklab, var(--accent) 65%, #000);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.harness-path-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.harness-path-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.harness-path-edit-row:last-child {
+  border-bottom: 0;
+}
+.harness-path-edit {
+  height: 30px;
+  font-size: var(--fs-meta);
+}
+
+/* the control is the 44 × 44 box; the 38 × 22 pill inside it is paint */
+.harness-switch {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+}
+.harness-switch .sfx-switch {
+  pointer-events: none;
+}
+.harness-switch:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.harness-switch[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+.harness-switch[aria-disabled='true'] .sfx-switch {
+  opacity: 0.55;
+}
+/* press: the track deepens, nothing moves */
+.harness-switch:active .sfx-switch[aria-checked='true'] {
+  background: color-mix(in oklab, var(--accent) 90%, #000);
+}
+
+.harness-note {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  line-height: 1.55;
+}
+.harness-note code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+
+/* the way back from a reversible preference: eight seconds, no confirm dialog */
+.undo-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--accent) 55%, var(--border));
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+  opacity: 1;
+  transition: opacity 0.12s ease-out;
+}
+.undo-strip span {
+  flex: 1;
+  min-width: 0;
+}
+.undo-btn {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in oklab, var(--accent) 70%, #000);
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.undo-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* the skeleton repeats the row grid, so nothing moves when the real rows land */
+.skel {
+  border-radius: var(--r-xs);
+  background: linear-gradient(90deg, var(--skel) 25%, var(--surface-2) 37%, var(--skel) 63%);
+  background-size: 400% 100%;
+  animation: harness-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes harness-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+.skel-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 44px;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.skel-row:last-child {
+  border-bottom: 0;
+}
+.skel-mark {
+  width: 22px;
+  height: 22px;
+}
+.skel-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skel-line {
+  display: block;
+  height: 9px;
+}
+.skel-line.s1 {
+  width: 84px;
+}
+.skel-line.s2 {
+  width: 148px;
+}
+.skel-pill {
+  width: 38px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  justify-self: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: none;
+    background: var(--skel);
+  }
+  .undo-strip {
+    transition: none;
+  }
+}
+
+/* 360 px: the id chip stays (it is how `pi` is told from a pi-like name) and
+   the path truncates instead; the row never wraps. */
+@media (max-width: 860px) {
+  .harness-path-edit-row {
+    /* the field takes the row and the three actions share the line under it */
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: 6px;
+  }
+  .harness-path-edit {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 360px) {
+  .harness-path-btn {
+    /* the id chip stays; the word shortens instead of the row wrapping */
+    padding: 0 4px;
+  }
+  .harness-path-edit-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding: 7px 6px 7px 9px;
+  }
+  .harness-row {
+    grid-template-columns: 18px minmax(0, 1fr) 44px;
+    gap: 9px;
+    padding: 7px 6px 7px 9px;
+  }
+  .harness-name b {
+    font-size: var(--fs-secondary);
+  }
+  .harness-state {
+    font-size: var(--fs-micro);
+  }
+  .harness-mark {
+    width: 18px;
+    height: 18px;
+  }
+  .role-badge.harness-count {
+    padding: 0 5px;
+  }
+  .harness-count .of {
+    display: none;
+  }
+  .skel-row {
+    grid-template-columns: 18px minmax(0, 1fr) 44px;
+    gap: 9px;
+    padding: 9px 6px 9px 9px;
+  }
+}

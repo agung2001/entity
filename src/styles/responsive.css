@@ -39,7 +39,8 @@
   .mgrid {
     grid-template-columns: 1fr 1fr;
   }
-  .acct-page {
+  .acct-page,
+  .harness-page {
     /* `1fr` is `minmax(auto, 1fr)`: the track then grows to the widest card's
        min-content, which is a 45 px overflow on a phone and invisible because the
        shell clips sideways. A zero minimum is what makes the card wrap instead. */

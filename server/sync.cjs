@@ -757,6 +757,7 @@ const HOST_ONLY_CALLS = new Set([
   'mcp.globals',
   'mcp.tools',
   'harness.setPath',
+  'harness.setEnabled',
   'skills.remote',
   'ssh.hosts',
   'ssh.probe',

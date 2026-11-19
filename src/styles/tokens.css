@@ -75,6 +75,13 @@
   --fs-h1: 30px;
   --rail: 228px;
   --rail-bg: #f7f5ef;
+  /* The loading skeleton's own fill. `--border` on `--surface` is 1.22:1, which
+     reads as an almost-blank card, so the placeholder mixes the muted ink in
+     (34 % → 1.60:1). Declared as a var so a theme move carries it. */
+  --skel: color-mix(in oklab, var(--muted) 34%, var(--surface));
+  /* The "found" word. Raw `--ok` is 3.78:1 on a daylight surface and fails as
+     small text; this is the same green darkened to 5.32:1. */
+  --ok-ink: #277544;
 
   color-scheme: light;
 }
@@ -100,6 +107,9 @@
   --field-edge: #827a6b;
   --on-accent: #171407;
   --rail-bg: #191813;
+  --skel: color-mix(in oklab, var(--muted) 30%, var(--surface));
+  /* at night `--ok` is already 6.78:1 on the surface */
+  --ok-ink: #58b575;
   color-scheme: dark;
 }
 

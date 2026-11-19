@@ -48,6 +48,7 @@ const ACCOUNT_ROWS = [
   { to: '/account/sound', label: 'Sound', hint: 'Area 51 feedback' },
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
+  { to: '/account/harnesses', label: 'Harnesses', hint: 'enable and disable agent CLIs' },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
 ]
 
@@ -102,6 +103,7 @@ const section = computed(() => {
     name === 'account-sound' ||
     name === 'account-notifications' ||
     name === 'account-mcp' ||
+    name === 'account-harnesses' ||
     name === 'account-backups'
   ) {
     return { id: 'account', title: 'Account', count: null }

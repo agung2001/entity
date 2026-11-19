@@ -1589,6 +1589,9 @@ function runHarness(
        named in this prompt, not a restriction the entity carries. */
     let mcp = { servers: [], files: [], argv: [], env: {}, notes: [], cleanup() {} }
     try {
+      /* A harness this machine turned off is not spawned, and the reason comes
+         back as the turn's error instead of a silent fallback. */
+      harnesses.assertEnabled(thread.harness)
       mcp = mcpRuntime.materialise({
         record,
         harness: thread.harness,
