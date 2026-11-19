@@ -55,8 +55,9 @@ yourself.
 The same works for MCP: servers in `<workspace>/mcp.json` apply to every entity in
 this workspace, so a server someone added there is already yours to use — do not
 ask to have it bound, and do not try to have one attached to a single entity: the
-pool belongs to the workspace, and `harness`, `model` and `dir` are the only fields
-that are per entity.
+pool belongs to the workspace, and `harness`, `model`, `dir` and `prefer` are the
+only fields that are per entity. `prefer:` is a bookmark, though: it reorders that
+entity's `/` menu and never adds or removes a skill.
 
 - `--help` on any verb beats guessing a flag.
 - A name is not an id: `list` first, then act on what it returned.

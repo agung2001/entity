@@ -662,8 +662,10 @@ const SKILL_REF_NAME = /^[A-Za-z0-9._-]+$/
  * attached to the workspace is not offered twice when it is the same file as a
  * harness one (deduped on the resolved path, not the name: a copied skill is a
  * different file and stays visible). Every entity sees the same list: nothing
- * here is ordered by what one entity "carries", because no entity carries a
- * skill of its own.
+ * here is granted or filtered by what one entity "carries", because no entity
+ * carries a skill of its own. The one per-entity ordering is the entity's own
+ * `prefer:` list — a starting point at the top of the workspace group, never a
+ * grant and never a filter.
  *
  * `machine` is the thread's machine. Only this machine's libraries can be read,
  * so a thread pinned anywhere else gets an empty menu and the composer's own
@@ -705,8 +707,26 @@ export function slashMenu(
       .filter(Boolean),
   )
 
+  /* The entity's bookmarks, in the entity's own order, kept only when the skill
+     really is attached here and can be typed as a reference. Never a grant: a
+     name the workspace lacks is simply not offered. */
+  const attachedSet = new Set(attached)
+  const preferred = (Array.isArray(agent?.prefer) ? agent.prefer : []).filter(
+    (name) => attachedSet.has(name) && SKILL_REF_NAME.test(name),
+  )
+
   const items = []
-  /* Skills that ship with the thread's base directory come first: they are the
+  /* A bookmark is the one per-entity ordering: it starts the menu, then the rest
+     of the workspace group follows in the same order as before. */
+  for (const name of preferred) {
+    items.push({
+      name: `${prefix}workspace:${name}`,
+      desc: 'Skill attached to this workspace · starts here',
+      kind: 'skill',
+    })
+  }
+
+  /* Skills that ship with the thread's base directory come next: they are the
      closest thing to "this project's instructions". */
   for (const skill of projectItems || []) {
     if (!SKILL_REF_NAME.test(skill.name)) continue
@@ -718,6 +738,8 @@ export function slashMenu(
   }
 
   for (const name of attached) {
+    /* already offered at the top as a bookmark — never twice */
+    if (preferred.includes(name)) continue
     items.push({
       name: `${prefix}workspace:${name}`,
       desc: 'Skill attached to this workspace',

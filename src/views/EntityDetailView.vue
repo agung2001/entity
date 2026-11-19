@@ -107,8 +107,11 @@ const threadLink = (thread) => ({
 const statusState = computed(() =>
   agent.value?.status === 'running' ? 'live' : agent.value?.status === 'error' ? 'fail' : 'idle',
 )
-const declaredSkills = computed(() =>
-  (agent.value?.skills || []).map((name) => ({
+/* The entity's own bookmark order, with the workspace's answer beside each name.
+   Read-only: the file is the only place a `prefer:` line is written, and a name
+   this workspace does not have is a note, not a problem. */
+const preferred = computed(() =>
+  (agent.value?.prefer || []).map((name) => ({
     name,
     present: hub.skills.some((skill) => skill.name === name && !skill.missing),
   })),
@@ -402,21 +405,27 @@ async function copyPath() {
 
           <section class="entp-sec">
             <div class="entp-sec-head">
-              <h2>Skills</h2>
-              <span class="n">{{ declaredSkills.length }} declared · {{ hub.skills.length }} in this workspace</span>
+              <h2>Starts from</h2>
+              <span class="n">{{ preferred.length }} first · {{ hub.skills.length }} available</span>
             </div>
-            <div class="entp-skills">
+            <div v-if="preferred.length" class="entp-chips">
               <router-link
-                v-for="skill in declaredSkills"
+                v-for="skill in preferred"
                 :key="skill.name"
                 class="entp-skchip"
-                :data-missing="skill.present ? '0' : '1'"
+                :data-gone="skill.present ? '0' : '1'"
                 :to="{ name: 'skill', params: { workspace: route.params.workspace, name: skill.name } }"
               >
-                <i></i>{{ skill.name }}<template v-if="!skill.present"> · link missing</template>
+                <i></i>{{ skill.name }}<template v-if="!skill.present"> · gone · not in this workspace</template>
               </router-link>
-              <span v-if="!declaredSkills.length" class="entp-skchip"><i></i>none declared</span>
             </div>
+            <p class="entp-note">
+              <template v-if="preferred.length">
+                A starting point, not a grant — every workspace skill stays reachable in
+                this entity's / menu.
+              </template>
+              <template v-else>no preference — the / menu is in its default order</template>
+            </p>
           </section>
         </div>
 

@@ -58,6 +58,18 @@ const copying = ref(false)
 let token = 0
 
 const files = computed(() => entry.value?.files || [])
+
+/* Entities whose own `prefer:` line names this skill, ordered by where they put
+   it and then by name. Everyone who does not is still offered the skill. */
+const starters = computed(() =>
+  hub.agents
+    .map((a) => {
+      const at = Array.isArray(a.prefer) ? a.prefer.indexOf(name.value) : -1
+      return at < 0 ? null : { ...a, position: at + 1 }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+)
 const currentFile = computed(() => files.value[fileIndex.value] || null)
 const version = computed(() => item.value?.version || '')
 /* the composer's `/` menu uses the same grammar; a name with a space is not a
@@ -266,13 +278,17 @@ async function attach() {
               <p v-else-if="error" class="tnote"><span>{{ error }}</span></p>
             </div>
 
-            <!-- A skill belongs to the workspace, so the answer is the same for
-                 every entity: there is no list to keep in sync. -->
+            <!-- Read-only evidence, never a permission list: every entity in the
+                 workspace gets this skill. This only shows who names it as a
+                 starting point in their own file. -->
             <div class="blk">
-              <h2>Available to <span class="k">— every entity in this workspace</span></h2>
-              <div v-if="hub.agents.length" class="ents">
+              <h2>
+                Who starts from it
+                <span class="k">— {{ starters.length }} of {{ hub.agents.length }} entities</span>
+              </h2>
+              <div v-if="starters.length" class="ents">
                 <button
-                  v-for="a in hub.agents"
+                  v-for="a in starters"
                   :key="a.id"
                   class="ent"
                   type="button"
@@ -283,11 +299,14 @@ async function attach() {
                     <span class="nm">{{ a.name }}</span>
                     <span class="rt">{{ a.harnessLabel }}</span>
                   </span>
-                  <span class="where">{{ a.dir }}</span>
+                  <span class="where">· position {{ a.position }}</span>
                 </button>
               </div>
+              <p v-if="starters.length" class="tnote">
+                <span>Everyone else still gets it in /workspace:{{ name }}.</span>
+              </p>
               <p v-else class="tnote">
-                <span>No entities in this workspace yet.</span>
+                <span>No entity starts from this one — every entity still gets it in its / menu.</span>
               </p>
             </div>
           </div>

@@ -5,7 +5,7 @@
  * box is ticked — a fresh workspace is empty until the user creates something.
  * `preferredSkills` is only a wish list: the seeder keeps the skills that the
  * workspace actually has, so a sample entity never ships with a broken
- * `skills:` line.
+ * `prefer:` line.
  */
 const SAMPLES = [
   {

@@ -1394,11 +1394,6 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.entp-skills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 .entp-skchip {
   display: inline-flex;
   align-items: center;
@@ -1418,13 +1413,12 @@
   border-radius: 50%;
   background: var(--ok);
 }
-.entp-skchip[data-missing='1'] {
-  border-color: color-mix(in oklab, var(--danger) 33%, var(--border));
-  background: var(--danger-soft);
-  color: var(--danger);
+/* A bookmark whose skill this workspace no longer has is a note, not a fault. */
+.entp-skchip[data-gone='1'] {
+  color: var(--muted);
 }
-.entp-skchip[data-missing='1'] i {
-  background: var(--danger);
+.entp-skchip[data-gone='1'] i {
+  background: var(--muted);
 }
 .entp-note {
   margin: 10px 0 0;
