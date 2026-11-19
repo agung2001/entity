@@ -86,6 +86,11 @@ function readFile(workspaceId, file) {
     harness: String(fm.harness || '').trim(),
     model: String(fm.model || '').trim(),
     dir: String(fm.dir || '').trim(),
+    /* a bookmark, not a grant: this only sorts the entity's own `/` menu */
+    prefer: String(fm.prefer || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     mark: {
       shape: String(fm.shape || '').trim(),
       color: String(fm.color || '').trim(),
@@ -160,13 +165,17 @@ function read(workspaceId, name) {
 
 /* Keys this writer owns. `skills` and `mcp` are here on purpose: they used to
    name a subset of the workspace, nothing reads them now, and listing them keeps
-   a stale line from being copied forward forever with no effect. */
-const KNOWN_KEYS = new Set(['name', 'harness', 'model', 'dir', 'skills', 'mcp'])
+   a stale line from being copied forward forever with no effect. `prefer` is
+   owned because it does have an effect — it is written back explicitly below. */
+const KNOWN_KEYS = new Set(['name', 'harness', 'model', 'dir', 'prefer', 'skills', 'mcp'])
 
 function serialize(entity) {
   const lines = ['---', `name: ${entity.name}`, `harness: ${entity.harness}`]
   if (entity.model) lines.push(`model: ${entity.model}`)
   lines.push(`dir: ${entity.dir}`)
+  /* owned above, so the unknown-key loop below skips it — write it here or the
+     next save silently drops the bookmark */
+  if (entity.prefer?.length) lines.push(`prefer: ${entity.prefer.join(', ')}`)
   /* anything else the file carried survives the round trip */
   for (const [key, value] of Object.entries(entity.frontmatter || {})) {
     if (KNOWN_KEYS.has(key) || !String(value || '').trim()) continue

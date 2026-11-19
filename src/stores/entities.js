@@ -33,6 +33,8 @@ export function toAgent(entity) {
     harnessLabel: harnessLabel(entity.harness),
     model: entity.model || '',
     dir,
+    /* the entity's own bookmark order for the `/` menu; never a grant */
+    prefer: Array.isArray(entity.prefer) ? entity.prefer : [],
     status: 'sleep',
     desc: entity.summary || 'No description in the file yet.',
     /* the seed's first shape/colour/mood, before the picker writes its own */
