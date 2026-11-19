@@ -35,7 +35,7 @@ const props = defineProps({
      screen — switching threads would otherwise take the words with it. */
   draft: { type: String, default: '' },
 })
-const emit = defineEmits(['send', 'stop', 'update:attachments', 'update:draft'])
+const emit = defineEmits(['send', 'stop', 'enhance', 'update:attachments', 'update:draft'])
 
 /* Local while you type (the caret, the menu and the growth all need it now);
    the store is told on every change and answers on every thread switch. */
@@ -70,6 +70,9 @@ const projectSkills = ref([])
 const projectScanned = ref('')
 let projectPending = false
 const sendShortcut = shortcutLabel('send')
+const enhanceShortcut = shortcutLabel('enhance-prompt')
+/* a keyboard-only feature is unreachable on touch, so the hint is a button */
+const canEnhance = computed(() => Boolean(draft.value.trim()) && !props.sending)
 /* one library read per machine per composer mount, even if the scan fails */
 const requested = new Set()
 
@@ -790,6 +793,17 @@ defineExpose({ focus, addFiles, addDrop, restore })
             <span class="slash-hint-sep" aria-hidden="true">·</span>
             <span class="slash-hint-term"><kbd>{{ terminalShortcut }}</kbd> terminal</span>
           </template>
+          <button
+            v-if="canEnhance"
+            class="slash-enh"
+            type="button"
+            :title="`Enhance this prompt (${enhanceShortcut})`"
+            aria-label="Enhance this prompt"
+            aria-haspopup="dialog"
+            @click="emit('enhance')"
+          >
+            <kbd>{{ enhanceShortcut }}</kbd> enhance
+          </button>
         </span>
         <span class="slash-send">
           <span class="attach-picker">
@@ -880,6 +894,42 @@ defineExpose({ focus, addFiles, addDrop, restore })
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+/* the enhancement capsule: dashed, so it reads as "extra" rather than
+   another send. A hint row is micro type on both ends, except the button. */
+.slash-enh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+  padding: 2px 6px 2px 3px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease;
+}
+.slash-enh:hover {
+  border-style: solid;
+  border-color: var(--muted);
+  color: var(--ink);
+}
+.slash-enh kbd {
+  background: var(--bg);
+}
+@media (max-width: 360px) {
+  .slash-hint {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slash-enh {
+    transition: none;
+  }
 }
 .attach-file-input {
   display: none;
