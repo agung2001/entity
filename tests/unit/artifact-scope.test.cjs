@@ -143,3 +143,40 @@ test('a removed file leaves no stale id behind', () => {
     fs.readFileSync(path.join(artifacts.artifactsDir(workspaces.open(record.id)), '.scope.json'), 'utf8'),
   ).shared), [])
 })
+
+/* ── the origin index follows the files, not the shelf word ────────────
+ *
+ * `eraseAll` takes a scope, and `personal` leaves the shared shelf standing. A
+ * blanket clear of the origin map there would unattach files that are still on
+ * disk; a stale entry is worse — a new file with the same name would be handed
+ * to a conversation that ended days ago.
+ */
+const originFile = (id) => path.join(artifacts.artifactsDir(workspaces.open(id)), '.origin.json')
+const origins = (id) => {
+  try {
+    return JSON.parse(fs.readFileSync(originFile(id), 'utf8')).threads
+  } catch {
+    return {}
+  }
+}
+
+test('the origin index is pruned against the files that survived the erase', () => {
+  const isPersonalOnly = workspaces.create({ label: 'origin-erase' })
+  const saved = artifacts.saveText({ workspace: isPersonalOnly.id, name: 'brief.md', text: 'a' })
+  assert.deepEqual(artifacts.stampOrigins({ workspace: isPersonalOnly.id, threadId: 't_alpha', ids: [saved.id] }), [
+    'brief.md',
+  ])
+
+  /* Erasing one shelf must not unattach a file on the other one. */
+  artifacts.share({ workspace: isPersonalOnly.id, id: saved.id })
+  artifacts.eraseAll({ workspace: isPersonalOnly.id, scope: 'personal' })
+  assert.deepEqual(origins(isPersonalOnly.id), { 'brief.md': 't_alpha' })
+
+  /* Erasing everything must leave no id behind… */
+  artifacts.eraseAll({ workspace: isPersonalOnly.id, scope: 'all' })
+  assert.deepEqual(origins(isPersonalOnly.id), {})
+
+  /* …so a later file of the same name is nobody's, not the old thread's. */
+  artifacts.saveText({ workspace: isPersonalOnly.id, name: 'brief.md', text: 'b' })
+  assert.deepEqual(origins(isPersonalOnly.id), {})
+})

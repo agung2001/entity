@@ -327,8 +327,11 @@ export const hub = reactive({
     error: '',
     workspace: '',
     /* A message another page prepared (artifact annotations) and the chat
-       consumes once the composer exists. Empty means nothing is waiting. */
+       consumes once the composer exists. Empty means nothing is waiting.
+       `draftThread` says which conversation wrote it: notes taken on an artifact
+       in one turn must never land in another's composer. */
     draft: '',
+    draftThread: '',
     /* threadId → the text still sitting in that thread's composer. Unsent text
        is the thread's, not the one box's: switching away used to drop it. */
     drafts: {},
@@ -414,6 +417,8 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
   hub.chat.summaries = []
   hub.chat.threads = {}
   hub.chat.active = ''
+  hub.chat.draft = ''
+  hub.chat.draftThread = ''
   hub.chat.sending = {}
   hub.chat.stopping = {}
   hub.chat.live = {}
@@ -541,6 +546,19 @@ export function openArtifactPreview(id) {
 
 export function closeArtifactPreview() {
   hub.artifact.open = ''
+}
+
+/**
+ * A preview belongs to the conversation it was opened in.
+ *
+ * An artifact is a file in the workspace, but the page over it is a view of one
+ * turn: its notes go to that thread's composer. `hub.artifact` is global — the
+ * dialog lives in `ChatView` — so switching threads used to leave the previous
+ * conversation's screenshot open over the new transcript, which reads as the
+ * file having followed the person. Close it on every thread change.
+ */
+export function closeArtifactForThreadChange() {
+  if (hub.artifact.open) hub.artifact.open = ''
 }
 
 /**

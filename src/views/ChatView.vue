@@ -36,6 +36,7 @@ import {
   cancelChat,
   chatDraft,
   chatSend,
+  closeArtifactForThreadChange,
   decideDelegation,
   ensureChats,
   harnessById,
@@ -97,12 +98,21 @@ function applyPendingDraft() {
 function consumeDraft() {
   const text = String(hub.chat.draft || '')
   if (!text) return
+  const stamped = String(hub.chat.draftThread || '')
   hub.chat.draft = ''
+  hub.chat.draftThread = ''
   /* Notes written on an artifact are only useful in a composer. With no thread
      open there is none, so the words go to the clipboard rather than nowhere. */
   if (!thread.value) {
     navigator.clipboard?.writeText(text).catch(() => {})
     toast('No thread is open — the notes are on your clipboard')
+    return
+  }
+  /* Written for another conversation and the reader has moved on: their place is
+     the clipboard, not this box, which is somebody else's turn. */
+  if (stamped && stamped !== thread.value.id) {
+    navigator.clipboard?.writeText(text).catch(() => {})
+    toast('Those notes were for another thread — they are on your clipboard')
     return
   }
   pendingDraft.value = text
@@ -117,10 +127,17 @@ watch(
   () => hub.chat.draft,
   (text) => {
     if (!text) return
+    const stamped = String(hub.chat.draftThread || '')
     hub.chat.draft = ''
+    hub.chat.draftThread = ''
     if (!thread.value) {
       navigator.clipboard?.writeText(text).catch(() => {})
       toast('No thread is open — the notes are on your clipboard')
+      return
+    }
+    if (stamped && stamped !== thread.value.id) {
+      navigator.clipboard?.writeText(text).catch(() => {})
+      toast('Those notes were for another thread — they are on your clipboard')
       return
     }
     pendingDraft.value = text
@@ -1111,6 +1128,9 @@ watch(
 watch(
   () => hub.chat.active,
   () => {
+    /* An artifact preview is a view of one turn — its notes go to that turn's
+       composer — so it must not survive into the next conversation. */
+    closeArtifactForThreadChange()
     timelineOpen.value = false
     helpOpen.value = false
     voiceOpen.value = false
@@ -1318,6 +1338,7 @@ watch(
             :machine="ctx.machine || 'local'"
             :dir="ctx.dir || ''"
             :workspace="hub.workspace"
+            :thread-id="hub.chat.active"
             @close="terminalOpen = false"
           />
 

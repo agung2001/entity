@@ -1006,8 +1006,10 @@ function artifactSummary(item) {
 function turnArtifacts(thread, turnStartedMs, answer, steps = []) {
   const linked = artifactRefs(answer)
   let shelf = []
+  let stamped = {}
   try {
     shelf = artifacts.list({ workspace: thread.workspace }).items || []
+    stamped = artifacts.origins({ workspace: thread.workspace }) || {}
   } catch {
     return []
   }
@@ -1030,6 +1032,7 @@ function turnArtifacts(thread, turnStartedMs, answer, steps = []) {
     remote,
     cache: evidence,
     alsoNamed: linked,
+    stamped,
   })
   return candidates
     .filter((item) => owned.has(item.id))
@@ -1236,22 +1239,54 @@ function otherWindows(thread) {
  *
  * What counts as evidence, in order:
  *
- *  1. **the turn says so** — `artifact://<id>`, the relative id in the answer,
+ *  1. **the store wrote it down** — when a turn ends it stamps the files it
+ *     produced (`.origin.json`). That is a record, not an inference, so it wins,
+ *     and a file stamped to another session is unreachable by 2 and 3 below;
+ *  2. **the turn says so** — `artifact://<id>`, the relative id in the answer,
  *     a write tool with that path, or a shell write operator beside it. Strong
  *     enough to win even when another turn overlaps;
- *  2. **the folder the turn wrote into** — a render batch is one deliverable:
+ *  3. **the folder the turn wrote into** — a render batch is one deliverable:
  *     the page it edited and the PNG beside it belong to the same turn, even
  *     when the answer only links one of them. Only for files whose window has
  *     exactly one owner, so two conversations in one folder cannot both claim
  *     a fresh file;
- *  3. **a file at the shelf root**, same single-owner condition. There is no
+ *  4. **a file at the shelf root**, same single-owner condition. There is no
  *     folder to be wrong about, so the window is the best available signal.
  *
  * Everything else stays on the shelf. An unattached file costs a click; a file
  * attached to the wrong design costs trust in every card in the app.
+ *
+ * A stamp is the store's own record of who *created* a file, written when that
+ * turn ended. It is the one claim that needs no inference, so it decides two
+ * things:
+ *
+ *  - a file stamped to this session is this session's, whatever the clock says;
+ *  - a file stamped to **another** session is off-limits to every inference
+ *    below — a folder or a shelf root must never take a file out of the
+ *    conversation that produced it.
+ *
+ * A stamp is authorship, not custody: the turn that *names* a file it revised
+ * still shows it (`wroteArtifact` is evidence, and a person expects the card
+ * beside the answer that talks about it). What the stamp forbids is guessing.
  */
-function claimsFor(window, items, windows, { remote = false, cache, taken = new Set(), alsoNamed = [] } = {}) {
+function stampOwner(stamped, id) {
+  return String((stamped || {})[id] || '')
+}
+
+/** An inference may only reach a file no session has claimed yet. */
+const unclaimed = (stamped, window) => (item) => {
+  const owner = stampOwner(stamped, item.id)
+  return !owner || owner === window.threadId
+}
+
+function claimsFor(
+  window,
+  items,
+  windows,
+  { remote = false, cache, taken = new Set(), alsoNamed = [], stamped = {} } = {},
+) {
   const owned = new Set()
+
   if (remote) {
     /* Staging rewrites every mtime, so the window says nothing here: the turn's
        own evidence is the only claim. It must be *evidence* — a path it wrote, or
@@ -1259,7 +1294,8 @@ function claimsFor(window, items, windows, { remote = false, cache, taken = new 
        turn" was satisfied by a directory listing: a `find` over the staged shelf
        chipped every file it printed, conflict copies included. */
     for (const item of items) {
-      if (wroteArtifact(window, item, cache || new Map())) owned.add(item.id)
+      if (stampOwner(stamped, item.id) === window.threadId) owned.add(item.id)
+      else if (wroteArtifact(window, item, cache || new Map())) owned.add(item.id)
     }
     return owned
   }
@@ -1268,9 +1304,12 @@ function claimsFor(window, items, windows, { remote = false, cache, taken = new 
   const within = (item) => item.ms >= window.start && item.ms < window.end
   /* Naming is precise — a full relative id or a path the turn wrote — so it
      needs no window and no first-come rule: the turn that created a file and
-     the turn that revised it both did work the card should show. */
+     the turn that revised it both did work the card should show. A stamp this
+     session wrote counts the same way, and survives the turn ageing out of the
+     transcript. */
   for (const item of items) {
-    if (!wroteArtifact(window, item, cache || new Map())) continue
+    const mine = stampOwner(stamped, item.id) === window.threadId
+    if (!mine && !wroteArtifact(window, item, cache || new Map())) continue
     owned.add(item.id)
     named.add(item.id)
   }
@@ -1284,8 +1323,12 @@ function claimsFor(window, items, windows, { remote = false, cache, taken = new 
     if (cut > 0) dirs.add(String(id).slice(0, cut))
   }
 
+  const mayInfer = unclaimed(stamped, window)
   for (const item of items) {
     if (owned.has(item.id)) continue
+    /* Another session produced this file: the clock and the folder are both
+       weaker than that, so they do not argue with it. */
+    if (!mayInfer(item)) continue
     /* An inferred claim is first come, first served: two turns writing into one
        folder must not both list the same PNG. */
     if (taken.has(item.id)) continue
@@ -1321,8 +1364,10 @@ function claimsFor(window, items, windows, { remote = false, cache, taken = new 
 
 function attachArtifactsByTurn(thread) {
   let shelf = []
+  let stamped = {}
   try {
     shelf = artifacts.list({ workspace: thread.workspace }).items || []
+    stamped = artifacts.origins({ workspace: thread.workspace }) || {}
   } catch {
     /* an unreadable shelf must not erase what the transcript already says */
     return thread
@@ -1345,7 +1390,12 @@ function attachArtifactsByTurn(thread) {
 
   for (const window of windows) {
     if (window.threadId !== thread.id) continue
-    const owned = claimsFor(window, available, windows, { remote, cache: evidence, taken: claimed })
+    const owned = claimsFor(window, available, windows, {
+      remote,
+      cache: evidence,
+      taken: claimed,
+      stamped,
+    })
     const found = available.filter((item) => owned.has(item.id))
     if (!found.length) continue
     const target = window.turn || window.request
@@ -2125,6 +2175,20 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
 
     const at = now()
     const createdArtifacts = turnArtifacts(thread, turnStartedMs, run.answer, run.steps)
+    /* Write down who produced these files, now, while the evidence is in hand.
+       Attribution on a later read is an inference from clocks and folder shapes;
+       a second conversation finishing at the same time defeats it. The stamp is
+       what keeps each deliverable in the session that made it. Best-effort: a
+       shelf this process cannot write is still one it can read. */
+    try {
+      artifacts.stampOrigins({
+        workspace: thread.workspace,
+        threadId: thread.id,
+        ids: createdArtifacts.map((item) => item.id),
+      })
+    } catch {
+      /* the inference below is the fallback, never the other way round */
+    }
     const execution = { ...run.execution, id: messageId, harness: thread.harness }
     turnMessage = run.canceled
       ? {

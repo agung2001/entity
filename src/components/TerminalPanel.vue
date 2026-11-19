@@ -25,6 +25,9 @@ const props = defineProps({
   /* the thread's base directory; local threads only */
   dir: { type: String, default: '' },
   workspace: { type: String, default: '' },
+  /* the conversation this shell belongs to: reattaching is per thread, so two
+     threads in one directory do not share a scrollback */
+  threadId: { type: String, default: '' },
 })
 
 const emit = defineEmits(['close'])
@@ -165,6 +168,7 @@ async function start() {
   try {
     const session = await call('terminal.open', {
       workspace: props.workspace,
+      threadId: props.threadId,
       machine: props.machine || 'local',
       dir: props.machine === 'local' || !props.machine ? props.dir : '',
       cols: term.cols,
@@ -235,10 +239,10 @@ watch(
   { immediate: true },
 )
 
-/* A different host or directory is a different shell; the old one is closed so
-   a window does not accumulate one process per thread switch. */
+/* A different host, directory or conversation is a different shell; the old one
+   is closed so a window does not accumulate one process per thread switch. */
 watch(
-  () => [props.machine, props.machine === 'local' ? props.dir : ''],
+  () => [props.machine, props.machine === 'local' ? props.dir : '', props.threadId],
   async (next, previous) => {
     if (!previous || next.join('|') === previous.join('|')) return
     await restart()

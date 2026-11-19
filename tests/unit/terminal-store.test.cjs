@@ -149,3 +149,24 @@ test('the session count is bounded, oldest first', { skip: !POSIX }, async () =>
   assert.ok(!open.some((row) => row.id === first.id), 'the oldest session is the one reaped')
   for (const row of open) terminal.close(row.id)
 })
+
+/* Reattaching is a hide-and-restore inside one conversation. The key used to be
+ * workspace + host + directory, so two threads sharing a base directory shared
+ * one shell: opening the panel in the second showed the first's scrollback.
+ */
+test('two threads in one directory do not share a shell', { skip: !POSIX }, async () => {
+  const terminal = createTerminal({ emit: () => {} })
+  const mine = terminal.open({ workspace: 'w4', threadId: 't_alpha', machine: 'local' })
+  const again = terminal.open({ workspace: 'w4', threadId: 't_alpha', machine: 'local' })
+  assert.equal(again.id, mine.id, 'the same thread reattaches to its own shell')
+  assert.equal(again.reused, true)
+
+  const other = terminal.open({ workspace: 'w4', threadId: 't_beta', machine: 'local' })
+  assert.notEqual(other.id, mine.id, 'another thread gets its own shell')
+  assert.equal(other.reused, false)
+  /* and the second shell starts empty rather than replaying the first one */
+  assert.equal(other.replay, '')
+
+  terminal.close(mine.id)
+  terminal.close(other.id)
+})

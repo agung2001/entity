@@ -263,7 +263,7 @@ function createTerminal({ emit = () => {} } = {}) {
    * closing the panel with the shortcut is a hide, not a kill, and a window
    * reload should come back to the same shell rather than a bare prompt.
    */
-  function open({ workspace, machine = 'local', dir = '', cols, rows } = {}) {
+  function open({ workspace, machine = 'local', dir = '', threadId = '', cols, rows } = {}) {
     const target = String(machine || 'local').trim() || 'local'
     let cwd = ''
     if (target === 'local' && dir) {
@@ -271,11 +271,18 @@ function createTerminal({ emit = () => {} } = {}) {
       if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) cwd = candidate
     }
 
+    /* Reattaching is a hide-and-restore inside one conversation, so the
+       conversation is part of the key. Without it, two threads in the same
+       directory shared one shell: opening the panel in the second one showed the
+       first one's scrollback, which reads as the shell having followed the
+       person across a switch. */
+    const thread = String(threadId || '')
     const existing = [...sessions.values()].find(
       (entry) =>
         !entry.closed &&
         entry.workspace === workspace &&
         entry.machine === target &&
+        (entry.threadId || '') === thread &&
         (entry.cwd || '') === cwd,
     )
     if (existing) {
@@ -302,6 +309,7 @@ function createTerminal({ emit = () => {} } = {}) {
       id: `t${seq}`,
       seq,
       workspace,
+      threadId: thread,
       machine: target,
       cwd: cwd,
       cols: plan.cols,

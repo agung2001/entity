@@ -23,6 +23,12 @@ const auth = require('./auth-store.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
 const DIRNAME = 'artifacts'
+/* Which session wrote a file. `artifacts/` is one tree for the whole workspace,
+   but a file is still produced *by a turn*, and reading that back out of clocks
+   and folder shapes is a guess. This index records the answer once, when the
+   turn ends, so a later read does not have to infer it again — and so a second
+   conversation running at the same time cannot claim it. */
+const ORIGIN_FILE = '.origin.json'
 /* One hidden root per signed-in account. Nothing that walks the workspace for
    export, sync or chat attribution looks inside it, which is the whole point. */
 const PERSONAL_DIRNAME = '.personal'
@@ -206,6 +212,93 @@ function ensurePersonal(record) {
   return dir
 }
 
+/* ── which session wrote a file ─────────────────────────────────────
+ * `<id> → <threadId>`, local to this machine: a thread id means nothing on a
+ * clone, and the sibling that owns the file has its own index. It is a dot
+ * file, so `walk` never lists it and `manifest.safeRel` never carries it — the
+ * shared shelf stays exactly what it was on the wire.
+ */
+function originFile(record) {
+  return path.join(artifactsDir(record), ORIGIN_FILE)
+}
+
+const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
+
+/** A map is data from disk: keep only the shape this store writes. */
+function readOrigins(record) {
+  const out = {}
+  let raw = null
+  try {
+    raw = JSON.parse(fs.readFileSync(originFile(record), 'utf8'))
+  } catch {
+    return out
+  }
+  if (!raw || raw.schema !== 1 || !raw.threads || typeof raw.threads !== 'object') return out
+  for (const [id, threadId] of Object.entries(raw.threads)) {
+    let rel = ''
+    try {
+      rel = safeRelative(id)
+    } catch {
+      continue
+    }
+    if (typeof threadId === 'string' && THREAD_ID.test(threadId)) out[rel] = threadId
+  }
+  return out
+}
+
+function writeOrigins(record, origins) {
+  ensureDir(record)
+  const file = originFile(record)
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, `${JSON.stringify({ schema: 1, threads: origins })}\n`, 'utf8')
+  fs.renameSync(tmp, file)
+}
+
+/**
+ * Record the files one turn produced. Called when the turn ends, from the store
+ * that already decided ownership from the transcript — the only place that has
+ * evidence. An id written by a different thread is left alone: the turn that
+ * created a file owns it, and a revise is not a change of author.
+ */
+function stampOrigins({ workspace, threadId, ids } = {}) {
+  const id = String(threadId || '')
+  if (!THREAD_ID.test(id)) throw new Error('That is not a thread id.')
+  const record = workspaces.open(workspace)
+  const origins = readOrigins(record)
+  const touched = []
+  for (const value of Array.isArray(ids) ? ids : []) {
+    let rel = ''
+    try {
+      rel = safeRelative(value)
+    } catch {
+      continue
+    }
+    if (origins[rel] && origins[rel] !== id) continue
+    if (origins[rel] === id) continue
+    origins[rel] = id
+    touched.push(rel)
+  }
+  if (touched.length) writeOrigins(record, origins)
+  return touched
+}
+
+/** `<id> → <threadId>` for this machine, or `{}` before any turn has stamped. */
+function origins({ workspace } = {}) {
+  return readOrigins(workspaces.open(workspace))
+}
+
+/** Forget ids that are gone, and ids stamped for a thread nobody knows. */
+function pruneOrigins(record, origins, alive) {
+  let changed = false
+  for (const id of Object.keys(origins)) {
+    if (!alive(id)) {
+      delete origins[id]
+      changed = true
+    }
+  }
+  if (changed) writeOrigins(record, origins)
+}
+
 function mimeFor(name) {
   return MIME[path.extname(String(name || '')).toLowerCase()] || 'application/octet-stream'
 }
@@ -360,6 +453,7 @@ function walk(record, root, rel, out, index, scope) {
 function list({ workspace } = {}) {
   const record = workspaces.open(workspace)
   const index = readScope(record)
+  const origins = readOrigins(record)
   const rows = []
   walk(record, personalDir(record), '', rows, index, 'personal')
   walk(record, artifactsDir(record), '', rows, index, 'shared')
@@ -380,6 +474,9 @@ function list({ workspace } = {}) {
       for (const id of stale) delete index.shared[id]
       writeScope(record, index)
     }
+    /* An origin naming a file that is gone is the same lie in the other index. */
+    const present = new Set(items.map((row) => row.id))
+    pruneOrigins(record, origins, (id) => present.has(id))
   }
   return {
     path: tilde(artifactsDir(record)),
@@ -656,6 +753,11 @@ function remove({ workspace, id } = {}) {
     delete index.shared[rel]
     writeScope(record, index)
   }
+  const origins = readOrigins(record)
+  if (origins[rel]) {
+    delete origins[rel]
+    writeOrigins(record, origins)
+  }
   return { id: rel, removed: true }
 }
 
@@ -735,6 +837,20 @@ function eraseAll({ workspace, scope = 'all' } = {}) {
     ensureDir(record)
     writeScope(record, { schema: 1, shared: {} })
   }
+  /* The origin index is the third thing that names those files, and it is the
+     one that decides a later read — so it is pruned against what actually
+     survived, not against the scope word. Erasing only the personal shelf leaves
+     the shared one standing (`scope: personal`), and clearing the whole map there
+     would unattach files that are still there; leaving a dead id would hand a new
+     file of the same name to an old thread. */
+  const survivors = new Set()
+  for (const root of [personalDir(record), artifactsDir(record)]) {
+    const rows = []
+    walk(record, root, '', rows, { shared: {} }, 'personal')
+    for (const row of rows) survivors.add(row.id)
+  }
+  const origins = readOrigins(record)
+  pruneOrigins(record, origins, (id) => survivors.has(id))
   return { scope: wanted, removed, bytes }
 }
 
@@ -801,6 +917,8 @@ module.exports = {
   eraseAll,
   ERASE_SCOPES,
   locate,
+  origins,
+  stampOrigins,
   brief,
   mimeFor,
   kindFor,

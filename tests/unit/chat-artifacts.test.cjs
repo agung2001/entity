@@ -15,6 +15,8 @@ process.env.ENTITY_HOME = PROFILE
 const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')
 const chats = require('../../electron/chat-store.cjs')
+const artifacts = require('../../electron/artifact-store.cjs')
+const manifest = require('../../electron/remote-manifest.cjs')
 
 let seq = 0
 
@@ -564,4 +566,142 @@ test('a sync conflict copy is never an artifact, even when it is named', () => {
     undefined,
     'the sync engine writes there, not a turn',
   )
+})
+
+/* ── a session's deliverable is locked to that session ────────────────
+ *
+ * The leak this pins, again: two conversations ran in the same folder inside
+ * one workspace, and the card under one of them listed the other's render.
+ * Folder inference is a *guess* with a single-owner condition, and the
+ * condition is satisfied whenever the two turns' windows happen not to
+ * overlap — the second design is still not this turn's.
+ *
+ * The store can be made to know: when a turn ends it records the files it
+ * produced, and that record outranks the clock, the folder and the shelf root.
+ * It is a lock, not a hint: what one session produced never appears under
+ * another, and it does not need a second turn to be running to be wrong.
+ */
+
+function stampedFile(record, id, seconds) {
+  writeShelfFile(record, id, seconds)
+  return id
+}
+
+test('a file another session stamped never appears under this one', () => {
+  const record = workspaceWithShelf()
+  /* One folder, one deliverable, and the two turns do not overlap at all —
+     which is exactly the case folder inference had no defence against. */
+  writeShelfFile(record, 'design/rail/index.html', 110)
+  writeShelfFile(record, 'design/rail/rail.png', 120)
+
+  writeThread(record, {
+    id: 't_owner',
+    messages: [
+      { who: 'me', text: 'Draw the rail.', at: at(100) },
+      {
+        who: 'agent',
+        text: 'Drawn.',
+        at: at(200),
+        execution: { harness: 'pi', endedAt: at(200), status: 'ok' },
+        steps: [{ seq: 1, type: 'tool_use', tool: 'write', at: at(110), input: { path: 'artifacts/design/rail/index.html' } }],
+      },
+    ],
+  })
+  /* A different conversation, later, in the same folder, naming nothing. */
+  writeThread(record, {
+    id: 't_other',
+    messages: [
+      { who: 'me', text: 'How many rows fit?', at: at(600) },
+      { who: 'agent', text: 'Twelve.', at: at(700), execution: { harness: 'pi', endedAt: at(700), status: 'ok' } },
+    ],
+  })
+
+  const owner = chats.read({ workspace: record.id, id: 't_owner' })
+  const produced = (owner.messages[1].artifacts || []).map((entry) => entry.id).sort()
+  assert.deepEqual(produced, ['design/rail/index.html', 'design/rail/rail.png'])
+  const other = chats.read({ workspace: record.id, id: 't_other' })
+  assert.deepEqual(other.messages[1].artifacts || [], [])
+})
+
+test('a stamp keeps a file in its session after the turn ages out of the window', () => {
+  const record = workspaceWithShelf()
+  /* Stamped by a turn whose question is older than the retention window the
+     read rebuilds from: evidence in the transcript has aged out, but the file
+     still belongs to the conversation that made it. */
+  writeShelfFile(record, 'design/board/shot.png', 120)
+  writeThread(record, {
+    id: 't_aged',
+    messages: [
+      { who: 'me', text: 'Take a shot of the board.', at: at(100) },
+      { who: 'agent', text: 'Done.', at: at(200), execution: { harness: 'pi', endedAt: at(200), status: 'ok' } },
+    ],
+  })
+
+  /* what the store wrote when that turn ended */
+  const chatsFile = path.join(record.path, 'artifacts', '.origin.json')
+  fs.writeFileSync(
+    chatsFile,
+    JSON.stringify({ schema: 1, threads: { 'design/board/shot.png': 't_aged' } }, null, 2),
+  )
+
+  const thread = chats.read({ workspace: record.id, id: 't_aged' })
+  assert.deepEqual((thread.messages[1].artifacts || []).map((entry) => entry.id), ['design/board/shot.png'])
+
+  /* and no other conversation reads it as its own */
+  writeThread(record, {
+    id: 't_bystander',
+    messages: [
+      { who: 'me', text: 'Anything new?', at: at(600) },
+      { who: 'agent', text: 'No.', at: at(700), execution: { harness: 'pi', endedAt: at(700), status: 'ok' } },
+    ],
+  })
+  const bystander = chats.read({ workspace: record.id, id: 't_bystander' })
+  assert.deepEqual(bystander.messages[1].artifacts || [], [])
+})
+
+test('a revision by another session still shows beside the answer that names it', () => {
+  const record = workspaceWithShelf()
+  writeShelfFile(record, 'design/page/index.html', 350)
+  writeThread(record, {
+    id: 't_author',
+    messages: [
+      { who: 'me', text: 'Draw it.', at: at(100) },
+      { who: 'agent', text: 'Drawn.', at: at(200), execution: { harness: 'pi', endedAt: at(200), status: 'ok' } },
+    ],
+  })
+  fs.writeFileSync(
+    path.join(record.path, 'artifacts', '.origin.json'),
+    JSON.stringify({ schema: 1, threads: { 'design/page/index.html': 't_author' } }, null, 2),
+  )
+  /* The second turn edits the page and says so. Authorship does not move, but a
+     card under the answer that talks about the file is what a person expects. */
+  writeThread(record, {
+    id: 't_editor',
+    messages: [
+      { who: 'me', text: 'Now the icons.', at: at(300) },
+      {
+        who: 'agent',
+        text: 'Icons in — artifact://design/page/index.html',
+        at: at(400),
+        execution: { harness: 'pi', endedAt: at(400), status: 'ok' },
+      },
+    ],
+  })
+
+  const editor = chats.read({ workspace: record.id, id: 't_editor' })
+  assert.deepEqual((editor.messages[1].artifacts || []).map((entry) => entry.id), ['design/page/index.html'])
+})
+
+test('the origin index is a dot file, so neither the shelf nor the wire carries it', () => {
+  const record = workspaceWithShelf()
+  writeShelfFile(record, 'notes.md', 100)
+  fs.writeFileSync(
+    path.join(record.path, 'artifacts', '.origin.json'),
+    JSON.stringify({ schema: 1, threads: { 'notes.md': 't_notes' } }, null, 2),
+  )
+  const listed = artifacts.list({ workspace: record.id })
+  assert.equal(listed.items.some((item) => item.id === '.origin.json'), false)
+  assert.equal(listed.count, listed.items.length)
+  /* a thread id means nothing on a clone, so the manifest never ships it */
+  assert.equal(manifest.safeRel('artifacts/.origin.json'), null)
 })

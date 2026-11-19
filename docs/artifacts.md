@@ -38,6 +38,28 @@ evidence that the turn wrote it. A file reaches a card for one of three reasons:
 Everything else stays on the shelf. That is deliberate: an unattached file costs a
 click, while a file attached to the wrong design costs trust in every card.
 
+### The file is locked to the session that made it
+
+The three reasons above are still inferences, and an inference with a single candidate
+is a guess. A second conversation that ran in the same folder at a different time is
+not a candidate at all, so the guess cannot see it — and the card lists it anyway.
+
+So the app writes the answer down. When a turn ends, the store records the files that
+turn produced in `artifacts/.origin.json` (`<id> → <threadId>`), which is a dot file:
+the shelf walk skips it and the sync manifest cannot carry it, because a thread id means
+nothing on a clone. A stamp then outranks everything else:
+
+- a file stamped to **this** conversation is on its card, even after the turn ages out
+  of the transcript window;
+- a file stamped to **another** conversation is never reachable by inference — no
+  folder, no clock, no shelf root moves it;
+- a turn that **names** a file it revised still shows it. A stamp records authorship,
+  not custody, and a person expects the card beside the answer that talks about it.
+
+The stamp is written while the turn's own evidence is in hand, which is why it can be
+trusted where a later read cannot. A file that is erased takes its stamp with it, so a
+new file of the same name belongs to nobody instead of to an old conversation.
+
 ### HTML artifacts: preview, and notes written on it
 
 An `.html` artifact opens as the page it is, with a **Preview / Source** switch in
@@ -78,6 +100,11 @@ holds for a screenshot, a document and a page: the card's name or thumbnail is t
 door. Annotations sent from there land in the *current* thread's composer, so the
 round trip is: look at the render, note what is wrong, send, and the agent already
 knows which conversation it belongs to.
+
+The preview belongs to that conversation, and so does the note. Switching threads closes
+the dialog, and a note carries the thread it was written in: if the reader has moved on
+by the time the composer is on screen, the words go to the clipboard with a toast
+instead of into somebody else's box.
 
 ### What a card can do
 

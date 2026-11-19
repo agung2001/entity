@@ -324,6 +324,11 @@ const canEditText = computed(
 function sendAnnotations(prompt) {
   if (!prompt) return
   hub.chat.draft = prompt
+  /* The notes were written while one conversation was on screen, and they belong
+     to it. Stamping the id lets the composer refuse them if the reader has moved
+     on by the time it is mounted — a note about one turn's page appearing in the
+     next turn's box is the same leak as the card. */
+  hub.chat.draftThread = props.modal ? String(hub.chat.active || '') : ''
   toast('Notes added to the chat draft')
   /* Over the conversation already: the notes land in this thread's composer. */
   if (props.modal) emit('close')
