@@ -45,10 +45,17 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The updater reads `latest-mac.yml` (the feed) and the `.blockmap` next
+      # to it; a DMG-only artifact set leaves electron-updater with nothing to
+      # find. The ZIP is the one Squirrel.Mac installs from.
       - uses: actions/upload-artifact@v4
         with:
           name: entity-macos
-          path: release/*.dmg
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
           if-no-files-found: error
 
   windows:
@@ -81,7 +88,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: entity-windows
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
           if-no-files-found: error
 
   container:
@@ -150,4 +160,8 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-assets/*.dmg
+            release-assets/*.zip
             release-assets/*.exe
+            release-assets/*.blockmap
+            release-assets/latest.yml
+            release-assets/latest-mac.yml

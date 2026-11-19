@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BrandMark from '@/components/BrandMark.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import RailContext from '@/components/RailContext.vue'
+import UpdateBadge from '@/components/UpdateBadge.vue'
 import { ensureChats, hub, initials, liveSummaries, roleById, signOut } from '@/stores/hub'
 import { artifacts } from '@/stores/artifacts'
 import { isEditable } from '@/lib/dom'
@@ -356,6 +357,8 @@ function leave() {
       </nav>
 
       <div class="rail-t1-spacer"></div>
+
+      <UpdateBadge />
 
       <button
         class="rail-ico rail-theme"

@@ -37,6 +37,7 @@ const backups = require('./backup-store.cjs')
 const retention = require('./retention-store.cjs')
 const artifactRetention = require('./artifact-retention-store.cjs')
 const voice = require('./voice.cjs')
+const { createUpdateStore } = require('./update-store.cjs')
 const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
@@ -117,6 +118,11 @@ function createRpc({
      sweep can be assigned to that host, and it is the only executor that never
      waits for a person, so it is the only one whose idle switch means nothing. */
   host = false,
+  /* The main process owns the updater because it is the only place a timer and
+     `app.isPackaged` mean anything. The dev server and the shared server get the
+     inert one, so the page falls back to its `dev` state instead of inventing a
+     version to install. */
+  update = createUpdateStore(),
 } = {}) {
   const runner = createRunner({ emit })
   /* A six-hour poll plus a debounce after the watcher reports a local edit.
@@ -335,6 +341,13 @@ function createRpc({
     'backup.remove': ({ id, name } = {}) => backups.removeSnapshot({ id, name }),
     'backup.reveal': ({ id, name } = {}) => backups.openFolder({ id, name, openPath }),
 
+    /* auto-update: one updater in the main process, read and written here */
+    'update.state': () => update.state(),
+    'update.check': (args) => update.check(args),
+    'update.download': () => update.download(),
+    'update.install': () => update.install(),
+    'update.setSettings': (patch) => update.setSettings(patch),
+
     /* thread metadata: links and paths mentioned in a conversation */
     'thread.metadata': (args) => threadMetadata.inspect(args),
     'thread.pathAction': async ({ workspace, id, path: target, action } = {}) => {
@@ -552,6 +565,7 @@ function createRpc({
       }
       remoteSync.stop()
       backups.stop()
+      update.stop()
       await mcpServer.stop()
     },
     activeCount: () => runner.activeCount() + chats.activeCount(),

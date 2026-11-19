@@ -49,6 +49,7 @@ const ACCOUNT_ROWS = [
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
+  { to: '/account/updates', label: 'Updates', hint: 'version and releases' },
 ]
 
 const railHosts = computed(() => {
@@ -102,7 +103,8 @@ const section = computed(() => {
     name === 'account-sound' ||
     name === 'account-notifications' ||
     name === 'account-mcp' ||
-    name === 'account-backups'
+    name === 'account-backups' ||
+    name === 'account-updates'
   ) {
     return { id: 'account', title: 'Account', count: null }
   }
