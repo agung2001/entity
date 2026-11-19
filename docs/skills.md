@@ -100,7 +100,9 @@ the skill itself.
 
 Nothing here is per entity. A skill belongs to the workspace — every entity sees all
 of them — so there is no `skills:` list to keep in step, and one agent cannot hold a
-skill its siblings lack.
+skill its siblings lack. An entity file may carry `prefer: name, name` as a bookmark
+that only sorts that entity's own `/` menu; removing the line changes nothing else,
+because it never added a skill in the first place.
 
 ## Related
 
