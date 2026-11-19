@@ -33,6 +33,7 @@ const threadMetadata = require('./thread-metadata.cjs')
 const usage = require('./usage.cjs')
 const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
+const enhancement = require('./enhance.cjs')
 const backups = require('./backup-store.cjs')
 const retention = require('./retention-store.cjs')
 const artifactRetention = require('./artifact-retention-store.cjs')
@@ -467,6 +468,8 @@ function createRpc({
        card stays as it was. */
     'chat.delegate': (args) => chats.decideHold(args),
     'chat.suggest': (args) => suggestions.suggest(args),
+    /* A rewrite, not a turn: no chat write, no counter, nothing sent. */
+    'chat.enhance': (args) => enhancement.enhance(args),
 
     /* spend and activity, folded from the thread files */
     'usage.summary': (args) => usage.summary(args),

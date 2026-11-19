@@ -11,6 +11,7 @@ import MessageList from '@/components/MessageList.vue'
 import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
+import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TerminalPanel from '@/components/TerminalPanel.vue'
 import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
@@ -79,6 +80,9 @@ const mcpOpen = ref(false)
 const metadataOpen = ref(false)
 const terminalOpen = ref(false)
 const tagOpen = ref(false)
+/* A rewrite of the composer's draft: opened by its catalog shortcut, and
+   closed when the thread changes. */
+const enhanceOpen = ref(false)
 const tagBusy = ref(false)
 /* A copy a pinned run asked for, waiting in this workspace. */
 const pendingClone = ref(null)
@@ -544,8 +548,17 @@ function onChatKey(event) {
     voiceOpen.value ||
     harnessOpen.value ||
     mcpOpen.value ||
-    tagOpen.value
+    tagOpen.value ||
+    enhanceOpen.value
   ) {
+    return
+  }
+  /* Only a draft with text can be rewritten, and the capsule that announces
+     the key is gone on an empty one; the key follows the same rule. */
+  if (matchesShortcut('enhance-prompt', event) && draft.value.trim()) {
+    event.preventDefault()
+    event.stopPropagation()
+    enhanceOpen.value = true
     return
   }
   if (matchesShortcut('thread-search', event)) {
@@ -758,6 +771,25 @@ async function send(text) {
     playReaction(hub.workspace, thread.value?.entity)
     throw error
   }
+}
+
+/**
+ * Apply a rewritten prompt: write the composer and stop there.
+ *
+ * Apply never sends — the arrow is still the only way out — so this is one
+ * draft write plus the 5-second Undo the thread archive already uses. The caret
+ * goes to the end because the person's next move is to read it and send.
+ */
+function applyEnhancement({ text, index }) {
+  const id = hub.chat.active
+  const previous = String(hub.chat.drafts[id] || '')
+  const restore = (value) => composer.value?.restore(value)
+  restore(text)
+  toast(`Applied variation ${index + 1} · draft replaced`, {
+    actionLabel: 'Undo',
+    onAction: () => restore(previous),
+  })
+  enhanceOpen.value = false
 }
 
 function sendFollowup(action) {
@@ -1131,6 +1163,7 @@ watch(
     /* An artifact preview is a view of one turn — its notes go to that turn's
        composer — so it must not survive into the next conversation. */
     closeArtifactForThreadChange()
+    enhanceOpen.value = false
     timelineOpen.value = false
     helpOpen.value = false
     voiceOpen.value = false
@@ -1458,6 +1491,7 @@ watch(
                   v-model:draft="draft"
                   @send="send"
                   @stop="stopTurn"
+                  @enhance="enhanceOpen = true"
                 />
               </div>
             </div>
@@ -1486,6 +1520,12 @@ watch(
         />
       </div>
     </div>
+
+    <PromptEnhanceDialog
+      :open="enhanceOpen"
+      @close="enhanceOpen = false"
+      @apply="applyEnhancement"
+    />
 
     <Teleport to="body">
       <div class="scrim" :data-open="helpOpen ? '1' : '0'" @click="helpOpen = false"></div>
