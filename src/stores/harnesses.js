@@ -6,7 +6,7 @@
  * so adding a CLI never needs a second edit here. Paths are machine-wide, so they
  * live outside the active workspace.
  */
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { call } from '@/composables/localBridge'
 
 export const harnesses = reactive({
@@ -75,6 +75,16 @@ export async function loadModels(id, force = false) {
     }
     return harnesses.models[key]
   }
+}
+
+/** Every picker offers only what this machine has turned on. Off is not
+    uninstalled: the row and its path stay, the choice does not. */
+export const pickableHarnesses = computed(() => harnesses.items.filter((row) => row.enabled))
+
+export async function setHarnessEnabled(id, enabled) {
+  const item = await call('harness.setEnabled', { id, enabled })
+  await loadHarnesses(true)
+  return item
 }
 
 export async function setHarnessPath(id, path) {

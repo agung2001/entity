@@ -67,7 +67,9 @@ test('the remote TSV is parsed into ordered harnesses and defaults', () => {
   )
   assert.equal(facts.hostname, 'build')
   assert.equal(facts.platform, 'Linux')
-  assert.deepEqual(facts.harnesses.map((entry) => entry.id), ['opencode', 'pi'])
+  /* ordered by harness-store's META; opencode is no longer offered there, so an
+     id the offer list does not know sorts last */
+  assert.deepEqual(facts.harnesses.map((entry) => entry.id), ['pi', 'opencode'])
   const pi = facts.harnesses.find((entry) => entry.id === 'pi')
   assert.equal(pi.default, 'openrouter/a')
   assert.deepEqual(pi.models, ['openrouter/a'])

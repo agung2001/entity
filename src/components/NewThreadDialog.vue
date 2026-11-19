@@ -7,7 +7,7 @@ import { markFor, moodGlyph } from '@/composables/entityMark'
 import { call } from '@/composables/localBridge'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { agentById, createThread, hub } from '@/stores/hub'
-import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
+import { harnesses, loadHarnesses, loadModels, pickableHarnesses } from '@/stores/harnesses'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
 import { scanMachine } from '@/stores/workspaces'
 
@@ -89,7 +89,7 @@ const entityOptions = computed(() =>
 )
 const harnessOptions = computed(() => {
   if (!remote.value) {
-    return harnesses.items.map((item) => ({
+    return pickableHarnesses.value.map((item) => ({
       id: item.id,
       label: item.label,
       meta: item.installed ? 'installed' : 'not found',
@@ -106,7 +106,7 @@ const harnessOptions = computed(() => {
    Until it does, the thread keeps whatever its entity asked for; a name this
    machine no longer knows settles on the first harness it does have. */
 watch(
-  () => harnesses.items,
+  () => pickableHarnesses.value,
   (items) => {
     if (!items.length || items.some((item) => item.id === form.harness)) return
     form.harness = items[0].id
@@ -159,7 +159,7 @@ function reset() {
      whichever harness the previous conversation happened to use; the picker and
      model field below are the explicit per-thread override. */
   const chosen = agentById(form.entity)
-  form.harness = chosen?.harness || harnesses.items[0]?.id || ''
+  form.harness = chosen?.harness || pickableHarnesses.value[0]?.id || ''
   form.model = chosen?.model || ''
   form.dir = ''
   dirOpen.value = false
@@ -252,7 +252,8 @@ function settleMachine() {
     form.model = chosen.default || ''
     return
   }
-  const installed = harnesses.items.filter((entry) => entry.installed)
+  /* a harness that is off is not offerable, so it cannot be the settled pick */
+  const installed = pickableHarnesses.value.filter((entry) => entry.installed)
   if (!installed.length) return
   if (!installed.some((entry) => entry.id === form.harness)) {
     form.harness = installed.some((entry) => entry.id === entityDefaultHarness.value)

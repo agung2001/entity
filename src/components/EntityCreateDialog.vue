@@ -6,7 +6,7 @@ import PickMenu from '@/components/PickMenu.vue'
 import { COLORS, MOODS, SHAPES, setMark } from '@/composables/entityMark'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { scaffoldEntity } from '@/stores/entities'
-import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
+import { harnesses, loadHarnesses, loadModels, pickableHarnesses } from '@/stores/harnesses'
 import { hub, toast } from '@/stores/hub'
 import { loadSamples, workspaces } from '@/stores/workspaces'
 
@@ -38,7 +38,7 @@ useDialogDismiss({
 
 const samples = computed(() => workspaces.samples)
 const harnessOptions = computed(() =>
-  harnesses.items.map((item) => ({
+  pickableHarnesses.value.map((item) => ({
     id: item.id,
     label: item.label,
     meta: item.installed ? 'installed' : 'not found',
@@ -48,7 +48,7 @@ const harnessOptions = computed(() =>
 /* The harness list comes from the machine, not from here; seed the picker once
    it lands, unless the user already chose. */
 watch(
-  () => harnesses.items,
+  () => pickableHarnesses.value,
   (items) => {
     if (!harness.value && items[0]) harness.value = items[0].id
   },
