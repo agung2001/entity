@@ -1,0 +1,392 @@
+/* ── prompt enhancement ──────────────────────────────────────────────
+   The dialog reuses the shipped `.modal` / `.mo-*` shell, `.acct-input`,
+   `.btn` grammar, `.scrim` and `.toast`; this sheet only draws what is new:
+   the read-only draft bed, the disclosure, the segmented count, the result
+   rows and their skeletons. `.enhdlg` is the one new class on the shell —
+   560px wide for the result rows, and never on `.modal` itself. */
+
+.enhdlg {
+  width: min(560px, 94vw);
+  max-height: min(86vh, 640px);
+}
+/* The dialog root is a focus holder, not a control: it keeps the key handler
+   alive when a click lands on the read-only draft. */
+.enhdlg:focus {
+  outline: none;
+}
+.enhlede {
+  max-width: 46ch;
+}
+.enhmeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.enhcount {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.enhbase {
+  max-height: 96px;
+  overflow: auto;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.enhbase[data-empty='1'] {
+  color: var(--muted);
+  font-style: italic;
+}
+.enhadv {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.enhadv summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+.enhadv summary::-webkit-details-marker {
+  display: none;
+}
+.enhadv[open] summary svg {
+  transform: rotate(90deg);
+}
+.enhsum {
+  font-family: var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.enhseg {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--bg);
+}
+.enhseg button {
+  height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.enhseg button:last-child {
+  border-right: 0;
+}
+.enhseg button[data-on='1'] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.enhseg button:hover:not([data-on='1']):not(:disabled) {
+  background: var(--surface);
+}
+.enhseg button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.enharea {
+  min-height: 66px;
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.enhout {
+  margin-top: 4px;
+}
+.enhsection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+.enhregen {
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--fs-secondary);
+}
+.enhrows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.enhrow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.enhrow:hover {
+  border-color: var(--border-strong);
+}
+.enhrow[data-on='1'] {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.enhn {
+  padding-top: 2px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--muted);
+}
+.enhcell {
+  min-width: 0;
+}
+.enhtext {
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.enhtext[data-clamped='1'] {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.enhtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.enhtag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.enhmore {
+  height: 24px;
+  margin-top: 7px;
+  padding: 0 8px;
+  font-size: var(--fs-secondary);
+}
+.enhact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.enhact .btn {
+  height: 28px;
+  padding: 0 9px;
+  font-size: var(--fs-secondary);
+}
+.enhskeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.enhskel {
+  position: relative;
+  padding: 11px 11px 11px 41px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.enhskel::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 13px;
+  width: 12px;
+  height: 9px;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+}
+.enhskel i {
+  display: block;
+  height: 9px;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+}
+.enhskel i + i {
+  margin-top: 7px;
+}
+.enhskel i:nth-child(1) {
+  width: 82%;
+}
+.enhskel i:nth-child(2) {
+  width: 56%;
+}
+.enhclock {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.enhspin {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--ink-2);
+  border-radius: 50%;
+  animation: enha-spin 0.9s linear infinite;
+}
+@keyframes enha-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.enherror {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 14px;
+}
+.enherror svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 2px;
+}
+.enhhint {
+  margin: 6px 0 0;
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.enhnote {
+  margin-right: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+/* Under 600px the dialog is a bottom sheet: the footer is a sibling of the
+   scrolling body, so it stays above the keyboard as well as the fold. */
+@media (max-width: 760px) {
+  .enhnote {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .enhdlg {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    transform: none;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    border-bottom: 0;
+    max-height: none;
+  }
+  .enhdlg[data-open='1'] {
+    transform: none;
+  }
+  .enhdlg .mo-head {
+    padding-top: 14px;
+  }
+  /* the title and the lede stop short of the close button instead of running
+     under it at this width */
+  .enhdlg .mo-head h2,
+  .enhdlg .mo-head .enhlede {
+    padding-right: 34px;
+  }
+  .enhdlg .mo-body {
+    max-height: calc(100dvh - 300px);
+    padding: 12px;
+  }
+  .enhdlg .mo-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px 14px;
+  }
+  .enhdlg .mo-foot .btn {
+    height: 44px;
+  }
+  .enhrow {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 7px 8px;
+  }
+  .enhact {
+    grid-column: 2;
+    margin-top: 8px;
+  }
+  .enhact .btn {
+    height: 44px;
+    padding: 0 16px;
+    flex: 1;
+  }
+  .enhseg button {
+    height: 44px;
+    padding: 0 10px;
+  }
+  .enhadv summary,
+  .enhregen,
+  .enhmore {
+    min-height: 44px;
+  }
+  .mo-x {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (max-width: 360px) {
+  .enhbase,
+  .enhtext,
+  .enhtag,
+  .enhhint,
+  .enherror {
+    overflow-wrap: anywhere;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enhrow {
+    transition: none;
+  }
+  .enhspin {
+    animation: none;
+  }
+}
