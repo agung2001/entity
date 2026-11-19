@@ -546,3 +546,76 @@ test('marked and dompurify live behind the lazy prose engine', () => {
   )
   assert.deepEqual(importers, ['src/lib/prose-engine.js'])
 })
+
+/* ── a store never calls a function that was deleted ───────────────────────
+ *
+ * ENTITY-31: `workspaces.js` kept calling `afterScopeWrite()` after the function
+ * itself was removed in an unrelated refactor. The write landed, then the call
+ * threw `afterScopeWrite is not defined` — so the toast said "saved" and the
+ * page kept its stale copy until a manual refresh, which reads as the save
+ * having half-failed.
+ *
+ * No linter runs over this repository, and a renamed local is not something a
+ * Vue template check would catch: a bare `name(` resolves at runtime or not at
+ * all. This walks the store modules and demands a definition for every bare call
+ * it makes, so deleting one end of a pair fails here instead of in the UI.
+ */
+test('a store calls no function it does not define or import', () => {
+  /* The globals a store may legitimately reach for, and nothing else. */
+  const BUILTINS = new Set([
+    'Promise', 'Object', 'Array', 'JSON', 'Number', 'String', 'Boolean', 'Map', 'Set',
+    'Date', 'Math', 'isNaN', 'parseInt', 'parseFloat', 'setTimeout', 'clearTimeout',
+    'setInterval', 'clearInterval', 'fetch', 'structuredClone', 'encodeURIComponent',
+    'decodeURIComponent', 'btoa', 'atob', 'Error', 'RegExp', 'WeakMap', 'queueMicrotask',
+    'requestAnimationFrame', 'cancelAnimationFrame', 'URL', 'Blob', 'FormData',
+    /* language keywords that are followed by `(` and are not calls */
+    'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'instanceof',
+    'function', 'await', 'async', 'void', 'new', 'delete', 'do', 'else', 'with',
+    'yield', 'super', 'constructor', 'case',
+  ])
+  /* Prose is not code: this file's comments are full of `name()` examples, and a
+     store's comments explain the shapes it writes. Strip comments and template
+     strings before looking for calls, or every sentence becomes a finding. */
+  const strip = (text) =>
+    text
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+      .replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``')
+      .replace(/'(?:\\[\s\S]|[^'\\])*'/g, "''")
+      .replace(/"(?:\\[\s\S]|[^"\\])*"/g, '""')
+  const problems = []
+  for (const entry of MODULES.filter((item) => /^src\/stores\/.+\.js$/.test(item.rel))) {
+    const text = entry.text
+    const code = strip(text)
+    /* Every name this module can call: its own declarations, imports, and
+       destructured or declared locals. */
+    const known = new Set()
+    for (const match of code.matchAll(/(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) known.add(match[1])
+    for (const match of code.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g)) known.add(match[1])
+    /* `const { a, b } = thing` binds a and b without a `= name` of their own. */
+    for (const match of code.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=/g)) {
+      for (const piece of match[1].split(',')) {
+        const name = piece.split(':').pop().split(/\s+as\s+/).pop().trim()
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) known.add(name)
+      }
+    }
+    for (const match of text.matchAll(/import\s+(?:([\w$]+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from/g)) {
+      if (match[1]) known.add(match[1])
+      for (const piece of (match[2] || '').split(',')) {
+        const name = piece.split(/\s+as\s+/).pop().trim()
+        if (name) known.add(name)
+      }
+    }
+    for (const match of code.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) known.add(match[1])
+    /* A call: `name(` not preceded by `.` (a method), or by `function`/`new`/
+       `async`, and not a `name: (a, b) =>` definition's parameter list. */
+    for (const match of code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+      const name = match[1]
+      if (BUILTINS.has(name) || known.has(name)) continue
+      const before = code.slice(Math.max(0, match.index - 40), match.index)
+      if (/(function|new|async|\.)\s*$/.test(before)) continue
+      problems.push(`${entry.rel}: ${name}()`)
+    }
+  }
+  assert.deepEqual(problems, [], `bare calls with no definition in the module: ${problems.join(', ')}`)
+})

@@ -429,6 +429,38 @@ export async function forgetMachineFacts(alias) {
 
 export const machineFactsFor = (alias) => workspaces.facts?.hosts?.[alias] || null
 
+/**
+ * Refresh after an attach/detach, or after a shelf write that another page reads.
+ *
+ * Deliberately lighter than `applyScope`: writing `mcp.json` does not change who
+ * this workspace is, so the open conversations are not thrown away over it. It
+ * re-reads the three things a scope write can move — entities, runs, and the two
+ * stores this module owns — and nothing else.
+ *
+ * The artifact is a `store`, so the work is a few reads rather than a reload of
+ * the window: the page that asked for the write sees the answer, the transcript
+ * beside it is untouched.
+ */
+async function afterScopeWrite() {
+  await Promise.all([
+    loadEntities(workspaces.active),
+    loadRuns(workspaces.active),
+    reloadSkills(),
+  ])
+  hub.machines = workspaces.machines
+  hub.skills = workspaces.skills
+  hub.runs = Object.values(runs.latest)
+}
+
+/** The attached-skill roster is its own read: one directory, not a scope. */
+async function reloadSkills() {
+  try {
+    workspaces.skills = await call('workspace.skills', { id: workspaces.active })
+  } catch {
+    /* a transient read failure is repaired on the next workspace open */
+  }
+}
+
 export async function attachSkill({ name, harness }) {
   workspaces.busy = `skill:${name}`
   try {
@@ -437,7 +469,6 @@ export async function attachSkill({ name, harness }) {
       name,
       harness,
     })
-    workspaces.skills = await call('workspace.skills', { id: workspaces.active })
     await afterScopeWrite()
     toast(result.copied ? `${name} copied into the workspace` : `${name} attached`)
     return result
@@ -450,7 +481,6 @@ export async function detachSkill(name) {
   workspaces.busy = `skill:${name}`
   try {
     await call('workspace.detachSkill', { id: workspaces.active, name })
-    workspaces.skills = await call('workspace.skills', { id: workspaces.active })
     await afterScopeWrite()
     toast(`${name} detached`)
   } finally {
