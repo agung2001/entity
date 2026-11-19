@@ -295,3 +295,50 @@ test('a config file left by a killed turn is pruned', () => {
     out.cleanup()
   }
 })
+
+test('pi is given deferred exposure, so one slow server cannot stall the turn', () => {
+  /* `direct` makes pi finish every server's handshake before the model sees a
+     token. A stdio server whose launcher boots an app measured 8.1s of a 10.9s
+     cold start here — and never answered, so the wait bought nothing. Deferred
+     keeps the tools reachable through tool_search/codemode and connects a
+     server when a call needs it. The `timeout` bounds the handshake that does
+     happen, because 60s is pi's default and a dead server should cost seconds. */
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-home-'))
+  const agent = path.join(home, '.pi', 'agent')
+  fs.mkdirSync(agent, { recursive: true })
+  fs.writeFileSync(path.join(agent, 'mcp.json'), '{"mcpServers":{}}', 'utf8')
+
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'pi', home, piVersion: '1.3.0' })
+  try {
+    const script = fs.readFileSync(out.argv[1], 'utf8')
+    assert.match(script, /exposure: "deferred"/)
+    assert.match(script, /timeout: 15/)
+    assert.equal(/exposure: "direct"/.test(script), false)
+  } finally {
+    out.cleanup()
+  }
+})
+
+test('servers pi already has are reported in one sentence, not one line each', () => {
+  /* Four lines about the same fact read as four problems, and the shadowing is
+     the common case: people keep the same pool in their own pi config. */
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-home-'))
+  const agent = path.join(home, '.pi', 'agent')
+  fs.mkdirSync(agent, { recursive: true })
+  fs.writeFileSync(
+    path.join(agent, 'mcp.json'),
+    JSON.stringify({ mcpServers: { github: { command: 'x' }, other: { command: 'y' } } }),
+    'utf8',
+  )
+
+  const { record } = scaffold(pool)
+  const out = runtime.materialise({ record, harness: 'pi', home, piVersion: '1.3.0' })
+  try {
+    const shadow = out.notes.filter((note) => note.includes('also in your own mcp.json'))
+    assert.equal(shadow.length, 1)
+    assert.match(shadow[0], /^pi: github is also in your own mcp\.json/)
+  } finally {
+    out.cleanup()
+  }
+})

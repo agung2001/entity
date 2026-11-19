@@ -166,6 +166,14 @@ A delegated run is given an hour (`ENTITY_MENTION_TIMEOUT_MS`), not the two minu
 search would need: a job that has to *finish* gets a fix round and a screenshot. It is
 still bounded, and **Stop** cancels it and keeps the answers that already landed.
 
+The turn that contains the delegation has its own clock, and it is the one that saves
+you. A turn gets **90 minutes** (`ENTITY_TURN_TIMEOUT_MS`) from spawn, whatever it is
+doing — it is armed once and progress does not extend it. The other clock only catches a
+*silent* harness (15 minutes with no output), and a harness that keeps printing thinking
+steps is never silent: one turn here streamed for 7.5 hours because the silence timer was
+the only bound. When the deadline fires the row says `The turn ran past its 90-minute
+limit and was stopped`, which is the truth, instead of blaming a lack of output.
+
 **One instruction, several sessions.** Start the message with `spawn N` and the mention
 runs N times, in parallel — N answers, N cards, N sessions:
 

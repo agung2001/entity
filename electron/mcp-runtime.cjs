@@ -309,11 +309,15 @@ function codexSpec(built, result) {
 function piSpec(record, built, result, home, piVersion = null) {
   const source = path.join(home, '.pi', 'agent')
   const globalNames = Object.keys(readJson(path.join(source, 'mcp.json'))?.mcpServers || {})
-  for (const name of Object.keys(built)) {
-    /* pi gives its own mcp.json precedence over an extension registration */
-    if (globalNames.includes(name)) {
-      result.notes.push(`pi: “${name}” is also in your own mcp.json, which takes precedence`)
-    }
+  /* One sentence, however many servers it is true of. Four separate lines about
+     the same fact read as four problems, and this is the common case (every
+     server someone also keeps in their own pi config). */
+  const shadowed = Object.keys(built).filter((name) => globalNames.includes(name))
+  if (shadowed.length) {
+    result.notes.push(
+      `pi: ${shadowed.join(', ')} ${shadowed.length === 1 ? 'is' : 'are'} also in your own mcp.json, ` +
+        'which takes precedence',
+    )
   }
 
   if (piSupportsMcpExtension(piVersion)) {
@@ -382,9 +386,17 @@ function piExtension(built) {
     '  }',
     '  for (const [name, config] of Object.entries(servers)) {',
     '    try {',
-    '      /* direct exposure: the pool is an explicit choice, and its tools should',
-    '         be usable without going through codemode first */',
-    '      pi.registerMcpServer(name, { exposure: "direct", ...config });',
+    '      /* Deferred exposure, because direct exposure makes pi wait for every',
+    '         server to finish its handshake before the model sees one token.',
+    '         A stdio MCP that boots an app (a launcher script that starts a',
+    '         daemon) therefore stalls the whole turn on its start-up: measured',
+    '         at 8.1s of a 10.9s cold start here, and the same server never',
+    '         answered, so the time was bought nothing. Deferred keeps the tools',
+    '         reachable through tool_search/codemode, and pi connects a server',
+    '         the first time a call needs it instead of at boot.',
+    '         `timeout` bounds the handshake that does happen: 60s is pi\'s',
+    '         default, and a dead server should cost seconds, not a minute. */',
+    '      pi.registerMcpServer(name, { exposure: "deferred", timeout: 15, ...config });',
     '    } catch (error) {',
     '      const reason = error instanceof Error ? error.message : String(error);',
     '      console.error("[entity] could not register MCP server " + JSON.stringify(name) + ": " + reason);',

@@ -37,6 +37,17 @@ const MAX_OUTPUT_CHARS = 240_000
 const MAX_PROMPT_CHARS = 48_000
 const MAX_TAGS = 12
 const MAX_TAG_CHARS = 32
+/* The longest a single turn may run, whatever the harness is doing. The idle
+   timer below only catches a *silent* harness, and a harness that keeps printing
+   thinking steps is never silent — one turn here printed every 80ms for 7.5 hours
+   before somebody pressed Stop. A delegated run gets its own hour
+   (`ENTITY_MENTION_TIMEOUT_MS`); a turn that contains delegations must outlive
+   them, so this is deliberately larger than one run and smaller than a working
+   day. `ENTITY_TURN_TIMEOUT_MS` overrides it. */
+const HARNESS_TURN_MS = (() => {
+  const configured = Number(process.env.ENTITY_TURN_TIMEOUT_MS)
+  return configured > 0 ? configured : 90 * 60 * 1000
+})()
 const HARNESS_IDLE_MS = 15 * 60 * 1000
 const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
 
@@ -1555,7 +1566,9 @@ function runHarness(
     inFlight.set(thread.id, child)
 
     let idleTimer = null
+    let deadlineTimer = null
     let timedOut = false
+    let overdue = false
     const armIdle = () => {
       clearTimeout(idleTimer)
       idleTimer = setTimeout(() => {
@@ -1564,11 +1577,20 @@ function runHarness(
       }, HARNESS_IDLE_MS)
       if (typeof idleTimer.unref === 'function') idleTimer.unref()
     }
+    /* Armed once, at spawn: progress does not extend it. `armIdle` is reset by
+       every byte, so a harness that keeps talking can run forever — which is
+       what happened. */
+    deadlineTimer = setTimeout(() => {
+      overdue = true
+      stopProcess(child)
+    }, HARNESS_TURN_MS)
+    if (typeof deadlineTimer.unref === 'function') deadlineTimer.unref()
 
     const finish = (code, error) => {
       if (settled) return
       settled = true
       clearTimeout(idleTimer)
+      clearTimeout(deadlineTimer)
       /* the config file is a secret; it outlives the process only if this line
          is skipped, which is why it is here and not in a finally */
       mcp.cleanup?.()
@@ -1639,7 +1661,16 @@ function runHarness(
     child.on('close', (code) =>
       finish(
         typeof code === 'number' ? code : null,
-        timedOut ? new Error('The harness produced no output for 15 minutes.') : null,
+        /* The deadline is the honest message: saying "no output" about a harness
+           that was talking the whole time sends the reader looking for the wrong
+           bug. */
+        overdue
+          ? new Error(
+              `The turn ran past its ${Math.round(HARNESS_TURN_MS / 60_000)}-minute limit and was stopped.`,
+            )
+          : timedOut
+            ? new Error('The harness produced no output for 15 minutes.')
+            : null,
       ),
     )
 

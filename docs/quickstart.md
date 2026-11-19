@@ -54,6 +54,12 @@ here; [Onboarding](onboarding.md) walks through the three steps.
 ENTITY_HOME=/tmp/entity-scratch npm run dev:desktop
 ```
 
+Two clocks bound a turn, and both are configurable. `ENTITY_TURN_TIMEOUT_MS`
+(default 90 min) is a wall-clock deadline armed when the harness is spawned — it is
+what stops a run that keeps talking, since the silence timer below never fires while
+output continues. `ENTITY_MENTION_TIMEOUT_MS` (default 60 min) is one delegated run's
+own budget, so a turn that delegates must be given longer than a single run.
+
 ## Tests
 
 The default E2E packs start their own server on port **5199** and seed a throwaway

@@ -197,3 +197,46 @@ test('a run that delegates again never holds: it is headless and cannot ask', { 
   chats.cancel({ workspace, id: session.id })
   await turn
 })
+
+test('a turn that keeps talking still runs out of time', { skip: !POSIX }, async (t) => {
+  /* The idle timer is reset by every byte, so a harness that prints forever is
+     never idle. One turn here streamed thinking steps for 7.5 hours before a
+     person pressed Stop, because the only clock was the silence one. The
+     deadline is armed at spawn and progress does not extend it. */
+  process.env.ENTITY_TURN_TIMEOUT_MS = '1500'
+  const store = path.resolve(__dirname, '../../electron/chat-store.cjs')
+  const stale = require.cache[store]
+  delete require.cache[store]
+  const chats = require(store)
+  t.after(() => {
+    chats.closeAll()
+    delete require.cache[store]
+    delete process.env.ENTITY_TURN_TIMEOUT_MS
+    if (stale) require.cache[store] = stale
+  })
+
+  const record = workspaces.create({ label: 'deadline' })
+  const workspace = record.id
+  entities.scaffold({ workspace, name: 'chatty-agent', harness: 'pi' })
+
+  /* One line every 100ms: never idle for the 15-minute silence timer, and it
+     must still be stopped by the deadline. */
+  const fake = path.join(PROFILE, 'chatty-pi')
+  fs.writeFileSync(
+    fake,
+    '#!/bin/sh\ni=0\nwhile [ $i -lt 600 ]; do\n  i=$((i+1))\n  echo \'{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"x"}}\'\n  sleep 0.1\ndone\n',
+    { mode: 0o755 },
+  )
+  harnesses.setPath({ id: 'pi', path: fake })
+
+  const thread = await chats.create({ workspace, entity: 'chatty-agent', harness: 'pi' })
+  const turn = chats.send({ workspace, id: thread.id, text: 'Keep talking.' })
+
+  const updated = await turn
+  const last = updated.messages.at(-1)
+  assert.equal(last.who, 'sys')
+  assert.match(last.text, /90-minute limit|minute limit/)
+  assert.equal(last.execution.status, 'error')
+  /* the steps it did produce are still the record */
+  assert.ok(last.steps.length > 0)
+})

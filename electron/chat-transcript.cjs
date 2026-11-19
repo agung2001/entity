@@ -59,8 +59,20 @@ function contentText(content) {
   return ''
 }
 
-function eventAt(event, previous) {
-  const stamp = event?.timestamp ?? event?.time ?? event?.at
+function eventAt(event) {
+  /* Harnesses are inconsistent: a session event carries `timestamp`, a pi
+     `message_start` nests it on the message, and a bare `agent_start` or
+     `message_update` carries nothing at all. Falling back to `previous` for
+     those is what flattened a whole transcript onto one instant — 400 steps,
+     one `at`, so neither the rail nor the execution card could say where the
+     hours went. An unstamped event happens *now*: wall clock is the only
+     truthful reading, and it costs nothing to be approximate. */
+  const stamp =
+    event?.timestamp ??
+    event?.time ??
+    event?.at ??
+    event?.message?.timestamp ??
+    event?.assistantMessageEvent?.timestamp
   if (typeof stamp === 'number' && Number.isFinite(stamp)) {
     const ms = stamp > 10_000_000_000 ? stamp : stamp * 1000
     return new Date(ms).toISOString()
@@ -69,7 +81,7 @@ function eventAt(event, previous) {
     const ms = Date.parse(stamp)
     if (Number.isFinite(ms)) return new Date(ms).toISOString()
   }
-  return previous || new Date().toISOString()
+  return new Date().toISOString()
 }
 
 function stepDuration(step) {
@@ -472,7 +484,7 @@ function createParser(harness, { onStep = () => {} } = {}) {
 
   function readEvent(event) {
     if (!event || typeof event !== 'object') return
-    const at = eventAt(event, lastAt)
+    const at = eventAt(event)
     lastAt = at
     readers[harness]?.(event)
   }

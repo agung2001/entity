@@ -52,6 +52,9 @@ plan around it; if it were hidden, you would find out mid-task.
 
 ## Numbers
 
+- **A turn is bounded at 90 minutes, and a delegated run at 60.** Both are clocks from
+  spawn, not silence: a harness that keeps printing is still stopped. `ENTITY_TURN_TIMEOUT_MS`
+  and `ENTITY_MENTION_TIMEOUT_MS` set them.
 - **Spend is only what the harness reports.** A turn without a price still counts as
   a turn and as tokens, but contributes nothing to the dollar total; the charts never
   estimate a price.

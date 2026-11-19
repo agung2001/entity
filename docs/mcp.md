@@ -101,6 +101,15 @@ The temp file or directory sits under `<ws>/runs/.mcp-*`, mode `0600`, and is re
 when the process exits. A server that is missing, or whose secret is unset, is
 reported on the turn instead of half-written — and the turn still runs.
 
+**A server cannot delay the first token.** Each harness reaches MCP tools the same way
+it reaches a search — on demand — so a slow or dead server costs nothing at start-up.
+This matters because a stdio definition is a *program*, and a launcher script that boots
+an app can block for as long as that app takes: one such server here added **8.1 s to a
+10.9 s cold start** and then never answered at all. pi gets `exposure: "deferred"`
+(`tool_search` and `codemode` still reach every tool, `direct` puts nothing on the
+critical path) and a `timeout: 15` on the handshake it does eventually make. Measured
+on a real turn: 10.9 s → 2.8 s to the first event.
+
 ## The other direction: an MCP server for agents
 
 **Account → MCP server** exposes the *workspace* to a client outside a run: a loopback
