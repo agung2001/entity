@@ -10,6 +10,7 @@ const workspaces = require('./workspace-store.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const { routeFromUrl } = require('./deep-link.cjs')
 const { turnNotification } = require('./notification-policy.cjs')
+const { createUpdateStore } = require('./update-store.cjs')
 
 /* Finder and the Dock start Electron with a bare PATH; a harness installed by
    Homebrew or npm would look "not installed". Restore the usual locations
@@ -32,6 +33,9 @@ const ICON_PATH = (() => {
 let mainWindow = null
 let rpc = null
 let watcher = null
+/* One updater for the whole app. Inert unless this build is packaged: in dev it
+   answers `{ status: 'dev' }` and constructs nothing. */
+const updates = createUpdateStore({ emit: (event) => broadcast(event) })
 
 /* The renderer owns the setting copy in localStorage; main keeps the last sync
    so a turn that finishes after the window closed can still decide. */
@@ -592,6 +596,10 @@ app.whenReady().then(() => {
 
   rpc = createRpc({
     emit: broadcast,
+    /* The auto-updater is a timer, not a request: one quiet check four
+       seconds after this table exists, then every six hours. `start` is
+       idempotent, so a dev-server reload does not stack timers. */
+    update: updates,
     reveal: (file) => shell.showItemInFolder(file),
     /* `openPath` resolves to an error message, not a rejection. */
     openPath: async (target) => {
@@ -608,6 +616,7 @@ app.whenReady().then(() => {
      not write. Without this watch the window would keep rendering the previous
      instructions until the user navigated away and back. */
   watcher = watchWorkspaces({ root: workspaces.WORKSPACES_DIR, emit: broadcast })
+  updates.start({ log: (line) => console.log(`[entity] ${line}`) })
 
   ipcMain.handle('app:info', () => ({
     name: app.getName(),

@@ -12,6 +12,7 @@ import { toggleTheme } from '@/lib/theme'
 import { isEditable } from '@/lib/dom'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hasDesktopBridge } from '@/composables/localBridge'
+import { RELEASES_URL } from '@/lib/releases'
 import { useDialogDismiss } from '@/composables/useDialog'
 
 /* The palette is twenty kilobytes of search that nobody needs to paint the
@@ -25,7 +26,6 @@ const router = useRouter()
 /* The app button belongs to the browser: inside Electron it would open the
    window you are already in. */
 const showAppLink = !hasDesktopBridge()
-const RELEASES_URL = 'https://github.com/agung2001/entity/releases/latest'
 
 /* A browser cannot ask whether an app is installed. Try the protocol, and if
    the page keeps focus (no handler launched anything), fall back to the

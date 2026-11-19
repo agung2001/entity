@@ -117,6 +117,12 @@ const navigationItems = computed(() => [
     act: () => router.push('/account/backups'),
   },
   {
+    id: 'nav:account-updates',
+    label: 'Updates',
+    meta: 'Version, release notes and restart',
+    act: () => router.push('/account/updates'),
+  },
+  {
     id: 'nav:entities',
     label: 'Entities',
     meta: 'Entity directory',

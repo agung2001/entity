@@ -1,0 +1,357 @@
+/* ── auto-update: the rail tile, its popover, and Account → Updates ────────
+   One 42 × 38 box in the rail and one page card. No colour, radius, size or
+   shadow is introduced here: the tile is `.rail-ico`'s box, the popover is
+   `.acct-menu`'s position and the rail tooltip's shadow, and every type step is
+   on the ladder in tokens.css. */
+
+/* ── the rail tile ────────────────────────────────────────────────────── */
+.rail-upd {
+  position: relative;
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+/* idle reserves nothing: the spacer above absorbs the box, so no other icon
+   in the rail moves when an update appears or goes */
+.rail-upd[data-state='idle'] {
+  display: none;
+}
+
+.upd-tile {
+  position: relative;
+  width: 42px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.upd-tile svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.upd-tile:hover {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+/* a version is waiting: the only accent-soft tile in the rail */
+.rail-upd[data-state='available'] .upd-tile,
+.rail-upd[data-state='downloading'] .upd-tile {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 65%, #000);
+  color: var(--accent-ink);
+}
+.rail-upd[data-state='available'] .upd-tile:hover,
+.rail-upd[data-state='downloading'] .upd-tile:hover {
+  background: color-mix(in oklab, var(--accent-soft) 88%, #000);
+  color: var(--accent-ink);
+}
+
+/* it is on disk: the one filled button in the rail */
+.rail-upd[data-state='ready'] .upd-tile {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 78%, #000);
+  color: var(--on-accent);
+}
+.rail-upd[data-state='ready'] .upd-tile:hover {
+  background: color-mix(in oklch, var(--accent) 90%, #000);
+  color: var(--on-accent);
+}
+
+/* only a download the person started: a failed check never paints this */
+.rail-upd[data-state='error'] .upd-tile {
+  color: var(--danger);
+  border-color: transparent;
+}
+.rail-upd[data-state='error'] .upd-tile:hover {
+  background: var(--danger-soft);
+  border-color: color-mix(in oklab, var(--danger) 22%, var(--bg));
+}
+
+/* the percent replaces the glyph while bytes arrive: one thing to read */
+.upd-pct {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* the only animation in the whole feature */
+.upd-spin {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in oklab, var(--muted) 45%, var(--surface));
+  border-top-color: var(--muted);
+  animation: upd-spin 0.75s linear infinite;
+}
+@keyframes upd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* the tooltip is the rail's own: rail-two-tier.css puts it at 100% + 9px */
+.rail-upd [data-tip] {
+  position: relative;
+}
+
+/* ── the restart popover ──────────────────────────────────────────────── */
+.upd-pop {
+  position: absolute;
+  left: 52px;
+  bottom: 0;
+  z-index: 120;
+  width: 272px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: 0 8px 22px -10px rgba(10, 10, 10, 0.35);
+  text-align: left;
+}
+.upd-pop h3 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.upd-pop p {
+  margin: 6px 0 0;
+  font-size: var(--fs-secondary);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.upd-pop .upd-pop-foot {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.upd-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.upd-pop-actions .btn {
+  height: 30px;
+  font-size: var(--fs-secondary);
+}
+.upd-pop-warn {
+  display: flex;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--bg));
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  font-size: var(--fs-label);
+  line-height: 1.45;
+  color: var(--danger);
+}
+.upd-pop-warn svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 1px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+}
+
+/* ── the page: the version row and its one action ─────────────────────── */
+.upd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.upd-id {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.upd-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+}
+.upd-name b {
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+}
+.upd-name .upd-kicker {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.upd-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-secondary);
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.upd-meta .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ok);
+}
+.upd-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* ── the page: the bar, and the two numbers under it ──────────────────── */
+.upd-progress {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+.upd-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.upd-progress-meta b {
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the page: release notes ─────────────────────────────────────────── */
+.upd-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+.upd-log li {
+  position: relative;
+  padding-left: 15px;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.upd-log li::before {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.upd-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 11px;
+  font-size: var(--fs-label);
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklab, var(--accent-ink) 45%, transparent);
+}
+.upd-link svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+}
+.upd-note {
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* the state stays readable: a static ring, no spin */
+  .upd-spin {
+    animation: none;
+  }
+  .upd-tile {
+    transition: none;
+  }
+}
+
+/* The rail becomes a top bar below 821 px: the tile keeps its box but loses the
+   tooltip, and the popover flips to the top edge (there is no room to the
+   right of a full-width bar). The `aria-label` carries the whole sentence
+   there, so nothing is lost with the tip. */
+@media (max-width: 820px) {
+  .rail-upd {
+    width: auto;
+    flex: none;
+  }
+  .upd-tile {
+    min-width: 40px;
+    min-height: 38px;
+  }
+  /* The bar sits at the top of the window, so `bottom: calc(100% + 8px)` would
+     put this popover off screen. It opens under the tile instead: same width,
+     same tile anchor, reachable by pointer and keyboard. */
+  .upd-pop {
+    left: auto;
+    right: 0;
+    top: calc(100% + 8px);
+    bottom: auto;
+    max-height: calc(100vh - 72px);
+    overflow: auto;
+  }
+}
+
+/* A live region that announces at 10 % steps: one element inside the page card
+   (the rail carries a percent, not a reading). Visually hidden, still read. */
+.upd-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

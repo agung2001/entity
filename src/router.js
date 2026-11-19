@@ -26,6 +26,7 @@ const AccountNotificationsView = () => import('@/views/account/AccountNotificati
 const AccountMcpView = () => import('@/views/account/AccountMcpView.vue')
 const AccountHarnessView = () => import('@/views/account/AccountHarnessView.vue')
 const AccountBackupView = () => import('@/views/account/AccountBackupView.vue')
+const AccountUpdateView = () => import('@/views/account/AccountUpdateView.vue')
 const WorkspaceView = () => import('@/views/WorkspaceView.vue')
 const ManageWorkspacesView = () => import('@/views/ManageWorkspacesView.vue')
 
@@ -267,6 +268,12 @@ const router = createRouter({
               name: 'account-backups',
               component: AccountBackupView,
               meta: { crumb: 'account', title: 'Backups · entity' },
+            },
+            {
+              path: 'updates',
+              name: 'account-updates',
+              component: AccountUpdateView,
+              meta: { crumb: 'account', title: 'Updates · entity' },
             },
           ],
         },

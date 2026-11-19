@@ -157,7 +157,32 @@
     grid-template-columns: 1fr;
   }
 }
+/* Account → Updates: the version row keeps its label above a full-width action,
+   and the two progress numbers stack so neither is cut at 360 px. */
+@media (max-width: 700px) {
+  .upd-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .upd-actions {
+    justify-content: stretch;
+  }
+  .upd-actions .btn {
+    flex: 1;
+  }
+  .upd-progress-meta {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .upd-name {
+    flex-wrap: wrap;
+  }
+}
 @media (max-width: 620px) {
+  .acct-card-head {
+    flex-wrap: wrap;
+  }
   .stat-grid {
     grid-template-columns: 1fr;
   }

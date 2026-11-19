@@ -50,6 +50,7 @@ const ACCOUNT_ROWS = [
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
   { to: '/account/harnesses', label: 'Harnesses', hint: 'enable and disable agent CLIs' },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
+  { to: '/account/updates', label: 'Updates', hint: 'version and releases' },
 ]
 
 const railHosts = computed(() => {
@@ -104,7 +105,8 @@ const section = computed(() => {
     name === 'account-notifications' ||
     name === 'account-mcp' ||
     name === 'account-harnesses' ||
-    name === 'account-backups'
+    name === 'account-backups' ||
+    name === 'account-updates'
   ) {
     return { id: 'account', title: 'Account', count: null }
   }

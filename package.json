@@ -50,6 +50,7 @@
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.17",
     "echarts": "^5.6.0",
+    "electron-updater": "^6.8.11",
     "marked": "^18.2.0",
     "unzipper": "^0.12.5",
     "vue": "^3.5.45",
@@ -77,7 +78,10 @@
       "package.json"
     ],
     "mac": {
-      "target": "dmg",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.productivity",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Entity uses the microphone only while voice mode is open, so you can talk to an entity instead of typing. The recording stays on this machine."
