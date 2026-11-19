@@ -105,6 +105,12 @@ const navigationItems = computed(() => [
     act: () => router.push('/account/mcp'),
   },
   {
+    id: 'nav:account-harnesses',
+    label: 'Harnesses',
+    meta: 'enable and disable agent CLIs on this machine',
+    act: () => router.push('/account/harnesses'),
+  },
+  {
     id: 'nav:account-backups',
     label: 'Workspace backups',
     meta: 'Smart snapshots, retention and restore',

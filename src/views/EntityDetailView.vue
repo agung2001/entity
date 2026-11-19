@@ -26,7 +26,7 @@ import {
 } from '@/stores/hub'
 import { findEntity, loadEntities, revealEntity, saveEntity } from '@/stores/entities'
 import { colorById, markFor } from '@/composables/entityMark'
-import { harnesses, loadHarnesses, loadModels } from '@/stores/harnesses'
+import { harnesses, loadHarnesses, loadModels, pickableHarnesses } from '@/stores/harnesses'
 
 /**
  * The entity is a page, not a drawer. It is the same file the table lists —
@@ -63,13 +63,19 @@ const modelData = computed(() => harnesses.models[form.harness] || null)
 /* Only what the harness itself reports; there is no built-in list to merge. */
 const modelOptions = computed(() => [...new Set(modelData.value?.models || [])])
 const modelLoading = computed(() => Boolean(modelData.value?.loading))
-const harnessOptions = computed(() =>
-  harnesses.items.map((item) => ({
-    id: item.id,
-    label: item.label,
-    meta: item.installed ? 'installed' : 'not found',
-  })),
-)
+/* Only what this machine offers — plus the entity's own harness when that one is
+   off, so an existing file still shows the value it carries instead of an empty
+   field. Choosing it again is not offered; it is the current state, not a pick. */
+const harnessOptions = computed(() => {
+  const current = String(agent.value?.harness || '')
+  return harnesses.items
+    .filter((item) => pickableHarnesses.value.includes(item) || item.id === current)
+    .map((item) => ({
+      id: item.id,
+      label: item.enabled ? item.label : `${item.label} · off`,
+      meta: item.installed ? 'installed' : 'not found',
+    }))
+})
 const instructionRows = computed(() =>
   Math.max(18, String(form.instructions || '').split('\n').length + 2),
 )
