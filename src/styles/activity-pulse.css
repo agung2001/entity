@@ -1,0 +1,804 @@
+/* ── Activity: the workspace's own cabinet, a pulse, and a day ledger ─────
+   The hero is the entity profile's own light-mode recipe from
+   `backdrops.css:375` (`:root:not([data-theme='dark']) .entp-hero`): a warm
+   white floor, the hero tint mixed into the gradients, ink text and a 34 %
+   tinted border. Light is the base rule because light is what the app ships;
+   the dark cabinet is one override block below. Every colour is a token or a
+   `color-mix` of one — the only literal hue is `--hero`, the `sun` entry of
+   `entityMark.js`, repeated from `.entp-hero`'s own vocabulary.
+
+   Geometry comes from the mock-up (`activity-pulse/index.html`), behaviour
+   from the spec beside it. Breakpoints are container queries on
+   `.ws-activity` (see `chrome.css`), so they measure the pane, not the window.
+   ponytail: one fixed 14-day window and no chart library on purpose — the
+   ceiling is "a month is unreadable", the upgrade path is a wider window in
+   `pulse()` in the view, not a new dependency. */
+
+.act-hero {
+  --hero: #f8b956;
+  /* On the cream cabinet --muted drops to 4.3:1 over the warmest gradient
+     corner, under AA for the 10 px mono labels; 72 % muted + --ink-2 measures
+     5.3:1 there. */
+  --hero-muted: color-mix(in oklab, var(--muted) 72%, var(--ink-2));
+  --hero-eyebrow: color-mix(in oklab, var(--hero) 30%, var(--ink-2));
+  --hero-ink: var(--ink);
+  --hero-2: var(--ink-2);
+  --hero-rule: color-mix(in oklab, var(--hero) 22%, var(--border));
+  --hero-chip-bg: color-mix(in oklab, #fff 62%, transparent);
+  --hero-chip-bd: color-mix(in oklab, var(--hero) 20%, var(--border));
+  --hero-chip-on: color-mix(in oklab, var(--hero) 18%, #fff);
+  --hero-card-bg: color-mix(in oklab, #fff 66%, transparent);
+  --hero-card-bd: color-mix(in oklab, var(--hero) 24%, var(--border));
+  --hero-lv-bg: color-mix(in oklab, var(--hero) 10%, #fff);
+  --hero-lv-bd: color-mix(in oklab, var(--hero) 28%, var(--border));
+  --hero-lv-ink: color-mix(in oklab, var(--hero) 42%, var(--ink));
+  --hero-band: color-mix(in oklab, var(--hero) 7%, transparent);
+  --hero-track: color-mix(in oklab, var(--surface-2) 68%, #fff);
+  /* On cream, chroma toward the accent *loses* contrast (1.6:1 at the peak), so
+     intensity is carried by ink: --accent-ink is the darkest end of the ramp
+     and the hero tint the lightest. 3.42:1 on a one-turn day, 4.87:1 at peak. */
+  --hero-bar-1: color-mix(in oklab, var(--hero) 42%, var(--accent-ink));
+  --hero-bar-2: color-mix(in oklab, var(--hero) 34%, var(--accent-ink));
+  --hero-bar-3: color-mix(in oklab, var(--hero) 26%, var(--accent-ink));
+  --hero-bar-4: color-mix(in oklab, var(--hero) 18%, var(--accent-ink));
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 20px 22px 0;
+  border: 1px solid color-mix(in oklab, var(--hero) 34%, var(--border));
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(72% 95% at 10% 0%, color-mix(in oklab, var(--hero) 24%, #fff), transparent 62%),
+    radial-gradient(48% 80% at 96% 100%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%),
+    linear-gradient(120deg, #fffdf8, #fff8ec 54%, #fffdf9);
+  color: var(--ink);
+  box-shadow:
+    0 18px 50px color-mix(in oklab, var(--hero) 10%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 70%, transparent);
+}
+.act-hero-in {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 26px;
+}
+.act-id {
+  flex: 1;
+  min-width: 0;
+}
+.act-id .eyebrow {
+  color: var(--hero-eyebrow);
+}
+.act-id h1 {
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  margin: 6px 0 0;
+  color: var(--hero-ink);
+}
+.act-id .desc {
+  margin: 6px 0 0;
+  max-width: 58ch;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--hero-2);
+}
+.act-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.act-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--hero-chip-bd);
+  border-radius: var(--r-pill);
+  background: var(--hero-chip-bg);
+  font-size: var(--fs-label);
+  color: var(--hero-2);
+  white-space: nowrap;
+}
+.act-chip b {
+  font-weight: 500;
+  color: var(--hero-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the level card: `.entp-xp` geometry, workspace numbers ─────────── */
+.act-lv {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  width: 300px;
+  align-self: flex-start;
+  padding: 12px;
+  border: 1px solid var(--hero-card-bd);
+  border-radius: var(--r-md);
+  background: var(--hero-card-bg);
+}
+.act-lv-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 48px;
+  min-height: 62px;
+  border: 1px solid var(--hero-lv-bd);
+  border-radius: var(--r-sm);
+  background: var(--hero-lv-bg);
+  font-family: var(--mono);
+}
+.act-lv-box span {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  color: var(--hero-muted);
+}
+.act-lv-box b {
+  margin-top: 2px;
+  font-size: var(--fs-h4);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--hero-lv-ink);
+  font-variant-numeric: tabular-nums;
+}
+.act-lv-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.act-lv-head,
+.act-lv-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hero-muted);
+  white-space: nowrap;
+}
+.act-lv-head b {
+  font-weight: 500;
+  color: var(--hero-2);
+}
+.act-lv-foot {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.act-track {
+  position: relative;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--hero-track);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.act-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-ink), color-mix(in oklab, var(--hero) 45%, var(--accent-ink)));
+  border-radius: inherit;
+}
+.act-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(90deg, transparent 0 9px, rgba(255, 255, 255, 0.55) 9px 10px);
+}
+
+/* ── the pulse: fourteen days of turns as pixel columns ─────────────── */
+.act-pulse {
+  position: relative;
+  z-index: 1;
+  margin: 18px -22px 0;
+  padding: 12px 22px 13px;
+  border-top: 1px solid var(--hero-rule);
+  background: var(--hero-band);
+}
+.act-pulse-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+}
+.act-pulse-head .eyebrow {
+  margin: 0;
+  color: var(--hero-eyebrow);
+}
+.act-pulse-head .facts {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--hero-muted);
+}
+.act-pulse-head .facts b {
+  font-weight: 500;
+  color: var(--hero-2);
+  font-variant-numeric: tabular-nums;
+}
+.act-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 46px;
+}
+.act-bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+/* A zero day is not a bar on the ramp: it is an empty slot at the track
+   colour, because a half-lit gold stub reads as activity. */
+.act-bar i {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  border-radius: var(--r-2xs) var(--r-2xs) 0 0;
+  background: var(--border-strong);
+}
+.act-bar[data-d='1'] i {
+  background: var(--hero-bar-1);
+}
+.act-bar[data-d='2'] i {
+  background: var(--hero-bar-2);
+}
+.act-bar[data-d='3'] i {
+  background: var(--hero-bar-3);
+}
+.act-bar[data-d='4'] i {
+  background: var(--hero-bar-4);
+}
+.act-bar[data-peak='1'] i {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-ink) 45%, transparent);
+}
+.act-bar[data-today='1'] i {
+  outline: 1px solid color-mix(in oklab, var(--hero) 45%, var(--ink));
+  outline-offset: 1px;
+}
+.act-bar em {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  color: var(--hero-2);
+  font-variant-numeric: tabular-nums;
+}
+.act-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--hero-muted);
+}
+
+/* ── the cast: who is in the journal, and the filter for it ─────────── */
+.act-cast {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 -22px;
+  padding: 11px 22px 13px;
+  border-top: 1px solid var(--hero-rule);
+}
+.act-cast .lbl {
+  flex: none;
+  margin-right: 4px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hero-muted);
+}
+.act-fchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--hero-chip-bd);
+  border-radius: var(--r-pill);
+  background: var(--hero-chip-bg);
+  font-size: var(--fs-label);
+  color: var(--hero-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out;
+}
+.act-fchip:hover {
+  background: color-mix(in oklab, #fff 88%, transparent);
+  border-color: color-mix(in oklab, var(--hero) 45%, var(--border-strong));
+  color: var(--hero-ink);
+}
+.act-fchip .mark {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.act-fchip .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--hero-muted);
+  font-variant-numeric: tabular-nums;
+}
+.act-fchip[aria-pressed='true'] {
+  border-color: color-mix(in oklab, var(--hero) 55%, var(--border-strong));
+  background: var(--hero-chip-on);
+  color: var(--hero-ink);
+}
+.act-fchip[aria-pressed='true'] .n {
+  color: var(--hero-2);
+}
+
+/* ── the toolbar: search, count, one sort ──────────────────────────── */
+.act-tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0 10px;
+}
+.act-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 240px;
+  max-width: 380px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+.act-search:focus-within {
+  border-color: var(--ink-2);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.act-search svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--muted);
+}
+.act-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+}
+.act-search input::placeholder {
+  color: var(--muted);
+}
+.act-clear {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-secondary);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease-out, color 0.12s ease-out;
+}
+.act-clear:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.act-count {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.act-count b {
+  color: var(--ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.act-tool .btn {
+  margin-left: auto;
+}
+
+/* ── the ledger: a day header, then its rows ────────────────────────── */
+.jr-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 30px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.jr-day:first-child {
+  border-top: 0;
+}
+.jr-day span {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted);
+}
+.jr {
+  display: grid;
+  grid-template-columns: 74px 186px minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 12px;
+  height: 50px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  transition: background 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+.jr:hover {
+  background: var(--surface);
+  box-shadow: inset 2px 0 var(--accent);
+}
+/* inside, so the table's `overflow: hidden` cannot clip the ring */
+.jr:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+  background: var(--surface);
+}
+.jr:active {
+  background: var(--surface-2);
+}
+.jr time {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.jr-ent {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.jr-ent .mark {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+.jr-ent .nm {
+  min-width: 0;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-act {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jr-act b {
+  min-width: 0;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jr-act .q {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jr-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.jr-ctx .pip {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.jr-go {
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+}
+.jr:hover .jr-go,
+.jr:focus-visible .jr-go {
+  opacity: 1;
+  transform: translateX(1px);
+}
+
+/* ── the ledger while a scan is still reading: real row geometry ────── */
+.act-sk-row {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 196px 104px;
+  align-items: center;
+  gap: 12px;
+  height: 50px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+}
+.act-sk-row:first-child {
+  border-top: 0;
+}
+.act-sk-b {
+  height: 9px;
+  border-radius: var(--r-xs);
+  background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2));
+  background-size: 200% 100%;
+  animation: act-sk 1.4s ease-in-out infinite;
+}
+.act-sk-b.wide {
+  width: 100%;
+}
+@keyframes act-sk {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+/* ── the dark cabinet: same anatomy, night floor ────────────────────────
+   The night hero floor is 1.03:1 against `--bg`, so the card keeps its edge
+   from `--border-strong` (1.97:1) instead of from the gradient. */
+.theme-dark .act-hero { border-color: var(--border-strong); }
+:root[data-theme='dark'] .act-hero {
+  --hero-muted: #9eaa8c;
+  --hero-eyebrow: color-mix(in oklab, var(--hero) 56%, #c5cfae);
+  --hero-ink: #f7f3df;
+  --hero-2: #b9c1a8;
+  --hero-rule: rgba(255, 255, 255, 0.09);
+  --hero-chip-bg: rgba(255, 255, 255, 0.05);
+  --hero-chip-bd: rgba(255, 255, 255, 0.14);
+  --hero-chip-on: color-mix(in oklab, var(--hero) 16%, rgba(255, 255, 255, 0.06));
+  --hero-card-bg: rgba(0, 0, 0, 0.24);
+  --hero-card-bd: rgba(255, 255, 255, 0.14);
+  --hero-lv-bg: rgba(0, 0, 0, 0.28);
+  --hero-lv-bd: color-mix(in oklab, var(--hero) 32%, rgba(255, 255, 255, 0.14));
+  --hero-lv-ink: #f7f3df;
+  --hero-band: rgba(0, 0, 0, 0.2);
+  --hero-track: rgba(255, 255, 255, 0.12);
+  /* the dark ramp runs the other way: chroma toward the hero tint is what
+     carries intensity away from the near-black band */
+  --hero-bar-1: color-mix(in oklab, var(--hero) 55%, #2b2a20);
+  --hero-bar-2: color-mix(in oklab, var(--hero) 70%, #2b2a20);
+  --hero-bar-3: color-mix(in oklab, var(--hero) 86%, #2b2a20);
+  --hero-bar-4: var(--hero);
+  border-color: var(--border-strong);
+  background:
+    radial-gradient(85% 120% at 16% 0%, color-mix(in oklab, var(--hero) 14%, #0a0e09), transparent 66%),
+    linear-gradient(120deg, #0a0d09, #0d120b 58%, #090b08);
+  color: #f6f2dd;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+}
+:root[data-theme='dark'] .act-bar i {
+  background: color-mix(in oklab, var(--hero) 40%, #2b2a20);
+}
+:root[data-theme='dark'] .act-bar[data-peak='1'] i {
+  box-shadow: 0 0 10px color-mix(in oklab, var(--hero) 55%, transparent);
+}
+:root[data-theme='dark'] .act-bar[data-today='1'] i {
+  outline-color: #f7f3df;
+}
+:root[data-theme='dark'] .act-track::after {
+  background-image: repeating-linear-gradient(90deg, transparent 0 9px, rgba(0, 0, 0, 0.35) 9px 10px);
+}
+:root[data-theme='dark'] .act-track i {
+  background: linear-gradient(90deg, color-mix(in oklab, var(--hero) 70%, #6b5424), var(--hero));
+}
+:root[data-theme='dark'] .act-fchip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f7f3df;
+}
+
+/* ── responsive: pane widths, not window widths ─────────────────────── */
+@container (max-width: 900px) {
+  .act-hero-in {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .act-lv {
+    width: 100%;
+    align-self: stretch;
+  }
+  .jr {
+    grid-template-columns: 68px 168px minmax(0, 1fr) 14px;
+  }
+  .jr-ctx {
+    display: none;
+  }
+}
+@container (max-width: 700px) {
+  .act-hero {
+    padding: 16px 16px 0;
+  }
+  .act-pulse,
+  .act-cast {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .act-id h1 {
+    font-size: var(--fs-h2);
+  }
+  .act-bar em {
+    display: none;
+  }
+  .act-tool {
+    gap: 8px;
+  }
+  .act-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .act-tool .btn {
+    margin-left: 0;
+  }
+  /* Two lines: identity and age share the first, the title owns the second.
+     `.jr-ctx` is dropped rather than wrapped — it is the least-loaded column. */
+  .jr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 10px;
+    height: auto;
+    /* 74 px measured: the spec's number, not whatever the two lines add up
+       to, so the pane never jumps between rows of equal content. */
+    min-height: 74px;
+    padding: 11px 12px;
+  }
+  .jr time {
+    order: 2;
+    margin-left: auto;
+    flex: none;
+  }
+  .jr-ent {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .jr-act {
+    order: 3;
+    flex: 1 1 100%;
+    white-space: normal;
+  }
+  .jr-act b {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+  .jr-go {
+    display: none;
+  }
+  .jr-day {
+    height: auto;
+    padding: 7px 12px;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .act-sk-row {
+    grid-template-columns: 60px minmax(0, 1fr);
+    height: 46px;
+    gap: 10px;
+  }
+  .act-sk-row .act-sk-b:last-child {
+    display: none;
+  }
+}
+/* A thumb still has to hit the clear affordance and the chips; the ledger row
+   keeps its own 74 px. */
+@container (max-width: 460px) {
+  .act-fchip {
+    height: 44px;
+    padding: 0 13px;
+  }
+  .act-search {
+    height: 44px;
+  }
+  .act-clear {
+    width: 44px;
+    height: 44px;
+    margin-right: -9px;
+  }
+  .act-tool .btn {
+    height: 44px;
+  }
+  .act-lv {
+    padding: 10px;
+    gap: 10px;
+  }
+  .sk-tabs button {
+    padding: 15px 9px 14px;
+  }
+  .sk-tabs button:first-child {
+    padding-left: 0;
+  }
+}
+
+/* Motion is transform/opacity only, and all of it goes away here: the scan
+   line and the drifting pixels come from `PixelBackdrop`, whose own block in
+   `backdrops.css` already stops them. */
+@media (prefers-reduced-motion: reduce) {
+  .act-bar,
+  .act-fchip,
+  .act-clear,
+  .act-search,
+  .jr,
+  .jr-go {
+    transition: none;
+  }
+  .act-sk-b {
+    animation: none;
+    background: var(--surface-2);
+  }
+}
