@@ -140,6 +140,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['mod', 'enter'],
       },
       {
+        id: 'enhance-prompt',
+        label: 'Enhance this prompt',
+        desc: 'Rewrite the draft in the composer before it costs a turn. Nothing in the dialog sends it.',
+        desktop: ['mod', 'shift', 'enter'],
+        browser: ['alt', 'shift', 'enter'],
+      },
+      {
         id: 'terminal',
         label: 'Terminal',
         desc: 'Open a shell beside the conversation — on this machine, or on the thread’s host.',
