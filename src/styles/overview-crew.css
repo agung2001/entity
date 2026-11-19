@@ -1,0 +1,987 @@
+/* ── the workspace overview: the workspace as a crew ─────────────────────
+   The page column is `.ovc`; every rule below is scoped to it, so nothing
+   here can reach the rest of the app.
+
+   The cabinet is the entity page's cabinet in markup — `class="ovc-hero entp-hero"`
+   — so `backdrops.css` already owns its paper, its grid and the dark recipe.
+   The voxel mark is `brand.css`, the `.state` chip is `inventory.css`, and the
+   heatmap legend is `insights.css`. This sheet carries the workspace-scale
+   deltas only: the page column, the hero's spacing, the crew cards, and the
+   Recent/This-year band.
+
+   Read order matters: `app.css` imports this sheet *before* `backdrops.css`,
+   so a delta that has to beat `.entp-hero`'s own padding is written
+   `.ovc .ovc-hero` (0,2,0), not `.ovc-hero`. */
+
+/* ── the page column ─────────────────────────────────────────────────── */
+.ovc {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  /* the page's top edge is `.ovc-bar`, 58px, so the column starts at 0 —
+     the app's own `.view` top padding would double it */
+  padding: 0 30px 64px;
+}
+
+/* the page's own top edge: a hairline bar, not a card (the entity page's
+   `.entp-bar`, one rung lighter) */
+.ovc .ovc-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 58px;
+}
+.ovc .ovc-bar .spacer {
+  flex: 1;
+}
+.ovc .ovc-barcrumb {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── the cabinet, at workspace scale ─────────────────────────────────────
+   `--hero` is what `.entp-hero` reads for its paper, its grid and its shadow;
+   the entity page hands it the entity's colour through an inline style, which
+   still wins over this fallback. Without a value the whole recipe silently
+   disappears (every `color-mix()` in it would be invalid), so the page states
+   the one it wants. */
+.ovc .ovc-hero {
+  --hero: var(--accent);
+  /* entp-hero pads itself for the entity page; here each block inside the
+     cabinet owns its padding, so the ribbon can run the full width */
+  margin-top: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink);
+}
+:root[data-theme='dark'] .ovc .ovc-hero {
+  color: #f6f2dd;
+}
+/* The ribbon sits inside the cabinet and is optional, so the cabinet carries
+   its own bottom edge: without it a calm workspace loses the lower margin the
+   ribbon used to supply and the crew rides up against the cabinet's inside.
+   `data-ribbon` is the view saying which of the two cabinets this is. */
+.ovc .ovc-hero-inner {
+  position: relative;
+  z-index: 1;
+  padding-bottom: 22px;
+}
+.ovc .ovc-hero[data-ribbon='1'] .ovc-hero-inner {
+  padding-bottom: 0;
+}
+
+.ovc .ovc-idhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 24px 0;
+}
+/* ── the cabinet's mark ───────────────────────────────────────────
+   Four squares on the voxel's own grid, not a character: the workspace has no
+   face, and borrowing one entity's voxel (and its mood sticker) read as "this
+   page is about that entity". Drawn in the accent's own ink so it belongs to
+   the paper, and it breathes one hard pixel step at a time — the same
+   `steps()` rhythm the pixel field behind it moves to, so the two never feel
+   like different machines. */
+.ovc .ovc-hero-mark {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  margin-top: 3px;
+  flex: none;
+  /* the same accent ink the level chip uses: `accent` mixed toward `ink` goes
+     olive, so the mark takes the token that was measured for this job */
+  color: var(--accent-ink);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+:root[data-theme='dark'] .ovc .ovc-hero-mark {
+  color: var(--accent-ink);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.ovc .ovc-hero-mark svg {
+  width: 34px;
+  height: 34px;
+}
+/* the four cells light in reading order, like a caret stepping through the
+   grid — `steps(1, end)` so each cell switches on and off with no ramp, the
+   same hard-edged rhythm the pixel field behind it keeps */
+.ovc .ovc-hero-mark svg rect {
+  fill: transparent;
+  animation: ovc-tile-fill 2.4s steps(1, end) infinite;
+}
+@keyframes ovc-tile-fill {
+  0%,
+  100% {
+    fill: color-mix(in oklab, currentColor 22%, transparent);
+  }
+  20% {
+    fill: currentColor;
+  }
+  40% {
+    fill: color-mix(in oklab, currentColor 22%, transparent);
+  }
+}
+.ovc .ovc-hero-mark svg rect:nth-child(1) {
+  animation-delay: 0s;
+}
+.ovc .ovc-hero-mark svg rect:nth-child(2) {
+  animation-delay: 0.6s;
+}
+.ovc .ovc-hero-mark svg rect:nth-child(3) {
+  animation-delay: 1.2s;
+}
+.ovc .ovc-hero-mark svg rect:nth-child(4) {
+  animation-delay: 1.8s;
+}
+.ovc .ovc-title {
+  min-width: 0;
+  flex: 1;
+}
+/* `.entp-hero .eyebrow`'s own colour already reads `--hero`, which the cabinet
+   sets to the accent — so the workspace eyebrow is the entity page's. Only the
+   gap is the page's own: this title is smaller than the entity's. */
+.ovc .ovc-title .eyebrow {
+  margin: 0 0 6px;
+}
+.ovc .ovc-title h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.06;
+  /* a workspace name is a folder name: it may be long and it may have no
+     break opportunity in it */
+  overflow-wrap: anywhere;
+}
+:root[data-theme='dark'] .ovc .ovc-title h1 {
+  color: #f7f3df;
+}
+.ovc .ovc-lede {
+  margin: 8px 0 0;
+  max-width: 58ch;
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+:root[data-theme='dark'] .ovc .ovc-lede {
+  color: #b9c1a8;
+}
+.ovc .ovc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.ovc .ovc-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 5px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in oklab, var(--accent) 20%, var(--border));
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, #fff 62%, transparent);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+:root[data-theme='dark'] .ovc .ovc-chip {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #b9c1a8;
+}
+.ovc .ovc-chip i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+.ovc .ovc-chip[data-live='1'] i {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  animation: ovc-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ovc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* the crew's experience — the entity page's XP box at workspace scale. The
+   internals are `.entp-lv` / `.entp-xp-*` from `backdrops.css`, which read
+   `--hero`; only the box itself and its width are this page's, so the whole
+   cabinet stays in one colour family. */
+.ovc .ovc-xp {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  width: 284px;
+  padding: 12px;
+  align-self: center;
+  border: 1px solid color-mix(in oklab, var(--hero) 24%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, #fff 66%, transparent);
+}
+:root[data-theme='dark'] .ovc .ovc-xp {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.24);
+}
+/* ── the attention ribbon — inside the cabinet, never a fifth tile ────────
+   The all-clear state keeps the same box and changes the sentence, so the
+   crew never moves when a problem is fixed. */
+.ovc .ovc-ribbon {
+  margin: 16px 24px 0;
+  border: 1px solid color-mix(in oklab, var(--danger) 26%, var(--border));
+  border-radius: var(--r);
+  background: color-mix(in oklab, var(--danger) 5%, var(--bg));
+  overflow: hidden;
+}
+/* the problem ribbon lifts its bed at night; the all-clear one keeps the
+   `[data-ok='1']` rule's bed, so the selector has to exclude it — the dark
+   block is more specific than `.ovc .ovc-ribbon[data-ok='1']` */
+:root[data-theme='dark'] .ovc .ovc-ribbon:not([data-ok='1']) {
+  background: color-mix(in oklab, var(--danger) 12%, var(--bg));
+}
+.ovc .ovc-ribbon-row {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+}
+.ovc .ovc-ribbon-row svg {
+  width: 14px;
+  height: 14px;
+  color: var(--danger);
+}
+.ovc .ovc-ribbon-row b {
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.ovc .ovc-ribbon-row span {
+  font-size: var(--fs-label);
+  color: color-mix(in oklab, var(--danger) 55%, var(--ink-2));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-theme='dark'] .ovc .ovc-ribbon-row span {
+  color: color-mix(in oklab, var(--danger) 60%, #e6dcc6);
+}
+.ovc .ovc-ribbon-go {
+  height: 26px;
+  padding: 0 9px;
+  white-space: nowrap;
+  border: 1px solid color-mix(in oklab, var(--danger) 25%, var(--border));
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--danger);
+  cursor: pointer;
+}
+.ovc .ovc-ribbon[data-ok='1'] {
+  border-color: var(--border);
+  background: color-mix(in oklab, var(--ok) 4%, var(--bg));
+}
+.ovc .ovc-ribbon[data-ok='1'] p {
+  margin: 0;
+  padding: 9px 12px;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.ovc .ovc-ribbon[data-ok='1'] p span {
+  color: var(--ok);
+  margin-right: 4px;
+}
+
+/* ── the crew ────────────────────────────────────────────────────────── */
+.ovc .ovc-sec {
+  margin-top: 26px;
+}
+.ovc .ovc-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ovc .ovc-sec-head h2 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.ovc .ovc-sec-head .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ovc .ovc-sort {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ovc .ovc-sort:hover {
+  color: var(--ink);
+}
+/* the pills carry their counts and the active one is ink-filled; `data-on`
+   mirrors `aria-pressed`, so the fill is never the only signal */
+.ovc .ovc-filters {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.ovc .ovc-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ovc .ovc-filter:hover {
+  border-color: var(--border-strong);
+  color: var(--ink-2);
+}
+.ovc .ovc-filter b {
+  font-weight: 500;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ovc .ovc-filter[data-on='1'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.ovc .ovc-filter[data-on='1'] b {
+  color: var(--bg);
+}
+
+.ovc .ovc-crew {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+/* the card is the page's product: one tab stop, and `Enter`/`Space` open it */
+.ovc .ovc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ovc .ovc-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.ovc .ovc-card[data-tone='live'] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg));
+}
+.ovc .ovc-card[data-tone='fail'] {
+  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
+  background: color-mix(in oklab, var(--danger) 4%, var(--bg));
+}
+.ovc .ovc-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+/* the mark's box is the card's, so the component only names the entity */
+.ovc .ovc-card-top .mark {
+  width: 44px;
+  height: 44px;
+}
+.ovc .ovc-card-top .state {
+  flex: none;
+}
+.ovc .ovc-card-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.ovc .ovc-card-id b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovc .ovc-card-id em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the running dot is the one thing on the card that moves */
+.ovc .state[data-s='live'] i {
+  animation: ovc-pulse 1.4s ease-in-out infinite;
+}
+/* `failed` and `needs a look` are words first: the chip colours the word, not
+   only the dot */
+.ovc .state[data-s='fail'] {
+  color: var(--danger);
+}
+.ovc .ovc-lvrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ovc .ovc-lvchip {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ovc .ovc-track {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.ovc .ovc-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ovc .ovc-xpn {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* the problem, in the file's own words — the same sentence the ribbon prints */
+.ovc .ovc-note {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in oklab, var(--danger) 20%, var(--border));
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--danger) 7%, var(--bg));
+  font-size: var(--fs-label);
+  line-height: 1.45;
+  color: color-mix(in oklab, var(--danger) 50%, var(--ink-2));
+}
+.ovc .ovc-note b {
+  font-weight: 600;
+  color: var(--danger);
+}
+:root[data-theme='dark'] .ovc .ovc-note {
+  color: color-mix(in oklab, var(--danger) 62%, #e6dcc6);
+}
+.ovc .ovc-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.ovc .ovc-mach {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  white-space: nowrap;
+}
+.ovc .ovc-mach svg {
+  width: 9px;
+  height: 9px;
+  opacity: 0.75;
+}
+/* an entity with no machine says so; a blank column reads as "same as above" */
+.ovc .ovc-mach .nowhere {
+  color: var(--danger);
+}
+.ovc .ovc-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  opacity: 0.85;
+}
+/* a path keeps its tilde on the left; only the tail may be cut */
+.ovc .ovc-dir-in {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.ovc .ovc-card-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.ovc .ovc-last {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+}
+.ovc .ovc-when {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.ovc .dim {
+  color: var(--muted);
+}
+
+/* ── loading: six boxes in the real grid at the real height ──────────────
+   156px is a loaded card at 1280px (measured on stage 01 and again here), so
+   the page does not jump when the files answer. The view draws the box and
+   nothing in it, so the box itself carries the shimmer — a plain grey slab at
+   the right height is honest but reads as broken paper, not as "coming". */
+.ovc .ovc-skel {
+  min-height: 156px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background-image: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-2) 37%,
+    var(--surface) 63%
+  );
+  background-size: 400% 100%;
+  animation: ovc-shimmer 1.5s linear infinite;
+  cursor: default;
+}
+@keyframes ovc-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* ── the empty and failed crews ──────────────────────────────────────────
+   One box for three facts: nothing here yet, nothing matches the filter, the
+   list did not load. Each says what happened and offers the one way out. */
+.ovc .ovc-none {
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.ovc .ovc-none b {
+  display: block;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.ovc .ovc-none p {
+  margin: 5px 0 10px;
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--muted);
+}
+/* the only inline code on this page is the `entities/` folder the empty state
+   names; the app styles code per prose surface, and this is not prose */
+.ovc .ovc-none code {
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.ovc .empty-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: inherit;
+  color: var(--ink-2);
+  border-bottom: 1px dotted var(--border-strong);
+  cursor: pointer;
+}
+
+/* ── this year, then recent conversations ────────────────────────────────
+   Two full-width rows, in that order. The year is a workspace fact and reads
+   in one glance; the conversations are the list you scan after it. Each band
+   owns its own width instead of sharing a 372 px column, so the heatmap gets
+   the whole page and the rows keep their scan line. */
+.ovc .ovc-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.ovc .ovc-rows {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+/* one separator system: a border between rows, never above the first */
+.ovc .ovc-row {
+  display: grid;
+  grid-template-columns: 56px 20px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.ovc .ovc-row:first-child {
+  border-top: 0;
+}
+.ovc .ovc-row:hover {
+  background: var(--surface);
+}
+/* the row is the chat-history row at 20px, so it keeps its mood sticker */
+.ovc .ovc-row .mark {
+  width: 20px;
+  height: 20px;
+}
+.ovc .ovc-row .mark--xs .mood {
+  display: grid;
+  right: -5px;
+  bottom: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  font-size: var(--fs-micro);
+}
+.ovc .ovc-row time {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ovc .ovc-q {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.ovc .ovc-q b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.ovc .ovc-where2 {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ovc .ovc-year {
+  padding: 12px 13px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.ovc .ovc-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 11px;
+}
+.ovc .ovc-totals dt {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ovc .ovc-totals dd {
+  margin: 2px 0 0;
+  font-family: var(--font);
+  font-size: var(--fs-h5);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}/* the inline year heatmap. `insights.css` owns the ECharts calendar; this is
+   the static 365-cell SVG the overview draws when it will not pay for the
+   chart chunk, so the two names its `<text>` nodes need live here. */
+.ovc .hm {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ovc .hm-m,
+.ovc .hm-d {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  fill: var(--muted);
+}
+.ovc .ovc-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.ovc .hm-key {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.ovc .hm-key i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-2xs);
+}
+
+.ovc .ovc-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.ovc .ovc-foot b {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.ovc .ovc-foot .r {
+  margin-left: auto;
+}
+
+/* ── the page column answers to the window ───────────────────────────────
+   The app's rail is 228px, so the column is narrower than the window; the
+   steps below are the spec's measured ones, and each keeps the rule that
+   matters: two columns before one, one card per row before the card breaks. */
+@media (max-width: 1080px) {
+  .ovc .ovc-crew {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ovc .ovc-xp {
+    width: 250px;
+  }
+}
+@media (max-width: 900px) {
+  .ovc .ovc-idhead {
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 18px 18px 0;
+  }
+  /* the experience box drops beneath the chips and takes the row */
+  .ovc .ovc-xp {
+    width: 100%;
+    margin: 2px 0 0;
+    order: 3;
+    align-self: stretch;
+  }
+  .ovc .ovc-ribbon {
+    margin: 14px 18px 0;
+  }
+  .ovc .ovc-bar {
+    height: 52px;
+  }
+  .ovc {
+    padding: 0 18px 56px;
+  }
+}
+@media (max-width: 760px) {
+  .ovc {
+    padding: 0 16px 44px;
+  }
+  .ovc .ovc-crew {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ovc .ovc-title h1 {
+    font-size: var(--fs-h2);
+  }
+  /* the mark is a fixed tile, not a character: it steps down once with the
+     title and keeps its grid */
+  .ovc .ovc-hero-mark {
+    width: 52px;
+    height: 52px;
+  }
+  .ovc .ovc-hero-mark svg {
+    width: 28px;
+    height: 28px;
+  }
+  .ovc .ovc-idhead {
+    padding: 16px 16px 0;
+  }
+  .ovc .ovc-ribbon {
+    margin: 13px 16px 0;
+  }
+  /* the reason moves under the entity name instead of being cut off */
+  .ovc .ovc-ribbon-row {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    row-gap: 5px;
+    grid-template-areas:
+      'ico name go'
+      'reason reason reason';
+  }
+  .ovc .ovc-ribbon-row > svg {
+    grid-area: ico;
+  }
+  .ovc .ovc-ribbon-row > b {
+    grid-area: name;
+  }
+  .ovc .ovc-ribbon-row > span {
+    grid-area: reason;
+    white-space: normal;
+    overflow: visible;
+  }
+  .ovc .ovc-ribbon-go {
+    grid-area: go;
+  }
+  /* the pills take their own row, full width, at a thumb's height */
+  .ovc .ovc-sec-head .ovc-filters {
+    margin-left: 0;
+    width: 100%;
+    order: 5;
+  }
+  .ovc .ovc-filter {
+    flex: 1;
+    justify-content: center;
+    height: 30px;
+  }
+  .ovc .ovc-sort {
+    margin-left: auto;
+  }
+  .ovc .ovc-row {
+    grid-template-columns: 46px 20px minmax(0, 1fr);
+    row-gap: 2px;
+  }
+  .ovc .ovc-where2 {
+    display: none;
+  }
+  .ovc .ovc-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ovc .btn-kbd {
+    display: none;
+  }
+  .ovc .ovc-chips {
+    gap: 5px;
+  }
+}
+@media (max-width: 430px) {
+  /* the mark goes above the name: beside it, a 52px block leaves 260px of
+     title, and a workspace name is never that short */
+  .ovc .ovc-idhead {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ovc .ovc-hero-mark {
+    margin-top: 0;
+  }
+  .ovc .ovc-card-top {
+    flex-wrap: wrap;
+  }
+  .ovc .ovc-card-top .state {
+    margin-left: 0;
+  }
+  .ovc .ovc-bar .btn-sm {
+    display: none;
+  }
+  .ovc .ovc-totals dd {
+    font-size: var(--fs-h6);
+  }
+}
+
+/* ── motion is opt-out ────────────────────────────────────────────────────
+   Six things move on this page: the card's hover, the XP fill, the cabinet's
+   pixel field (plus the grid and the scanline `backdrops.css` already stops),
+   the running dot and the skeleton shimmer. All six stop here; the field keeps
+   the opacity that gives the cabinet its texture without the travel. */
+@media (prefers-reduced-motion: reduce) {
+  .ovc .ovc-hero .pxbg-px {
+    animation: none !important;
+    opacity: 0.32;
+  }
+  .ovc .ovc-hero .pxbg-grid,
+  .ovc .ovc-hero .pxbg-scan,
+  .ovc .state[data-s='live'] i,
+  .ovc .ovc-chip[data-live='1'] i,
+  .ovc .ovc-skel {
+    animation: none !important;
+  }
+  /* the cabinet's mark stops lit rather than dark: a stopped animation must not
+     leave the mark empty */
+  .ovc .ovc-hero-mark svg rect {
+    animation: none !important;
+    fill: color-mix(in oklab, currentColor 22%, transparent);
+  }
+  .ovc .ovc-card,
+  .ovc .ovc-track i,
+  .ovc .entp-xp-track i {
+    transition: none;
+  }
+}
