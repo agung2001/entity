@@ -63,6 +63,9 @@
 }
 .ws-activity {
   max-width: none;
+  /* The activity page answers its own pane width, not the window: the rail is
+     236px of the window above 820px and none of it below. */
+  container-type: inline-size;
 }
 
 /* a workspace card is a settings shortcut; its menu must not follow the card */
