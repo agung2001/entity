@@ -33,9 +33,47 @@ library when the target supports it.
 Do not try to reach the person's local filesystem, local Entity profile or a
 local MCP server. If a file or server is missing, say so instead of guessing.`
 
+/**
+ * What a turn that is on a clock is told.
+ *
+ * A chat turn is stopped at a wall-clock deadline, and the stop lands mid-thought:
+ * two threads here ran 90 minutes each, wrote a plan fifteen times and edited
+ * nothing. A deadline the harness cannot see is only a way to lose the work, so
+ * the turn is handed the one thing that changes its shape — how long it has — and
+ * the order that fits inside that. Only a bounded turn gets this; a run has no
+ * such deadline and must not be told it does.
+ */
+function turnBudget(minutes) {
+  /* no deadline, no budget: a run is queued and has none, and a caller that
+     guessed at a number must not be able to invent one */
+  const span = Math.round(Number(minutes))
+  if (!Number.isFinite(span) || span < 1) return ''
+  return `## This turn is on a clock
+
+It is stopped at **${span} minutes** from the moment it started, and the stop lands wherever
+the work is — an unwritten plan produces nothing. So:
+
+- **The first plan you write is the plan.** Do not re-derive it after a read. If a
+  step you already wrote is still true, do it; a second \`let me plan\` costs a
+  read and buys nothing.
+- **Read to answer a question, not to see the file.** \`grep -n\` the line and take
+  one offset read around it. Sweeping \`sed -n\` slices across a large file is the
+  most expensive way to learn one fact.
+- **A first edit beats a fourth read.** A file you have changed is somewhere to
+  refine from; a file you have only read is still a guess.
+- **Land the whole deliverable, then refine it.** On a bounded turn the first
+  complete version outranks an excellent fraction of one.
+- When it is finished and verified, reply and stop. Do not keep improving a thing
+  the person already has.`
+}
+
 /** instruction text for one run */
-function compose({ record, entity, extra = '', remote = false } = {}) {
+function compose({ record, entity, extra = '', remote = false, budget = '' } = {}) {
   const parts = [remote ? REMOTE_SKILL : SKILL]
+  /* a turn's deadline is a platform constraint, so it precedes the workspace's own
+     rules: an entity may narrow it, but it may not hide it */
+  const clock = String(budget || '').trim()
+  if (clock) parts.push(clock)
   const context = String(record?.context || '').trim()
   if (context) parts.push(`## Workspace context\n\n${context}`)
   const own = String(entity?.instructions || '').trim()
@@ -106,4 +144,13 @@ function env({ record, entity, remote = false } = {}) {
   return out
 }
 
-module.exports = { SKILL, REMOTE_SKILL, compose, env, ensureShim, shimPath, shellQuote }
+module.exports = {
+  SKILL,
+  REMOTE_SKILL,
+  compose,
+  turnBudget,
+  env,
+  ensureShim,
+  shimPath,
+  shellQuote,
+}

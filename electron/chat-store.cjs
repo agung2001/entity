@@ -1495,6 +1495,10 @@ function runHarness(
         record,
         entity,
         extra: artifacts.brief(thread.workspace),
+        /* The turn is stopped by `deadlineTimer` below. Telling the harness how
+           long it has is the only thing that changes its shape: a bounded turn
+           must land the deliverable before it refines it. */
+        budget: platform.turnBudget(HARNESS_TURN_MS / 60_000),
       })
       const attachmentText = attachmentsBlock(attachments)
       const runPrompt = attachmentText ? `${prompt.trim()}\n\n${attachmentText}` : prompt

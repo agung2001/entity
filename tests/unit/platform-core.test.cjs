@@ -142,6 +142,35 @@ test('workspace context is prepended to the entity body', () => {
   assert.match(text, /ENTITY_CLI_PATH/)
 })
 
+test('a bounded turn is told how long it has, before the workspace rules', () => {
+  /* Two threads here ran 90 minutes each, wrote "let me plan" fifteen times and
+     edited nothing. A deadline the harness cannot see is only a way to lose the
+     work, so the turn is handed the number and the order that fits inside it. */
+  const text = brief.compose({
+    record: { context: 'House rule: never push to main.' },
+    entity: { instructions: 'You are py-agent.' },
+    budget: brief.turnBudget(90),
+  })
+  assert.match(text, /90 minutes/)
+  assert.match(text, /turn is on a clock/)
+  /* the platform constraint precedes a workspace rule, which may narrow it but
+     must not hide it */
+  assert.ok(text.indexOf('turn is on a clock') < text.indexOf('House rule'))
+  assert.ok(text.indexOf('turn is on a clock') < text.indexOf('You are py-agent'))
+})
+
+test('a run is not given a turn budget, because it has no turn deadline', () => {
+  /* `runHarness` (chat) stops at a wall clock; a queued run does not. A budget
+     on a run would be a lie that changes how the work is done. */
+  const text = brief.compose({
+    record: { context: 'House rule.' },
+    entity: { instructions: 'You are py-agent.' },
+  })
+  assert.doesNotMatch(text, /turn is on a clock/)
+  assert.equal(brief.turnBudget(''), '', 'no budget text without a number')
+  assert.equal(brief.turnBudget(0), '')
+})
+
 test('an entity cannot be given an exclusive skill or MCP list', () => {
   const workspace = freshWorkspace('fields')
   entities.scaffold({ workspace, name: 'a' })

@@ -174,6 +174,15 @@ steps is never silent: one turn here streamed for 7.5 hours because the silence 
 the only bound. When the deadline fires the row says `The turn ran past its 90-minute
 limit and was stopped`, which is the truth, instead of blaming a lack of output.
 
+**The turn is told its deadline** (`platform.turnBudget`) — a stop the harness cannot see
+is only a way to lose the work, because it lands wherever the turn happens to be. The
+text sits with the platform brief, before the workspace's own rules, and asks the harness
+to commit to its first plan, to read a line rather than sweep a file, and to land a whole
+version before refining it. Two threads here ran the full 90 minutes, wrote `let me plan`
+fifteen times and edited nothing at all; the fix is the number, not a shorter clock. A
+queued **run** is not given this: it has no turn deadline, and a budget it does not have
+would change how the work is done for no reason.
+
 **One instruction, several sessions.** Start the message with `spawn N` and the mention
 runs N times, in parallel — N answers, N cards, N sessions:
 
