@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { hub, toast } from '@/stores/hub'
+import EraseAllDialog from '@/components/EraseAllDialog.vue'
+import { eraseChats, hub, toast } from '@/stores/hub'
 import {
   loadRetention,
   retention,
@@ -214,6 +215,37 @@ function showArchived() {
     /* a browser with storage disabled still gets the chat page */
   }
   router.push({ name: 'chat', params: { workspace: hub.workspace } })
+}
+
+/* ── erase all ─────────────────────────────────────────────────────── */
+/* The one control on this card that is not a threshold: it removes the history
+   itself. It asks in a dialog, because an undo here is a backup on somebody
+   else's disk and nothing on this page can promise one. */
+const eraseOpen = ref(false)
+const erasing = ref(false)
+const eraseError = ref('')
+
+const draftCount = computed(() => Object.keys(hub.chat.drafts || {}).length)
+const eraseSummary = computed(() => ({
+  count: meta.value?.threads || 0,
+  bytes: mb(meta.value?.bytes),
+  extra: draftCount.value ? plural(draftCount.value, 'unsent draft') : '',
+}))
+
+async function erase() {
+  if (erasing.value) return
+  erasing.value = true
+  eraseError.value = ''
+  try {
+    const result = await eraseChats()
+    toast(`Erased ${plural(result?.removed || 0, 'thread')}`)
+    eraseOpen.value = false
+    await loadRetention({ force: true })
+  } catch (problem) {
+    eraseError.value = problem?.message || 'The history could not be erased.'
+  } finally {
+    erasing.value = false
+  }
 }
 
 /* A different workspace is a different rule. */
@@ -689,6 +721,51 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      <div class="acct-sep">
+        Erase all
+        <small>The one write here that no threshold and no Trash can undo</small>
+      </div>
+
+      <div class="erase-options">
+        <div class="erase-option">
+          <span class="sfx-copy">
+            <b>Erase every chat in this workspace</b>
+            <span>
+              {{ plural(meta?.threads || 0, 'thread') }} · {{ mb(meta?.bytes) }}.
+              Archived threads go with the working list, and so do the unsent drafts on
+              this machine. Only an owner or an admin can do it.
+            </span>
+          </span>
+          <button
+            class="btn btn-danger btn-sm"
+            type="button"
+            :disabled="!canEdit || saving || erasing || !meta?.threads"
+            :title="
+              !canEdit
+                ? 'Only an owner or an admin can erase the history'
+                : !meta?.threads
+                  ? 'There is no chat in this workspace yet'
+                  : `Removes ${plural(meta.threads, 'thread')}`
+            "
+            @click="eraseOpen = true"
+          >
+            Erase all
+          </button>
+        </div>
+      </div>
+
+      <EraseAllDialog
+        :open="eraseOpen"
+        kind="chats"
+        :workspace="hub.workspaceLabel || hub.workspace"
+        :summary="eraseSummary"
+        target="chats/*.json"
+        :busy="erasing"
+        :error="eraseError"
+        @close="eraseOpen = false"
+        @confirm="erase"
+      />
+
       <p class="mnote ret-foot">
         <template v-if="last?.error">
           Last pass failed {{ ago(last.at) }} — {{ last.error }}
@@ -729,6 +806,11 @@ onBeforeUnmount(() => {
       <p class="mnote">
         <b>Delete</b> — <code class="mono">remove()</code> is
         <code class="mono">fs.rmSync</code>. Nothing goes to the Trash.
+      </p>
+      <p class="mnote">
+        <b>Erase all</b> — every <code class="mono">.json</code> in
+        <code class="mono">chats/</code>, archived ones included, and the unsent drafts
+        on this machine. It is the one action here that no threshold undoes.
       </p>
       <p class="mnote">
         <b>Where it runs</b> — this machine, where the threads are. A workspace opened

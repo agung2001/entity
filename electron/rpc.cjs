@@ -265,6 +265,9 @@ function createRpc({
     'artifact.saveText': (args) => artifacts.saveText(args),
     'artifact.writeText': (args) => artifacts.writeText(args),
     'artifact.remove': (args) => artifacts.remove(args),
+    /* settings → Artifacts → Erase all: one scope per button (`shared`,
+       `personal`, `all`), answered with what was actually removed. */
+    'artifact.eraseAll': (args) => artifacts.eraseAll(args),
     'artifact.root': (args) => artifacts.rootPath(args),
     'artifact.reveal': (args) => {
       const found = artifacts.locate(args)
@@ -424,6 +427,10 @@ function createRpc({
     'chat.tags': (args) => chats.tags(args),
     'chat.send': (args) => chats.send({ ...args, emit }),
     'chat.remove': (args) => chats.remove(args),
+    /* The one button that empties the whole history, from settings → Chats. It
+       is a call of its own so the destructive write stays one verb with one
+       answer (`{ removed, bytes }`), not a loop in the renderer. */
+    'chat.eraseAll': (args) => chats.eraseAll(args),
     /* retention: one rule per workspace, a forecast, and the pass itself */
     'chat.retention': (args) => retention.analyse(args),
     /* Saves as you change it: the answer is the whole card again, so the

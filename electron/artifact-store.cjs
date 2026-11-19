@@ -659,6 +659,85 @@ function remove({ workspace, id } = {}) {
   return { id: rel, removed: true }
 }
 
+/**
+ * Erase a workspace's artifacts (settings → Artifacts → Erase all).
+ *
+ * Three populations, because the card draws three and a single button that
+ * removed all of them would not say which half a person meant:
+ *
+ *   - `shared` — `artifacts/`, its `.archive/` and its `.trash/`, plus the two
+ *     dot indexes that describe it (`.scope.json`, `.opened.json`). The sweep's
+ *     folders are dot folders the shelf walk skips, so a "erase the shelf" that
+ *     only listed the visible files would leave every archived and deleted file
+ *     on the disk — the half-truth this button must not be.
+ *   - `personal` — this window's own shelf, `.personal/<account>/artifacts/`. It
+ *     syncs nowhere, and it is the only personal shelf the app ever lists, so it
+ *     is also the only one a button here may remove: another account's folder is
+ *     never on this screen, and erasing what the person cannot see is not what
+ *     "erase personal" says.
+ *   - `all` — both of those.
+ *
+ * A scope the store does not know is an error, never a silent `all`.
+ */
+const ERASE_SCOPES = ['shared', 'personal', 'all']
+
+function eraseAll({ workspace, scope = 'all' } = {}) {
+  const record = workspaces.open(workspace)
+  const wanted = String(scope || 'all')
+  if (!ERASE_SCOPES.includes(wanted)) {
+    throw new Error(`Erase scope must be one of ${ERASE_SCOPES.join(', ')}.`)
+  }
+  const roots = []
+  if (wanted === 'shared' || wanted === 'all') roots.push(artifactsDir(record))
+  if (wanted === 'personal' || wanted === 'all') roots.push(personalDir(record))
+  let removed = 0
+  let bytes = 0
+
+  const walkAndRemove = (dir) => {
+    let entries = []
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      /* A link is never followed: erasing it must not reach outside the shelf. */
+      if (entry.isSymbolicLink()) {
+        fs.rmSync(full, { force: true })
+        continue
+      }
+      if (entry.isDirectory()) {
+        walkAndRemove(full)
+        continue
+      }
+      if (!entry.isFile()) continue
+      try {
+        bytes += fs.statSync(full).size
+      } catch {
+        /* a file that vanished mid-walk costs a byte count, never the erase */
+      }
+      fs.rmSync(full, { force: true })
+      removed += 1
+    }
+    /* the folder itself goes when it is empty; `force` keeps a race harmless */
+    try {
+      if (!fs.readdirSync(dir).length) fs.rmdirSync(dir)
+    } catch {
+      /* busy or already gone */
+    }
+  }
+
+  for (const root of roots) walkAndRemove(root)
+  if (wanted !== 'personal') {
+    /* An emptied shelf starts from an empty index, not from one naming files that
+       are gone. `ensureDir` is what `list` and `upload` expect to find. */
+    ensureDir(record)
+    writeScope(record, { schema: 1, shared: {} })
+  }
+  return { scope: wanted, removed, bytes }
+}
+
 function locate({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
   const rel = safeRelative(id)
@@ -719,6 +798,8 @@ module.exports = {
   saveText,
   writeText,
   remove,
+  eraseAll,
+  ERASE_SCOPES,
   locate,
   brief,
   mimeFor,

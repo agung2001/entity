@@ -383,6 +383,13 @@ export function dropChatDraft(id) {
   hub.chat.drafts = draftBook.all()
 }
 
+/** Every draft in this workspace belongs to a thread that is about to be gone. */
+export function clearChatDrafts() {
+  for (const id of Object.keys(hub.chat.drafts)) draftBook.drop(id)
+  hub.chat.drafts = draftBook.all()
+  draftBook.flush()
+}
+
 /* ── scope: what one workspace owns ───────────────────────────────── */
 
 /**
@@ -1138,6 +1145,25 @@ export async function removeThread(id) {
   if (!hub.chat.active && hub.chat.summaries.length) {
     await selectThread(hub.chat.summaries[0].id)
   }
+}
+
+/**
+ * Erase every thread in this workspace, from settings → Chats.
+ *
+ * The main process deletes the files; the window then drops what it was
+ * holding: the open transcript, the rail rows and the unsent drafts (a draft for
+ * a thread that is gone is text nobody can send), so nothing on screen is
+ * describing a history that no longer exists. The retention card re-reads its
+ * counts itself, because it is a separate store.
+ */
+export async function eraseChats() {
+  const result = await call('chat.eraseAll', { workspace: hub.workspace })
+  hub.chat.threads = {}
+  hub.chat.active = ''
+  hub.chat.live = {}
+  clearChatDrafts()
+  await refreshChatList()
+  return result
 }
 
 /** Context moves only before the first question. The server enforces the same rule. */

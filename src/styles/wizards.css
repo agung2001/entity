@@ -356,7 +356,11 @@
   margin-top: 7px;
   color: var(--danger);
 }
-.notif-options {
+/* One row grammar for every switch row, including the destructive ones on the
+   retention cards. They stay separate classes so a test that counts the
+   protections on that card is not counting a button. */
+.notif-options,
+.erase-options {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -364,7 +368,8 @@
   overflow: hidden;
   background: var(--surface);
 }
-.notif-option {
+.notif-option,
+.erase-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -372,13 +377,16 @@
   padding: 11px 12px;
   border-bottom: 1px solid var(--border);
 }
-.notif-option:last-child {
+.notif-option:last-child,
+.erase-option:last-child {
   border-bottom: 0;
 }
-.notif-option .sfx-copy b {
+.notif-option .sfx-copy b,
+.erase-option .sfx-copy b {
   font-size: var(--fs-secondary);
 }
-.notif-option .sfx-copy span {
+.notif-option .sfx-copy span,
+.erase-option .sfx-copy span {
   font-size: var(--fs-label);
 }
 .notif-option .sfx-switch:disabled {

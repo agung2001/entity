@@ -906,6 +906,58 @@ function remove({ workspace, id }) {
   return { removed: existed }
 }
 
+/**
+ * Erase the whole history of this workspace (settings → Chats → Erase all).
+ *
+ * One row at a time is `remove`; this is the same write applied to every thread
+ * the signed-in account can read, archived ones included — the archive is a
+ * state of a thread, not a second store, so leaving it behind would make the
+ * erase a half-truth. A thread that belongs to another account is not this
+ * person's history and stays.
+ *
+ * A turn still answering aborts the whole erase before the first file is
+ * removed: its final write would put one thread back, and a history that is
+ * empty except for a resurrected row is worse than one that was never erased.
+ */
+function eraseAll({ workspace } = {}) {
+  const record = workspaces.open(workspace)
+  const dir = chatsDir(record)
+  let files = []
+  try {
+    files = fs.readdirSync(dir).filter((file) => file.endsWith('.json') && !file.startsWith('.'))
+  } catch {
+    /* no chats folder yet: nothing to erase, and not an error */
+    files = []
+  }
+
+  const targets = []
+  for (const file of files) {
+    const id = file.replace(/\.json$/, '')
+    /* an unreadable file is still this workspace's data: erase it rather than
+       leave an orphan nobody can list */
+    const thread = readThread(record, id)
+    if (thread && !canAccess(thread)) continue
+    if (sending.has(id)) {
+      throw new Error('A thread is still answering. Stop the turn before erasing the history.')
+    }
+    targets.push(path.join(dir, file))
+  }
+
+  let bytes = 0
+  for (const file of targets) {
+    try {
+      bytes += fs.statSync(file).size
+    } catch {
+      /* a file removed mid-walk costs a byte count, never the erase */
+    }
+    fs.rmSync(file, { force: true })
+  }
+
+  windowCache.delete(record.id)
+  artifactIndexCache.delete(record.id)
+  return { removed: targets.length, bytes }
+}
+
 /** `artifact://shots/page.png` in the answer is already rendered by the body. */
 function artifactRefs(text) {
   const ids = new Set()
@@ -2194,6 +2246,7 @@ module.exports = {
   threadsWithArtifacts,
   tags,
   remove,
+  eraseAll,
   send,
   cancel,
   /* the plan gate's one answer, from the window */

@@ -365,6 +365,44 @@ the composer already does: mention another entity.
   question stays in the transcript. A hold is in memory, so a reload reads `Interrupted`
   and nothing was ever started.
 
+## An erase-all is a dialog, and the scope is the button
+
+Workspace settings → Chats and → Artifacts each carry the one control on the page
+that is not a threshold: it removes the whole population. The retention sweep has
+an undo (a number), this does not, so its shape is stricter than everything around
+it.
+
+- **The card says the scope, the dialog says the count.** Artifacts has three
+  populations on screen — the shared shelf (`artifacts/` with its `.archive/` and
+  `.trash/`), the personal shelf (`.personal/<account>/artifacts/`), and both — so
+  it gets three buttons. One "Erase all" that removed all three could not say
+  which half a person meant, and a scope the store does not know is an error, never
+  a silent `all`. Chats has one population (every thread, archived included) and
+  therefore one button.
+- **The erase is one call, not a loop in the window.** `chat.eraseAll` and
+  `artifact.eraseAll` are verbs in the call table with a `{ removed, bytes }`
+  answer; the renderer never walks files, and the effect on screen (rail rows,
+  drafts, the shelf's counts, an open artifact preview) is dropped by the store
+  that owns it.
+- **A half-truth is the bug.** The archived and trashed files are dot folders the
+  shelf walk skips, so "erase the shelf" has to walk them as their own
+  populations; an erase that leaves `.archive/` behind is the failure this button
+  exists to avoid. A personal shelf is the account's own, so `shared` never
+  touches it and `personal` never touches a colleague's folder.
+- **A turn in flight refuses the whole erase, before the first file.** A thread's
+  final write would put one row back, and a history that is empty except for a
+  resurrected row is worse than one that was never erased. The verb throws; the
+  dialog shows the reason.
+- **The word is a guard, not a ceremony.** The primary stays disabled until
+  `ERASE` is typed exactly (case-sensitive — a typo is not consent), the field is
+  focused on open, and `Esc` and the scrim are guarded while the write is in
+  flight. The primary names the population it removes (`Erase shared`, `Erase
+  personal`, `Erase everything`), because three buttons open one dialog.
+- **The counts come from the card's own store.** The dialog is handed `{ count,
+  bytes, extra }` computed from the retention `meta` the page already draws, so
+  the number in the confirmation and the number on the badge beside it cannot
+  disagree. The workspace itself, its entities and its rule are stated as staying.
+
 ## Common mistakes
 
 | Symptom | Rule | Where it is enforced |
@@ -375,6 +413,8 @@ the composer already does: mention another entity.
 | `Esc` closes a dialog mid-save and leaves a spinner | Pass `guard: () => busy.value` | Each dialog's `useDialogDismiss` |
 | The scrim and `Esc` leave different state behind | One close function for every path | Review |
 | A dialog has no dimmed backdrop / cannot be clicked away | A modal is scrim + dialog + close button + `Esc` | `RemoteConnectDialog`, `RemoteSyncPanel` for the pattern |
+| "Erase all" leaves `.archive/` or a personal shelf on the disk | The dot folders the shelf walk skips are walked as their own populations, and one scope per button | `npm test` (`erase-all`) |
+| A destructive dialog's primary fires on one click | Type the word, case-sensitive, primary disabled until it matches | `tests/e2e/full/21-erase-all.spec.js` |
 | A tooltip says `⌘K` but the handler was changed | Combo comes from `shortcutLabel(id)` | `npm test` (forbids `⌘` / `Ctrl+` in `.vue`) |
 | Typing `?` in the composer opens the help guide | Check `isEditable(event.target)` before a bare-key shortcut | `HubLayout.onKey` |
 | A bare-key shortcut fires while someone is typing a URL or a path | A `search`/`focus` key carries a modifier (`⌘/`), or guards `isEditable` | `src/lib/shortcuts.js` |

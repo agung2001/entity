@@ -129,6 +129,22 @@ export async function removeArtifact(id) {
   return result
 }
 
+/**
+ * Erase part of the shelf, from settings → Artifacts.
+ *
+ * `scope` is `shared` (`artifacts/` with its archive and its trash), `personal`
+ * (this account's `.personal/<account>/artifacts/`) or `all`. The main process
+ * removes the files; the window re-reads the shelf it was showing, so the counts,
+ * the rail panel and the open preview cannot keep naming a file that is gone.
+ */
+export async function eraseArtifacts(scope = 'all') {
+  const result = await call('artifact.eraseAll', { workspace: hub.workspace, scope })
+  forgetRead(hub.workspace)
+  hub.artifact.open = ''
+  await loadArtifacts()
+  return result
+}
+
 /** Both scope moves are the same shape: write the index, then re-read the shelf
  *  so the counts and the row's place come from the store, not from here. */
 async function moveScope(channel, id) {

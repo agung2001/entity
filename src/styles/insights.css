@@ -595,6 +595,41 @@
   font-size: var(--fs-label);
   color: var(--danger);
 }
+/* The confirm word: a guard on the one dialog whose write has no undo. The label
+   sits above the field, not beside it: `.modal input[type="text"]` is a wider
+   selector than a class, so a side-by-side row let the field win the whole row
+   and squeezed the label into "Type ER… to con-firm". */
+.erase-modal .confirm-note + .confirm-note {
+  margin-top: 6px;
+}
+.erase-word {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.erase-word-label {
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.erase-word-label b {
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.erase-word .erase-word-input {
+  width: 100%;
+  height: 32px;
+  font-size: var(--fs-secondary);
+  letter-spacing: 0.14em;
+}
+.erase-word .erase-word-input[aria-invalid='true'] {
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+}
 
 /* ── voice mode ───────────────────────────────────────────────── */
 /* The microphone sits with the composer's other context controls, immediately

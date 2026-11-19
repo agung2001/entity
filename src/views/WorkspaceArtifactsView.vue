@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDialogDismiss } from '@/composables/useDialog'
+import EraseAllDialog from '@/components/EraseAllDialog.vue'
 import { hub, toast } from '@/stores/hub'
+import { eraseArtifacts } from '@/stores/artifacts'
 import {
   artifactRetention,
   loadArtifactRetention,
@@ -217,6 +219,69 @@ function toggleReferenced() {
 function openShelf() {
   hub.rail.entities = false
   hub.rail.artifacts = true
+}
+
+/* ── erase all ─────────────────────────────────────────────────────── */
+/* The one control on this card that is not a threshold: it empties a shelf. Three
+   buttons, because the card draws three populations and one button that removed
+   all of them could not say which half a person meant. Each asks in the same
+   dialog, because the sweep has no restore and neither does this. */
+const eraseScope = ref('')
+const erasing = ref(false)
+const eraseError = ref('')
+
+const eraseOpen = computed({
+  get: () => Boolean(eraseScope.value),
+  set: (open) => {
+    if (!open) eraseScope.value = ''
+  },
+})
+
+/**
+ * What each scope costs, from the same `meta` the card draws — a dialog with its
+ * own arithmetic is a second count that can disagree with the button beside it.
+ * The personal shelf is counted by the shelf walk, so its bytes are the shelf's.
+ */
+function summaryFor(scope) {
+  const sharedFiles = meta.value?.files || 0
+  const archivedFiles = meta.value?.archived || 0
+  const personalFiles = meta.value?.personal || 0
+  if (scope === 'shared') {
+    return {
+      count: sharedFiles + archivedFiles,
+      bytes: mb((meta.value?.bytes || 0) + (meta.value?.archivedBytes || 0)),
+      extra: archivedFiles ? plural(archivedFiles, 'archived file') : '',
+    }
+  }
+  if (scope === 'personal') {
+    return { count: personalFiles, bytes: '', extra: '' }
+  }
+  return {
+    count: sharedFiles + archivedFiles + personalFiles,
+    bytes: mb((meta.value?.bytes || 0) + (meta.value?.archivedBytes || 0)),
+    extra: personalFiles ? plural(personalFiles, 'personal file') : '',
+  }
+}
+
+const eraseTarget = computed(() =>
+  eraseScope.value === 'personal' ? '.personal/<account>/artifacts/' : 'artifacts/',
+)
+
+async function erase() {
+  if (erasing.value) return
+  const scope = eraseScope.value
+  erasing.value = true
+  eraseError.value = ''
+  try {
+    const result = await eraseArtifacts(scope)
+    toast(`Erased ${plural(result?.removed || 0, 'file')}`)
+    eraseScope.value = ''
+    await loadArtifactRetention({ force: true })
+  } catch (problem) {
+    eraseError.value = problem?.message || 'The shelf could not be erased.'
+  } finally {
+    erasing.value = false
+  }
 }
 
 async function runNow() {
@@ -777,6 +842,107 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      <div class="acct-sep">
+        Erase all
+        <small>The one write here that the archive and the trash cannot undo</small>
+      </div>
+
+      <div class="erase-options">
+        <div class="erase-option">
+          <span class="sfx-copy">
+            <b>Shared shelf</b>
+            <span>
+              {{ plural(meta?.files || 0, 'file') }} on the shelf ·
+              {{ plural(meta?.archived || 0, 'file') }} in the archive. The hidden
+              <code class="mono">.archive/</code> and <code class="mono">.trash/</code>
+              go with them.
+            </span>
+          </span>
+          <button
+            class="btn btn-danger btn-sm"
+            type="button"
+            :disabled="!canEdit || saving || erasing || !(meta?.files || meta?.archived)"
+            :title="
+              !canEdit
+                ? 'Only an owner or an admin can erase the shelf'
+                : !(meta?.files || meta?.archived)
+                  ? 'The shared shelf is empty'
+                  : `Removes ${plural((meta?.files || 0) + (meta?.archived || 0), 'file')}`
+            "
+            @click="eraseScope = 'shared'"
+          >
+            Erase shared
+          </button>
+        </div>
+
+        <div class="erase-option">
+          <span class="sfx-copy">
+            <b>Your personal shelf</b>
+            <span>
+              {{ plural(meta?.personal || 0, 'file') }} under
+              <code class="mono">.personal/&lt;account&gt;/artifacts/</code> for the account
+              this window is signed in as. It syncs nowhere, and the shared shelf keeps
+              its files.
+            </span>
+          </span>
+          <button
+            class="btn btn-danger btn-sm"
+            type="button"
+            :disabled="!canEdit || saving || erasing || !meta?.personal"
+            :title="
+              !canEdit
+                ? 'Only an owner or an admin can erase a shelf'
+                : !meta?.personal
+                  ? 'Your personal shelf is empty'
+                  : `Removes ${plural(meta.personal, 'file')}`
+            "
+            @click="eraseScope = 'personal'"
+          >
+            Erase personal
+          </button>
+        </div>
+
+        <div class="erase-option">
+          <span class="sfx-copy">
+            <b>Everything in this workspace</b>
+            <span>
+              The shared shelf with its archive and trash, and your personal shelf —
+              both buttons above in one write.
+            </span>
+          </span>
+          <button
+            class="btn btn-danger btn-sm"
+            type="button"
+            :disabled="
+              !canEdit || saving || erasing || !((meta?.files || 0) + (meta?.archived || 0) + (meta?.personal || 0))
+            "
+            :title="
+              !canEdit
+                ? 'Only an owner or an admin can erase these shelves'
+                : !((meta?.files || 0) + (meta?.archived || 0) + (meta?.personal || 0))
+                  ? 'There is no artifact in this workspace yet'
+                  : 'Removes the shared world and every personal shelf'
+            "
+            @click="eraseScope = 'all'"
+          >
+            Erase all
+          </button>
+        </div>
+      </div>
+
+      <EraseAllDialog
+        :open="eraseOpen"
+        kind="artifacts"
+        :scope="eraseScope"
+        :workspace="hub.workspaceLabel || hub.workspace"
+        :summary="summaryFor(eraseScope)"
+        :target="eraseTarget"
+        :busy="erasing"
+        :error="eraseError"
+        @close="eraseOpen = false"
+        @confirm="erase"
+      />
+
       <p class="mnote ret-foot">
         <template v-if="last?.error">
           Last pass failed {{ ago(last.at) }} — {{ last.error }}
@@ -832,6 +998,12 @@ onBeforeUnmount(() => {
           <code class="mono">artifacts/.trash/</code> and removed from the archive. Restoring
           it is a file-manager job.
         </template>
+      </p>
+      <p class="mnote">
+        <b>Erase all</b> — three buttons, one per population: the shared shelf with
+        <code class="mono">.archive/</code> and <code class="mono">.trash/</code>, every
+        personal shelf under <code class="mono">.personal/</code>, or both at once. One
+        dialog each, no undo.
       </p>
       <p class="mnote">
         <b>Where it runs</b> — the one machine named in
