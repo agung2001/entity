@@ -11,7 +11,7 @@ import { loadRemoteSkills, loadSkillNames, workspaces } from '@/stores/workspace
  *
  *   `/`  a skill: `/workspace:<name>`, `/<harness>:<name>`, or a bare `/<name>`
  *   `@`  a mention: an entity (that entity runs the job), an Orca project file,
- *        an artifact, a Maka note, a YouTrack issue
+ *        an artifact, a Maka note, a YouTrack issue, a GitHub repository
  *
  * Picking inserts text and nothing else. Resolution happens in the backend when
  * the message is sent, so typing never starts a process or a network call.
@@ -78,23 +78,33 @@ const menuMode = ref('slash')
 const mentionSources = ref(null)
 let mentionAsked = false
 
-/* The four typed mentions. A bare `@name` is an entity, so entities are listed
-   from the workspace rather than from this table. */
-const MENTION_KINDS = computed(() => [
-  {
-    name: '@file:',
-    desc: props.baseDir ? 'A file under the base directory' : 'A local file for this turn only',
-    kind: 'attachment-file',
-  },
-  ...(props.machine === 'local'
-    ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
-    : []),
-  { name: '@orca:', desc: 'A path from an Orca project — project:file' },
-  { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
-  { name: '@maka:', desc: 'A note in a Maka vault — vault:query' },
-  { name: '@youtrack:', desc: 'An issue — project:query' },
-  { name: '@thread:', desc: 'Another conversation in this workspace' },
-])
+/* The typed mentions. A bare `@name` is an entity, so entities are listed from
+   the workspace rather than from this table. A kind whose integration is off in
+   Account → Integrations is not offered at all: this list is the `@` menu, which
+   is the only place the switch promises to change. Resolving is untouched — a
+   token typed out in full still works, because off is an offer, not a refusal. */
+const MENTION_KINDS = computed(() => {
+  const on = mentionSources.value?.integrations || {}
+  const gated = (kind) => on[kind] !== false
+  return [
+    {
+      name: '@file:',
+      desc: props.baseDir ? 'A file under the base directory' : 'A local file for this turn only',
+      kind: 'attachment-file',
+    },
+    ...(props.machine === 'local'
+      ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
+      : []),
+    ...(gated('orca') ? [{ name: '@orca:', desc: 'A path from an Orca project — project:file' }] : []),
+    { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
+    { name: '@maka:', desc: 'A note in a Maka vault — vault:query' },
+    ...(gated('youtrack') ? [{ name: '@youtrack:', desc: 'An issue — project:query' }] : []),
+    ...(gated('github')
+      ? [{ name: '@github:', desc: 'A repository — owner/repo, or a search' }]
+      : []),
+    { name: '@thread:', desc: 'Another conversation in this workspace' },
+  ]
+})
 
 /** `@` right before the caret, with the partial word typed after it. */
 function mentionTrigger() {
@@ -117,21 +127,36 @@ function mentionMenu(query) {
       kind: 'entity',
     })
   }
-  for (const project of mentionSources.value?.orca || []) {
+  /* An Orca project row is an `@orca:` token, so it follows the same switch as
+     the row above. `mention.sources` itself is untouched: a project name is a
+     read, and the list it answers is the one the Harnesses-style pages show. */
+  const projects = mentionSources.value?.integrations?.orca === false ? [] : mentionSources.value?.orca || []
+  for (const project of projects) {
     if (!String(project.name || '').toLowerCase().includes(q)) continue
     items.push({ name: `@orca:${project.name}`, desc: `Orca · ${project.path}`, kind: 'orca' })
   }
   return items.slice(0, 8)
 }
 
-/** One RPC per composer mount, only once an `@` is actually typed. */
+/** One RPC per composer mount, only once an `@` is actually typed. It is also
+    what tells the menu which integrations are on: until it lands nothing gated
+    is offered, which is the safe direction — a token must never flash into the
+    menu and then vanish. */
 async function loadMentionSources() {
   if (mentionAsked) return
   mentionAsked = true
   try {
     mentionSources.value = await call('mention.sources')
   } catch {
-    mentionSources.value = { orca: [] }
+    mentionSources.value = { orca: [], integrations: {} }
+  }
+  /* The first `@` paints before this lands, so the menu is rebuilt once with the
+     switches known: a gated kind must not stay offered just because the answer
+     was one keystroke late. */
+  const at = mentionTrigger()
+  if (at && menuMode.value === 'mention') {
+    menu.value = mentionMenu(at.query)
+    if (active.value > menu.value.length - 1) active.value = 0
   }
 }
 

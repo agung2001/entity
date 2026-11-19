@@ -23,6 +23,7 @@ const mcpServer = require('./mcp-server.cjs')
 const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
+const integrations = require('./integrations-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
@@ -214,8 +215,13 @@ function createRpc({
       const directory = await chooseDirectory(String(title || 'Choose a folder') || 'Choose a folder')
       return directory ? { canceled: false, directory } : { canceled: true, directory: '' }
     },
-    /* Orca project names for the composer's `@` menu; cached in main for a minute */
-    'mention.sources': () => mentionRef.sources(),
+    /* Orca project names for the composer's `@` menu; cached in main for a minute.
+       The `gated` map rides along because the menu, not the resolver, is where an
+       integration that is off stops being offered (see Account → Integrations). */
+    'mention.sources': async () => ({
+      ...(await mentionRef.sources()),
+      integrations: await integrations.enabled(),
+    }),
     /* the worktree a delegated row works in, *now* — the renderer sends a
        ticket key and the run's cwd, and only a path Orca itself returned is
        ever stat-ed. Read-only, and cached in main like the repo list. */
@@ -261,6 +267,13 @@ function createRpc({
       }),
     'harness.setPath': (args) => harnesses.setPath(args),
     'harness.setEnabled': (args) => harnesses.setEnabled(args),
+
+    /* account → integrations: the machine-wide switches the composer's `@` menu
+       reads, plus the one credential that lives in the workspace pool. */
+    'integrations.list': (args) => integrations.list(args),
+    'integrations.setEnabled': (args) => integrations.setEnabled(args),
+    'integrations.saveCredential': (args) => integrations.saveCredential(args),
+    'integrations.test': (args) => integrations.test(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),

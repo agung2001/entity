@@ -25,6 +25,7 @@ const AccountSoundView = () => import('@/views/account/AccountSoundView.vue')
 const AccountNotificationsView = () => import('@/views/account/AccountNotificationsView.vue')
 const AccountMcpView = () => import('@/views/account/AccountMcpView.vue')
 const AccountHarnessView = () => import('@/views/account/AccountHarnessView.vue')
+const AccountIntegrationsView = () => import('@/views/account/AccountIntegrationsView.vue')
 const AccountBackupView = () => import('@/views/account/AccountBackupView.vue')
 const AccountUpdateView = () => import('@/views/account/AccountUpdateView.vue')
 const WorkspaceView = () => import('@/views/WorkspaceView.vue')
@@ -262,6 +263,12 @@ const router = createRouter({
               name: 'account-harnesses',
               component: AccountHarnessView,
               meta: { crumb: 'account', title: 'Harnesses · entity' },
+            },
+            {
+              path: 'integrations',
+              name: 'account-integrations',
+              component: AccountIntegrationsView,
+              meta: { crumb: 'account', title: 'Integrations · entity' },
             },
             {
               path: 'backups',

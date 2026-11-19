@@ -111,6 +111,12 @@ const navigationItems = computed(() => [
     act: () => router.push('/account/harnesses'),
   },
   {
+    id: 'nav:account-integrations',
+    label: 'Integrations',
+    meta: 'third-party services the composer can mention',
+    act: () => router.push('/account/integrations'),
+  },
+  {
     id: 'nav:account-backups',
     label: 'Workspace backups',
     meta: 'Smart snapshots, retention and restore',
