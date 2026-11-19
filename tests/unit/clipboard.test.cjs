@@ -82,7 +82,8 @@ test('the clipboard API is used when it accepts the write', async () => {
       document: fakeDocument(),
     },
     async () => {
-      assert.equal(await copyText('thread id'), true)
+      /* the route, not a bare `true`: the caller announces which one worked */
+      assert.equal(await copyText('thread id'), 'clipboard')
     },
   )
   assert.equal(written, 'thread id')
@@ -101,7 +102,7 @@ test('a rejected clipboard promise falls back to the selection copy', async () =
       document,
     },
     async () => {
-      assert.equal(await copyText('fallback text'), true)
+      assert.equal(await copyText('fallback text'), 'selection')
     },
   )
   /* the textarea carried the text, was selected, and was removed again */
@@ -113,7 +114,7 @@ test('a rejected clipboard promise falls back to the selection copy', async () =
 test('a missing clipboard API still copies', async () => {
   const { copyText } = await load()
   await withGlobals({ clipboard: null, document: fakeDocument() }, async () => {
-    assert.equal(await copyText('no api here'), true)
+    assert.equal(await copyText('no api here'), 'selection')
   })
 })
 

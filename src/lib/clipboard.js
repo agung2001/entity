@@ -1,5 +1,5 @@
 /**
- * One copy path.
+ * One copy path, and it says which one it took.
  *
  * `navigator.clipboard.writeText` needs a focused document and a secure context.
  * In the packaged app the renderer loads its bundle from `app.asar` over
@@ -7,6 +7,9 @@
  * which is how "Copy reference" came to do nothing at all, silently, with the
  * toast blaming the reference. The fallback below is the oldest path there is
  * and works wherever the first does not, so a copy either happens or says so.
+ *
+ * It returns the route, not `true`: a caller that announces "copied" over a
+ * fallback it did not take is lying about what happened.
  */
 export async function copyText(text) {
   const value = String(text ?? '')
@@ -15,7 +18,7 @@ export async function copyText(text) {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value)
-      return true
+      return 'clipboard'
     }
   } catch {
     /* fall through to the selection path */
@@ -33,7 +36,7 @@ export async function copyText(text) {
     area.setSelectionRange?.(0, value.length)
     const copied = document.execCommand('copy')
     area.remove()
-    return copied
+    return copied ? 'selection' : false
   } catch {
     return false
   }
