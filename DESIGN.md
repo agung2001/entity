@@ -307,7 +307,22 @@ the composer already does: mention another entity.
   runs nothing — a delegatee holding the instruction but no row would pick one.
 - **In a fan-out the skill belongs to each run, not to the message.** `/workspace:…` goes
   after the entity, so every run is routed; a skill at the front is a hard error that says
-  exactly that.
+  exactly that. The one exception is the fan-out `intent-ref` derives below: a skill the
+  composer put at the front is *moved onto every run* rather than refused, because that is
+  what the person's `/workspace:` already meant.
+- **A `spawn` the grammar cannot read is asked about, once.** `spawn @entity <job>` — no
+  count — used to match no prefix, so the whole sentence became ONE job and ran once,
+  silently; the session looked like a summary of the fan-out that never happened. `intent-ref`
+  now reads that shape before anything is parsed and answers a `spawn per …` sentence the
+  grammar already understands, so the rows, the cap and the hold are the ordinary ones. Three
+  rules keep it honest: it only looks at a `spawn` with no count (a message the grammar
+  reads is never second-guessed, so it costs no model call); it **proposes and the person
+  confirms**, because the result is a normal fan-out and the hold card shows every row before
+  a harness starts; and it cannot invent a name — the entity must exist here and the list
+  must be a mention that resolves. A reader that errors, or a plan naming an entity this
+  workspace does not have, is dropped and the message runs exactly as it does today. A pasted
+  issue URL (`…/issue/ENTITY-25/…`) is read deterministically as `relates to: ENTITY-25`, so a
+  lost model costs a slightly blunter job, never the fan-out.
 - **A long turn shows its work, in the shape the answer will have.** A fan-out paints one
   delegation card per run inside the live bubble — queued, `Working…`, then that run's answer —
   and the foot carries `N of M done · elapsed`. No second panel, no spinner-only wait: the
@@ -500,6 +515,7 @@ it.
 | A remote or delegated turn cannot be stopped | Whatever is running is reachable by `chat.cancel`: the parent harness *or* the delegated children, and queued runs never start |
 | Seven runs of a list all carry the shared instruction as their title | The row (issue id + title) is the mention's label and the session's title, and the block names each run by it |
 | A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | Refused before anything runs: the skill goes inside the job, one route per run |
+| `spawn @coder …` (no count) runs once and looks like the fan-out's summary | A `spawn` with no count is the one shape asked about: `intent-ref` turns it into a `spawn per …` before parsing, or leaves the message alone — never one silent run | `npm test` (`intent-ref`), `electron/intent-ref.cjs` |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |

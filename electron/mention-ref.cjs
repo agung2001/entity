@@ -76,6 +76,10 @@ const MENTION_AT = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/g
    the backlog" stays prose. */
 const SPAWN_PREFIX = /^\s*spawn\s+(\d{1,2})\s+(?=@)/
 const SPAWN_PER = /^\s*spawn\s+per\s+(?=@)/i
+/* A `spawn` with no count is the shape that used to run once, silently: it
+   matched no prefix, so the whole sentence became one ordinary job. `intent-ref`
+   turns it into a `spawn per …` before this module sees it. */
+const SPAWN_WITHOUT_COUNT = /^\s*spawn\b(?!\s+(?:per\b|\d))/i
 /* `spawn per [a, b, c] @entity …` — the rows are written out. A catalogue that
    lives in a JSON file has no mention that can enumerate it, and copying ten
    names is shorter than any selector syntax. */
@@ -1115,8 +1119,20 @@ async function resolveOne(ctx, segment) {
       const instruction = instructionOf(segment)
       /* The skill is resolved on the person's words, not on the row-prefixed
          instruction: `use this skill <path>` has to stay the first line for the
-         harness to load it. The row reaches the run through the note below. */
-      const job = [resolveSkillInJob(ctx.record, segment.job), shareNote(segment)]
+         harness to load it. The row reaches the run through the note below. A
+         skill that led the *message* and was turned into this fan-out by
+         `intent-ref` is carried on the segment, because a fan-out routes each
+         run and the prologue must lead every job, not the parent's. */
+      const resolved = resolveSkillInJob(ctx.record, segment.job)
+      /* A carried skill leads every job, but never twice: a job that already has
+         its own `/workspace:` reference keeps that one. */
+      const job = [
+        segment.carriedSkill && !/^use this skill /i.test(resolved)
+          ? segment.carriedSkill
+          : '',
+        resolved,
+        shareNote(segment),
+      ]
         .filter(Boolean)
         .join('\n\n')
       const run = await ctx.deps.runEntity(ctx.record, mentioned, job, {
@@ -1437,15 +1453,47 @@ async function rewrite(
     stopped = null,
     /* the plan gate: present only for a person's own top-level turn */
     hold = null,
+    /* the intent reader: sees the message only when the grammar could not, and
+       answers a `spawn per …` sentence — absent in tests and the CLI */
+    intent = null,
   } = {},
 ) {
-  const source = String(text || '')
+  let source = String(text || '')
+  /* A `spawn` with no count is the one shape the grammar cannot read: it matched
+     no prefix, so the whole sentence became one ordinary job and ran once,
+     silently. Ask what was meant before parsing anything, and hand the answer
+     back as a `spawn per …` this module already understands. */
+  const skillPrefix = source.match(SKILL_PROLOGUE)
+  /* A `/workspace:` that led the message moves onto every run it produces:
+     `skill-ref` resolved it for the message, and a fan-out routes each run. */
+  let carriedSkill = ''
+  if (
+    intent &&
+    spawnPrefix(source) === null &&
+    SPAWN_WITHOUT_COUNT.test(skillPrefix ? source.slice(skillPrefix[0].length) : source)
+  ) {
+    let plan = null
+    try {
+      plan = await intent(source)
+    } catch {
+      /* a reader that throws is a reader that had nothing to say */
+      plan = null
+    }
+    if (plan?.list && plan?.entity) {
+      const separator = /\s$/.test(String(plan.job || '')) ? '' : ' '
+      source = `spawn per ${plan.list} @${plan.entity}${separator}${plan.job}`.trim()
+      /* the prologue is now carried by every run instead of leading the message */
+      if (skillPrefix) carriedSkill = skillPrefix[0].trim()
+    }
+  }
   const spawn = spawnPrefix(source)
   const parsed = parse(source)
   if (!parsed.segments.length) return { text: source, mentions: [] }
   /* A fan-out routes each run, not the message. A leading `/workspace:` reaches
      us as `use this skill <path>` in front of the prefix, which used to leave the
-     parent to create one desk for the whole message — the exact opposite. */
+     parent to create one desk for the whole message — the exact opposite.
+     The derived fan-out above has already taken the prologue onto its runs, so
+     there is nothing left here to refuse. */
   const prologue = source.match(SKILL_PROLOGUE)
   if (prologue && SPAWN_AFTER_SKILL.test(source.slice(prologue[0].length))) {
     throw new Error(
@@ -1507,6 +1555,8 @@ async function rewrite(
     }
   }
   if (spawn?.kind === 'repeat') segments = expandSpawn(segments, spawn)
+  /* every run of a carried skill is routed by it, and it stays the first line */
+  if (carriedSkill) for (const segment of segments) segment.carriedSkill = carriedSkill
   const rowsUntilRun =
     spawn?.kind === 'rows' ? expandFanout(segments, target, spawn.rows.map((label) => ({ label }))) : null
   if (spawn?.kind === 'rows') segments = rowsUntilRun

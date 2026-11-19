@@ -19,6 +19,7 @@ const entities = require('./entity-store.cjs')
 const workspaces = require('./workspace-store.cjs')
 const skillRef = require('./skill-ref.cjs')
 const mentionRef = require('./mention-ref.cjs')
+const intentRef = require('./intent-ref.cjs')
 const attachmentRef = require('./attachment-ref.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const mcpRuntime = require('./mcp-runtime.cjs')
@@ -2000,6 +2001,20 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
         machine: thread.machine,
         localOnly: thread.machine !== 'local',
         threadId: thread.id,
+        /* The grammar cannot read a `spawn` with no count, and that shape used to
+           run once — silently. Ask the harness that is about to answer what was
+           meant, and hand mention-ref back a `spawn per …` it already knows; the
+           rows, the cap and the hold below stay the ordinary ones. Local only:
+           a remote thread's harness is not here to ask, and its message is
+           forwarded untouched rather than guessed at. */
+        intent:
+          thread.machine === 'local' &&
+          (thread.spawnedFrom ? false : intentRef.wantsFanout(applied.text)) &&
+          intentRef.reader({
+            harness: thread.harness,
+            model: thread.model,
+            entities: entities.list(record.id).map((item) => item.name),
+          }),
         /* `@thread:` reads through the store's own list/read, so `canAccess` and
            the entity filter are the whole privacy story — mention-ref never opens
            a chat file itself. */

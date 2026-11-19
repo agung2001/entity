@@ -224,7 +224,33 @@ runs handle the rest"). Two rules come with it:
 - **The skill belongs inside the job.** A fan-out routes each *run*, not the message, so
   `/workspace:…` goes after the entity (`@coder /workspace:orca-worktree …`). Leading with
   the skill is refused with that sentence, because it would route the parent instead and
-  leave seven agents in one checkout.
+  leave seven agents in one checkout. The exception is the derived fan-out below: there the
+  composer's `/workspace:` is moved onto every run, which is what it already meant.
+
+**A `spawn` with no count is read, once.** `spawn @coder <job>` is the shape that used to
+run once — silently, because a bare `spawn` matched no prefix and the whole sentence became
+one ordinary job, so the session looked like the summary of a fan-out that never happened.
+Before anything is parsed, the same harness that is about to answer the turn is asked what
+was meant, and its answer is handed back as the `spawn per …` sentence above. So this:
+
+```
+/workspace:code-milestone spawn @coder entity for each issue relates to : \
+  https://youtrack.example.test/issue/ENTITY-25 #Unresolved only. let it work on the issue.
+```
+
+…becomes six sessions, one per issue that relates to `ENTITY-25` and is still unresolved.
+Four things it will not do:
+
+- **It only looks at a `spawn` with no count.** A message the grammar already reads is never
+  second-guessed, so an exact `spawn 3` or `spawn per` costs no model call at all.
+- **It proposes; you confirm.** The result is an ordinary fan-out, so the hold card lists
+  the rows and their folders before a harness starts — a wrong guess costs one keystroke.
+- **It cannot invent.** The entity must be one this workspace has, and the list must be a
+  mention that resolves. A reader that errors, or a plan naming an entity that is not here,
+  is dropped and the message runs exactly as it did before.
+- **A pasted issue URL is read without a model.** `…/issue/ENTITY-25/…` means
+  `relates to: ENTITY-25`, so the fan-out survives a harness that will not answer — with a
+  blunter job, never with no runs at all.
 
 Routing is a first-message affair: the worktree exists after that turn, and the delegatee's
 own rule sends every follow-up to the same terminal.
