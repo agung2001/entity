@@ -145,6 +145,8 @@ jobs:
       - windows
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
@@ -165,3 +167,20 @@ jobs:
             release-assets/*.blockmap
             release-assets/latest.yml
             release-assets/latest-mac.yml
+
+      # The release is already public at this point, so a Discord outage must
+      # never turn a good build red: `continue-on-error` plus the script's own
+      # skip-when-unset behaviour. The step is a notification, not the thing
+      # being shipped. `scripts/broadcast-release.mjs` reads the notes back from
+      # the release GitHub just generated, quotes them, and stays under
+      # Discord's embed limits — see `tests/unit/discord-broadcast.test.cjs`.
+      # Add `DISCORD_WEBHOOK_URL` as a repo secret to turn it on; a fork without
+      # the secret simply logs and skips.
+      - name: Broadcast to Discord
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Every release pings the channel. Clear it to `''` for a quiet card.
+          DISCORD_MENTION: '@everyone'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/broadcast-release.mjs --tag "${{ github.ref_name }}"
