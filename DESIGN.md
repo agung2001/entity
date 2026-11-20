@@ -248,6 +248,73 @@ does not speak, in two files, each with its own keyframes.
   steps, and nothing under `prefers-reduced-motion`. No gaze, no blink, no
   requestAnimationFrame loop for a 36px drawing.
 
+### A scan result is a fact about a row, not a notification
+
+Workspace → Machines was a three-up gallery of `.mcard`s — a roster drawn as a
+gallery, which `DESIGN.md` names as a mistake two sections up. Each card owned five
+buttons, and a scan's result arrived as a **toast**: red for eight seconds, then gone.
+Two decisions the page made were therefore invisible — why a host is red, and which
+machine runs the artifact sweep.
+
+- **A row answers for itself.** Five cells, always in this order: the station's tile,
+  the host, its state, its inventory, its actions. The grid depends on that order, so
+  the row never reflows; assert `children.length === 5`.
+- **The failure reason is a cell, not a toast.** `.mfcap .l1` carries ssh's own words
+  with `data-fail="1"`, and `.l2` keeps the last known count (`kept from <date>`) so an
+  unreachable host is never mistaken for an unscanned one. A toast may confirm; it may
+  not be the record.
+- **The control exists where the capability does.** The sweep lives on the two machines
+  that can run a pass (`local`, the sync host) and reads `owner decides` on every ssh
+  row — an ssh host is a run target, not a daemon. A member sees the same words as
+  text, never a button that fails after a click.
+- **A name wraps, a count ellipses.** An identifier clipped to `build-box-west…`
+  cannot be told from `build-box-east…`, so the name track is sized by its content
+  (`auto`) and wraps rather than truncating; the inventory track is the flexible one,
+  because its whole string travels in `title`. Fixed tracks for the state and the
+  actions, whose words are the app's own.
+- **The page height is the hero plus the box.** One bounded scroller
+  (`min(62vh, 620px)`), sticky desk, 60 px rows: fourteen hosts and two hundred hosts
+  are the same page.
+- **A gallery is not fixed by adding a column.** If a card grid cannot say what a row
+  needs to say, the answer is the table, not a taller card.
+- **A reading rail beside a five-column roster is a tax, not a service.** The entity
+  page's rail earns its 306 px because the columns beside it are prose. A roster's
+  columns are cells, and the rail took a third of the band to repeat what the hero and
+  the rows already said — so its facts become a **row** above the table (`.mach-strip`,
+  same `entp-facts` grammar, laid horizontally) and the table gets the whole measure.
+  The rule is the shape of the neighbour: prose gets a rail, an inventory gets the band.
+- **A custom property is not an inline style.** `.entp-hero` mixes its paper, its grid
+  and its shadow from `--hero`; a page that renders the cabinet must publish it
+  (`style="--hero: var(--accent)"`), or every `color-mix(in oklab, var(--hero) …)` is
+  invalid and the hero falls back to `background: none` — a white rectangle with a
+  `currentColor` border. `background: none` on a shared surface is the tell.
+- **`auto` and `max-content` in a table's track list resolve per row.** The desk and the
+  cells below it then get different columns and the header labels run together. Use
+  lengths, and cap the track whose content is bounded rather than letting a fraction
+  hand it dead space.
+- **A page-wide verb belongs on the second row.** `.entp-bar` is the entity page's
+  top edge — way back, where you are, and the actions that belong to the whole page.
+  *Reload*, *Test every host* and *Forget every fact* act on the fleet, so they go
+  there, not in a card above the roster that pushes the roster down.
+- **A detail shell is the parent's, and it is not re-entrant.** `WorkspaceView` already
+  renders `.view.detail-view` for this tab, so the embedded page's root must not bring
+  another: two nested shells inset the hero by 56px instead of 28 and put the roster on
+  a different measure from the bar above it. Assert one `.detail-view`, and one child.
+- **The second row shares the top bar's gutter, not the reading measure.** `.entp-bar`
+  pads `0 var(--view-pad)` and centres nothing, so it bleeds the whole window and its
+  first item starts exactly where the top nav's does. A page that "helpfully" centres
+  its own bar on the 1180px measure puts the crumb 28px right of the nav above it — the
+  one thing a second row must not do.
+- **A drawing means one thing.** The Machines page shipped a table grid for *forget
+  every fact* and a smaller grid for *forget this host*, a pixel apart, and two broken
+  arcs for *reload*. Use the vendored set (`src/components/icons/`, rendered by
+  `UiIcon.vue`), and give a fleet-wide verb a different glyph from its single-host
+  counterpart — sharing one makes the bar look like it does what a row does.
+- **`directory.css` hides `.entp-bar .entp-actions .btn:first-child` below 760px.**
+  That is right on the entity page, whose first action duplicates *Open chat* a few
+  pixels below. A page whose first action is *Reload* must override it: a hidden
+  reload is a page that cannot recover from a stale read.
+
 ### Two shelves, two jobs — one tab each, one URL
 
 Artifacts became personal-first, and the settings card did not follow: a personal
@@ -538,6 +605,18 @@ it.
 | "Copy" does nothing and the toast blames the content | `navigator.clipboard` rejects in the packaged app; go through `src/lib/clipboard.js` (clipboard API → selection fallback → `false`) and let the toast say which happened | `npm test` (`clipboard`) |
 | Escape does nothing while an artifact preview has focus | A frame never receives the window's keydown: forward it from the frame's own document | `tests/e2e/full/16-artifact-scope.spec.js` |
 | A dialog opens with focus still on the page behind it | Focus the first control on open, and give the dialog its confirm combo | `tests/e2e/full/01-thread-lifecycle.spec.js` |
+| A scan result is announced only by a toast, so a red row explains nothing afterwards | The reason is a cell on the row (`data-fail="1"`), with the last known count beside it | `npm test` (`ui-contract`), `tests/e2e/full/24-machines-fleet.spec.js` |
+| A second row is inset 28px from the nav above it | `.entp-bar` shares `.topbar`'s gutter; it bleeds the window and pads its own contents | `tests/e2e/full/24-machines-fleet.spec.js` |
+| Two different actions share (or nearly share) one drawing | Vendored iconoir glyphs, one meaning each; a fleet verb never reuses a row verb's shape | `npm test` (`ui-contract`) |
+| A section head repeats a count the hero already states | Drop it, and let the field open the table with no gap | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A page-wide verb sits in a card above the roster | `.entp-bar`: back-crumb, where you are, and the page's own actions | `npm test` (`ui-contract`), `tests/e2e/full/24-machines-fleet.spec.js` |
+| The page is inset by 56px and the bar is on a different measure than the table | One `.detail-view`, owned by the parent; an embedded page brings no shell of its own | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A bar action vanishes below 760px | `directory.css` hides the first `.entp-actions` button; a page whose first action is not a duplicate must override it | `tests/e2e/full/24-machines-fleet.spec.js` |
+| The hero is a white rectangle with a `currentColor` border | A page rendering `.entp-hero` must publish `--hero`; a missing custom property invalidates every `color-mix()` inside it | `tests/e2e/full/24-machines-fleet.spec.js` |
+| The desk's labels do not line up with the cells below | `auto` / `max-content` in a grid's tracks resolve per row; use lengths | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A reading rail squeezes a five-column roster into a third of the band | Prose gets a rail, an inventory gets the band: the facts become a row above the table | `npm test` (`ui-contract`), `tests/e2e/full/24-machines-fleet.spec.js` |
+| A roster is drawn as a three-up card gallery | A table with one bounded scroller, 60 px rows and five fixed cells | `npm test` (`ui-contract`) |
+| A sweep control appears on a machine that cannot run a pass | The button only where the capability is; a word (`owner decides`) everywhere else | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A settings card mixes two populations that have different rules | One shelf per tab, in the URL as a second axis (`?tab=artifacts&shelf=personal`), and the rule renders only on the shelf it governs | `npm test` (`ui-contract`), `tests/e2e/full/23-artifact-shelves.spec.js` |
 | An artifact reaches a teammate although nobody shared it | A path is not consent: the scope is the index entry, and the sync manifest carries only what `.scope.json` claims. Files found in the shared tree with no entry are `unclaimed` — personal, and taken back on the shelf's next read | `npm test` (`artifact-scope`) |
 | The shared count is 577 on a workspace where nothing was shared | Those were written by hand, by an agent, or by a render; `adoptUnclaimed` moves them to the personal root and `conflicts/` stops being a shelf row | `npm test` (`artifact-scope`) |

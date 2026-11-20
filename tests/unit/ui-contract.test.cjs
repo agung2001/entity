@@ -212,6 +212,115 @@ test('the machine capability page brands harnesses and offers search', () => {
   assert.match(text, /type="search"/, 'the harness/model inventory needs a search input')
 })
 
+test('the machines page is a roster with a rail, not a card gallery', () => {
+  const view = fs.readFileSync(path.join(SRC, 'views', 'MachinesView.vue'), 'utf8')
+  const shelf = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceView.vue'), 'utf8')
+
+  /* DESIGN.md → "A roster is a table": a gallery of five-button cards was the
+     shape this page had, and it could not say why a row was red. */
+  assert.doesNotMatch(view, /class="mgrid"/, 'the roster is a table, not a card grid')
+  assert.doesNotMatch(view, /class="mcard"/, 'the roster is a table, not a card grid')
+  assert.match(view, /class="mrow"/, 'the roster needs its rows')
+  assert.match(view, /class="mfhead"/, 'a roster has a sticky desk')
+
+  /* a scan result that arrives as a toast and nothing else is the defect: the
+     reason has to survive on the row */
+  /* DESIGN.md: a template may not carry layout in a `style` attribute. A data
+     value does (a progress bar's own width is not a margin), and so does a
+     custom property a shared recipe reads — `--hero` is the cabinet's input, not
+     this page's decision about margins. */
+  const inline = [...view.matchAll(/\sstyle="([^"]*)"/g)]
+    .map((match) => match[1].trim())
+    .filter((decl) => !decl.startsWith('--'))
+  assert.deepEqual(inline, [], `inline layout in the template: ${inline.join(', ')}`)
+  assert.match(view, /data-fail/, 'a failed scan states its reason on the row')
+
+  /* an embedded tab owns no page head, and this one takes the wide measure */
+  /* one drawing per meaning, from the vendored iconoir set — no hand-drawn
+     arrows: the set that shipped before used a table grid for two different
+     "forget" actions, a pixel apart */
+  assert.match(view, /<UiIcon name="refresh" \/>/, 'reload needs the refresh glyph')
+  assert.match(view, /<UiIcon name="refresh-double" \/>/, 'the fleet needs its own glyph')
+  assert.match(view, /<UiIcon name="scanning"/, 'a host read needs the scanning glyph')
+  assert.match(view, /<UiIcon name="trash"/, 'forget needs the bin')
+  /* and the vendored files still match the component's paths */
+  const icons = path.join(SRC, 'components', 'icons')
+  const component = fs.readFileSync(path.join(SRC, 'components', 'UiIcon.vue'), 'utf8')
+  for (const name of ['refresh', 'refresh-double', 'scanning', 'nav-arrow-right', 'trash']) {
+    assert.ok(fs.existsSync(path.join(icons, `${name}.svg`)), `${name}.svg is not vendored`)
+    const real = [...fs.readFileSync(path.join(icons, `${name}.svg`), 'utf8').matchAll(/d="([^"]+)"/g)]
+      .map((match) => match[1])
+    const key = name.includes('-') ? `'${name}'` : name
+    const block = component.match(new RegExp(`  ${key.replace(/'/g, "\\'")}: \\[\\n((?:.*\\n)*?)  \\],`))
+    assert.ok(block, `${name} has no entry in UiIcon`)
+    assert.deepEqual([...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]), real, `${name} drifted from its file`)
+  }
+  assert.match(fs.readFileSync(path.join(icons, 'LICENSE.iconoir.md'), 'utf8'), /MIT License/, 'the licence travels with the vendored glyphs')
+
+  /* the page is a fragment: bar and shelf are siblings under the parent's shell */
+  assert.doesNotMatch(view, /class="mach-page"/, 'no wrapper: the bar must be a direct child of .detail-view')
+  assert.match(shelf, /view detail-view/, 'a five-column roster needs the measure the entity page uses')
+
+  /* the fleet facts are a row above the table, not a rail beside it: a 306px
+     column cost the roster a third of the band and repeated the hero */
+  assert.doesNotMatch(view, /class="entp-rail"/, 'the fleet facts are a row, not a rail')
+  assert.doesNotMatch(view, /class="entp-grid"/, 'the page is one column, so the table is full width')
+  assert.match(view, /class="mach-strip"/, 'the facts strip is missing')
+  assert.ok(
+    view.indexOf('class="mach-strip"') < view.indexOf('class="mftable"'),
+    'the strip sits after the banner and before the table',
+  )
+
+  /* the page's verbs live on the entity profile's second row, not under the
+     facts: a settings page with three page-wide actions in a card is a toolbar
+     that forgot where it belongs */
+  assert.match(view, /class="entp-bar"/, 'the page needs the entity shell\'s second row')
+  assert.match(view, /class="entp-crumb"/, 'the second row states where you are')
+  assert.ok(
+    view.indexOf('class="entp-bar"') < view.indexOf('class="entp-hero"'),
+    'the bar is the page\'s top edge, above the hero',
+  )
+  const actions = view.slice(view.indexOf('class="entp-bar"'), view.indexOf('class="mach-shelf"'))
+  for (const verb of ['Test every host', 'Forget every fact', 'Reload']) {
+    assert.ok(actions.includes(verb), `${verb} belongs on the second row, not in the roster`)
+  }
+  assert.doesNotMatch(view, /class="mach-actions"/, 'the facts row must not carry the verbs too')
+
+  /* no section head over the roster: the hero's counter and the facts row have
+     said it, and a heading between them and the field is a gap nobody reads */
+  assert.doesNotMatch(view, /class="entp-sec-head"/, 'the roster needs no heading')
+  assert.match(view, /class="mbar"[\s\S]*?class="mftable"/, 'the field sits straight on the table')
+
+  /* one filter, the band's full width — no sentence beside it */
+  assert.match(view, /class="mbar"/, 'the search bar is missing')
+  assert.match(view, /id="inventory-search"/, 'the roster needs its one filter')
+  /* the sentence that used to share the bar with the search field */
+  assert.doesNotMatch(view, /local<\/b> is always available/, 'the tagline that shared the bar is gone')
+  assert.doesNotMatch(view, /class="mbar">[\s\S]*?<span class="mnote"/, 'the bar holds the field alone')
+  assert.match(allStyles(), /\.mbar \.wsl-search \{[^}]*flex: 1 1 100%/, 'the filter must take the band')
+
+  /* the shell is the parent's: nesting `.detail-view` inside `.detail-view`
+     insets the page by 56px and puts the roster on a second measure */
+  assert.doesNotMatch(view, /class="view detail-view"/, 'the embedded root must not bring a second shell')
+  assert.match(shelf, /tab === 'machines' \? 'view detail-view'/, 'WorkspaceView owns the detail shell')
+
+  /* `--hero` is what the cabinet mixes its paper, grid and shadow from; without
+     it every color-mix(var(--hero) …) is invalid and the hero is a white box */
+  assert.match(view, /--hero:\s*var\(--accent\)/, 'the hero must publish --hero')
+
+  /* the ornament is the shared voxel, not a second drawing */
+  assert.match(view, /<VoxelMark shape="station"/, 'the hero wears the specimen sheet station')
+  assert.match(view, /shortcutLabel\('inventory-search'\)/, 'the search carries the catalog key')
+
+  const css = allStyles()
+  assert.match(css, /\.mrow \{[^}]*min-height: 60px/, 'a data row is 60 px')
+  assert.match(css, /\.mfhead \{[^}]*position: sticky/, 'the desk sticks to the scroll box')
+  /* the row is a grid of exactly five tracks in the base rule */
+  const row = css.match(/\n\.mfhead,\n\.mrow \{[^}]*grid-template-columns: ([^;]+);/)
+  assert.ok(row, '.mfhead/.mrow have no shared track rule')
+  assert.equal(row[1].trim().split(/\s+(?![^(]*\))/).filter(Boolean).length, 5, 'the row is five columns')
+})
+
 test('the account has a reachable backups page with smart as the default', () => {
   const router = fs.readFileSync(path.join(SRC, 'router.js'), 'utf8')
   assert.match(router, /name: 'account-backups'/, 'the backups page needs a route')

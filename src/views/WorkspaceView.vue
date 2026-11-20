@@ -173,7 +173,11 @@ async function save() {
 </script>
 
 <template>
-  <div class="view">
+  <!-- Machines is drawn as the entity profile page — its own second row and the
+     detail measure — so this tab carries `.detail-view` and pays no gutter of
+     its own: the bar and the sections inside it pad themselves. Every other
+     settings tab keeps the narrow `.view` measure. -->
+  <div :class="tab === 'machines' ? 'view detail-view' : 'view'">
     <div v-if="tab === 'general' || tab === 'members'" class="acct-page ws-page">
       <form class="acct-card" @submit.prevent="save">
         <template v-if="tab === 'general'">

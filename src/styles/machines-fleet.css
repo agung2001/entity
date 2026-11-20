@@ -1,0 +1,583 @@
+/* ── workspace → machines: the fleet as the entity profile page ──────────
+   The page keeps every decision the gallery made — this machine, the ssh hosts,
+   the sync host, which one sweeps, what a scan found — and moves them into the
+   shell the entity page already uses: one hero with the workspace's space
+   station where a character's mark sits, a fleet counter where the level card
+   sits, a dense roster with an *Inventory* column, and a reading rail that says
+   about the fleet what the entity rail says about an entity.
+
+   What the gallery could not say, and this can:
+   - **why a row is red.** A scan result arrived as a toast and then was gone;
+     the reason now lives in the row.
+   - **which machine runs the sweep.** The control existed on all fifteen cards
+     and only two of them can run a pass; it is a word on the other thirteen.
+   - **how much is left.** A count is stated once, over a histogram, instead of
+     fifteen identical cards pretending to be an inventory.
+
+   Every value here is a token the repo already ships. Nothing new is a colour:
+   the hero and the counter are `.entp-hero` / `.entp-xp` (`backdrops.css`), the
+   rail is `.entp-*` (`directory.css`), the state dots are `.state`
+   (`inventory.css`), the ornament reads `--mk` like every other. */
+
+/* The page is a container, not a window: the rail takes 236 px above 820 px and
+   none below it, so the page's own column is what runs out of room. */
+/* `.detail-view` centres each of its children on the reading measure and pays
+   the gutter; the shelf is that child, so it declares neither. It is a container
+   because the rail takes 236 px above 820 px and none below it, and it is the
+   column — not the window — that runs out of room. */
+.mach-shelf {
+  container-type: inline-size;
+  container-name: machshelf;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Three verbs plus a back-crumb do not fit a phone. The bar keeps its height and
+   the crumb, and the verbs take a second line inside it.
+
+   `directory.css:1591` hides `.entp-bar .entp-actions .btn:first-child` below
+   760px — sensible on the entity page, whose first action is a duplicate of
+   *Open chat* a few pixels below. Here it is **Reload**, and a hidden reload is
+   a page that cannot recover from a stale read, so this bar keeps all three. */
+@media (max-width: 620px) {
+  .view.detail-view > .entp-bar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+    padding: 8px var(--view-pad);
+    row-gap: 6px;
+  }
+  .mach-in-settings > .entp-bar .spacer,
+  .view.detail-view > .entp-bar .spacer {
+    flex: 1 1 100%;
+    height: 0;
+  }
+  .mach-in-settings > .entp-bar .entp-actions,
+  .view.detail-view > .entp-bar .entp-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 760px) {
+  .mach-in-settings > .entp-bar .entp-actions .btn:first-child,
+  .view.detail-view > .entp-bar .entp-actions .btn:first-child {
+    display: inline-flex;
+  }
+}
+
+/* ── the hero's mark slot ─────────────────────────────────────────────────
+   The entity page opens on its character; a fleet has no character, so the
+   workshop's own object takes the slot — the specimen sheet's space station, in
+   the mark's recipe (`--mk`), in the same 62 px tile the picker occupies. */
+.mach-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 62px;
+  height: 62px;
+  margin-top: 3px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--mk) 14%, transparent);
+}
+.mach-mark .vx {
+  display: block;
+  width: 38px;
+  height: 38px;
+}
+
+/* ── the bar above the roster ───────────────────────────────────────────
+   One field, the band's full width. It is the page's only filter: a half-width
+   input beside a sentence nobody needed was the gallery's leftovers, and the
+   count already sits under the section head. */
+/* `.entp-sec` is `margin-top: 30px` because on the entity page a section follows
+   a chart. Here the facts row closes the hero, so the roster starts straight
+   under it — no heading, no 30px of air, no gap between the field and the table. */
+.mach-shelf > .entp-sec {
+  margin-top: 18px;
+}
+.mbar {
+  display: flex;
+  margin-bottom: 0;
+}
+.mbar .wsl-search {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+/* ── the roster ──────────────────────────────────────────────────────────
+   `DESIGN.md` → "a roster is a table": one bounded scroll area, a sticky desk,
+   `border-top` on every data row and none on the desk. The row is not the
+   link — it holds buttons.
+
+   Two bounds differ from that rule and only this page: 620 px rather than
+   560 px, because the row carries a second line (the inventory and its date)
+   and a 58 px row would clip it.
+
+   Five columns sized for the real band: the roster measures 746 px inside the
+   1180 px page at 1440 (306 rail + 30 gap + 56 gutter). Measured below, per
+   track and at that width — the name needs 270 (its longest row is
+   `ada-macbook` plus a `this machine` tag) on two wrapped lines, the
+   actions need 148 (a pressed sweep button and *Open*, which is all the mockup
+   draws on that row), and the rest is the inventory — 160 px, enough for
+   `6 harnesses · 1315 models` on one line.
+
+   The name wraps rather than the inventory ellipsing, because a clipped
+   `build-box-west…` cannot be told from `build-box-east…` while a
+   clipped count is still readable in its first half and carries the whole string
+   in `title` either way. */
+.mftable {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  overflow: hidden;
+}
+.mftable-scroll {
+  max-height: min(62vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.mfhead,
+.mrow {
+  display: grid;
+  /* Five tracks, and two of them may not float. `auto` and `max-content`
+     resolve *per row*, so the desk and the cells below it would each get their
+     own columns and `MACHINE STATE INVENTORY` would run together over a 267px
+     name track. Every row must share one set of columns, so they are lengths.
+
+     The name is capped rather than proportional: its longest value is 270 px
+     (`ada-macbook` + a `this machine` tag) and anything more is dead
+     space between the identifier and its state. The spare goes to the inventory,
+     which is where a wide count actually reads better
+     (`5 harnesses · 1278 models`), and 180 px is its floor. */
+  grid-template-columns: 30px minmax(0, 292px) 116px minmax(180px, 1fr) 148px;
+  gap: 12px;
+  align-items: center;
+  /* 12, not the roster grammar's 14: at 1440 the inventory is 8 px short of
+     `6 harnesses · 1315 models` at 14, and the extra 4 px of track is cheaper
+     than clipping the count. */
+  padding: 0 12px;
+}
+.mfhead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mrow {
+  min-height: 60px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+.mrow:first-child {
+  border-top: 0;
+}
+.mrow:hover {
+  background: var(--surface);
+}
+/* a probed host is tinted, and it also changes its dot and its word — colour is
+   never the only signal */
+.mrow[data-probe='ok'] {
+  background: color-mix(in oklab, var(--ok) 7%, var(--bg));
+}
+.mrow[data-probe='ok']:hover {
+  background: color-mix(in oklab, var(--ok) 11%, var(--bg));
+}
+.mrow[data-probe='fail'] {
+  background: color-mix(in oklab, var(--danger) 5%, var(--bg));
+}
+.mrow[data-probe='fail']:hover {
+  background: color-mix(in oklab, var(--danger) 8%, var(--bg));
+}
+.mrow[data-probe='testing'] {
+  background: color-mix(in oklab, var(--accent) 7%, var(--bg));
+}
+/* this machine is where you are: the row is selected, not decorated */
+.mrow[aria-current='true'] {
+  background: var(--surface-2);
+}
+.mrow[aria-current='true']:hover {
+  background: var(--surface-2);
+}
+/* a git remote is in the file but is not a place to run an agent: it keeps its
+   contrast and loses its actions, never its words */
+.mrow[data-host='0'] .mfhost .nm {
+  color: var(--muted);
+}
+
+/* the station's slot: a 30 px tile in the mark's own recipe */
+.mvslot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--mk) 16%, transparent);
+}
+.mvslot .vx {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+.mvslot[data-kind='sync'] {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+}
+.mvslot[data-kind='ssh'] {
+  background: var(--surface-2);
+}
+
+.mfhost {
+  min-width: 0;
+}
+.mfhost b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  row-gap: 3px;
+  min-width: 0;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+/* a host name is an identifier, not prose: it wraps rather than ellipsing,
+   because `build-box-west` and `build-box-east` differ only in
+   their last five characters */
+/* The glyph is inside `.nm` and stays inline with the identifier, so the two can
+   never wrap apart: a 12 px server icon on its own line reads as a stray mark.
+   The name wraps by word first and only anywhere as a last resort. */
+.mfhost b .nm {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.mfhost b .ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+.mfhost .addr {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+/* the address is where the row goes: the one anchor a person aims at */
+.mfhost .addr a {
+  border-bottom: 1px dotted var(--border-strong);
+  color: inherit;
+  text-decoration: none;
+}
+.mfhost .addr a:hover {
+  color: var(--ink-2);
+}
+
+.mfcap {
+  min-width: 0;
+}
+.mfcap .l1,
+.mfcap .l2 {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+.mfcap .l1 {
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+/* the failure line is the reason ssh gave, in ssh's own words */
+.mfcap .l1[data-fail='1'] {
+  color: var(--danger);
+}
+.mfcap .l2 {
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+.mfact {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+/* The actions track is finite, so a button that would not fit shrinks its own
+   padding before it pushes the row wider than the table. */
+.mfact .btn-sm {
+  padding: 0 7px;
+  white-space: nowrap;
+}
+/* the row's secondary action: an icon button, still a 28 × 28 hit box */
+.ibtn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
+}
+.ibtn:hover {
+  background: var(--surface);
+  border-color: var(--muted);
+  color: var(--ink);
+}
+.ibtn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.ibtn svg {
+  width: 13px;
+  height: 13px;
+}
+.ibtn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+/* the words a member reads where an owner finds a control */
+.mfact .owner-word {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── the skeleton, in the real grid ─────────────────────────────────────
+   A spinner over nothing teaches the wrong rhythm; three rows at 60 px keep the
+   page from jumping when the read answers. `--skel` is the token the app ships
+   for exactly this shape. */
+.mskel {
+  display: block;
+  background: var(--skel);
+  border-radius: var(--r-2xs);
+}
+.mskel.nm {
+  width: 62%;
+  height: 10px;
+}
+.mskel.addr {
+  width: 46%;
+  height: 8px;
+  margin-top: 5px;
+}
+.mskel.dot {
+  width: 46px;
+  height: 9px;
+}
+.mskel.line {
+  width: 100%;
+  height: 9px;
+}
+.mskel.line.short {
+  width: 58%;
+  height: 7px;
+  margin-top: 5px;
+}
+.mskel.btn {
+  width: 28px;
+  height: 28px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mskel {
+    animation: mskel-breathe 1.6s ease-in-out infinite;
+  }
+  @keyframes mskel-breathe {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}
+
+/* ── the fleet counter ──────────────────────────────────────────────────
+   `.entp-xp`'s box, saying different things: the level block becomes the fleet
+   total, the experience track becomes how much of it has been inventoried. */
+.mach-shelf .entp-xp {
+  flex: none;
+}
+.mach-shelf .entp-xp-track i {
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ── the strip: the rail's facts and verbs, laid across the band ─────
+   The reading rail took 306px of a 1084px band and repeated what the hero and
+   the rows already said. It is one row now, above the roster, so the table can
+   use the whole measure. Same grammar (`entp-facts` rows, `entp-rail-actions`
+   buttons), same 10px 13px rhythm — `directory.css` draws both; this only
+   unrolls them horizontally on a surface of their own. */
+.mach-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px 22px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.mach-facts {
+  margin: 0;
+  flex: 1 1 620px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px 18px;
+}
+.mach-facts > div {
+  min-width: 0;
+}
+.mach-facts dt {
+  margin: 0 0 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mach-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+}
+.mach-facts dd.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+/* ── ≤ 1024: the band is 1084 → 764 with the strip folded, and the five
+   tracks still fit. The inventory's floor drops to 150 and the actions track to
+   132; the name keeps the larger fraction and is allowed to wrap from here down,
+   which is what makes fourteen identifiers and three verbs share a 748px row.
+   Measured: nothing clips at 1024, and the roster never scrolls sideways. ── */
+@container machshelf (max-width: 1024px) {
+  .mfhead,
+  .mrow {
+    grid-template-columns: 28px minmax(0, 1.5fr) 96px minmax(150px, 1fr) 132px;
+    gap: 10px;
+    padding: 0 11px;
+  }
+  .mrow {
+    padding: 9px 11px;
+  }
+}
+
+@container machshelf (max-width: 768px) {
+  .mfhead,
+  .mrow {
+    grid-template-columns: 26px minmax(0, 1.25fr) 92px minmax(150px, 1fr) 130px;
+    gap: 9px;
+    padding: 0 11px;
+  }
+  .mrow {
+    padding: 9px 11px;
+  }
+}
+
+/* ── ≤ 560: the hero stacks, and the counter goes full width ─────────── */
+@container machshelf (max-width: 560px) {
+  .mach-shelf .entp-hero {
+    padding: 18px 14px;
+  }
+  .mach-shelf .entp-hero-inner {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .mach-shelf .entp-xp {
+    width: 100%;
+  }
+  .mach-shelf .entp-idhead {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .mach-shelf .entp-title h1 {
+    font-size: var(--fs-h2);
+  }
+}
+
+/* ── ≤ 460, and therefore 360: the row is three lines in one content
+   column — station + name + state, then the address, then the inventory and
+   the actions. The desk is dropped because every row now labels itself, so a
+   row that means the same three things cannot lose a column to a scroll. ── */
+@container machshelf (max-width: 460px) {
+  .mfhead {
+    display: none;
+  }
+  .mrow {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 2px 10px;
+    padding: 11px 12px;
+    min-height: 0;
+  }
+  .mvslot {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .mfhost {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  /* the name is the one thing that may take two lines here. The glyph is
+     inside `.nm`, so it can never wrap away from the identifier it belongs to */
+  .mfhost b .nm {
+    flex: 1 1 auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mrow .state {
+    grid-column: 3;
+    grid-row: 1;
+    white-space: nowrap;
+  }
+  .mfhost .addr {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mfcap {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    margin-top: 3px;
+  }
+  .mfcap .l1,
+  .mfcap .l2 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mfact {
+    grid-column: 2 / -1;
+    grid-row: 4;
+    justify-content: flex-start;
+    margin-top: 7px;
+  }
+}
