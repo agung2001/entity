@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SkillCopyDialog from '@/components/SkillCopyDialog.vue'
+import VoxelMark from '@/components/VoxelMark.vue'
 import { COLORS } from '@/composables/entityMark'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { call } from '@/composables/localBridge'
@@ -415,59 +416,13 @@ onBeforeUnmount(() => {
         <PixelBackdrop variant="hero" :count="18" />
         <div class="sk-hero-in">
           <header class="sk-hero-id">
-            <!-- The cabinet's own ornament: a Minecraft sword, drawn the way
-                 `entityMark.js` draws a mark — square cells on an integer grid,
-                 one flat fill per light angle, no path, no request. Traced down
-                 from a 32-cell reference to this 16-cell mask and merged into
-                 runs; leather grip, iron guard, three faces of steel. It takes
-                 the mark's slot at the top-left of the hero, so the page opens
-                 the way the entity profile it mirrors does. -->
+            <!-- The cabinet's own ornament: the specimen sheet's energy blade,
+                 drawn the way `entityMark.js` draws a mark — square cells on an
+                 integer grid, one flat fill per light angle, no path and no
+                 request. It takes the mark's slot at the top-left of the hero, so
+                 the page opens the way the entity profile it mirrors does. -->
             <span class="sk-crest" aria-hidden="true">
-              <svg class="sw" viewBox="0 0 16 16" shape-rendering="crispEdges">
-                <rect class="sw-gl" x="15" y="0" width="1" height="1" />
-                <rect class="sw-pm" x="0" y="15" width="1" height="1" />
-                <rect class="sw-gp" x="1" y="14" width="1" height="1" />
-                <rect class="sw-pm" x="1" y="15" width="1" height="1" />
-                <rect class="sw-gp" x="2" y="13" width="1" height="1" />
-                <rect class="sw-gpr" x="2" y="14" width="1" height="1" />
-                <rect class="sw-gr" x="3" y="8" width="1" height="1" />
-                <rect class="sw-gp" x="3" y="12" width="1" height="2" />
-                <rect class="sw-gr" x="4" y="8" width="1" height="2" />
-                <rect class="sw-gp" x="4" y="11" width="1" height="1" />
-                <rect class="sw-gpr" x="4" y="12" width="1" height="1" />
-                <rect class="sw-gr" x="5" y="9" width="1" height="2" />
-                <rect class="sw-gp" x="5" y="11" width="1" height="1" />
-                <rect class="sw-hi" x="6" y="9" width="1" height="1" />
-                <rect class="sw-gr" x="6" y="10" width="1" height="2" />
-                <rect class="sw-hi" x="7" y="8" width="1" height="1" />
-                <rect class="sw-fc" x="7" y="9" width="1" height="1" />
-                <rect class="sw-gr" x="7" y="11" width="1" height="2" />
-                <rect class="sw-hi" x="8" y="7" width="1" height="1" />
-                <rect class="sw-fc" x="8" y="8" width="1" height="1" />
-                <rect class="sw-sh" x="8" y="9" width="1" height="1" />
-                <rect class="sw-gr" x="8" y="12" width="1" height="1" />
-                <rect class="sw-hi" x="9" y="6" width="1" height="1" />
-                <rect class="sw-fc" x="9" y="7" width="1" height="1" />
-                <rect class="sw-sh" x="9" y="8" width="1" height="1" />
-                <rect class="sw-hi" x="10" y="5" width="1" height="1" />
-                <rect class="sw-fc" x="10" y="6" width="1" height="1" />
-                <rect class="sw-sh" x="10" y="7" width="1" height="1" />
-                <rect class="sw-hi" x="11" y="4" width="1" height="1" />
-                <rect class="sw-fc" x="11" y="5" width="1" height="1" />
-                <rect class="sw-sh" x="11" y="6" width="1" height="1" />
-                <rect class="sw-hi" x="12" y="3" width="1" height="1" />
-                <rect class="sw-fc" x="12" y="4" width="1" height="1" />
-                <rect class="sw-sh" x="12" y="5" width="1" height="1" />
-                <rect class="sw-hi" x="13" y="2" width="1" height="1" />
-                <rect class="sw-fc" x="13" y="3" width="1" height="1" />
-                <rect class="sw-sh" x="13" y="4" width="1" height="1" />
-                <rect class="sw-hi" x="14" y="1" width="1" height="1" />
-                <rect class="sw-fc" x="14" y="2" width="1" height="1" />
-                <rect class="sw-sh" x="14" y="3" width="1" height="1" />
-                <rect class="sw-hi" x="15" y="0" width="1" height="1" />
-                <rect class="sw-fc" x="15" y="1" width="1" height="1" />
-                <rect class="sw-sh" x="15" y="2" width="1" height="1" />
-              </svg>
+              <VoxelMark shape="blade" />
             </span>
             <div class="sk-hero-text">
               <p class="eyebrow">

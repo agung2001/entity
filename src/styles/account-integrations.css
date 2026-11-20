@@ -1,14 +1,13 @@
 /* ── account: integrations ─────────────────────────────────────────────────
-   The row grammar is Account → Harnesses', not a second one: `mark · copy ·
-   switch` on a `22px minmax(0,1fr) 44px` grid, with the disclosure on the name
-   line and its editor in a sibling row that shares the same grid. Only the
-   `.int-*` rules and the page's own box live here — `.acct-page`,
-   `.acct-card`, `.acct-card-head`, `.role-badge`, `.role-card`, `.mnote`,
-   `.ws-meta`, `.acct-input`, `.acct-error`, `.empty-note`, `.btn`,
-   `.sfx-switch`, `.undo-strip`, `.undo-btn` and the skeleton recipe are declared
-   once in their own sheets. */
+   A roster, not a card grid: the row grammar is Account → Harnesses' and the
+   skills shelf's — `mark · copy` on the table's own four tracks, with the
+   disclosure on the name line and its editor in a sibling row on the same grid.
+   `.acct-page`, `.acct-card`, `.acct-card-head`, `.role-badge`, `.role-card`,
+   `.mnote`, `.ws-meta`, `.acct-input`, `.acct-error`, `.empty-note`, `.btn`,
+   `.sfx-switch`, `.undo-strip` and the `.skt` table recipe are declared once in
+   their own sheets; only what this page adds lives here. */
 .int-page {
-  max-width: 900px;
+  max-width: 1000px;
 }
 .int-head {
   align-items: flex-start;
@@ -23,57 +22,98 @@
   color: var(--ink-2);
 }
 
-.int-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface);
-  overflow: hidden;
+/* ── the bar: one search field, the probe clock, Refresh ──────────────────
+   The same field the conversations rail and the skills roster wear (`.skbar` /
+   `.sksearch` / `.search-kbd`), so one key means the same thing on this page.
+   Refresh sits beside it because the status line is the only part of this page
+   that can be stale, and it says how old it is. */
+.int-page .skbar {
+  padding: 0 0 12px;
 }
-.int-list > li {
-  list-style: none;
+.int-search {
+  flex: 1 1 220px;
+}
+.int-where {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.int-where:first-letter {
+  text-transform: uppercase;
+}
+.int-refresh {
+  flex: none;
+  gap: 6px;
+}
+.int-refresh svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+.int-refresh[disabled] svg {
+  animation: int-spin 1.2s linear infinite;
+}
+@keyframes int-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.int-count {
+  flex: none;
+}
+.int-probe-error {
+  margin-bottom: 12px;
 }
 
-/* The skeleton repeats *this* row grid, not a nearly-identical one: the shared
-   `.skel-row` padding is 12px on both sides while the real row spends 12 left
-   and 10 right (the switch's hit box already pads its own side), and two
-   pixels of track is exactly the layout shift the loading state must not have. */
-.int-skeleton .skel-row {
-  grid-template-columns: 22px minmax(0, 1fr) 44px;
+/* ── the table ──────────────────────────────────────────────────────────
+   Four tracks: the service, its status line, the `@` token and the two
+   controls. `minmax(0, …)` everywhere, so a long path or a rejected-token
+   sentence cannot grow the page sideways. */
+.int-t .row {
+  /* the switch is the row's only control, so it takes the 44 px it needs and
+     the status line — the one column with a sentence in it — gets the room */
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.35fr) 108px 148px;
+}
+.int-t .int-panel {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+  align-items: start;
+  padding: 12px 14px 14px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+.int-t .int-panel > .gutter {
+  display: none;
+}
+.int-t .int-panel > .body {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  padding: 9px 10px 9px 12px;
-  min-height: 56px;
+  min-width: 0;
 }
-.int-skeleton .skel-row:last-child {
-  border-bottom: 0;
-}
-
-/* three children, no fourth column: mark, copy, switch */
-.int-row {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 44px;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 10px 9px 12px;
-  min-height: 56px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  transition: background 0.14s ease;
-}
-.int-row:hover {
-  background: var(--surface-2);
-}
-.int-row[data-busy='1'] {
+/* a row that is asking the CLIs is present, not pending */
+.int-t .row[data-busy='1'] {
   opacity: 0.72;
 }
-.int-row[data-busy='1']:hover {
-  background: var(--surface);
+.int-t .row[data-on='0'] .int-name b {
+  color: var(--ink-2);
 }
+.int-noresults {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 26px 14px;
+  text-align: center;
+}
+
 .int-mark {
   display: grid;
   place-items: center;
+  flex: none;
   width: 22px;
   height: 22px;
   color: var(--ink-2);
@@ -90,7 +130,7 @@
   display: block;
   flex: none;
 }
-.int-row[data-on='0'] .int-mark {
+.int-t .row[data-on='0'] .int-mark {
   color: var(--muted);
 }
 /* A brand mark carries its own palette, so `color` cannot mute it the way it
@@ -100,23 +140,19 @@
 .int-mark-img {
   transition: filter 0.14s ease, opacity 0.14s ease;
 }
-.int-row[data-on='0'] .int-mark-brand,
-.int-row[data-on='0'] .int-mark-img {
+.int-t .row[data-on='0'] .int-mark-brand,
+.int-t .row[data-on='0'] .int-mark-img {
   filter: grayscale(1);
   opacity: 0.78;
 }
 .int-copy {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 .int-name {
   display: flex;
   align-items: baseline;
   gap: 7px;
   min-width: 0;
-  overflow: hidden;
 }
 .int-name b {
   font-family: var(--font);
@@ -126,41 +162,94 @@
   color: var(--ink);
   white-space: nowrap;
 }
-.int-row[data-on='0'] .int-name b {
-  color: var(--ink-2);
-}
+/* the mono echo is the first thing to give way when the track runs out: the
+   label already says which service it is, and a clipped `youtr…` says nothing */
 .int-name .id {
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
+/* the status line: a word first, its detail second, and the detail is the one
+   part that may ellipsise. A tooltip carries the whole sentence either way. */
 .int-state {
   display: block;
+  overflow: hidden;
   font-family: var(--mono);
   font-size: var(--fs-meta);
   letter-spacing: 0.02em;
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
-/* status is a word first, a colour second */
 .int-state .ok {
   color: var(--ok-ink);
 }
-.int-state .token {
-  color: var(--accent-ink);
+.int-state .bad {
+  color: var(--danger);
 }
 
-/* the disclosure is on the name line, pushed to its end, so the row keeps three
-   columns and the panel opens directly under the row it belongs to */
+/* the `@` token and whether it is offered — the one thing a person types */
+.int-token {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.int-token code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--accent-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.int-t .row[data-on='0'] .int-token code {
+  color: var(--muted);
+}
+.int-avail {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.int-avail[data-ok='1'] {
+  color: var(--ok-ink);
+}
+.int-acts {
+  gap: 4px;
+}
+.int-acts .btn {
+  height: 26px;
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.int-acts .btn[aria-expanded='true'] {
+  border-color: color-mix(in oklab, var(--accent) 65%, #000);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.int-acts .btn:focus-visible,
+.int-acts .int-switch:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* the settings door: in the row's action cell, beside the switch, because the
+   table already has a track for what a person can do to the row */
 .int-cfg-btn {
   flex: none;
-  margin-left: auto;
-  height: 20px;
-  padding: 0 6px;
-  border: 1px solid transparent;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
   border-radius: var(--r-xs);
   background: none;
   color: var(--muted);
@@ -181,13 +270,6 @@
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
-.int-cfg-btn:focus-visible,
-.int-switch:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-  border-radius: var(--r-xs);
-}
-/* the dot is redundant: the words "no permanent token" say the same thing */
 .int-cfg-btn .dot {
   display: inline-block;
   width: 4px;
@@ -198,25 +280,7 @@
   vertical-align: 1px;
 }
 
-/* the panel is a sibling row on the row's own grid, so its fields align under
-   the copy column instead of under the mark */
-.int-panel {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 12px;
-  padding: 12px 10px 14px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
-.int-panel > .gutter {
-  width: 22px;
-}
-.int-panel > .body {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+/* ── the panel's fields ──────────────────────────────────────────────── */
 .fld {
   display: flex;
   flex-direction: column;
@@ -282,7 +346,7 @@
 
 /* the reason a write was refused, under the sentence that says nothing changed.
    Two lines: a raw ENOENT/rename reason can be three lines of absolute path, and
-the block must not push the list off the card. The whole of it is in `title`. */
+   the block must not push the list off the card. The whole of it is in `title`. */
 .int-reason {
   display: -webkit-box;
   margin-top: 2px;
@@ -294,6 +358,54 @@ the block must not push the list off the card. The whole of it is in `title`. */
   line-height: 1.45;
   overflow-wrap: anywhere;
   opacity: 0.8;
+}
+
+/* ── the skeleton repeats *this* grid ───────────────────────────────────
+   The shared `.skel-row` is not used here: its padding and its tracks would be
+   a two-pixel shift when the rows land, which is the one thing a loading state
+   must not have. A skeleton row is the same 58 px as a real one. */
+.int-skeleton .row {
+  min-height: 58px;
+}
+.int-skeleton .skel-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+}
+.int-skeleton .skel-line {
+  display: block;
+  height: 10px;
+  width: 62%;
+  border-radius: var(--r-2xs);
+}
+.int-skeleton .skel-line.s2 {
+  width: 76%;
+}
+.int-skeleton .skel-line.s3 {
+  width: 54%;
+}
+.int-skeleton .skel-pill {
+  width: 44px;
+  height: 22px;
+  border-radius: var(--r-pill);
+}
+.skel {
+  background: var(--skel, var(--surface-2));
+  animation: int-pulse 1.3s ease-in-out infinite;
+}
+@keyframes int-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.int-skeleton .nm {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .int-note {
@@ -337,7 +449,13 @@ the block must not push the list off the card. The whole of it is in `title`. */
   overflow-wrap: anywhere;
 }
 
-/* ≤720: the aside drops under the card; the row keeps its three columns */
+/* ≤1100: the token column folds, the status line keeps its room */
+@media (max-width: 1100px) {
+  .int-t .row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) 96px 140px;
+  }
+}
+/* ≤720: the aside drops under the card; the row keeps its four tracks */
 @media (max-width: 720px) {
   .int-page {
     grid-template-columns: minmax(0, 1fr);
@@ -345,10 +463,8 @@ the block must not push the list off the card. The whole of it is in `title`. */
   .int-head {
     flex-wrap: wrap;
   }
-  .int-panel {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .int-panel > .gutter {
+  .int-where,
+  .int-count {
     display: none;
   }
 }
@@ -358,17 +474,68 @@ the block must not push the list off the card. The whole of it is in `title`. */
 .int-page {
   container-type: inline-size;
 }
-@container (max-width: 380px) {
-  .int-row {
-    grid-template-columns: 18px minmax(0, 1fr) 44px;
-    gap: 9px;
-    padding: 7px 6px 7px 9px;
-    align-items: start;
+@container (max-width: 460px) {
+  /* the table folds: the four tracks become name · switch with the status, the
+     token and the disclosure stacked under it, like the skills roster's phone
+     layout */
+  .int-t .row.head {
+    display: none;
   }
-  .int-mark {
+  .int-t .row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-rows: auto auto auto;
+    row-gap: 5px;
+    padding: 12px 4px;
+  }
+  .int-t .nm,
+  .int-t .int-state,
+  .int-t .int-token {
+    grid-column: 1;
+  }
+  .int-t .nm {
+    grid-row: 1;
+    gap: 8px;
+  }
+  .int-t .row {
+    min-height: 0;
+  }
+  .int-t .int-state {
+    grid-row: 2;
+    font-size: var(--fs-micro);
+    line-height: 1.35;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .int-t .int-token {
+    grid-row: 3;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 7px;
+  }
+  /* the row's two controls stack: the settings door above the switch, because
+     removing either one is a dead end (a phone still needs the token field) */
+  .int-t .acts {
+    grid-row: 1 / span 3;
+    grid-column: 2;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  /* 54px fits `Sign-in` at the mono micro size; the switch keeps its 44 and the
+     two stack, because removing either one is a dead end on a phone */
+  .int-acts .int-cfg-btn {
+    width: 54px;
+    height: 22px;
+    padding: 0;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .int-t .int-mark {
     width: 18px;
     height: 18px;
-    margin-top: 3px;
   }
   .int-mark-img {
     width: 18px;
@@ -377,35 +544,14 @@ the block must not push the list off the card. The whole of it is in `title`. */
   .int-name b {
     font-size: var(--fs-secondary);
   }
-  .int-name {
-    gap: 4px;
-  }
-  .int-cfg-btn {
-    padding: 0 3px;
-    margin-left: 2px;
-  }
-  /* at this width `YouTrack` + `youtrack` + `Token` cannot share a line, and a
-     clipped control is worse than a missing mono echo: the label still says
-     which one it is. Rows without a disclosure keep their id. */
+  /* `YouTrack` + `youtrack` + `Token` cannot share a line, and a clipped control
+     is worse than a missing mono echo: the label still says which one it is */
   .int-name:has(.int-cfg-btn) .id {
     display: none;
   }
-  .int-state {
-    font-size: var(--fs-micro);
-    line-height: 1.4;
-    /* the path may ellipsise, the @token may not: wrap to two lines instead */
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  .int-switch {
-    align-self: center;
-  }
-  .int-skeleton .skel-row {
-    grid-template-columns: 18px minmax(0, 1fr) 44px;
-    gap: 9px;
-    padding: 7px 6px 7px 9px;
+  .int-where,
+  .int-count {
+    display: none;
   }
   .int-badge .of {
     display: none;
@@ -413,22 +559,25 @@ the block must not push the list off the card. The whole of it is in `title`. */
   .panel-actions {
     gap: 6px;
   }
+  .int-skeleton .row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+  .int-skeleton .k2,
+  .int-skeleton .k3 {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .int-row {
+  .int-cfg-btn,
+  .int-acts .btn,
+  .skel,
+  .undo-strip,
+  .int-switch .sfx-switch,
+  .int-switch .sfx-switch span {
     transition: none;
   }
   .skel {
     animation: none;
-    background: var(--skel);
-  }
-  .undo-strip {
-    transition: none;
-  }
-  .int-switch .sfx-switch,
-  .int-switch .sfx-switch span,
-  .int-cfg-btn {
-    transition: none;
   }
 }

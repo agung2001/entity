@@ -446,8 +446,75 @@
   color: var(--muted);
   line-height: 1.45;
 }
+/* ── the ornament ────────────────────────────────────────────────
+   The specimen sheet's silhouettes, drawn the way the character is: square
+   cells on an integer grid, one flat fill per light angle, no path and no
+   request. The slot decides the size; the colour is the mark's own (`--mk`), so
+   an ornament never reintroduces a second palette into the app. */
+.vx {
+  display: block;
+  flex: none;
+  width: 100%;
+  height: 100%;
+}
+.vx svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* a voxel is a filled cell, never a stroked path */
+  shape-rendering: crispEdges;
+}
+/* The ornament shares the character's own recipe instead of a palette of its
+   own: the face is `--mk`, the lit edge is that face mixed toward white, and
+   the three steps behind it fall away toward the mark's own hue. Deriving them
+   here rather than hard-coding four greys is what keeps an ornament and a
+   character standing on the same paper in both themes. */
+.vx .vx-hi {
+  fill: color-mix(in oklab, var(--mk) 62%, white);
+}
+.vx .vx-fc {
+  fill: var(--mk);
+}
+.vx .vx-sh {
+  fill: color-mix(in oklab, var(--mk) 74%, oklch(46% 0.09 var(--mk-h)));
+}
+.vx .vx-dx1 {
+  fill: color-mix(in oklab, var(--mk) 46%, oklch(34% 0.08 var(--mk-h)));
+}
+.vx .vx-dx2 {
+  fill: color-mix(in oklab, var(--mk) 22%, oklch(26% 0.06 var(--mk-h)));
+}
+.vx .vx-eye {
+  fill: var(--ink);
+}
+/* the gleam: one cell at the shoulder, in two hard pixel steps — the mark's own
+   blink idiom, not a smooth fade */
+.vx .vx-gl {
+  fill: #fff;
+  opacity: 0;
+  animation: vx-gleam 3.4s steps(2, end) infinite;
+}
+@keyframes vx-gleam {
+  0%,
+  84% {
+    opacity: 0;
+  }
+  86%,
+  92% {
+    opacity: 0.9;
+  }
+  94%,
+  100% {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mark .lid {
     opacity: 0;
+  }
+  .vx .vx-gl {
+    opacity: 0;
+    animation: none;
   }
 }

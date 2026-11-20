@@ -93,6 +93,92 @@ test('the composer keeps attachments below the prompt and documents them', () =>
   assert.doesNotMatch(help, /@skill:/, 'skills stay on the slash syntax')
 })
 
+test('a page ornament is drawn once, in the mark\'s own language', () => {
+  /* One module owns the silhouettes and one component paints them: a page that
+     re-traces its own drawing is how the app grew two pixel languages. */
+  const voxel = fs.readFileSync(path.join(SRC, 'lib', 'voxel.js'), 'utf8')
+  assert.match(voxel, /export const VOXELS/, 'the silhouettes live in one list')
+  assert.match(voxel, /mask: \[/, 'a silhouette is a hand-written mask')
+  assert.match(voxel, /function bounds/, 'the viewBox frames the painted cells')
+
+  const mark = fs.readFileSync(path.join(SRC, 'components', 'VoxelMark.vue'), 'utf8')
+  assert.match(mark, /from '@\/lib\/voxel'/, 'the ornament reads the shared module')
+  assert.doesNotMatch(mark, /<svg[\s>]/, 'the mark is generated, not re-traced in the template')
+
+  /* the pages that open on an ornament use it, and neither hand-draws one */
+  for (const [file, shape] of [
+    ['views/OverviewView.vue', 'station'],
+    ['views/SkillsView.vue', 'blade'],
+  ]) {
+    const text = fs.readFileSync(path.join(SRC, file), 'utf8')
+    assert.match(text, new RegExp(`<VoxelMark[^>]*shape="${shape}"`), `${file} lost its ${shape}`)
+    /* the ornament's slot holds the component and nothing else: no second
+       hand-drawn `<svg>` inside the crest it was moved into */
+    const slot = text.match(/(?:ovc-hero-mark|sk-crest)[^>]*>([\s\S]{0,240}?)<\/span>/)
+    assert.ok(slot, `${file} has no ornament slot`)
+    assert.doesNotMatch(slot[1], /<svg[\s>]/, `${file} draws its own pixels`)
+  }
+
+  /* the fills are the character's recipe, so an ornament never brings a palette */
+  const brand = fs.readFileSync(path.join(SRC, 'styles', 'brand.css'), 'utf8')
+  assert.match(brand, /\.vx \.vx-fc \{[^}]*fill: var\(--mk\)/, 'the face is the mark colour')
+  assert.match(brand, /\.vx \.vx-hi \{[^}]*color-mix/, 'the lit edge is derived, not a grey')
+})
+
+test('the turn deadline is a setting the page actually offers', () => {
+  const view = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceChatsView.vue'), 'utf8')
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'turn.js'), 'utf8')
+  const backend = fs.readFileSync(path.join(ROOT, 'electron', 'turn-timeout-store.cjs'), 'utf8')
+  const chat = fs.readFileSync(path.join(ROOT, 'electron', 'chat-store.cjs'), 'utf8')
+  const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
+
+  /* a clock a person cannot change is the complaint this feature answers */
+  assert.match(view, /type="number"[\s\S]{0,400}Stop a turn after|Stop a turn after/, 'no field')
+  assert.match(view, /setTurnMinutes|typeTurn/, 'the field never writes')
+  assert.match(store, /turn\.set/, 'the renderer has no write')
+  assert.match(rpc, /'turn\.set'/, 'the call table has no write')
+  assert.match(backend, /function set\(/, 'the store has no write')
+
+  /* the turn path must read it per turn, not once at require time */
+  assert.match(chat, /turnTimeout\.turnTimeoutMs\(\)/, 'the deadline is not read from the store')
+  assert.doesNotMatch(chat, /const HARNESS_TURN_MS/, 'the deadline is a constant again')
+
+  /* the environment still wins, and a refusal may not look like a save */
+  assert.match(backend, /source: 'environment'/, 'the environment case is not reported')
+  assert.match(view, /turn\.editable/, 'the field does not follow the read-only case')
+  assert.match(backend, /RANGE_MS/, 'nothing bounds the number')
+})
+
+test('account integrations paints its rows before it probes the CLIs', () => {
+  const view = fs.readFileSync(
+    path.join(SRC, 'views', 'account', 'AccountIntegrationsView.vue'),
+    'utf8',
+  )
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'integrations.js'), 'utf8')
+  const backend = fs.readFileSync(path.join(ROOT, 'electron', 'integrations-store.cjs'), 'utf8')
+  const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
+
+  /* two calls, because the two halves cost different things */
+  assert.match(rpc, /'integrations\.probe'/, 'the status line needs its own call')
+  assert.match(backend, /async function probe\(/, 'the probe is a function of its own')
+  assert.match(backend, /PROBE_TTL/, 'the probe has to be cached')
+  assert.match(store, /export async function probeIntegrations/, 'the renderer owns the second read')
+  assert.ok(
+    view.indexOf('probeIntegrations({') > view.indexOf('await loadIntegrations({'),
+    'the rows must land before the probe is asked for',
+  )
+  assert.match(view, /int-refresh/, 'a cached read needs a way to refresh it')
+
+  /* a roster is a table, and one searchable */
+  assert.match(view, /type="search"/, 'the roster needs a visible filter')
+  assert.match(view, /shortcutLabel\('inventory-search'\)/, 'the search carries the catalog key')
+  assert.match(view, /class="skt int-t"/, 'the roster is the table grammar, not a card grid')
+  const css = allStyles()
+  const table = css.match(/\n\.int-t \.row \{[^}]*\}/)
+  assert.ok(table, '.int-t .row has no base rule')
+  assert.match(table[0], /minmax\(0,/, 'a column has to be able to shrink')
+})
+
 test('the machine capability page brands harnesses and offers search', () => {
   const file = path.join(SRC, 'views', 'MachineDetailView.vue')
   const text = fs.readFileSync(file, 'utf8')
@@ -223,6 +309,25 @@ test('no component hard-codes a shortcut combo', () => {
       /⌘|⌥|⇧|Ctrl\+/.test(entry.text),
   ).map((entry) => entry.rel)
   assert.deepEqual(offenders, [], `use shortcutLabel() instead: ${offenders.join(', ')}`)
+})
+
+test('every field in the New thread dialog carries its own catalog key', () => {
+  const dialog = fs.readFileSync(path.join(SRC, 'components', 'NewThreadDialog.vue'), 'utf8')
+  const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
+
+  /* Four fields, four combos: a dialog that hints at three of them and leaves the
+     fourth to the mouse is the bug this test exists for. */
+  const ids = ['pick-entity', 'pick-machine', 'pick-harness', 'pick-model']
+  for (const id of ids) {
+    assert.match(catalog, new RegExp(`id: '${id}'`), `the catalog lost ${id}`)
+    assert.match(dialog, new RegExp(`shortcutLabel\\('${id}'\\)`), `the hint for ${id} is missing`)
+    assert.match(dialog, new RegExp(`matchesShortcut\\('${id}'|\\['${id}'`), `nothing handles ${id}`)
+  }
+  /* the hint is rendered, not typed: the label carries the catalog's string */
+  for (const key of ['entity', 'machine', 'harness', 'model']) {
+    assert.match(dialog, new RegExp(`pickKeys\\.${key}`), `the ${key} label has no key`)
+  }
+  assert.doesNotMatch(dialog, /⌥⇧|Ctrl\+/, 'a combo may not be typed into the dialog')
 })
 
 test('the shortcut catalog is well formed and unique', () => {

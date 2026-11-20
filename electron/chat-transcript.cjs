@@ -480,7 +480,15 @@ function createParser(harness, { onStep = () => {} } = {}) {
     }
   }
 
-  const readers = { claude, pi, opencode, codex, gemini }
+  /* Ollama has no JSONL stream: what it prints *is* the answer. Every line is a
+     fragment of it, so the live bubble still fills as tokens arrive instead of
+     waiting for the process to exit — the one thing the chat surface owes even a
+     harness with no event protocol. */
+  function ollama(line) {
+    append('text', `${line}\n`, lastAt)
+  }
+
+  const readers = { claude, pi, opencode, codex, gemini, ollama }
 
   function readEvent(event) {
     if (!event || typeof event !== 'object') return
@@ -490,6 +498,13 @@ function createParser(harness, { onStep = () => {} } = {}) {
   }
 
   function readLine(line) {
+    /* A plain-text harness owns the whole line, including a blank one: a blank
+       line is a paragraph break in an answer, not noise to drop. */
+    if (harness === 'ollama') {
+      remember(line)
+      ollama(line)
+      return
+    }
     const trimmed = line.trim()
     if (!trimmed) return
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {

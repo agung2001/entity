@@ -350,10 +350,10 @@ decide quality and cost:
   If the source runtime has no faithful equivalent, keep the harness the entity
   already had and say why.
 
-The harness ids are exactly five: `claude`, `codex`, `gemini`, `opencode`, `pi`
-(`HARNESSES` in `electron/harness-store.cjs`); anything else is an *unknown
-harness* problem. What is installed is not the same question, and the answer is
-the scanned inventory, not a `which`:
+The harness ids are exactly the `META` list in `electron/harness-store.cjs`:
+`claude`, `codex`, `gemini`, `opencode`, `pi`, `antigravity` (`agy`) and `hermes`;
+anything else is an *unknown harness* problem. What is installed is not the same
+question, and the answer is the scanned inventory, not a `which`:
 
 ```bash
 jq -r '.hosts | to_entries[] | .key as $h | .value.harnesses[] | "\($h)\t\(.id)\t\(.default)"' \
@@ -379,7 +379,7 @@ time, not at validation time.
 
 | Problem | Cause |
 | --- | --- |
-| `harness "x" is unknown` | not one of the five supported harnesses |
+| `harness "x" is unknown` | not one of the supported harnesses |
 | `dir is not set` | no `dir:` in the frontmatter |
 | `dir … does not exist` | the path is not a directory on this machine |
 | `harness "x" is unknown` | a harness this build does not run |

@@ -305,6 +305,11 @@ const HARNESSES = [
     roots: [path.join(HOME, '.gemini', 'skills')],
   },
   {
+    id: 'ollama',
+    label: 'Ollama',
+    roots: [path.join(HOME, '.ollama', 'skills')],
+  },
+  {
     id: 'agents',
     label: 'Agents (~/.agents)',
     roots: [path.join(HOME, '.agents', 'skills')],
@@ -695,6 +700,7 @@ const PROJECT_ROOTS = [
   ['.opencode', 'skills', 'opencode'],
   ['.codex', 'skills', 'codex'],
   ['.gemini', 'skills', 'gemini'],
+  ['.ollama', 'skills', 'ollama'],
   ['.antigravity', 'skills', 'antigravity'],
 ]
 

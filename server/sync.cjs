@@ -758,6 +758,13 @@ const HOST_ONLY_CALLS = new Set([
   'mcp.tools',
   'harness.setPath',
   'harness.setEnabled',
+  /* the turn deadline belongs to the host process that arms it */
+  'turn.set',
+  /* an integration switch is the machine's, not the workspace's: only the host
+     that owns the binary can answer for it */
+  'integrations.setEnabled',
+  'integrations.saveCredential',
+  'integrations.test',
   'skills.remote',
   'ssh.hosts',
   'ssh.probe',

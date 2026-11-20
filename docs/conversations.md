@@ -167,8 +167,10 @@ search would need: a job that has to *finish* gets a fix round and a screenshot.
 still bounded, and **Stop** cancels it and keeps the answers that already landed.
 
 The turn that contains the delegation has its own clock, and it is the one that saves
-you. A turn gets **90 minutes** (`ENTITY_TURN_TIMEOUT_MS`) from spawn, whatever it is
-doing — it is armed once and progress does not extend it. The other clock only catches a
+you. A turn gets **90 minutes by default** from spawn, whatever it is doing — it is armed
+once and progress does not extend it. The number is a setting (Workspace → Chats → *How
+long a turn may run*), so it is read when the turn starts; `ENTITY_TURN_TIMEOUT_MS` still
+outranks it. The other clock only catches a
 *silent* harness (15 minutes with no output), and a harness that keeps printing thinking
 steps is never silent: one turn here streamed for 7.5 hours because the silence timer was
 the only bound. When the deadline fires the row says `The turn ran past its 90-minute

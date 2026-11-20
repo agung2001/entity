@@ -46,7 +46,7 @@ the rooms you add later come from the picker's modal.
 <img src="assets/onboarding/step-2-agent.webp" alt="Step 2 of the wizard: five agent CLIs — Claude Code, Codex CLI, Gemini CLI, opencode and pi — each with its command and installed path, all marked installed, with Claude Code selected" width="820" />
 
 entity drives a CLI you already have, so this step is a probe, not a choice of model.
-The five CLIs the app knows — `claude`, `codex`, `gemini`, `opencode`, `pi` — are looked
+The CLIs the app knows — `claude`, `codex`, `gemini`, `opencode`, `pi` — are looked
 up on `PATH` and listed as a real radiogroup, so the arrow keys move the selection. Each
 row shows the `command · path` the machine reported, the hint under the list counts
 what was found (`5 CLIs found`, `1 CLI found`, `No CLI found yet`), and the first

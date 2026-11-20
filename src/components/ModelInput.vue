@@ -127,6 +127,22 @@ function toggle() {
   nextTick(() => input.value?.focus())
 }
 
+/* The catalog's `pick-model` combo reaches this field the same way the pickers'
+   own digits do: one door per field in the New thread dialog, and the hint is
+   rendered from `shortcutLabel('pick-model')` rather than typed here. */
+defineExpose({
+  toggle: () => {
+    if (props.disabled) return
+    if (open.value) {
+      open.value = false
+      input.value?.focus()
+      return
+    }
+    toggle()
+  },
+  focus: () => input.value?.focus(),
+})
+
 function onKey(event) {
   if (event.key === 'ArrowDown') {
     event.preventDefault()

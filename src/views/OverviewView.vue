@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import VoxelMark from '@/components/VoxelMark.vue'
 import OverviewHeatmap from '@/components/OverviewHeatmap.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import { colorById } from '@/composables/entityMark'
@@ -242,12 +243,7 @@ const heatLegend = computed(() => [
       <div class="ovc-hero-inner">
         <div class="ovc-idhead">
           <span class="ovc-hero-mark" aria-hidden="true">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-              <rect x="1.5" y="1.5" width="5.4" height="5.4" rx="1.4" />
-              <rect x="9.1" y="1.5" width="5.4" height="5.4" rx="1.4" />
-              <rect x="1.5" y="9.1" width="5.4" height="5.4" rx="1.4" />
-              <rect x="9.1" y="9.1" width="5.4" height="5.4" rx="1.4" />
-            </svg>
+            <VoxelMark shape="station" />
           </span>
           <div class="ovc-title">
             <p class="eyebrow">Workspace · {{ hub.workspace }}</p>

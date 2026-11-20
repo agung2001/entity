@@ -9,6 +9,17 @@ import {
   runRetention,
   setRetention,
 } from '@/stores/retention'
+import {
+  defaultMinutes,
+  loadTurn,
+  maxMinutes,
+  minMinutes,
+  resetTurn,
+  setTurnMinutes,
+  turn,
+  turnLabel,
+  turnMinutes,
+} from '@/stores/turn'
 
 /**
  * Chats — when a thread archives itself, and when it is gone (ENTITY-20).
@@ -207,6 +218,27 @@ async function runNow() {
   )
 }
 
+/** The turn deadline: one number, machine-wide, saved when the field pauses. */
+function typeTurn(minutes) {
+  const n = Number(minutes)
+  if (!Number.isFinite(n) || n <= 0) return
+  typed.value = 'turn'
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(() => {
+    typed.value = null
+    setTurnMinutes(n).catch((problem) => toast(problem?.message || 'Could not save that'))
+  }, 450)
+}
+
+async function resetTurnNow() {
+  try {
+    await resetTurn()
+    toast(`A turn gets ${turnLabel()} again`)
+  } catch (problem) {
+    toast(problem?.message || 'Could not reset the turn limit')
+  }
+}
+
 /** The rail's archived group is the other way to the same threads. */
 function showArchived() {
   try {
@@ -256,7 +288,10 @@ watch(
 
 /* Forced: a cadence changed on the Artifacts card is the same schedule, and the
    cache in this store would still hold the previous one. */
-onMounted(() => loadRetention({ force: true }))
+onMounted(() => {
+  loadRetention({ force: true })
+  loadTurn()
+})
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
 })
@@ -492,6 +527,85 @@ onBeforeUnmount(() => {
           moves both lines — and nothing removed this way comes back.
         </template>
       </p>
+
+      <div class="acct-sep">
+        How long a turn may run
+        <small>
+          Machine-wide, and the same clock for every conversation — it is armed when a
+          harness is spawned, not when a thread goes quiet.
+        </small>
+      </div>
+
+      <div class="rule-rows turn-rows">
+        <div class="rule-row turn-row">
+          <span class="rule-who"><span class="rule-label">Stop a turn after</span></span>
+          <input
+            class="acct-input rule-num"
+            type="number"
+            :min="minMinutes()"
+            :max="maxMinutes()"
+            step="5"
+            :value="turnMinutes()"
+            :disabled="!canEdit || turn.saving || !turn.editable || turn.loading"
+            aria-label="Stop a turn after this many minutes"
+            @input="typeTurn($event.target.value)"
+          />
+          <select
+            class="acct-input rule-unit turn-unit"
+            :value="turnMinutes()"
+            :disabled="!canEdit || turn.saving || !turn.editable || turn.loading"
+            aria-label="Suggested turn deadlines"
+            @change="typeTurn($event.target.value)"
+          >
+            <!-- `choices` is already in minutes, like the field it fills -->
+            <option
+              v-for="choice in turn.choices"
+              :key="choice"
+              :value="choice"
+              :selected="choice === turnMinutes()"
+            >
+              {{ turnLabel(choice * 60000) }}
+            </option>
+          </select>
+          <span class="rule-tail">minutes from spawn</span>
+          <span class="rule-effect turn-effect">
+            <template v-if="turn.loading">
+              <span class="skel skel--line" style="width: 96px"></span>
+            </template>
+            <template v-else-if="turn.source === 'environment'"
+              >set by ENTITY_TURN_TIMEOUT_MS</template
+            >
+            <template v-else-if="turn.source === 'default'">this build's default</template>
+            <template v-else>saved in <code>~/.entity/{{ turn.file }}</code></template>
+          </span>
+        </div>
+
+        <p class="mnote turn-note">
+          <template v-if="!turn.editable">
+            This app was started with <code>ENTITY_TURN_TIMEOUT_MS</code> = {{ turnLabel() }}, so
+            the deadline is that environment's. Restart it without the variable to choose one
+            here.
+          </template>
+          <template v-else-if="turn.source === 'default'">
+            Nothing has been chosen, so a turn gets {{ turnLabel() }}. Changing it saves on the
+            next message — a turn that is already running keeps the clock it was armed with.
+          </template>
+          <template v-else>
+            A turn is stopped at <b>{{ turnLabel() }}</b> from spawn, wherever the work is. The
+            silence timer is separate: a harness that prints nothing for 15 minutes is stopped
+            whether or not the deadline has passed.
+          </template>
+          <button
+            v-if="turn.editable && turn.source !== 'default' && canEdit"
+            type="button"
+            class="turn-reset"
+            :disabled="turn.saving"
+            @click="resetTurnNow"
+          >
+            Use the default · {{ turnLabel(turn.defaultMs) }}
+          </button>
+        </p>
+      </div>
 
       <div v-if="danger" class="ret-warn" role="status">
         <b>② is {{ delDays }} {{ delDays === 1 ? 'day' : 'days' }}.</b>

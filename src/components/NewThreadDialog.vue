@@ -25,16 +25,19 @@ const emit = defineEmits(['close', 'created'])
 
 const form = reactive({ entity: '', machine: 'local', harness: 'claude', model: '', dir: '' })
 const startKey = shortcutLabel('start-thread')
-/* One digit per picker: the dialog is three choices and a button, and reaching
-   for the mouse to make any of them is the slow part. */
+/* One digit per field: the dialog is four choices and a button, and reaching for
+   the mouse to make any of them is the slow part. All four come from the
+   catalog, so the hint on the label and the handler below cannot drift. */
 const pickKeys = {
   entity: shortcutLabel('pick-entity'),
   machine: shortcutLabel('pick-machine'),
   harness: shortcutLabel('pick-harness'),
+  model: shortcutLabel('pick-model'),
 }
 const entityPick = ref(null)
 const machinePick = ref(null)
 const harnessPick = ref(null)
+const modelField = ref(null)
 /* The dialog is now fully keyboard-driven: it opens on the first picker, each
    picker takes arrows and Enter, and the combo below files the thread without
    reaching for the mouse. */
@@ -301,10 +304,11 @@ function onKey(event) {
     ['pick-entity', entityPick],
     ['pick-machine', machinePick],
     ['pick-harness', harnessPick],
+    ['pick-model', modelField],
   ]
   for (const [id, target] of pickers) {
     if (!matchesShortcut(id, event)) continue
-    /* a disabled picker is the machine refusing the choice, not a key to eat */
+    /* a disabled field is the machine refusing the choice, not a key to eat */
     event.preventDefault()
     target.value?.toggle()
     return
@@ -434,8 +438,9 @@ async function submit() {
       </div>
 
       <div class="fld">
-        <span class="lbl">Model</span>
+        <span class="lbl">Model <kbd v-if="!busy" class="fld-key">{{ pickKeys.model }}</kbd></span>
         <ModelInput
+          ref="modelField"
           :model-value="form.model"
           :options="modelOptions"
           :loading="modelLoading"

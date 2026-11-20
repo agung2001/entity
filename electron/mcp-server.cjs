@@ -16,6 +16,7 @@ const path = require('node:path')
 const http = require('node:http')
 const crypto = require('node:crypto')
 const workspaces = require('./workspace-store.cjs')
+const harnesses = require('./harness-store.cjs')
 const entities = require('./entity-store.cjs')
 const chats = require('./chat-store.cjs')
 const artifacts = require('./artifact-store.cjs')
@@ -85,8 +86,8 @@ const TOOL_DEFS = [
         name: { type: 'string', description: 'Lowercase file name, e.g. review-scout.' },
         harness: {
           type: 'string',
-          description: 'claude, codex, opencode, pi or gemini.',
-          enum: ['claude', 'codex', 'opencode', 'pi', 'gemini'],
+          description: 'Any harness this app can spawn — see Account → Harnesses.',
+          enum: harnesses.META.map((meta) => meta.id),
         },
         model: { type: 'string', description: 'Harness model; blank uses its default.' },
         description: { type: 'string', description: 'Short brief for the new entity.' },

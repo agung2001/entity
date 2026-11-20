@@ -35,7 +35,9 @@ const ROOT = process.env.ENTITY_HOME
 const WORKSPACES_DIR = path.join(ROOT, 'workspaces')
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/
-const HARNESS_IDS = new Set(HARNESSES.map((h) => h.id).concat(['gemini']))
+/* One list, read from `harness-store`'s META: an entity may name any harness the
+   app can spawn, and adding a CLI is one edit rather than two. */
+const HARNESS_IDS = new Set(HARNESSES.map((h) => h.id))
 const MEMBER_ROLES = new Set(['owner', 'admin', 'member'])
 
 function slugify(value) {

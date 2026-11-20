@@ -1,5 +1,5 @@
 /* ── account: harnesses ───────────────────────────────────────────────────
-   Five rows, one switch each. The row is the whole grammar: mark, name + id,
+   A row per CLI, one switch each. The row is the whole grammar: mark, name + id,
    install state, a 44 px hit box wrapping the 38 × 22 pill. Only what is new
    here — `.acct-page`, `.acct-card`, `.acct-card-head`, `.role-badge`,
    `.role-card`, `.mnote`, `.btn`, `.sfx-switch`, `.acct-error` and

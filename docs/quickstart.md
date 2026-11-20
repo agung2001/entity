@@ -4,9 +4,9 @@
 
 ## Requirements
 
-**Node.js `^20.19` or `>=22.12`** (Vite 8). Any one of the five assistant CLIs on
-`PATH` — `claude`, `codex`, `gemini`, `opencode`, `pi`. They are installed from a
-terminal once; after that you never need one to use the app.
+**Node.js `^20.19` or `>=22.12`** (Vite 8). Any one of the assistant CLIs on `PATH`
+— `claude`, `codex`, `gemini`, `opencode`, `pi` and the newer `agy` / `hermes` —
+installed from a terminal once; after that you never need one to use the app.
 
 ```bash
 git clone https://github.com/agung2001/entity.git
@@ -54,11 +54,13 @@ here; [Onboarding](onboarding.md) walks through the three steps.
 ENTITY_HOME=/tmp/entity-scratch npm run dev:desktop
 ```
 
-Two clocks bound a turn, and both are configurable. `ENTITY_TURN_TIMEOUT_MS`
-(default 90 min) is a wall-clock deadline armed when the harness is spawned — it is
-what stops a run that keeps talking, since the silence timer below never fires while
-output continues. `ENTITY_MENTION_TIMEOUT_MS` (default 60 min) is one delegated run's
-own budget, so a turn that delegates must be given longer than a single run.
+Two clocks bound a turn. The wall-clock deadline (default 90 min) is armed when the
+harness is spawned — it is what stops a run that keeps talking, since the silence timer
+below never fires while output continues. It is a setting: **Workspace → Chats → How long
+a turn may run**, 10 minutes to 6 hours, saved in `~/.entity/turn.json` and read when a
+turn starts. Starting the app with `ENTITY_TURN_TIMEOUT_MS` overrides it (that is how the
+E2E suite pins the number). `ENTITY_MENTION_TIMEOUT_MS` (default 60 min) is one delegated
+run's own budget, so a turn that delegates must be given longer than a single run.
 
 ## Tests
 

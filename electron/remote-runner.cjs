@@ -68,6 +68,7 @@ const SKILL_ROOTS = {
   opencode: '.config/opencode/skills',
   codex: '.codex/skills',
   gemini: '.gemini/skills',
+  ollama: '.ollama/skills',
   antigravity: '.gemini/antigravity/skills',
 }
 
@@ -77,6 +78,7 @@ const SKILL_LABELS = {
   opencode: 'opencode',
   codex: 'Codex CLI',
   gemini: 'Gemini CLI',
+  ollama: 'Ollama',
   antigravity: 'Antigravity',
 }
 const SKILL_LIST_ROOTS = {
@@ -85,6 +87,7 @@ const SKILL_LIST_ROOTS = {
   opencode: ['.config/opencode/skills', '.opencode/skills'],
   codex: ['.codex/skills'],
   gemini: ['.gemini/skills'],
+  ollama: ['.ollama/skills'],
   antigravity: ['.gemini/antigravity/skills', '.antigravity/skills'],
 }
 
@@ -326,7 +329,7 @@ function buildScript({ harness, model, instructions, prompt }) {
   const stdin = Boolean(spec.stdin)
   const promptText = stdin
     ? spec.stdin
-    : harness === 'opencode'
+    : harness === 'opencode' || harness === 'ollama'
       ? spec.argv[spec.argv.length - 1]
       : harness === 'gemini'
         ? spec.argv[1]
@@ -339,6 +342,9 @@ function buildScript({ harness, model, instructions, prompt }) {
   } else if (harness === 'gemini') {
     args = ['-p', '$PROMPT']
     if (model) args.push('-m', model)
+  } else if (harness === 'ollama') {
+    /* the model is positional and required; the prompt follows it */
+    args = ['run', model || 'llama3.2', '$PROMPT']
   } else if (!stdin) {
     throw new Error(`${harness} is not supported for remote chat yet.`)
   }

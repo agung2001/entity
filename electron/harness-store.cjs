@@ -1,11 +1,16 @@
 /**
  * Harness discovery and per-machine paths.
  *
- * The five CLIs are usually on PATH, but a version manager or an app bundle
- * often puts one somewhere else. This module owns the machine-wide override
- * file (`~/.entity/harnesses.json`) and the model hints each installed CLI can
+ * These CLIs are usually on PATH, but a version manager or an app bundle often
+ * puts one somewhere else. This module owns the machine-wide override file
+ * (`~/.entity/harnesses.json`) and the model hints each installed CLI can
  * report. A chat or run resolves its command through here before spawning, so
  * the saved path is the one actually used.
+ *
+ * The list is the six CLIs `runner-local.cjs` can actually invoke — an id with
+ * no invocation would be a row whose switch spawns nothing — and it is the one
+ * list: the renderer reads it through `harness.list`, `entity-store.cjs`
+ * validates `harness:` against it, and the skill scan walks the same ids.
  */
 const fs = require('node:fs')
 const os = require('node:os')
@@ -24,6 +29,9 @@ const MODEL_TTL = 60_000
 const META = [
   { id: 'claude', label: 'Claude Code', command: 'claude' },
   { id: 'codex', label: 'Codex', command: 'codex' },
+  { id: 'opencode', label: 'opencode', command: 'opencode' },
+  { id: 'gemini', label: 'Gemini CLI', command: 'gemini' },
+  { id: 'ollama', label: 'Ollama', command: 'ollama' },
   { id: 'pi', label: 'pi', command: 'pi' },
   { id: 'antigravity', label: 'Antigravity', command: 'agy' },
   { id: 'hermes', label: 'Hermes Agent', command: 'hermes' },
@@ -223,6 +231,12 @@ function configuredModel(id) {
     const settings = readJson(path.join(HOME, '.pi', 'agent', 'settings.json'))
     return stringAt(settings, ['model']) || stringAt(settings, ['defaultModel'])
   }
+  if (id === 'ollama') {
+    /* Ollama has no "default model" setting: `ollama run` requires a name, and
+       whichever one was pulled last is not a choice anybody made. The first of
+       its own list is the honest prefill, and `models()` already reads it. */
+    return ''
+  }
   if (id === 'opencode') {
     return ''
   }
@@ -359,6 +373,20 @@ function cliModels(id, binaryPath) {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line && !/\s/.test(line))
+  }
+  if (id === 'ollama') {
+    /* `ollama list` is a fixed-width table: NAME, ID, SIZE, MODIFIED. The name is
+       the first column and it is the part before the digest, so a line is split
+       on two-or-more spaces rather than on whitespace (`gpt-oss:20b` is one
+       token and a model may not be). */
+    const text = runModels(binaryPath, ['list'])
+    if (!text) return []
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !/^NAME\b/i.test(line))
+      .map((line) => line.split(/\s{2,}/)[0].trim())
+      .filter(Boolean)
   }
   return []
 }

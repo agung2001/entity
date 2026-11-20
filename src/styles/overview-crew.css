@@ -80,12 +80,12 @@
   padding: 22px 24px 0;
 }
 /* ── the cabinet's mark ───────────────────────────────────────────
-   Four squares on the voxel's own grid, not a character: the workspace has no
-   face, and borrowing one entity's voxel (and its mood sticker) read as "this
-   page is about that entity". Drawn in the accent's own ink so it belongs to
-   the paper, and it breathes one hard pixel step at a time — the same
-   `steps()` rhythm the pixel field behind it moves to, so the two never feel
-   like different machines. */
+   The specimen sheet's space station, drawn the way `entityMark.js` draws a
+   character — square cells on the mark's own grid, one flat fill per light
+   angle, no path and no request. A station is not a face, so the workspace
+   wears an object rather than borrowing one entity's voxel and its mood
+   sticker. The tile behind it is the same hue as the drawing (`--mk`), so the
+   block reads as one object on the paper instead of an icon in a box. */
 .ovc .ovc-hero-mark {
   display: grid;
   place-items: center;
@@ -93,50 +93,15 @@
   height: 62px;
   margin-top: 3px;
   flex: none;
-  /* the same accent ink the level chip uses: `accent` mixed toward `ink` goes
-     olive, so the mark takes the token that was measured for this job */
-  color: var(--accent-ink);
   border-radius: var(--r-sm);
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--mk) 14%, transparent);
 }
 :root[data-theme='dark'] .ovc .ovc-hero-mark {
-  color: var(--accent-ink);
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  background: color-mix(in oklab, var(--mk) 10%, transparent);
 }
-.ovc .ovc-hero-mark svg {
-  width: 34px;
-  height: 34px;
-}
-/* the four cells light in reading order, like a caret stepping through the
-   grid — `steps(1, end)` so each cell switches on and off with no ramp, the
-   same hard-edged rhythm the pixel field behind it keeps */
-.ovc .ovc-hero-mark svg rect {
-  fill: transparent;
-  animation: ovc-tile-fill 2.4s steps(1, end) infinite;
-}
-@keyframes ovc-tile-fill {
-  0%,
-  100% {
-    fill: color-mix(in oklab, currentColor 22%, transparent);
-  }
-  20% {
-    fill: currentColor;
-  }
-  40% {
-    fill: color-mix(in oklab, currentColor 22%, transparent);
-  }
-}
-.ovc .ovc-hero-mark svg rect:nth-child(1) {
-  animation-delay: 0s;
-}
-.ovc .ovc-hero-mark svg rect:nth-child(2) {
-  animation-delay: 0.6s;
-}
-.ovc .ovc-hero-mark svg rect:nth-child(3) {
-  animation-delay: 1.2s;
-}
-.ovc .ovc-hero-mark svg rect:nth-child(4) {
-  animation-delay: 1.8s;
+.ovc .ovc-hero-mark .vx {
+  width: 36px;
+  height: 36px;
 }
 .ovc .ovc-title {
   min-width: 0;
@@ -869,9 +834,9 @@
     width: 52px;
     height: 52px;
   }
-  .ovc .ovc-hero-mark svg {
-    width: 28px;
-    height: 28px;
+  .ovc .ovc-hero-mark .vx {
+    width: 30px;
+    height: 30px;
   }
   .ovc .ovc-idhead {
     padding: 16px 16px 0;
@@ -973,11 +938,10 @@
   .ovc .ovc-skel {
     animation: none !important;
   }
-  /* the cabinet's mark stops lit rather than dark: a stopped animation must not
-     leave the mark empty */
-  .ovc .ovc-hero-mark svg rect {
+  /* the cabinet's mark rests lit rather than dark: a stopped animation must
+     not leave the mark empty */
+  .ovc .ovc-hero-mark .vx-gl {
     animation: none !important;
-    fill: color-mix(in oklab, currentColor 22%, transparent);
   }
   .ovc .ovc-card,
   .ovc .ovc-track i,

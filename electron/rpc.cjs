@@ -24,6 +24,7 @@ const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
+const turnTimeout = require('./turn-timeout-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
@@ -269,9 +270,16 @@ function createRpc({
     'harness.setPath': (args) => harnesses.setPath(args),
     'harness.setEnabled': (args) => harnesses.setEnabled(args),
 
+    /* how long a turn may run: one machine-wide number, read when a turn starts */
+    'turn.status': () => turnTimeout.status(),
+    'turn.set': (args) => turnTimeout.set(args),
+
     /* account → integrations: the machine-wide switches the composer's `@` menu
-       reads, plus the one credential that lives in the workspace pool. */
+       reads, plus the one credential that lives in the workspace pool. `list` is
+       the switches alone and `probe` is the status line, so the page paints its
+       rows before a binary is spawned. */
     'integrations.list': (args) => integrations.list(args),
+    'integrations.probe': (args) => integrations.probe(args),
     'integrations.setEnabled': (args) => integrations.setEnabled(args),
     'integrations.saveCredential': (args) => integrations.saveCredential(args),
     'integrations.test': (args) => integrations.test(args),

@@ -28,6 +28,7 @@ const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const auth = require('./auth-store.cjs')
 const platform = require('./platform-brief.cjs')
+const turnTimeout = require('./turn-timeout-store.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
@@ -44,11 +45,13 @@ const MAX_TAG_CHARS = 32
    before somebody pressed Stop. A delegated run gets its own hour
    (`ENTITY_MENTION_TIMEOUT_MS`); a turn that contains delegations must outlive
    them, so this is deliberately larger than one run and smaller than a working
-   day. `ENTITY_TURN_TIMEOUT_MS` overrides it. */
-const HARNESS_TURN_MS = (() => {
-  const configured = Number(process.env.ENTITY_TURN_TIMEOUT_MS)
-  return configured > 0 ? configured : 90 * 60 * 1000
-})()
+   day.
+   
+   The number is a setting now (`Account → Chats` writes `~/.entity/turn.json`),
+   read **per turn** rather than at require time — a deadline that cannot move
+   until the app restarts is not a setting. `ENTITY_TURN_TIMEOUT_MS` still wins,
+   which is what pins it in the E2E suite. */
+const turnLimitMs = () => turnTimeout.turnTimeoutMs()
 const HARNESS_IDLE_MS = 15 * 60 * 1000
 const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,80}$/i
 
@@ -1604,7 +1607,7 @@ function runHarness(
         /* The turn is stopped by `deadlineTimer` below. Telling the harness how
            long it has is the only thing that changes its shape: a bounded turn
            must land the deliverable before it refines it. */
-        budget: platform.turnBudget(HARNESS_TURN_MS / 60_000),
+        budget: platform.turnBudget(turnLimitMs() / 60_000),
       })
       const attachmentText = attachmentsBlock(attachments)
       const runPrompt = attachmentText ? `${prompt.trim()}\n\n${attachmentText}` : prompt
@@ -1693,7 +1696,7 @@ function runHarness(
     deadlineTimer = setTimeout(() => {
       overdue = true
       stopProcess(child)
-    }, HARNESS_TURN_MS)
+    }, turnLimitMs())
     if (typeof deadlineTimer.unref === 'function') deadlineTimer.unref()
 
     const finish = (code, error) => {
@@ -1776,7 +1779,7 @@ function runHarness(
            bug. */
         overdue
           ? new Error(
-              `The turn ran past its ${Math.round(HARNESS_TURN_MS / 60_000)}-minute limit and was stopped.`,
+              `The turn ran past its ${Math.round(turnLimitMs() / 60_000)}-minute limit and was stopped.`,
             )
           : timedOut
             ? new Error('The harness produced no output for 15 minutes.')

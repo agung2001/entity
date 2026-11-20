@@ -1,21 +1,32 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { call } from '@/composables/localBridge'
-import { useDialogDismiss } from '@/composables/useDialog'
 import IntegrationMark from '@/components/IntegrationMark.vue'
+import { useDialogDismiss } from '@/composables/useDialog'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub } from '@/stores/hub'
+import {
+  integrations,
+  loadIntegrations,
+  probeIntegrations,
+  saveIntegrationCredential,
+  setIntegrationEnabled,
+  testIntegration,
+} from '@/stores/integrations'
 
 /**
  * Account → Integrations.
  *
- * Three third-party services a composer can mention, one switch each. Off is not
- * uninstalled: the binary keeps its place and stops being offered in the `@` menu
- * of every composer on this machine.
+ * A roster, not a card grid: three third-party services a composer can mention,
+ * drawn as the one table this repo already owns (bounded scroll area, sticky
+ * head, a 58 px row, one separator system). The grammar is Account → Harnesses'
+ * and Skills': `mark · copy · switch`, with the disclosure on the name line and
+ * its editor in a sibling row on the same grid.
  *
- * The switch is the whole action — no Save, no Apply, no confirm. A write is
- * optimistic and snaps back on rejection, and YouTrack never flips at all
- * without a token: its switch opens the panel that stores one, because "on"
- * without a credential is a promise the next `@youtrack:` would break.
+ * The read is two calls. `integrations.list` is the switches and answers in a
+ * millisecond; `integrations.probe` spawns `orca`, spawns `gh` and searches
+ * YouTrack through the MCP pool, so it lands after the rows are painted and is
+ * cached — coming back to this page does not re-sign-in to anything. `Refresh`
+ * is the only thing that pays for the probe again.
  *
  * The state lives in `electron/integrations-store.cjs` (`~/.entity/integrations.json`);
  * the token stays in this workspace's `mcp.json`, where the MCP runtime already
@@ -24,14 +35,13 @@ import { hub } from '@/stores/hub'
  */
 const UNDO_MS = 8000
 
-const state = ref({ loading: true, loaded: false, error: '', total: 3 })
-/* the list is the one mutable copy: `rows` is what the template paints, and a
-   write replaces the row it touched rather than refetching three probes */
-const rows = ref([])
+const rows = computed(() => integrations.rows)
+const enabledCount = computed(() => rows.value.filter((row) => row.enabled).length)
 const busy = ref('')
 const undo = ref(null)
 const error = ref('')
 const retry = ref(null)
+const writeError = ref('')
 let undoTimer = null
 
 /* one open panel at a time: `panel` names the row */
@@ -43,11 +53,10 @@ const panelNotice = ref('')
 const draft = ref({ host: '', token: '' })
 const reveal = ref(false)
 
-const enabledCount = computed(() => rows.value.filter((row) => row.enabled).length)
-
-/** `N of 3` in the head. A plain leading space before `on` is trimmed by the
-    flex badge, so the phrase carries its own `&nbsp;` (finding F1). */
-const badgeOf = computed(() => `${enabledCount.value} of ${state.value.total || 3}`)
+/* the roster's search: the same field, the same key, every searchable list */
+const query = ref('')
+const searchEl = ref(null)
+const searchKey = shortcutLabel('inventory-search')
 
 function messageOf(problem) {
   return String(problem?.message || problem || '').replace(/^Error:\s*/, '')
@@ -57,13 +66,37 @@ function credentialMissing(problem) {
   return /^credential-missing/.test(messageOf(problem))
 }
 
-/* ── copy ─────────────────────────────────────────────────────────
-   The vocabulary is closed: found, connected, off, not probed, not on PATH,
-   not runnable, not signed in, saving… Every line ends with its `@` token, so a
-   row answers "what will I be able to type" and not only "is this on". */
-
 function nameOf(row) {
   return row?.label || row?.id || ''
+}
+
+/* ── the table's columns ────────────────────────────────────────
+   A row answers three questions and only three: which service, is it on, and
+   what will it actually do. The `@` token is part of the third, because that is
+   what a person types. */
+
+function stateOf(row) {
+  return String(row?.status || 'not probed')
+}
+
+function toneOf(row) {
+  const word = stateOf(row)
+  if (word === 'found' || word === 'connected') return 'ok'
+  if (row?.problem) return 'bad'
+  return ''
+}
+
+/** The one sentence under the name. A row that has not been probed says so,
+    rather than pretending its binary is missing. */
+function detailOf(row) {
+  if (integrations.probing && !row?.detail) return 'asking…'
+  return String(row?.detail || '')
+}
+
+function titleOf(row) {
+  return [stateOf(row), detailOf(row), row?.token, row?.available ? 'offered' : 'unavailable']
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function disclosureFor(row) {
@@ -78,32 +111,6 @@ function disclosureLabel(row) {
   return `${nameOf(row)} credential settings`
 }
 
-/** The one line under the name, split into the parts the template paints so the
-    status word, the detail and the `@` token can each carry their own tone.
-    `saving…` is appended by the template while a write is in flight and never
-    replaces the state the row already knew. */
-function stateParts(row) {
-  if (!row) return []
-  const parts = [{ kind: 'word', text: String(row.status || 'off') }]
-  if (row.detail) parts.push({ kind: 'sep', text: ' · ' }, { kind: 'detail', text: String(row.detail) })
-  parts.push(
-    { kind: 'sep', text: ' · ' },
-    { kind: 'token', text: String(row.token || '') },
-    { kind: 'sep', text: ' ' },
-    { kind: 'word', text: row.available ? 'offered' : 'unavailable' },
-  )
-  return parts
-}
-
-/** The same sentence, plain, for `title` — the state line ellipsises at one line
-    and the full value has to be reachable without opening the panel. */
-function stateTitle(row) {
-  return stateParts(row)
-    .map((part) => part.text)
-    .join('')
-    .trim()
-}
-
 function switchLabel(row) {
   if (!row) return ''
   if (busy.value === row.id) return `${nameOf(row)} is ${row.enabled ? 'on' : 'off'}, saving`
@@ -113,22 +120,55 @@ function switchLabel(row) {
   return row.enabled ? `${nameOf(row)} is on. Turn off` : `${nameOf(row)} is off. Turn on`
 }
 
-/* ── reading ──────────────────────────────────────────────────── */
+/* ── the search ──────────────────────────────────────────────── */
 
-async function load({ quiet = false } = {}) {
-  if (!quiet) state.value.loading = true
-  state.value.error = ''
-  try {
-    const data = await call('integrations.list', { workspace: hub.workspace })
-    rows.value = data?.rows || []
-    state.value = { ...state.value, loading: false, loaded: true, error: '', total: data?.total || 3 }
-  } catch (problem) {
-    rows.value = []
-    state.value = { ...state.value, loading: false, loaded: false, error: messageOf(problem) }
-  }
+const visible = computed(() => {
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) return rows.value
+  return rows.value.filter((row) =>
+    [row.label, row.id, row.idText, row.token, row.status, row.detail, row.path]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(needle)),
+  )
+})
+
+const nothingInstalled = computed(
+  () =>
+    !integrations.loading &&
+    integrations.loaded &&
+    !integrations.error &&
+    rows.value.length > 0 &&
+    rows.value.every((row) => !row.installed),
+)
+
+function focusSearch() {
+  const field = searchEl.value
+  if (!(field instanceof HTMLInputElement)) return
+  field.focus()
+  field.select()
 }
 
-/* ── writing ──────────────────────────────────────────────────── */
+function onKey(event) {
+  if (!matchesShortcut('inventory-search', event)) return
+  event.preventDefault()
+  focusSearch()
+}
+
+/* ── reading ────────────────────────────────────────────────── */
+
+/**
+ * Rows first, status second: the page is usable the moment the rows land, and a
+ * row says `not probed` until the second answer arrives. The probe still asks
+ * all three services in main (one spawn each, cached for minutes there), so a
+ * switched-off row can carry the truth about its binary instead of "unknown" —
+ * the cost was the *synchronous* wait, not the probe.
+ */
+async function read({ force = false } = {}) {
+  await loadIntegrations({ workspace: hub.workspace })
+  probeIntegrations({ workspace: hub.workspace, force }).catch(() => {})
+}
+
+/* ── writing ────────────────────────────────────────────────── */
 
 function clearUndo() {
   clearTimeout(undoTimer)
@@ -158,26 +198,13 @@ async function write(id, enabled) {
   if (!before) return
   busy.value = id
   error.value = ''
-  /* optimistic: the switch moves now, the row dims, `saving…` is appended */
-  const optimistic = rows.value.map((row) => (row.id === id ? { ...row, enabled } : row))
-  rows.value = optimistic
   try {
-    const row = await call('integrations.setEnabled', {
-      workspace: hub.workspace,
-      id,
-      enabled,
-    })
-    if (row) {
-      rows.value = rows.value.map((entry) => (entry.id === id ? row : entry))
-      if (enabled) offerUndo(row)
-    }
+    const row = await setIntegrationEnabled(id, enabled)
+    if (row && enabled) offerUndo(row)
     retry.value = null
   } catch (problem) {
-    /* no optimistic value survives a rejection */
-    rows.value = rows.value.map((entry) => (entry.id === id ? before : entry))
     if (credentialMissing(problem)) {
       openPanel(before, { field: `int-token-${id}` })
-      busy.value = ''
       return
     }
     error.value = messageOf(problem)
@@ -204,13 +231,9 @@ function retryWrite() {
   write(wanted.id, wanted.enabled)
 }
 
-/* ── the panel ───────────────────────────────────────────────── */
+/* ── the panel ─────────────────────────────────────────────── */
 
 const isOpen = (id) => panel.value === id
-
-function openerFor(id) {
-  return panelOpeners.get(id) || null
-}
 
 function openPanel(row, { field = '' } = {}) {
   if (!row) return
@@ -229,8 +252,7 @@ function openPanel(row, { field = '' } = {}) {
        meant "give me the token", so the caret goes into the panel's first
        input rather than to the disclosure. */
     const target =
-      (field && document.getElementById(field)) ||
-      document.querySelector('.int-panel .acct-input')
+      (field && document.getElementById(field)) || document.querySelector('.int-panel .acct-input')
     target?.focus()
   })
 }
@@ -244,7 +266,7 @@ function closePanel({ restore = true } = {}) {
   draft.value = { host: '', token: '' }
   if (!restore || !closing) return
   /* Esc and Cancel both land here: focus goes back to what opened the panel */
-  const opener = openerFor(closing)
+  const opener = panelOpeners.get(closing)
   nextTick(() => opener?.focus?.())
 }
 
@@ -266,10 +288,7 @@ async function testConnection() {
   panelError.value = ''
   panelNotice.value = ''
   try {
-    const result = await call('integrations.test', {
-      workspace: hub.workspace,
-      id: panel.value,
-    })
+    const result = await testIntegration(panel.value)
     panelNotice.value = result?.detail || 'The connection answered.'
   } catch (problem) {
     panelError.value = messageOf(problem)
@@ -287,15 +306,11 @@ async function saveCredential() {
   const saved = { ...draft.value }
   draft.value = { ...draft.value, token: '' }
   try {
-    const result = await call('integrations.saveCredential', {
-      workspace: hub.workspace,
+    const result = await saveIntegrationCredential({
       id,
       token: saved.token,
       host: saved.host,
     })
-    if (result?.row) {
-      rows.value = rows.value.map((entry) => (entry.id === id ? result.row : entry))
-    }
     /* the switch turns on in the same write, so there is nothing left to click */
     if (result?.row && !result.row.enabled) await write(id, true)
     closePanel({ restore: false })
@@ -312,16 +327,22 @@ function cancelPanel() {
   closePanel()
 }
 
-/* ── empty / error ───────────────────────────────────────────── */
+/* ── the probe clock ─────────────────────────────────────────── */
 
-const nothingInstalled = computed(
-  () =>
-    !state.value.loading &&
-    state.value.loaded &&
-    !state.value.error &&
-    rows.value.length > 0 &&
-    rows.value.every((row) => !row.installed),
-)
+const probedLabel = computed(() => {
+  if (!integrations.probed) return integrations.probing ? 'asking…' : 'not asked yet'
+  const then = Number(integrations.probedAt)
+  if (!Number.isFinite(then) || then <= 0) return integrations.cached ? 'cached' : 'just now'
+  const minutes = Math.floor((Date.now() - then) / 60_000)
+  const clock = minutes < 1 ? 'just now' : minutes === 1 ? 'a minute ago' : `${minutes}m ago`
+  return integrations.cached ? `${clock} · cached` : clock
+})
+
+const stamp = ref(Date.now())
+/* one ticker for the label, so "just now" does not stay true for an hour */
+let ticker = null
+
+const refreshing = computed(() => integrations.probing)
 
 /* Which file each one writes, for the aside — one fact per row, not a link. */
 const WHERE = [
@@ -333,10 +354,18 @@ const WHERE = [
 ]
 
 onMounted(() => {
-  load()
+  window.addEventListener('keydown', onKey)
+  if (!integrations.loaded || integrations.workspace !== hub.workspace) read()
+  else if (!integrations.probed) probeIntegrations({ workspace: hub.workspace }).catch(() => {})
+  ticker = setInterval(() => {
+    stamp.value = Date.now()
+  }, 30_000)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
   clearUndo()
+  clearTimeout(undoTimer)
+  clearInterval(ticker)
 })
 </script>
 
@@ -351,12 +380,11 @@ onBeforeUnmount(() => {
             <code>@</code> menu of every composer.
           </p>
         </div>
-        <!-- absent until the count is known: an empty pill reads as "0 of 3" -->
         <span
-          v-if="state.loaded"
+          v-if="integrations.loaded"
           class="role-badge int-badge"
           :data-on="enabledCount ? '1' : '0'"
-          >{{ badgeOf }}<span class="of">&nbsp;on</span></span
+          >{{ enabledCount }} of {{ integrations.total }}<span class="of">&nbsp;on</span></span
         >
       </div>
 
@@ -365,68 +393,150 @@ onBeforeUnmount(() => {
         <button class="undo-btn" type="button" @click="undoNow">Undo</button>
       </div>
 
-      <div class="acct-error" role="alert" v-if="error">
+      <div class="acct-error" role="alert" v-if="error || writeError">
         <span>
           Could not save — <code>~/.entity/integrations.json</code> is not writable. Nothing
           changed.
-          <span class="int-reason" :title="error">{{ error }}</span>
+          <span class="int-reason" :title="error || writeError">{{ error || writeError }}</span>
         </span>
         <button class="btn btn-sm" type="button" style="flex: none" @click="retryWrite">
           Try again
         </button>
       </div>
 
-      <ul class="int-list" v-if="state.loaded && rows.length && !nothingInstalled">
-        <template v-for="row in rows" :key="row.id">
-          <li class="int-row" :data-on="row.enabled ? '1' : '0'" :data-busy="busy === row.id ? '1' : '0'">
-            <span class="int-mark" aria-hidden="true">
-              <IntegrationMark :name="row.id" :size="22" />
+      <!-- the bar: the same search every roster has, the probe clock, and the one
+           action that pays for the probe again. The status line is the only part
+           that ever needed a spawn, so it is the only part that can be stale —
+           and it says when it was read. -->
+      <div class="skbar int-bar" v-if="integrations.loaded && rows.length">
+        <label class="sksearch int-search">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.3" />
+            <path d="M10.3 10.3L14 14" />
+          </svg>
+          <input
+            ref="searchEl"
+            v-model="query"
+            type="search"
+            placeholder="Search name or status…"
+            aria-label="Search this machine's integrations"
+            spellcheck="false"
+          />
+          <kbd class="sksearch-key search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
+        </label>
+        <span class="int-where" :title="integrations.probed ? 'The status line, read once and cached' : 'The status line has not been read yet'">
+          {{ probedLabel }}
+        </span>
+        <button
+          class="btn btn-sm int-refresh"
+          type="button"
+          :disabled="refreshing"
+          title="Ask every switched-on CLI again and replace the cached status"
+          @click="read({ force: true })"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M13.4 7.2a5.4 5.4 0 1 0-5.1-3.6M13.4 7.2V2.9M13.4 7.2h-4.2" />
+            <path d="M2.6 8.8a5.4 5.4 0 1 0 5.1 3.6M2.6 8.8v4.3M2.6 8.8h4.2" />
+          </svg>
+          {{ refreshing ? 'Asking…' : 'Refresh' }}
+        </button>
+        <span class="skbar-where int-count">{{ visible.length }} of {{ rows.length }}</span>
+      </div>
+
+      <div class="acct-error int-probe-error" role="status" v-if="integrations.probeError">
+        <span>
+          The CLIs could not be asked, so every status below is what this machine knew last.
+          <span class="int-reason" :title="integrations.probeError">{{ integrations.probeError }}</span>
+        </span>
+        <button class="btn btn-sm" type="button" @click="read({ force: true })">Try again</button>
+      </div>
+
+      <!-- the roster: a table with one bounded scroll area, the same grammar as
+           the skills shelf and the machine inventories -->
+      <div
+        class="skt int-t"
+        v-if="integrations.loaded && rows.length && !nothingInstalled"
+        role="table"
+        aria-label="Third-party services this machine can offer"
+      >
+        <div class="row head" role="row">
+          <span class="k1" role="columnheader">Integration</span>
+          <span class="k2" role="columnheader">Status</span>
+          <span class="k3" role="columnheader">Token</span>
+          <span class="acts-head k4" role="columnheader">On</span>
+        </div>
+
+        <div v-if="!visible.length" class="empty-note int-noresults" role="row">
+          <b>No integration matches “{{ query.trim() }}”.</b>
+          <span>Search covers the name, the id, the status line and the <code>@</code> token.</span>
+          <div class="empty-actions">
+            <button class="btn btn-sm" type="button" @click="query = ''">Clear the search</button>
+          </div>
+        </div>
+
+        <template v-for="row in visible" :key="row.id">
+          <div
+            class="row int-row"
+            role="row"
+            :data-on="row.enabled ? '1' : '0'"
+            :data-busy="busy === row.id ? '1' : '0'"
+          >
+            <div class="nm k1" role="cell">
+              <span class="int-mark">
+                <IntegrationMark :name="row.id" :size="22" />
+              </span>
+              <span class="nm-stack int-copy">
+                <span class="nm-line int-name">
+                  <b>{{ row.label }}</b><span class="id">{{ row.idText }}</span>
+                </span>
+              </span>
+            </div>
+
+            <span class="int-state k2" role="cell" :title="titleOf(row)">
+              <span :class="toneOf(row)">{{ stateOf(row) }}</span>
+              <template v-if="detailOf(row)"> · {{ detailOf(row) }}</template>
+              <template v-if="busy === row.id"> · saving…</template>
             </span>
 
-            <span class="int-copy">
-              <span class="int-name">
-                <b>{{ row.label }}</b><span class="id">{{ row.idText }}</span>
-                <button
-                  class="int-cfg-btn"
-                  type="button"
-                  :data-int-cfg="row.id"
-                  :aria-expanded="isOpen(row.id) ? 'true' : 'false'"
-                  :aria-label="disclosureLabel(row)"
-                  @click="togglePanel(row)"
-                >
-                  {{ disclosureFor(row) }}<span
-                    class="dot"
-                    v-if="row.id === 'youtrack' && !row.hasCredential"
-                    aria-hidden="true"
-                  ></span>
-                </button>
-              </span>
-              <span class="int-state" :title="stateTitle(row)">
-                <template v-for="(part, at) in stateParts(row)" :key="at"
-                  ><span v-if="part.kind === 'sep'">{{ part.text }}</span
-                  ><span v-else-if="part.kind === 'token'" class="token">{{ part.text }}</span
-                  ><span v-else-if="part.kind === 'word'" :class="part.text === 'found' || part.text === 'connected' ? 'ok' : ''">{{ part.text }}</span
-                  ><span v-else>{{ part.text }}</span></template
-                ><template v-if="busy === row.id"> · saving…</template>
+            <span class="int-token k3" role="cell">
+              <code>{{ row.token }}</code>
+              <span class="int-avail" :data-ok="row.available ? '1' : '0'">
+                {{ row.available ? 'offered' : 'unavailable' }}
               </span>
             </span>
 
-            <button
-              class="int-switch"
-              type="button"
-              role="switch"
-              :aria-checked="row.enabled ? 'true' : 'false'"
-              :aria-disabled="busy === row.id ? 'true' : 'false'"
-              :aria-label="switchLabel(row)"
-              @click="toggle(row)"
-            >
-              <span class="sfx-switch" :aria-checked="row.enabled ? 'true' : 'false'"><span></span></span>
-            </button>
-          </li>
+            <div class="acts k4 int-acts" role="cell">
+              <button
+                class="int-cfg-btn"
+                type="button"
+                :data-int-cfg="row.id"
+                :aria-expanded="isOpen(row.id) ? 'true' : 'false'"
+                :aria-label="disclosureLabel(row)"
+                @click="togglePanel(row)"
+              >
+                {{ disclosureFor(row) }}<span
+                  class="dot"
+                  v-if="row.id === 'youtrack' && !row.hasCredential"
+                  aria-hidden="true"
+                ></span>
+              </button>
+              <button
+                class="int-switch"
+                type="button"
+                role="switch"
+                :aria-checked="row.enabled ? 'true' : 'false'"
+                :aria-disabled="busy === row.id ? 'true' : 'false'"
+                :aria-label="switchLabel(row)"
+                @click="toggle(row)"
+              >
+                <span class="sfx-switch" :aria-checked="row.enabled ? 'true' : 'false'"><span></span></span>
+              </button>
+            </div>
+          </div>
 
-          <li class="int-panel" v-if="isOpen(row.id)">
-            <span class="gutter"></span>
-            <span class="body">
+          <div class="row int-panel" v-if="isOpen(row.id)" role="row">
+            <span class="gutter k1"></span>
+            <span class="body k2 k3 k4">
               <label class="fld" v-if="row.id === 'youtrack'">
                 <span class="lbl">Host</span>
                 <input
@@ -440,7 +550,13 @@ onBeforeUnmount(() => {
               </label>
 
               <label class="fld">
-                <span class="lbl">{{ row.id === 'youtrack' ? 'Permanent token' : row.id === 'orca' ? 'Executable path' : 'Sign in with gh' }}</span>
+                <span class="lbl">{{
+                  row.id === 'youtrack'
+                    ? 'Permanent token'
+                    : row.id === 'orca'
+                      ? 'Executable path'
+                      : 'Sign in with gh'
+                }}</span>
                 <input
                   :id="`int-token-${row.id}`"
                   v-model="draft.token"
@@ -506,13 +622,13 @@ onBeforeUnmount(() => {
                 not copied between workspaces.
               </span>
             </span>
-          </li>
+          </div>
         </template>
-      </ul>
+      </div>
 
-      <div class="empty-note err int-empty" v-else-if="state.error">
-        <b>{{ state.error }}</b>
-        <button class="btn btn-sm" type="button" @click="load()">Try again</button>
+      <div class="empty-note err int-empty" v-else-if="integrations.error">
+        <b>{{ integrations.error }}</b>
+        <button class="btn btn-sm" type="button" @click="read()">Try again</button>
       </div>
 
       <div class="empty-note int-empty" v-else-if="nothingInstalled">
@@ -524,16 +640,30 @@ onBeforeUnmount(() => {
         <span class="cmd">brew install gh · orca repo list</span>
       </div>
 
-      <ul class="int-list int-skeleton" v-else>
-        <li class="skel-row" v-for="n in 3" :key="n" :data-skeleton="'1'">
-          <span class="skel skel-mark"></span>
-          <span class="skel-copy">
+      <!-- skeleton, in the real grid: nothing moves when the rows land -->
+      <div
+        class="skt int-t int-skeleton"
+        v-else
+        role="table"
+        aria-busy="true"
+        aria-label="Third-party services this machine can offer"
+      >
+        <div class="row head" role="row">
+          <span class="k1" role="columnheader">Integration</span>
+          <span class="k2" role="columnheader">Status</span>
+          <span class="k3" role="columnheader">Token</span>
+          <span class="acts-head k4" role="columnheader">On</span>
+        </div>
+        <div v-for="n in 3" :key="n" class="row" role="row" aria-hidden="true">
+          <div class="nm k1" role="cell">
+            <span class="skel skel-mark"></span>
             <span class="skel skel-line s1"></span>
-            <span class="skel skel-line s2"></span>
-          </span>
-          <span class="skel skel-pill"></span>
-        </li>
-      </ul>
+          </div>
+          <span class="k2" role="cell"><span class="skel skel-line s2"></span></span>
+          <span class="k3" role="cell"><span class="skel skel-line s3"></span></span>
+          <div class="acts k4" role="cell"><span class="skel skel-pill"></span></div>
+        </div>
+      </div>
 
       <p class="mnote int-note">
         Off is not uninstalled. Turning one on makes its <code>@</code> token appear in the composer
@@ -556,6 +686,10 @@ onBeforeUnmount(() => {
       <p class="mnote int-aside-note">
         Machine-wide, every workspace and every entity on it. A disabled integration cannot be
         mentioned by accident — the token is not offered, not merely hidden.
+      </p>
+      <p class="mnote int-aside-note">
+        The status line is the only thing here that costs a process or a request, so it is read
+        once and cached for five minutes. <code>Refresh</code> is the one way to pay for it again.
       </p>
     </aside>
   </div>

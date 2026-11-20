@@ -46,6 +46,9 @@ const CREDENTIAL = { orca: 'none', youtrack: 'required', github: 'none' }
 const PROBE_TIMEOUT_MS = 4000
 const VERIFY_LIMIT = 5
 const VERIFY_TTL = 60_000
+/* a repository list, a signed-in CLI and a YouTrack token are not facts that
+   change between two visits to a settings page */
+const PROBE_TTL = 5 * 60_000
 
 /* ── the preference file ─────────────────────────────────────────── */
 
@@ -313,45 +316,134 @@ function installedWithoutProbing(id, workspace) {
   return Boolean(harnesses.which(id === 'github' ? 'gh' : 'orca'))
 }
 
-/** One row per integration. Probing happens only for a service that is on: the
-    page can answer "not probed" honestly without spawning a binary nobody
-    asked to use, and switching one on probes it in the same round trip. */
+/**
+ * The list, in two parts, because the two parts cost wildly different things.
+ *
+ * `list` is the switches: one small file on disk and one `stat` per binary, and
+ * it answers in a millisecond. The *probe* is what a row's status line needs —
+ * `orca repo list --json`, `gh auth status`, a YouTrack search through the MCP
+ * pool — and each one is a spawn or a network round trip with a four-second
+ * ceiling. Asking for all three in one response made the page wait for the
+ * slowest integration before it could paint a single row.
+ *
+ * So the rows land first and the probe lands second. `probe` is cached per
+ * workspace for `PROBE_TTL`, because a repository list and a signed-in CLI do
+ * not change between two visits to a settings page; `Refresh` passes
+ * `force: true` and pays for them again.
+ */
 async function list({ workspace } = {}) {
   const config = readConfig()
-  const rows = []
-  for (const id of IDS) {
+  const rows = IDS.map((id) => {
     const enabled = config[id].enabled === true
-    let probe = { usable: false, word: 'off', detail: 'not probed', path: '', problem: '' }
-    try {
-      if (id === 'orca') probe = enabled ? await probeOrca() : { ...probe, detail: 'orca not probed' }
-      else if (id === 'github') {
-        probe = enabled ? await probeGithub() : { ...probe, detail: 'gh not probed' }
-      } else {
-        const credential = youtrackCredential(workspace)
-        probe = enabled
-          ? await probeYoutrack(workspace)
-          : {
-              ...probe,
-              detail: credential.hasCredential
-                ? `token stored${credential.host ? ` · ${credential.host}` : ''}`
-                : 'no permanent token',
-              path: credential.host,
-              hasCredential: credential.hasCredential,
-            }
-      }
-    } catch (error) {
-      /* one broken probe is a row, never a page error */
-      const reason = String(error?.message || error).slice(0, 200)
-      probe = { usable: false, word: 'not runnable', detail: reason, path: '', problem: reason }
+    const credential = id === 'youtrack' ? youtrackCredential(workspace) : null
+    /* The row says `not probed` until `integrations.probe` answers, and the one
+       thing known without spawning anything is whether a token exists. `off`
+       would be a different claim — that the service was asked and said no. */
+    const probe = {
+      usable: false,
+      word: 'not probed',
+      detail:
+        credential === null
+          ? ''
+          : credential.hasCredential
+            ? `token stored${credential.host ? ` · ${credential.host}` : ''}`
+            : 'no permanent token',
+      path: credential?.host || '',
+      problem: '',
+      hasCredential: credential?.hasCredential,
+      installed: installedWithoutProbing(id, workspace),
     }
-    probe.installed = installedWithoutProbing(id, workspace)
-    rows.push(rowOf(id, enabled, probe))
-  }
+    return rowOf(id, enabled, probe)
+  })
   return {
     rows,
     enabledCount: rows.filter((row) => row.enabled).length,
     total: IDS.length,
+    cached: false,
   }
+}
+
+const probes = new Map()
+
+function probeKey(workspace) {
+  return String(workspace || '')
+}
+
+/** One status probe, or the cached answer for this workspace. */
+async function probeOne(id, workspace, { force = false } = {}) {
+  if (id === 'youtrack') return probeYoutrack(workspace, { force })
+  if (id === 'github') return probeGithub()
+  return probeOrca()
+}
+
+/**
+ * The status line for every integration, from cache when it is fresh.
+ *
+ * All three are asked, whatever their switch says: the sentence a row needs is
+ * "is orca runnable", and a switched-off row that cannot say is a row nobody
+ * can fix. The cost was never the probe itself — it is one spawn each and it is
+ * cached here for minutes — it was the page blocking on it before painting.
+ */
+async function probe({ workspace, force = false } = {}) {
+  const key = probeKey(workspace)
+  const hit = probes.get(key)
+  if (!force && hit && Date.now() - hit.at < PROBE_TTL) return { ...hit.value, cached: true }
+
+  const config = readConfig()
+  const rows = IDS.map((id) => {
+    const credential = id === 'youtrack' ? youtrackCredential(workspace) : null
+    return {
+      id,
+      enabled: config[id].enabled === true,
+      value: {
+        usable: false,
+        word: 'not probed',
+        detail: '',
+        path: credential?.host || '',
+        problem: '',
+        hasCredential: credential?.hasCredential,
+      },
+    }
+  })
+
+  /* three spawns and a pool call concurrently: the answer takes as long as the
+     slowest one, not the sum */
+  await Promise.all(
+    rows.map(async (row) => {
+      try {
+        const value = await probeOne(row.id, workspace, { force })
+        const credential = row.id === 'youtrack' ? youtrackCredential(workspace) : null
+        row.value = {
+          ...value,
+          /* the row's own copy of "a token exists", so the switch can say why it
+             will not flip */
+          hasCredential: credential ? credential.hasCredential : value.hasCredential,
+          installed: installedWithoutProbing(row.id, workspace),
+        }
+      } catch (error) {
+        /* one broken probe is a row, never a page error */
+        const reason = String(error?.message || error).slice(0, 200)
+        row.value = {
+          usable: false,
+          word: 'not runnable',
+          detail: reason,
+          path: '',
+          problem: reason,
+          installed: installedWithoutProbing(row.id, workspace),
+        }
+      }
+    }),
+  )
+
+  const answer = {
+    rows: rows.map((row) => rowOf(row.id, row.enabled, row.value)),
+    enabledCount: rows.filter((row) => row.enabled).length,
+    total: IDS.length,
+    at: Date.now(),
+    cached: false,
+  }
+  probes.set(key, { at: Date.now(), value: answer })
+  return answer
 }
 
 /** The switches alone, with no probe and no file read beyond the config: what a
@@ -379,8 +471,25 @@ async function setEnabled({ workspace, id, enabled } = {}) {
   const config = readConfig()
   const next = { ...config, [key]: { enabled: wanted } }
   writeConfig(next)
-  const state = await list({ workspace })
-  return state.rows.find((row) => row.id === key) || null
+  /* The switch moved. The other rows are still true, so only this one is asked
+     again and the cached answer is patched in place: a switch answers in a
+     click, not in three spawns. */
+  const cache = probeKey(workspace)
+  const row = rowOf(key, wanted, {
+    ...(await probeOne(key, workspace).catch((error) => {
+      const reason = String(error?.message || error).slice(0, 200)
+      return { usable: false, word: 'not runnable', detail: reason, path: '', problem: reason }
+    })),
+    installed: installedWithoutProbing(key, workspace),
+    hasCredential: key === 'youtrack' ? youtrackCredential(workspace).hasCredential : undefined,
+  })
+  const hit = probes.get(cache)
+  if (hit) {
+    const value = { ...hit.value, rows: hit.value.rows.map((entry) => (entry.id === key ? row : entry)) }
+    value.enabledCount = value.rows.filter((entry) => entry.enabled).length
+    probes.set(cache, { at: Date.now(), value })
+  }
+  return row
 }
 
 function readMcp(workspace) {
@@ -448,7 +557,8 @@ async function saveCredential({ workspace, id, token, host } = {}) {
   try {
     const { count } = await verifyYoutrack(workspace)
     verified.delete(cacheKey(workspace, 'youtrack'))
-    const state = await list({ workspace })
+    probes.delete(probeKey(workspace))
+    const state = await probe({ workspace, force: true })
     return {
       row: state.rows.find((row) => row.id === 'youtrack') || null,
       issues: count,
@@ -498,6 +608,7 @@ module.exports = {
   IDS,
   enabled,
   list,
+  probe,
   setEnabled,
   saveCredential,
   test,

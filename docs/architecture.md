@@ -87,9 +87,10 @@ the number.
 ## Where the prompts go
 
 Prompts reach the harness on **stdin**, never through a shell (`shell: false`).
-`harness` must be one of the five known ids, a name must match `[a-z0-9-]+`, and a
-`dir` is resolved in main before anything spawns. The body of an entity becomes a
-system prompt (`claude`, `pi`) or prompt text (`codex`, `opencode`, `gemini`).
+`harness` must be one of the ids in `harness-store.cjs`'s `META`, a name must
+match `[a-z0-9-]+`, and a `dir` is resolved in main before anything spawns. The
+body of an entity becomes a system prompt (`claude`, `pi`) or prompt text
+(`codex`, `opencode`, `gemini`).
 
 ## Related
 

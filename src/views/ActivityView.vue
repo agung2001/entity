@@ -302,6 +302,7 @@ const STORE_PATHS = {
   claude: '~/.claude/projects',
   codex: '~/.codex/sessions',
   gemini: '~/.gemini/tmp',
+  ollama: 'no session files',
   opencode: '~/.local/share/opencode',
   pi: '~/.pi/agent/sessions',
 }

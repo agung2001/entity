@@ -23,6 +23,7 @@ const HARNESS_LABELS = {
   codex: 'Codex CLI',
   opencode: 'opencode',
   gemini: 'Gemini CLI',
+  ollama: 'Ollama',
   antigravity: 'Antigravity',
   agents: 'Agents',
 }
@@ -39,6 +40,10 @@ const SOURCES = [
   { harness: 'opencode', file: path.join(XDG_CONFIG, 'opencode', 'opencode.json'), keys: ['mcp'] },
   { harness: 'opencode', file: path.join(HOME, '.opencode', 'config.json'), keys: ['mcp', 'mcpServers'] },
   { harness: 'gemini', file: path.join(HOME, '.gemini', 'settings.json'), keys: ['mcpServers'] },
+  /* Ollama has no MCP surface of its own: a local model is not an agent, and it
+     spawns no children. Reading this file lets the pool panel list whatever an
+     `mcp`-aware client put there rather than inventing a shape. */
+  { harness: 'ollama', file: path.join(HOME, '.ollama', 'config.json'), keys: ['mcpServers', 'mcp'] },
   { harness: 'antigravity', file: path.join(HOME, '.gemini', 'antigravity', 'mcp_config.json'), keys: ['mcpServers', 'mcp', 'servers'] },
   { harness: 'antigravity', file: path.join(HOME, '.gemini', 'antigravity-cli', 'mcp_config.json'), keys: ['mcpServers', 'mcp', 'servers'] },
   { harness: 'agents', file: path.join(HOME, '.agents', 'mcp.json'), keys: ['mcpServers'] },

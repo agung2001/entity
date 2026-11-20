@@ -763,6 +763,62 @@
   margin: 10px 0 16px;
   line-height: 1.5;
 }
+
+/* ── the turn deadline ──────────────────────────────────────────────
+   One number on a row of its own, under the two thresholds: the archive rule is
+   about a thread's *silence*, this is about a turn's *wall clock*, and putting
+   them in one list would invite reading them as the same clock. */
+.turn-rows .rule-row {
+  border-top: 0;
+  padding-top: 0;
+}
+.turn-unit {
+  /* `1 h 30 min` is the longest label the picker prints; at 108px it clipped to
+     `1 h 30 mi` and read as a typo rather than a value */
+  width: 132px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+}
+.turn-effect {
+  flex: 1 0 auto;
+}
+.turn-effect code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+}
+.turn-note {
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+.turn-note code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+}
+/* the way back to the shipped number, beside the sentence that explains it */
+.turn-reset {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.turn-reset:hover {
+  color: var(--ink);
+}
+.turn-reset[disabled] {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
 .sched {
   display: flex;
   flex-direction: column;

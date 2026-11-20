@@ -52,10 +52,13 @@ plan around it; if it were hidden, you would find out mid-task.
 
 ## Numbers
 
-- **A turn is bounded at 90 minutes, and a delegated run at 60.** Both are clocks from
-  spawn, not silence: a harness that keeps printing is still stopped. `ENTITY_TURN_TIMEOUT_MS`
-  and `ENTITY_MENTION_TIMEOUT_MS` set them. The turn is also **told** the number, because
-  a deadline the harness cannot see only costs the work it was about to land.
+- **A turn is bounded (90 minutes by default), and a delegated run at 60.** Both are clocks
+  from spawn, not silence: a harness that keeps printing is still stopped. The turn's number
+  is a setting (Workspace → Chats → *How long a turn may run*, 10 min – 6 h, saved in
+  `~/.entity/turn.json`); `ENTITY_TURN_TIMEOUT_MS` still wins when the app is started with
+  it, which is how the E2E suite pins it. The delegated run is `ENTITY_MENTION_TIMEOUT_MS`.
+  The turn is also **told** the number, because a deadline the harness cannot see only costs
+  the work it was about to land.
 - **Spend is only what the harness reports.** A turn without a price still counts as
   a turn and as tokens, but contributes nothing to the dollar total; the charts never
   estimate a price.

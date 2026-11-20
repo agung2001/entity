@@ -1253,18 +1253,17 @@
   background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 0, 0, 0.4) 7px 9px);
 }
 
-/* ── the crest: a Minecraft sword in the cabinet ─────────────────────────
+/* ── the crest: the specimen sheet's energy blade ────────────────────
    The entity page opens on its character in the top-left of the cabinet, and
    this page mirrors that layout: the crest takes the mark's slot, the title and
-   lede sit beside it, and the meter keeps the right column. Draw the sword the
-   way `entityMark.js` draws a mark — square cells on an integer grid, one flat
-   fill per light angle, no path and no request.
+   lede sit beside it, and the meter keeps the right column.
 
-   The palette is the reference's own, sampled from it: three faces of steel for
-   the blade, near-black iron for the guard, orange leather for the grip, gold
-   for the pommel. None of it is themed — a blade that recoloured with the
-   workspace read as a stripe, and steel is steel in both themes. Only the tile
-   behind it follows the paper. */
+   The blade is drawn the way `entityMark.js` draws a mark — square cells on an
+   integer grid, one flat fill per light angle, no path and no request — and it
+   is shared with every other page that needs an ornament (`VoxelMark.vue`, fed
+   by `src/lib/voxel.js`). Only the tile behind it follows the paper: a voxel
+   recolouring with the workspace read as a stripe, so the blade keeps the
+   accent's ink in both themes. */
 .sk-hero-id {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1277,81 +1276,21 @@
   place-items: center;
   width: 52px;
   height: 52px;
-  border: 1px solid color-mix(in oklab, #8db6ed 26%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--mk) 26%, var(--border));
   border-radius: var(--r-sm);
-  background: color-mix(in oklab, #8db6ed 7%, #fff);
+  background: color-mix(in oklab, var(--mk) 7%, #fff);
   box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 70%, transparent);
 }
-.sk-crest .sw {
+.sk-crest .vx {
   width: 36px;
   height: 36px;
-  /* a voxel is a filled cell, never a stroked path */
-  stroke: none;
-}
-/* three faces of steel: the lit edge, the face, the extrusion behind it */
-.sw-hi {
-  fill: #f4f8fb;
-}
-.sw-fc {
-  fill: #cbcfd2;
-}
-.sw-sh {
-  fill: #9a9b9e;
-}
-/* iron guard */
-.sw-gr {
-  fill: #1d1d1c;
-}
-/* leather grip, two tones so the wrap reads at 36px */
-.sw-gp {
-  fill: #d88c40;
-}
-.sw-gpr {
-  fill: #914e1c;
-}
-.sw-pm {
-  fill: #d8b24a;
-}
-/* the gleam: one cell at the shoulder, in two hard pixel steps — the mark's own
-   blink idiom, not a smooth fade */
-.sw-gl {
-  fill: #fff;
-  opacity: 0;
-  animation: sw-gleam 3.4s steps(2, end) infinite;
-}
-/* only the blade breathes, so the hilt never drifts off its baseline */
-.sw-blade {
-  animation: sw-bob 3.4s ease-in-out infinite;
-}
-@keyframes sw-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-1px);
-  }
-}
-@keyframes sw-gleam {
-  0%,
-  84% {
-    opacity: 0;
-  }
-  86%,
-  92% {
-    opacity: 0.9;
-  }
-  94%,
-  100% {
-    opacity: 0;
-  }
 }
 .sk-hero-text {
   min-width: 0;
 }
 :root[data-theme='dark'] .sk-crest {
-  border-color: color-mix(in oklab, #8db6ed 22%, var(--border));
-  background: color-mix(in oklab, #8db6ed 6%, var(--surface-2));
+  border-color: color-mix(in oklab, var(--mk) 22%, var(--border));
+  background: color-mix(in oklab, var(--mk) 6%, var(--surface-2));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -1943,7 +1882,7 @@
     width: 44px;
     height: 44px;
   }
-  .sk-crest .sw {
+  .sk-crest .vx {
     width: 30px;
     height: 30px;
   }
@@ -2040,16 +1979,12 @@
     transform: none;
   }
   .sk,
-  .sw-blade,
-  .sw-gl {
+  .vx-gl {
     animation: none;
   }
   /* the ornament keeps its resting pose rather than freezing mid-gleam */
-  .sw-gl {
+  .vx-gl {
     opacity: 0;
-  }
-  .sw-blade {
-    transform: none;
   }
 }
 

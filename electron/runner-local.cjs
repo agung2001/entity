@@ -26,6 +26,11 @@ const MAX_RUNS_SCANNED = 400
 
 /* Each harness takes instructions differently. Only claude and pi have a real
    system prompt; the rest get the file prepended to the prompt text.
+ *
+ * `ollama` is the odd one on two counts: it has no `--json` stream (its output is
+ * the answer and nothing else), and it cannot be told a system prompt — so the
+ * instructions go in front of the prompt like `codex` and `gemini`, and the
+ * transcript reader is the plain-text one.
 
    `mcp` is what `mcp-runtime.materialise()` returned: argv to add and the
    files/dirs to clean up later. Placement matters — codex reads its `-c`
@@ -74,6 +79,13 @@ function baseInvocation(harness, instructions, prompt, model = '') {
       const argv = ['-p', preface]
       if (chosen) argv.push('-m', chosen)
       return { cmd: 'gemini', argv, stdin: '', system: false }
+    }
+    case 'ollama': {
+      /* `ollama run <model> <prompt>`; the model is positional and required, so a
+         thread with none falls back to the label the picker prefilled. Nothing
+         streams JSON, so this is the one harness whose output is read as text. */
+      const argv = ['run', chosen || 'llama3.2', preface]
+      return { cmd: 'ollama', argv, stdin: '', system: false }
     }
     default:
       throw new Error(`The harness "${harness}" has no known invocation.`)
@@ -127,6 +139,12 @@ function baseChatInvocation(harness, instructions, prompt, model = '') {
       const argv = ['-p', preface, '--output-format', 'stream-json']
       if (chosen) argv.push('-m', chosen)
       return { cmd: 'gemini', argv, stdin: '', system: false }
+    }
+    case 'ollama': {
+      /* No stream format exists, so the chat path is the one-shot path: the
+         reader collects the answer as it arrives and the turn still streams. */
+      const argv = ['run', chosen || 'llama3.2', preface]
+      return { cmd: 'ollama', argv, stdin: '', system: false }
     }
     default:
       throw new Error(`The harness "${harness}" has no known invocation.`)

@@ -99,6 +99,25 @@ on the browser's Find.
 - Long model lists stay inside a bounded scroll area; do not let the page grow
   by hundreds of rows.
 
+#### A capability read is two calls, and the cheap one paints first
+
+Account → Integrations is three services, each answering "is this usable" by
+spawning a binary or searching a remote server. One response carrying all of it
+made the page paint nothing until the slowest probe answered.
+
+- **Split the read by its cost.** `integrations.list` is the preference file and
+  one `stat` per binary; `integrations.probe` is the status line, and it is the
+  only call that spawns anything. The rows land from the first, each saying
+  `not probed`, and the page is usable while the CLIs are still being asked.
+- **Cache the expensive half, and say whose clock it is.** The probe is cached in
+  main for minutes and in the store for the session; the bar prints `just now ·
+  cached` so a stale line is never mistaken for a fresh one.
+- **`Refresh` is the only thing that pays again.** One button, one call with
+  `force: true`. Do not re-probe on mount, on every tab focus or on every write —
+  a switch patches its own row and nothing else.
+- **A status that could not be read is a sentence, not a zero.** "not probed" is
+  a state; "not runnable · ENOENT" is the answer a person can act on.
+
 #### Inventory row density
 
 A capability row is a compact control, not a card heading.
@@ -205,6 +224,30 @@ inventory, and this repo already owns the grammar for one.
 - **Escape is guarded while the work is in flight** (`guard: () => busy`), and the
   X, Cancel and primary all agree with it.
 
+### A page ornament is a voxel, not an icon
+
+A cabinet needs a mark. The overview's was four stroked squares, the skills
+shelf's a hand-traced 16-cell sword — two drawings in a language the character
+does not speak, in two files, each with its own keyframes.
+
+- **Draw it the way `entityMark.js` draws a character**: hand-written masks of
+  square cells on an integer grid, one flat fill per light angle (`hi` / `fc` /
+  `sh`), two extrusion steps behind the face, merged into runs. No path, no
+  stroke, no request.
+- **One module, one component.** `src/lib/voxel.js` holds the masks and the
+  markup, `VoxelMark.vue` paints one by id (`station`, `drone`, `blade`, …). A
+  page picks a shape; it never re-traces one.
+- **The fill is the character's own recipe** (`--mk`, mixed toward white for the
+  lit edge and toward `oklch(… var(--mk-h))` for the depth steps), never a page's
+  second palette. A four-grey ornament beside a `--mk` character reads as two
+  species on one paper.
+- **Frame the painted cells, not the field.** A station is five rows tall in a
+  nine-row box; a viewBox of the whole field leaves a third of the slot empty and
+  every ornament arrives as the same small smudge at card size.
+- **An ornament does not animate like a character.** One glint in two hard pixel
+  steps, and nothing under `prefers-reduced-motion`. No gaze, no blink, no
+  requestAnimationFrame loop for a 36px drawing.
+
 ## A retention rule is a chart, and a deadline the app can miss
 
 Workspace settings → Chats decides when a silent thread archives itself and when an
@@ -269,6 +312,32 @@ system.
 - **Grid tracks that hold cards are `minmax(0, 1fr)`.** A bare `1fr` is
   `minmax(auto, 1fr)`: the track grows to the card's min-content and the shell hides the
   overflow, so a phone silently loses 45 px of every settings card.
+
+### A deadline the person cannot move is a bug report
+
+A turn is stopped by a wall clock, and that number used to be `ENTITY_TURN_TIMEOUT_MS` —
+an environment variable nobody sets. The complaint was exact: "there are no options to
+control the maximum chat timeout limit".
+
+- **A clock is a setting, and it lives on the card it bounds.** Workspace → Chats carries
+  *How long a turn may run* under the two retention thresholds: same card, because both are
+  about threads; a separate block, because one counts *silence* and the other counts *wall
+  time*. Never on the same list.
+- **Read it when the turn starts.** A deadline resolved at `require` time cannot move until
+  the app restarts, which is not a setting. `turnTimeoutMs()` is called at spawn, so the
+  next message is the first one that gets the new clock.
+- **The environment still wins, and the field goes read-only.** `ENTITY_TURN_TIMEOUT_MS`
+  pins the number in the E2E suite; a page that silently ignores every edit is worse than
+  one that says "this app was started with it". The row states its source: `this build's
+  default` / `saved in ~/.entity/turn.json` / `set by ENTITY_TURN_TIMEOUT_MS`.
+- **Refuse, do not clamp.** 7 minutes or 9 hours is an error the field can show; snapping it
+  to the nearest legal step saves a number the person never chose.
+- **Zero is not "no limit".** A turn is always bounded — an unbounded one is a leaked
+  promise and a card that lies about still thinking.
+- **Offer the steps, keep the field typeable.** A picker of 10 · 15 · 20 · 30 · 45 · 60 · 90 …
+  for the common case, and 25 or 50 still works.
+- **The silence timer is a different clock and says so.** Fifteen minutes with no output is
+  not the same sentence as a whole turn's deadline, and the card must not blur them.
 
 ## A delegation is a session, and the session is not a row
 
@@ -444,6 +513,11 @@ it.
 | "Copy" does nothing and the toast blames the content | `navigator.clipboard` rejects in the packaged app; go through `src/lib/clipboard.js` (clipboard API → selection fallback → `false`) and let the toast say which happened | `npm test` (`clipboard`) |
 | Escape does nothing while an artifact preview has focus | A frame never receives the window's keydown: forward it from the frame's own document | `tests/e2e/full/16-artifact-scope.spec.js` |
 | A dialog opens with focus still on the page behind it | Focus the first control on open, and give the dialog its confirm combo | `tests/e2e/full/01-thread-lifecycle.spec.js` |
+| A turn's deadline is a constant, so only an environment variable can change it | A clock is a setting on the card it bounds; read per turn, environment wins and the field goes read-only | `npm test` (`turn-timeout`) |
+| A settings field silently snaps an out-of-range value to the nearest step | Refuse it and show why — a clamped number is one nobody chose | `turn-timeout-store.cjs` (`set`) |
+| A new harness id is added to `META` and nowhere else | The list is one, but the transcript reader, the remote run, the skill roots and the brand mark each need their own entry — a row whose switch spawns nothing is the bug | `runner-local.cjs`, `chat-transcript.cjs` |
+| A cabinet mark is a stroked icon beside a voxel character | Draw it from `src/lib/voxel.js` via `VoxelMark` — masks on the mark's own grid, one flat fill per light angle | `VoxelMark.vue`, `voxel.js` |
+| An ornament recolours with the page, or brings its own four greys | Fills come from `--mk` and `--mk-h`, the character's recipe; only the tile behind it follows the paper | `brand.css` (`.vx-*`) |
 | A roster of seven items is drawn as a card grid | Inventories are tables: bounded scroll area, one row per item, name as the only link | `tests/e2e/full/18-skills-copy.spec.js` |
 | An unreadable directory is reported as "0 skills" | A read that failed is an error note with the reason and a retry; only a missing directory is an empty list | `electron/workspace-store.cjs` (`skills`) |
 | A copy lands as `x-2` but still declares `name: x` | Rewrite the declared name, or the roster shows two identical rows and the slash reference resolves to neither | `npm test` (`workspace-skills`) |
@@ -487,6 +561,9 @@ it.
 | Search only looks at harness names, not models | Match id, label, path, default and every model id | Review |
 | A detail page dumps hundreds of model ids into the page flow | Put them in a bounded scroll area and keep a result count/empty state | Review |
 | A summary row inherits the card heading size | Set label/meta sizes explicitly: 12px label, 10px count | Review |
+| A settings page paints nothing until the slowest CLI answers | Split the read: the switches paint first, the status line lands second and is cached; `Refresh` is the only re-probe | `AccountIntegrationsView`, `integrations-store.cjs` |
+| A capability row whose status reads `not probed` looks broken | The copy is a state, like `off` or `not signed in`; a skeleton is for "nothing is known", not for "the probe is late" | `AccountIntegrationsView` |
+| A roster of three services is drawn as a card grid, with no search | A roster is a table on every page: `.skt` tracks, a bounded scroll area, a visible search with `inventory-search`, and the count in the bar | `tests/e2e/full/22-integrations.spec.js` |
 | An inventory hides a parked or disabled row, so synced data looks absent | List the row with its state and show the parked count; a disabled remote MCP server is present, not missing | `McpView` |
 | A remote MCP server or skill needs a second setup step on every clone | Definitions travel enabled; attached skills are copied into the workspace, never linked; only a change to an existing server's command/url is held local and reported | `workspace-store.cjs`, `remote-sync.cjs` |
 | A sub-page opened from the rail has no way back to where it came from | Every non-root section carries `section.back`, and it goes up **one level** — `machine → machines`, `machines → workspace settings` — not always to the workspace picker. The button's title names the destination | `RailContext` |

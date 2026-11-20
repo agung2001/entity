@@ -31,7 +31,7 @@ const pathError = ref('')
 
 const rows = computed(() => harnesses.items)
 const enabledCount = computed(() => rows.value.filter((row) => row.enabled).length)
-/* A machine with none of the five installed gets the empty note, not five rows
+/* A machine with none of them installed gets the empty note, not seven rows
    whose switches have nothing to turn on. */
 const installedCount = computed(() => rows.value.filter((row) => row.installed).length)
 const loadError = computed(() => harnesses.error)
@@ -177,7 +177,9 @@ onBeforeUnmount(clearUndo)
         </div>
         <span class="role-badge harness-count" :data-on="enabledCount ? '1' : '0'">
           <template v-if="harnesses.loading">checking</template>
-          <template v-else>{{ enabledCount }} of 5<span class="of"> on</span></template>
+          <template v-else
+            >{{ enabledCount }} of {{ rows.length || '—' }}<span class="of">&nbsp;on</span></template
+          >
         </span>
       </div>
 
@@ -286,10 +288,13 @@ onBeforeUnmount(clearUndo)
       <div class="empty-note" v-else-if="!harnesses.loading">
         <b>No agent CLI found on this machine.</b>
         <p>
-          None of the five known harnesses resolves on <code>PATH</code>. Install one and reopen
-          this page — entity probes each binary on open, so nothing needs restarting.
+          None of the known harnesses resolves on <code>PATH</code>. Install one and reopen this
+          page — entity probes each binary on open, so nothing needs restarting.
         </p>
-        <span class="cmd">npm i -g @anthropic-ai/claude-code · npm i -g @openai/codex · pi</span>
+        <span class="cmd">
+          npm i -g @anthropic-ai/claude-code · npm i -g @openai/codex · npm i -g @google/gemini-cli
+          · npm i -g opencode-ai · brew install ollama · pi
+        </span>
         <p>
           Antigravity's <code>agy</code> and <code>hermes</code> work the same way. A CLI
           installed elsewhere is fine too — set its path on an entity.

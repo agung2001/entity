@@ -201,6 +201,13 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', '3'],
       },
       {
+        id: 'pick-model',
+        label: 'Pick the model',
+        desc: 'In the New thread dialog: open the model suggestions, or close them.',
+        desktop: ['alt', 'shift', '4'],
+        browser: ['alt', 'shift', '4'],
+      },
+      {
         id: 'prev-chat',
         label: 'Previous conversation',
         desc: 'Move to the previous conversation in the rail.',

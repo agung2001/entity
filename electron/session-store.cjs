@@ -38,6 +38,7 @@ const HARNESS_LABELS = {
   opencode: 'opencode',
   pi: 'pi',
   gemini: 'Gemini CLI',
+  ollama: 'Ollama',
 }
 
 const RESUME = {
@@ -46,6 +47,9 @@ const RESUME = {
   opencode: ['opencode', '--session'],
   pi: ['pi', '--session'],
   gemini: ['gemini', '--resume'],
+  /* `ollama` keeps no session files: `ollama run` is a one-shot completion, so a
+     thread on it has no history to resume and the panel says so. */
+  ollama: [],
 }
 
 /* ── small readers ────────────────────────────────────────────────── */
