@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useDialogDismiss } from '@/composables/useDialog'
 import EraseAllDialog from '@/components/EraseAllDialog.vue'
 import { hub, toast } from '@/stores/hub'
-import { eraseArtifacts } from '@/stores/artifacts'
+import { artifacts, eraseArtifacts, loadArtifacts } from '@/stores/artifacts'
 import {
   artifactRetention,
   loadArtifactRetention,
@@ -24,7 +25,41 @@ import {
  * The arithmetic lives in `electron/artifact-retention-store.cjs`. This view
  * draws its answer and never computes a count of its own, which is why the
  * legend, the rule effects, the forecast and the pass cannot disagree.
+ *
+ * ── two shelves, two jobs ──────────────────────────────────────────
+ * The card stopped being one thing when artifacts became personal-first. The
+ * rule (①/②, cadence, protections, the machine that runs the pass) is about the
+ * **workspace's shared shelf**: it is workspace configuration, it syncs, and a
+ * teammate's clone reads it. Your personal shelf has no rule at all — it is one
+ * account's files under `.personal/`, nothing sweeps it, and nothing about it
+ * travels. Those are two different questions and they were stacked in one
+ * column, so the page now answers one at a time.
+ *
+ * The tab is the URL's, not a component's: `?tab=artifacts` still lands here, and
+ * `&shelf=personal` is the second axis. A saved view, a link and Back all work.
  */
+const route = useRoute()
+const router = useRouter()
+const SHELVES = ['shared', 'personal']
+const shelf = ref(SHELVES.includes(String(route.query.shelf)) ? String(route.query.shelf) : 'shared')
+
+function setShelf(next) {
+  if (!SHELVES.includes(next) || next === shelf.value) return
+  shelf.value = next
+  const query = { ...route.query, tab: 'artifacts' }
+  if (next === 'shared') delete query.shelf
+  else query.shelf = next
+  router.replace({ name: 'workspace', params: { workspace: route.params.workspace }, query })
+}
+
+watch(
+  () => route.query.shelf,
+  (value) => {
+    const next = SHELVES.includes(String(value)) ? String(value) : 'shared'
+    if (next !== shelf.value) shelf.value = next
+  },
+)
+
 const state = computed(() => artifactRetention.state)
 const settings = computed(() => state.value?.settings || null)
 const meta = computed(() => state.value?.meta || null)
@@ -221,6 +256,13 @@ function openShelf() {
   hub.rail.artifacts = true
 }
 
+/* The rail already has a scope switch, so "open my shelf" is the same panel with
+   the personal scope selected — one shelf on one panel, not a second one. */
+function openPersonalShelf() {
+  artifacts.scope = 'personal'
+  openShelf()
+}
+
 /* ── erase all ─────────────────────────────────────────────────────── */
 /* The one control on this card that is not a threshold: it empties a shelf. Three
    buttons, because the card draws three populations and one button that removed
@@ -320,18 +362,58 @@ onBeforeUnmount(() => {
     <section class="acct-card" aria-labelledby="art-ret-title">
       <div class="acct-card-head">
         <h2 id="art-ret-title">Artifacts</h2>
-        <span v-if="meta" class="role-badge">{{ plural(meta.files, 'file') }}</span>
+        <span v-if="meta" class="role-badge">
+          {{ plural(shelf === 'shared' ? meta.files : meta.personal || 0, 'file') }}
+        </span>
         <span v-else class="skel skel--line" style="width: 74px; height: 18px"></span>
       </div>
 
-      <p class="ret-intro">
+      <!-- Two shelves, two jobs: the shared one has a rule every clone reads, the
+           personal one is one account's own files and has none. The switcher is
+           the page's own tab grammar, inside the card it belongs to. -->
+      <div class="sk-tabs art-shelves" role="tablist" aria-label="Which shelf">
+        <button
+          role="tab"
+          type="button"
+          :aria-selected="shelf === 'shared' ? 'true' : 'false'"
+          @click="setShelf('shared')"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="6" cy="5.6" r="2.6" />
+            <path d="M2.2 13.4a3.8 3.8 0 017.6 0" />
+            <path d="M10.4 3.4a2.4 2.4 0 010 4.5M11.6 13.4a3.6 3.6 0 00-1.2-2.6 3.4 3.4 0 013.4 2.6" />
+          </svg>
+          Shared shelf <span class="n" v-if="meta">{{ meta.files }}</span>
+        </button>
+        <button
+          role="tab"
+          type="button"
+          :aria-selected="shelf === 'personal' ? 'true' : 'false'"
+          @click="setShelf('personal')"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="6" cy="5.6" r="2.6" />
+            <path d="M2.2 13.4a3.8 3.8 0 017.6 0" />
+          </svg>
+          Personal shelf <span class="n" v-if="meta">{{ meta.personal || 0 }}</span>
+        </button>
+      </div>
+
+      <p v-if="shelf === 'shared'" class="ret-intro">
         Everything on this workspace's <b>shared</b> artifacts shelf, by how long it has
         been since anyone opened it. ① decides what moves into the archive; ② decides what
         leaves this machine for good. An archived file is out of the shelf's list, not off
-        the disk. A personal shelf (<code class="mono">.personal/&lt;account&gt;/artifacts/</code>)
-        is one account's own and is never swept.
+        the disk.
+      </p>
+      <p v-else class="ret-intro">
+        The files under <code class="mono">.personal/&lt;account&gt;/artifacts/</code> for the
+        account this window is signed in as — everything you and your agents made that
+        nobody has shared. Nothing sweeps it and nothing syncs it: these are your files
+        until you share one, and from that moment the shared shelf's rule is what happens
+        to it.
       </p>
 
+      <template v-if="shelf === 'shared'">
       <div v-if="!canEdit" class="role-line">
         <span class="role-badge">{{ role }}</span>
         <span>
@@ -842,13 +924,56 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      </template>
+
+      <!-- ── the personal shelf ────────────────────────────────────────
+           No rule, no chart, no sweep: these are your files until you share one.
+           What it does have is the one action a shelf needs — emptying it. -->
+      <template v-else>
+        <div class="acct-sep">
+          Your files
+          <small>
+            {{ plural(meta?.personal || 0, 'file') }} in
+            <code class="mono">.personal/&lt;account&gt;/artifacts/</code>
+          </small>
+        </div>
+
+        <div v-if="!meta?.personal" class="empty-inline">
+          <b>Nothing on your shelf yet.</b>
+          <span>
+            An upload, a <b>Save to workspace</b>, and the folder an agent is told to write
+            into all land here first. A file appears on the shared shelf only when you
+            share it.
+          </span>
+        </div>
+        <p v-else class="mnote art-personal-note">
+          Nothing here is swept, synced or shown to anyone else. Opening one on the
+          artifacts rail is how you share it, and from that moment the
+          <button class="art-link" type="button" @click="setShelf('shared')">shared rule</button>
+          is what happens to it.
+        </p>
+
+        <div class="acct-actions">
+          <button class="btn btn-ghost" type="button" @click="openPersonalShelf">
+            Open your shelf
+          </button>
+        </div>
+      </template>
+
       <div class="acct-sep">
-        Erase all
-        <small>The one write here that the archive and the trash cannot undo</small>
+        {{ shelf === 'personal' ? 'Empty your shelf' : 'Erase all' }}
+        <small>
+          <template v-if="shelf === 'personal'">
+            The files you made, and nothing anybody shared
+          </template>
+          <template v-else>
+            The one write here that the archive and the trash cannot undo
+          </template>
+        </small>
       </div>
 
-      <div class="erase-options">
-        <div class="erase-option">
+      <div class="erase-options" :data-shelf="shelf">
+        <div v-if="shelf === 'shared'" class="erase-option">
           <span class="sfx-copy">
             <b>Shared shelf</b>
             <span>
@@ -875,7 +1000,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="erase-option">
+        <div v-if="shelf === 'personal'" class="erase-option">
           <span class="sfx-copy">
             <b>Your personal shelf</b>
             <span>
@@ -906,8 +1031,8 @@ onBeforeUnmount(() => {
           <span class="sfx-copy">
             <b>Everything in this workspace</b>
             <span>
-              The shared shelf with its archive and trash, and your personal shelf —
-              both buttons above in one write.
+              The shared shelf with its archive and trash, and every personal shelf
+              under <code class="mono">.personal/</code> — both populations in one write.
             </span>
           </span>
           <button
@@ -943,7 +1068,11 @@ onBeforeUnmount(() => {
         @confirm="erase"
       />
 
-      <p class="mnote ret-foot">
+      <p v-if="shelf === 'personal'" class="mnote ret-foot">
+        Yours, and nobody else's. Sharing a file is what moves it to the shared shelf,
+        and that is the shelf with a rule — this one is only ever emptied by hand.
+      </p>
+      <p v-else class="mnote ret-foot">
         <template v-if="last?.error">
           Last pass failed {{ ago(last.at) }} — {{ last.error }}
         </template>

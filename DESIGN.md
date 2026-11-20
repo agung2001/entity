@@ -248,6 +248,31 @@ does not speak, in two files, each with its own keyframes.
   steps, and nothing under `prefers-reduced-motion`. No gaze, no blink, no
   requestAnimationFrame loop for a 36px drawing.
 
+### Two shelves, two jobs — one tab each, one URL
+
+Artifacts became personal-first, and the settings card did not follow: a personal
+file count sat beside a workspace-wide threshold, and the erase section offered
+three buttons for two different populations stacked in one column.
+
+- **A rule belongs to the population it governs.** ①/②, the cadence, the
+  protections and the one machine that runs the pass are the **shared** shelf's —
+  they are workspace configuration every clone reads. Your personal shelf has no
+  rule at all: nothing sweeps it, nothing syncs it, and sharing a file is what
+  hands it to the rule above. So the card answers one shelf at a time.
+- **The tab is the page's own grammar.** The switch is `.sk-tabs` (the app's tab
+  look), *inside* the card it belongs to — not a second page and not a second
+  navigation.
+- **One URL, two axes.** A link into this page keeps `?tab=artifacts`; the shelf
+  is `&shelf=personal`, and the default (`shared`) drops the parameter instead of
+  spelling out a default. `router.replace`, because a tab is a place — Back
+  leaves the page rather than walking through every shelf someone tried.
+- **The rule must not leak.** A chart, a threshold and a cadence over a shelf that
+  has none is three lies in a row; the personal tab renders none of them and says
+  in its own sentence why.
+- **The destructive action follows the shelf too.** Shared shows *Erase shared*,
+  personal shows *Erase personal*, and *Erase all* stays on both — it is the one
+  button whose scope is both populations, and its copy says so.
+
 ## A retention rule is a chart, and a deadline the app can miss
 
 Workspace settings → Chats decides when a silent thread archives itself and when an
@@ -513,6 +538,9 @@ it.
 | "Copy" does nothing and the toast blames the content | `navigator.clipboard` rejects in the packaged app; go through `src/lib/clipboard.js` (clipboard API → selection fallback → `false`) and let the toast say which happened | `npm test` (`clipboard`) |
 | Escape does nothing while an artifact preview has focus | A frame never receives the window's keydown: forward it from the frame's own document | `tests/e2e/full/16-artifact-scope.spec.js` |
 | A dialog opens with focus still on the page behind it | Focus the first control on open, and give the dialog its confirm combo | `tests/e2e/full/01-thread-lifecycle.spec.js` |
+| A settings card mixes two populations that have different rules | One shelf per tab, in the URL as a second axis (`?tab=artifacts&shelf=personal`), and the rule renders only on the shelf it governs | `npm test` (`ui-contract`), `tests/e2e/full/23-artifact-shelves.spec.js` |
+| An artifact reaches a teammate although nobody shared it | A path is not consent: the scope is the index entry, and the sync manifest carries only what `.scope.json` claims. Files found in the shared tree with no entry are `unclaimed` — personal, and taken back on the shelf's next read | `npm test` (`artifact-scope`) |
+| The shared count is 577 on a workspace where nothing was shared | Those were written by hand, by an agent, or by a render; `adoptUnclaimed` moves them to the personal root and `conflicts/` stops being a shelf row | `npm test` (`artifact-scope`) |
 | A turn's deadline is a constant, so only an environment variable can change it | A clock is a setting on the card it bounds; read per turn, environment wins and the field goes read-only | `npm test` (`turn-timeout`) |
 | A settings field silently snaps an out-of-range value to the nearest step | Refuse it and show why — a clamped number is one nobody chose | `turn-timeout-store.cjs` (`set`) |
 | A new harness id is added to `META` and nowhere else | The list is one, but the transcript reader, the remote run, the skill roots and the brand mark each need their own entry — a row whose switch spawns nothing is the bug | `runner-local.cjs`, `chat-transcript.cjs` |

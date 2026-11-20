@@ -404,7 +404,8 @@ function capabilitiesFor(name) {
 function metadata(record, rel, stat, index = { shared: {} }, scope = 'shared') {
   const name = path.basename(rel)
   const ext = path.extname(name).toLowerCase()
-  const dir = scope === 'personal' ? personalDir(record) : artifactsDir(record)
+  const local = scope === 'personal' || scope === 'unclaimed'
+  const dir = local ? personalDir(record) : artifactsDir(record)
   const entry = scope === 'shared' ? index.shared?.[rel] : null
   return {
     id: rel,
@@ -417,8 +418,11 @@ function metadata(record, rel, stat, index = { shared: {} }, scope = 'shared') {
     modifiedAt: stat.mtime.toISOString(),
     /* Reveal applies to every file; editor/browser depend on the extension. */
     capabilities: capabilitiesFor(name),
-    /* The shelf the file is on is the scope; only shared files carry an owner. */
-    scope,
+    /* The shelf the file is *on* is the scope. A file found in the shared tree
+       with no owner in the index is `unclaimed`: present, not published, and
+       carried by nothing until someone shares it. */
+    scope: scope === 'unclaimed' ? 'personal' : scope,
+    unclaimed: scope === 'unclaimed',
     owner: entry?.owner || null,
   }
 }
@@ -435,6 +439,11 @@ function walk(record, root, rel, out, index, scope) {
     if (entry.name.startsWith('.')) continue
     const child = rel ? `${rel}/${entry.name}` : entry.name
     if (entry.isSymbolicLink()) continue
+    /* `conflicts/` is the sync engine's copy of a file that disagreed, not
+       something a person made. `chat-store` already refuses to attribute it and
+       `adoptUnclaimed` refuses to move it, so it must not appear as a row on a
+       shelf either — 391 of them read as the owner's own files. */
+    if (!rel && entry.isDirectory() && entry.name === CONFLICTS_DIR) continue
     if (entry.isDirectory()) {
       walk(record, root, child, out, index, scope)
       continue
@@ -446,8 +455,94 @@ function walk(record, root, rel, out, index, scope) {
     } catch {
       continue
     }
-    out.push(metadata(record, child, stat, index, scope))
+    /* A file in the shared tree that the index does not know was never shared —
+       it was written there (an agent's screenshot, a hand-run script). Reporting
+       it as shared is the leak this rule exists to stop, so it is reported as
+       the person's own until they actually share it. */
+    const claimed = scope !== 'shared' || Boolean(index.shared?.[child])
+    out.push(metadata(record, child, stat, index, claimed ? scope : 'unclaimed'))
   }
+}
+
+/**
+ * Take back the files that were never shared.
+ *
+ * The shared tree is what an export bundle and remote sync carry, and it used to
+ * be filled two ways: by `share()` (a rename, and an entry in the index) and by
+ * anything that wrote a path under `artifacts/` — an agent told to leave a
+ * screenshot on "the workspace artifact shelf", a script, a hand-run command.
+ * Those files were never shared by anyone, but `list()` called them Shared
+ * because of where they sat, which put them in front of a colleague on the next
+ * sync.
+ *
+ * So the shelf stops guessing. A file in the shared tree with no owner in the
+ * index is moved into the personal root, where every other unshared file lives,
+ * and nothing is carried until someone shares it. The move is a rename, so one
+ * file still exists in one place.
+ *
+ * Idempotent and never destructive:
+ *   - a name that already exists on the personal shelf is kept as `<name>-2`, so
+ *     neither copy is lost to the other;
+ *   - the whole tree is walked, not the top level, so a screenshot in
+ *     `artifacts/screenshots/entity-41/` is adopted with its path;
+ *   - a failure on one file is recorded and the rest still move.
+ */
+/* The sync engine's own record of a file that disagreed. It lives under the
+   shared tree so a person can find it, but it is evidence about a file rather
+   than a file anybody made: not a shelf row, not an adoption, not content. */
+const CONFLICTS_DIR = 'conflicts'
+const ADOPT_SKIP = new Set([CONFLICTS_DIR])
+
+function adoptUnclaimed(record, { index = readScope(record) } = {}) {
+  const root = artifactsDir(record)
+  const adopted = []
+  const failed = []
+  const claimed = new Set(Object.keys(index.shared || {}))
+
+  const visit = (rel) => {
+    let entries = []
+    try {
+      entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue
+      /* `conflicts/` is the sync engine's own record of a disagreement: it is
+         evidence about a file, not a file a person made, and moving it would
+         destroy the record of what went wrong. */
+      if (!rel && ADOPT_SKIP.has(entry.name)) continue
+      const child = rel ? `${rel}/${entry.name}` : entry.name
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        visit(child)
+        continue
+      }
+      if (entry.isFile() && !claimed.has(child)) adoptOne(child)
+    }
+  }
+
+  visit('')
+
+  function adoptOne(rel) {
+    const source = fileUnder(root, rel)
+    const home = personalDir(record)
+    try {
+      const dir = path.posix.dirname(rel)
+      const relDir = dir === '.' ? '' : dir
+      fs.mkdirSync(path.join(home, relDir), { recursive: true })
+      /* `uniqueName` on the personal side: a same-named file the person already
+         has is theirs, and neither copy may overwrite the other. */
+      const name = uniqueName(path.join(home, relDir), path.basename(rel))
+      const dest = fileUnder(home, relDir ? `${relDir}/${name}` : name)
+      fs.renameSync(source, dest)
+      adopted.push({ from: rel, to: relDir ? `${relDir}/${name}` : name })
+    } catch (error) {
+      failed.push({ id: rel, reason: String(error?.message || error).slice(0, 200) })
+    }
+  }
+
+  return { adopted, failed }
 }
 
 function list({ workspace } = {}) {
@@ -484,6 +579,10 @@ function list({ workspace } = {}) {
     count: items.length,
     items,
     counts,
+    /* Present but not published: files sitting in the shared tree that no share
+       ever claimed. They read as personal (see `walk`) and the sync manifest
+       refuses to carry them (see `remote-manifest`'s `claimed` scope). */
+    unclaimed: items.filter((item) => item.unclaimed).length,
   }
 }
 
@@ -892,7 +991,12 @@ function brief(workspace) {
   return [
     `Your personal artifacts live in ${dir}.`,
     'When you create a document, image, or screenshot for the user, save it inside that directory — not in /tmp, the workspace root, or a chat message.',
-    'Files there stay on this machine and are not synced until the person shares them with the workspace.',
+    /* The sibling `<ws>/artifacts/` is the *shared* tree: writing there
+       publishes a file to every teammate on the next sync, which is the leak
+       this brief is one half of. Name the difference rather than assuming a
+       harness reads "personal" as a path it must construct. */
+    `The directory beside it, ${path.join(record.path, DIRNAME)}, is the workspace's SHARED shelf: never write there. A file only belongs there when the person shares it themselves.`,
+    'Files in your directory stay on this machine and are not synced until the person shares them.',
     'Use a filename without spaces (dashes are fine), and in your reply refer to it as artifact://<relative-path> so the chat can show it inline.',
   ].join(' ')
 }
@@ -900,6 +1004,7 @@ function brief(workspace) {
 module.exports = {
   DIRNAME,
   PERSONAL_DIRNAME,
+  adoptUnclaimed,
   artifactsDir,
   personalDir,
   rootPath,

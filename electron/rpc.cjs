@@ -287,6 +287,10 @@ function createRpc({
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
     'artifact.share': (args) => artifacts.share(args),
+    /* Take back the files nobody shared. Opening the shelf is the natural moment:
+       it is where the person would notice them, and the tree heals without a
+       migration pass that has to run before every other read. */
+    'artifact.adopt': (args) => artifacts.adoptUnclaimed(workspaces.open(args.workspace)),
     'artifact.unshare': (args) => artifacts.unshare(args),
     'artifact.read': (args) => artifacts.read(args),
     'artifact.download': (args) => artifacts.download(args),

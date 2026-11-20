@@ -1,6 +1,6 @@
 import { test, expect, readProfile } from '../fixtures.js'
 import { expectToast, newThread, openChat, sendMessage, waitForAnswer } from '../helpers/app.js'
-import { artifactFile, listArtifacts } from '../helpers/profile.js'
+import { artifactFile, listArtifacts, listPersonalArtifacts } from '../helpers/profile.js'
 import fs from 'node:fs'
 
 test.describe('artifacts', () => {
@@ -33,13 +33,17 @@ test.describe('artifacts', () => {
     await sendMessage(page, 'E2E-SAVE save this answer')
     await waitForAnswer(page, 'E2E-STUB-OK')
 
-    const before = listArtifacts(profile)
+    /* A save lands on the person's own shelf; sharing is what puts a file in the
+       workspace tree, and this test never shares. */
+    const before = listPersonalArtifacts(profile)
     await page.getByRole('button', { name: 'Save response as an artifact' }).last().click()
     await expectToast(page, 'Saved to artifacts')
 
     await expect
-      .poll(() => listArtifacts(profile).filter((id) => id.startsWith('chat-')).length)
+      .poll(() => listPersonalArtifacts(profile).filter((id) => id.startsWith('chat-')).length)
       .toBeGreaterThan(0)
-    expect(listArtifacts(profile).length).toBeGreaterThan(before.length)
+    expect(listPersonalArtifacts(profile).length).toBeGreaterThan(before.length)
+    /* and it was never published by accident */
+    expect(listArtifacts(profile).filter((id) => id.startsWith('chat-'))).toEqual([])
   })
 })

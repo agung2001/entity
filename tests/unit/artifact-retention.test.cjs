@@ -20,12 +20,19 @@ function shelfWith(files, { armedDays = 1000 } = {}) {
   const record = workspaces.open(workspace.id)
   const dir = artifacts.artifactsDir(record)
   fs.mkdirSync(dir, { recursive: true })
+  /* The sweep's population is the workspace's *shared* shelf, and a file is on
+     it because someone shared it — not because a path happens to be
+     `artifacts/…`. Seed the index with the files, or the store reads them as the
+     person's own (never shared) and the rule has nothing to sweep. */
+  const shared = {}
   for (const [name, age] of files) {
     const file = path.join(dir, name)
     fs.writeFileSync(file, '# file\n')
     const at = new Date(Date.now() - age * DAY)
     fs.utimesSync(file, at, at)
+    shared[name] = { owner: { name: 'Avery', email: 'avery@example.test' }, at: at.toISOString() }
   }
+  fs.writeFileSync(path.join(dir, '.scope.json'), JSON.stringify({ schema: 1, shared }))
   if (armedDays !== null) {
     const since = new Date(Date.now() - armedDays * DAY).toISOString()
     fs.writeFileSync(retention.runtimeFile(record), JSON.stringify({ schema: 1, executorSince: since }))

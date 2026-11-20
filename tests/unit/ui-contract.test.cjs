@@ -125,6 +125,32 @@ test('a page ornament is drawn once, in the mark\'s own language', () => {
   assert.match(brand, /\.vx \.vx-hi \{[^}]*color-mix/, 'the lit edge is derived, not a grey')
 })
 
+test('the artifacts card answers one shelf at a time', () => {
+  const view = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceArtifactsView.vue'), 'utf8')
+
+  /* Two populations with two different answers: the shared shelf has a rule that
+     syncs, the personal one has none at all. One column holding both put a
+     personal count beside a workspace-wide threshold. */
+  assert.match(view, /role="tablist"\s+aria-label="Which shelf"/, 'the card needs a shelf switch')
+  assert.match(view, /setShelf\('personal'\)/, 'the personal shelf is not reachable')
+  assert.match(view, /query\.shelf/, 'the tab state belongs to the URL, or Back loses it')
+  assert.match(view, /tab: 'artifacts'/, 'the switch must keep the page\'s own tab')
+
+  /* The rule — chart, thresholds, cadence, protections, the pass — is the shared
+     shelf's, and must not render over the personal one. */
+  /* the rule renders only while the shared shelf is the one on screen: it sits
+     between the shared template and the personal one */
+  const openAt = view.indexOf("<template v-if=\"shelf === 'shared'\">")
+  const ruleAt = view.indexOf('The rule ②')
+  const personalAt = view.indexOf('the personal shelf ────')
+  assert.ok(openAt > 0 && ruleAt > openAt, 'the rule is not inside the shared-only block')
+  assert.ok(personalAt > ruleAt, 'the shared rule leaks onto the personal shelf')
+
+  /* And the one action the personal shelf owns is emptying it. */
+  assert.match(view, /openPersonalShelf/, 'the personal shelf has no way out')
+  assert.match(view, /shelf === 'personal'\s*\?/, 'the erase section does not follow the shelf')
+})
+
 test('the turn deadline is a setting the page actually offers', () => {
   const view = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceChatsView.vue'), 'utf8')
   const store = fs.readFileSync(path.join(SRC, 'stores', 'turn.js'), 'utf8')

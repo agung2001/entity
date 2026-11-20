@@ -468,7 +468,7 @@ async function recordFile(full, rel, stat, files, skipped) {
  * a dereferenced skill symlink: the bytes live in the harness library, but the
  * shared path is `skills/<name>/…`.
  */
-async function walkDir(base, diskRel, manifestRel, files, skipped, depth, followTopLink) {
+async function walkDir(base, diskRel, manifestRel, files, skipped, depth, followTopLink, claimed) {
   if (depth > 20) {
     skipped.push(`${manifestRel}: directory nesting is too deep to sync`)
     return
@@ -509,7 +509,7 @@ async function walkDir(base, diskRel, manifestRel, files, skipped, depth, follow
           skipped.push(`${rel}: file limit reached`)
           return
         }
-        await walkDir(real, '', rel, files, skipped, depth + 1, false)
+        await walkDir(real, '', rel, files, skipped, depth + 1, false, claimed)
       } else {
         await recordFile(real, rel, target.stat, files, skipped)
       }
@@ -520,10 +520,16 @@ async function walkDir(base, diskRel, manifestRel, files, skipped, depth, follow
         skipped.push(`${rel}: file limit reached`)
         return
       }
-      await walkDir(base, diskChild, rel, files, skipped, depth + 1, false)
+      await walkDir(base, diskChild, rel, files, skipped, depth + 1, false, claimed)
       continue
     }
     if (!entry.isFile()) continue
+    /* `artifacts/` is carried entry by entry, and only what the index claims: a
+       directory of screenshots an agent wrote is not a shared shelf. The index
+       keys are bare ids (`hero/index.html`), while `rel` carries the scope
+       prefix the manifest uses (`artifacts/hero/index.html`) — and `.scope.json`
+       is the claim list itself, so it always travels (see `safeRel`). */
+    if (claimed && rel !== SCOPE_REL && !claimed.has(rel.slice('artifacts/'.length))) continue
     let stat
     try {
       stat = fs.statSync(full)
@@ -535,17 +541,35 @@ async function walkDir(base, diskRel, manifestRel, files, skipped, depth, follow
   }
 }
 
-async function walkScope(root, rel, files, skipped) {
+/**
+ * Which artifacts this workspace actually carries: the ones the scope index
+ * names. Everything else under `artifacts/` is a file somebody wrote there — an
+ * agent's screenshot, a hand-run render — and it was never shared, so it is not
+ * on the wire. A path is not consent; the index is.
+ */
+function claimedArtifacts(dir) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, SCOPE_REL), 'utf8'))
+    if (!raw || raw.schema !== 1 || !raw.shared || typeof raw.shared !== 'object') return new Set()
+    return new Set(Object.keys(raw.shared))
+  } catch {
+    /* nothing has been shared in this workspace yet: carry no artifact at all */
+    return new Set()
+  }
+}
+
+async function walkScope(root, rel, files, skipped, claimed) {
   /* Only the top level of `skills/` dereferences links; everything below a
      skill (and every other scope) keeps the "a link is not content" rule. */
-  await walkDir(root, rel, rel, files, skipped, 0, rel === 'skills')
+  await walkDir(root, rel, rel, files, skipped, 0, rel === 'skills', claimed)
 }
 
 async function buildManifest(dir, { record, skills, mcpRaw, skipped = [] } = {}) {
   if (!dir) throw new Error('A workspace directory is required.')
   const files = new Map()
+  const claimed = claimedArtifacts(dir)
   for (const scope of SCOPES) {
-    await walkScope(dir, scope, files, skipped)
+    await walkScope(dir, scope, files, skipped, scope === 'artifacts' ? claimed : null)
   }
   const virtual = virtualBuffers(record || {}, skills || [], mcpRaw || {})
   for (const [name, buffer] of Object.entries(virtual)) {

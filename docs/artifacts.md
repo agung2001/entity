@@ -135,6 +135,22 @@ The shared shelf is `<ws>/artifacts/` — the artifacts tree an export bundle an
 sync carry. The split is a location, not a flag, so another account on this machine (or a
 clone on another machine) cannot see a file that was never shared.
 
+### The settings card answers one shelf at a time
+
+Workspace → Settings → Artifacts (`?tab=artifacts`) is two tabs, because the two
+shelves do not have the same rule:
+
+- **Shared shelf** — ①/② on one histogram, the cadence, the protections, the one
+  machine that runs the pass. Workspace configuration, so every clone reads it.
+- **Personal shelf** — no rule at all. Nothing sweeps it, nothing syncs it; sharing
+  a file is what hands it to the rule above.
+
+The shelf is the URL's second axis (`&shelf=personal`; `shared` is the default and
+drops the parameter), so a link, a reload and a bookmark land on the shelf they
+name while the page stays one address. **Erase** follows it too: the shared tab
+offers *Erase shared*, the personal one *Erase personal*, and *Erase all* — the
+only button whose scope is both populations — stays on both.
+
 The rail's artifact panel says which shelf you are looking at:
 
 - **Personal _n_** — only you, under the group head `Personal · only you`.
@@ -142,6 +158,22 @@ The rail's artifact panel says which shelf you are looking at:
 
 **Share with workspace** moves the file into `artifacts/` — a rename, not a copy
 (*one file, one place*) — and stamps the owner in `artifacts/.scope.json`.
+
+**A path is not consent.** The shared tree is what an export bundle and a remote sync
+carry, and it used to fill two ways: `share()`, and *anything that wrote a path under
+`artifacts/`* — an agent told to leave a screenshot on "the workspace artifact shelf", a
+render script, a hand-run command. Those files were never shared by anyone, but the shelf
+called them Shared because of where they sat, so a colleague received them on the next
+sync. Two rules close it:
+
+- **The scope is the index entry, not the directory.** A file in `artifacts/` with no
+  owner in `.scope.json` reads as `unclaimed`: personal, and the sync manifest refuses to
+  carry it (`remote-manifest.cjs`, `claimedArtifacts`).
+- **The tree heals.** `adoptUnclaimed` moves every such file into the personal root — a
+  rename, so one file still exists in one place, and a name the person already has is kept
+  as `<name>-2` rather than overwritten. It runs on the shelf's next read, is idempotent,
+  and leaves `conflicts/` alone: that folder is the sync engine's record of a
+  disagreement, evidence about a file rather than a file anybody made.
 
 **Move back to Personal** is the same move in reverse. The button is labelled that
 way on your own file and **Remove from workspace** on someone else's; either way the

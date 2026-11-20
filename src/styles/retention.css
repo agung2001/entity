@@ -772,6 +772,43 @@
   border-top: 0;
   padding-top: 0;
 }
+/* ── artifacts: two shelves, two tabs ──────────────────────────────
+   The card answers one shelf at a time. The switcher is `.sk-tabs`, the app's
+   own tab grammar, so it needs only the spacing the card wants and a link that
+   reads as a link inside a sentence (a `<button>`, because it switches tabs). */
+.art-shelves {
+  margin: 14px 0 18px;
+}
+.art-shelves .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.art-shelves button svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.art-personal-note {
+  margin: 0 0 16px;
+  line-height: 1.55;
+}
+.art-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+/* One population per tab: the erase rows follow the shelf being shown, so the
+   shared tab does not offer to erase the personal one and vice versa. */
+.erase-options[data-shelf='personal'] {
+  margin-top: 2px;
+}
+
 .turn-unit {
   /* `1 h 30 min` is the longest label the picker prints; at 108px it clipped to
      `1 h 30 mi` and read as a typo rather than a value */

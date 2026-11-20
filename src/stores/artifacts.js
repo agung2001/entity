@@ -45,11 +45,47 @@ export function resetArtifacts() {
   reads.clear()
 }
 
+/**
+ * Take back the files nobody shared.
+ *
+ * The shared tree is what an export and a remote sync carry, and it used to fill
+ * two ways: `share()` (a rename plus an index entry) and anything that wrote a
+ * path under `artifacts/` directly — an agent told to leave its screenshot on
+ * "the workspace artifact shelf", a render script, a hand-run command. Those
+ * files were never shared, but they sat in the shared tree and a colleague got
+ * them on the next sync. The store moves them to the personal root, where every
+ * other unshared file lives; nothing is deleted, and a name the person already
+ * has is kept as `<name>-2`.
+ *
+ * Run once per workspace from the shelf's own read, not on a timer: the moment
+ * somebody looks at their artifacts is the moment to fix them.
+ */
+const adopted = new Set()
+
+export async function adoptUnclaimedArtifacts(workspace = hub.workspace) {
+  if (!workspace || adopted.has(workspace)) return null
+  adopted.add(workspace)
+  try {
+    const result = await call('artifact.adopt', { workspace })
+    if (result?.adopted?.length) {
+      /* A file that changed shelf changes the list and the counts. */
+      artifacts.loaded = false
+      forgetRead(workspace)
+    }
+    return result
+  } catch {
+    /* the read below still answers; a failed adoption is not a failed shelf */
+    return null
+  }
+}
+
 export async function loadArtifacts(workspace = hub.workspace) {
   if (!workspace) {
     resetArtifacts()
     return []
   }
+  /* Before the list, so the counts the panel paints are the ones it kept. */
+  await adoptUnclaimedArtifacts(workspace)
   if (artifacts.workspace !== workspace) {
     artifacts.items = []
     artifacts.path = ''

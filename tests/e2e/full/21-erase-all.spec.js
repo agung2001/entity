@@ -131,7 +131,10 @@ test.describe('erase all', () => {
     await page.reload()
     await expect(page.locator('.acct-card')).toBeVisible({ timeout: 20_000 })
 
-    /* Shared only: the personal shelf must survive its sibling's button. */
+    /* Shared only: the personal shelf must survive its sibling's button. The
+       card answers one shelf at a time, so each button lives on its own tab —
+       which is the point: two populations, two jobs, no third button to guess
+       between. */
     await rowButton(page, 'Erase shared').click()
     await expect(dialog(page)).toContainText('Erase the shared shelf?')
     await confirmWith(page, 'Erase shared')
@@ -139,8 +142,10 @@ test.describe('erase all', () => {
     expect(fs.existsSync(path.join(shared, '.archive', 'old.md'))).toBe(false)
     expect(fs.existsSync(path.join(personal, 'mine.md'))).toBe(true)
 
-    /* Personal only: the shared shelf is already empty, so this proves the scope
-       went the other way rather than that the first click removed everything. */
+    /* Personal only, on the tab that owns it: the shared shelf is already empty,
+       so this proves the scope went the other way rather than that the first
+       click removed everything. */
+    await page.locator('.art-shelves [role="tab"]').nth(1).click()
     await rowButton(page, 'Erase personal').click()
     await expect(dialog(page)).toContainText('Erase your personal shelf?')
     await confirmWith(page, 'Erase personal')

@@ -144,6 +144,104 @@ test('a removed file leaves no stale id behind', () => {
   ).shared), [])
 })
 
+/* ── a path is not consent ─────────────────────────────────────────────
+ *
+ * The shared tree is what an export bundle and a remote sync carry, and it used
+ * to fill two ways: `share()` (a rename plus an index entry) and *anything that
+ * wrote a path under `artifacts/`* — an agent told to leave a screenshot on "the
+ * workspace artifact shelf", a render script, a hand-run command. Those files
+ * were never shared by anyone, yet `list()` called them Shared because of where
+ * they sat, so a colleague received them on the next sync.
+ *
+ * The rule: **a file is on the workspace shelf because someone shared it, not
+ * because of its path.** These pin both halves — what the shelf reports, and
+ * what the wire carries.
+ */
+test('a file written into the shared tree was never shared, so it reads as personal', () => {
+  const leaky = workspaces.create({ label: 'leaky-shelf' })
+  const record = workspaces.open(leaky.id)
+  const dir = artifacts.artifactsDir(record)
+  fs.mkdirSync(path.join(dir, 'screenshots', 'entity-41'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'agent-shot.png'), 'png bytes')
+  fs.writeFileSync(path.join(dir, 'screenshots', 'entity-41', 'leak.png'), 'png bytes')
+
+  const shelfNow = shelf(leaky.id)
+  assert.deepEqual(shelfNow.counts, { personal: 2, shared: 0 }, 'nobody shared these')
+  assert.equal(shelfNow.unclaimed, 2, 'and the answer says why they look odd')
+  for (const item of shelfNow.items) {
+    assert.equal(item.scope, 'personal')
+    assert.equal(item.unclaimed, true)
+    assert.equal(item.owner, null, 'no share means no owner')
+  }
+})
+
+test('the wire carries what the index claims, never a path an agent wrote', async () => {
+  const leaky = workspaces.create({ label: 'leaky-wire' })
+  const record = workspaces.open(leaky.id)
+  const dir = artifacts.artifactsDir(record)
+  fs.mkdirSync(path.join(dir, 'shots'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'shots', 'leak.png'), 'png bytes')
+  fs.writeFileSync(path.join(dir, 'report.md'), 'agent output')
+
+  /* Nothing shared: the manifest carries the shelf's config and no artifact. */
+  const empty = await manifest.buildManifest(record.path, manifest.recordInputs(record))
+  assert.deepEqual(
+    empty.files.map((file) => file.path).filter((rel) => rel.startsWith('artifacts/')),
+    [],
+    'an unshared file must not travel',
+  )
+
+  /* Share one of them; exactly that one travels, and the other still does not. */
+  const saved = artifacts.saveText({ workspace: leaky.id, name: 'kept.md', text: '# kept' })
+  artifacts.share({ workspace: leaky.id, id: saved.id })
+  const shared = await manifest.buildManifest(record.path, manifest.recordInputs(record))
+  assert.deepEqual(
+    shared.files.map((file) => file.path).filter((rel) => rel.startsWith('artifacts/')).sort(),
+    ['artifacts/.scope.json', 'artifacts/kept.md'],
+  )
+})
+
+test('adoption takes back what nobody shared, and keeps both files on a clash', () => {
+  const messy = workspaces.create({ label: 'messy-shelf' })
+  const record = workspaces.open(messy.id)
+  const dir = artifacts.artifactsDir(record)
+  const home = artifacts.personalDir(record)
+  fs.mkdirSync(path.join(dir, 'design', 'hero'), { recursive: true })
+  fs.mkdirSync(home, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'design', 'hero', 'index.html'), 'agent')
+  /* a file the person already has under the same name must survive */
+  fs.writeFileSync(path.join(home, 'mine.md'), 'MINE')
+  fs.writeFileSync(path.join(dir, 'mine.md'), 'AGENT')
+
+  const first = artifacts.adoptUnclaimed(record)
+  assert.equal(first.failed.length, 0)
+  assert.equal(first.adopted.length, 2)
+  assert.equal(fs.readFileSync(path.join(home, 'mine.md'), 'utf8'), 'MINE', 'the person keeps theirs')
+  assert.equal(fs.readFileSync(path.join(home, 'mine-2.md'), 'utf8'), 'AGENT', 'the agent copy is kept')
+  assert.equal(fs.existsSync(path.join(home, 'design', 'hero', 'index.html')), true, 'the path is kept')
+  assert.equal(fs.existsSync(path.join(dir, 'design', 'hero', 'index.html')), false)
+
+  /* idempotent: a second pass has nothing left to take back */
+  assert.deepEqual(artifacts.adoptUnclaimed(record).adopted, [])
+  assert.deepEqual(shelf(messy.id).counts, { personal: 3, shared: 0 })
+})
+
+test("the sync engine's conflict copies are evidence, not shelf rows", () => {
+  const conflicted = workspaces.create({ label: 'conflicted-shelf' })
+  const record = workspaces.open(conflicted.id)
+  const dir = artifacts.artifactsDir(record)
+  fs.mkdirSync(path.join(dir, 'conflicts', 'artifacts'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'conflicts', 'artifacts', 'a.html'), 'local bytes')
+  fs.writeFileSync(path.join(dir, 'real.png'), 'png')
+
+  const listed = shelf(conflicted.id)
+  assert.deepEqual(listed.items.map((item) => item.id), ['real.png'], 'a conflict copy is not an artifact')
+  /* and adoption leaves the record of the disagreement alone */
+  artifacts.adoptUnclaimed(record)
+  assert.equal(fs.existsSync(path.join(dir, 'conflicts', 'artifacts', 'a.html')), true)
+  assert.equal(fs.existsSync(path.join(dir, 'real.png')), false, 'the real file moved home')
+})
+
 /* ── the origin index follows the files, not the shelf word ────────────
  *
  * `eraseAll` takes a scope, and `personal` leaves the shared shelf standing. A

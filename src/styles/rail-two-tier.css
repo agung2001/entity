@@ -805,6 +805,16 @@
   line-height: 1.5;
   color: var(--muted);
 }
+/* The rule, said once, where a `Shared 0` would otherwise read as a bug: a file
+   is yours until you share it, so an empty shared shelf is the default working. */
+.rail-t2-note {
+  margin: 0;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+}
 /* MCP: the search, the scope switch and the chips stay put; only the rows
    scroll, because a 236px panel has no room for a filter that leaves. */
 .rail-t2-body--mcp {

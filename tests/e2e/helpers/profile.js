@@ -91,6 +91,31 @@ export function listArtifacts(p = readProfile()) {
   return out.sort()
 }
 
+/**
+ * Everything on the person's *own* shelf: `<ws>/.personal/<account>/artifacts`.
+ *
+ * A save lands personal and only a deliberate share moves a file into the
+ * workspace tree, so a test asking "did my save land" must look here — listing
+ * `artifacts/` answers "did I share it", which is a different question.
+ */
+export function listPersonalArtifacts(p = readProfile()) {
+  const root = path.join(p.workspacePath, '.personal')
+  const out = []
+  const walk = (dir, rel = '') => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const next = rel ? `${rel}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), next)
+      else if (next.includes('/artifacts/')) out.push(next.split('/artifacts/')[1])
+    }
+  }
+  try {
+    walk(root)
+  } catch {
+    return []
+  }
+  return out.sort()
+}
+
 export function newestPrompt(p = readProfile()) {
   const files = fs
     .readdirSync(p.paths.stubLog)

@@ -76,8 +76,17 @@ const failed = computed(() => Boolean(artifacts.error) && !artifacts.loading)
 const filtered = computed(() => Boolean(search.value) || filtersActive.value)
 const emptyCopy = computed(() =>
   artifacts.scope === 'shared'
-    ? `Nothing shared yet. When you share a file, it appears here for everyone in ${workspaceLabel.value}.`
-    : 'Nothing personal here yet. Anything you upload, or an agent saves for you, lands on your shelf first.',
+    ? `Nothing shared yet. A file lands on your own shelf first, and appears here for everyone in ${workspaceLabel.value} only when you share it.`
+    : 'Nothing on your shelf yet. Anything you upload, or an agent saves for you, lands here — and stays here until you share it.',
+)
+
+/* The one sentence a person needs when the shelf is still private-first: without
+   it, `Shared 0` on a workspace that has been used for weeks reads as a bug,
+   when it is the rule working. */
+const scopeNote = computed(() =>
+  artifacts.scope === 'shared' && !counts.value.shared
+    ? 'Personal first, shared on purpose: nothing leaves this machine until you share it.'
+    : '',
 )
 
 /* Clear the query and the advanced filters, never the scope: which shelf you
@@ -265,5 +274,7 @@ defineExpose({ pickUpload })
     </div>
 
     <p v-else class="rail-t2-empty">{{ emptyCopy }}</p>
+
+    <p v-if="scopeNote && !failed && !artifacts.loading" class="rail-t2-note">{{ scopeNote }}</p>
   </div>
 </template>
