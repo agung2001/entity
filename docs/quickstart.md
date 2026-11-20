@@ -86,6 +86,18 @@ before running the installer. The workflow uses the tag as the app version, so
 `v0.0.1` produces installers named `0.0.1` and the image tag
 `ghcr.io/agung2001/entity:0.0.1` (also `:v0.0.1`, `:0.0`, `:latest`).
 
+The same workflow announces the release in Discord, pinging `@everyone`. Nothing
+else is required to build; to turn the announcement on, add the channel webhook as
+the repository secret `DISCORD_WEBHOOK_URL`. Without that secret the step logs a
+skip. A failed broadcast never fails the release — the installers are already
+published when it runs.
+
+Preview the card without sending it:
+
+```bash
+node scripts/broadcast-release.mjs --dry-run --tag v0.0.1
+```
+
 ## Related
 
 - [Workspaces and entities](workspaces.md) — what a workspace actually is
