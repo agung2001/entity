@@ -112,8 +112,8 @@ const navigationItems = computed(() => [
   },
   {
     id: 'nav:account-integrations',
-    label: 'Integrations',
-    meta: 'third-party services the composer can mention',
+    label: 'Connectors',
+    meta: 'services this workspace can reach, and each one’s scope',
     act: () => router.push('/account/integrations'),
   },
   {

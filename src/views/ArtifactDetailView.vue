@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ArtifactHtmlPreview from '@/components/ArtifactHtmlPreview.vue'
 import CodeEditor from '@/components/CodeEditor.vue'
@@ -93,6 +93,14 @@ const mediaKind = computed(() => {
 
 const id = computed(() => String(props.id || route.params.id || ''))
 const item = computed(() => artifacts.items.find((entry) => entry.id === id.value) || null)
+/* A dashboard is an artifact with a page of its own. The kind decides, not the
+   extension typed into a template: one address opens the right surface, and the
+   generic file preview (bytes, editor, share sheet) never renders over a
+   snapshot it would only show as JSON. */
+const isDashboard = computed(() => item.value?.kind === 'dashboard')
+/* Lazy: a PNG or a PDF artifact has no reason to download the dashboard page, and
+   the template's branch is the only place it can be reached from. */
+const DashboardView = defineAsyncComponent(() => import('@/views/DashboardView.vue'))
 const shared = computed(() => item.value?.scope === 'shared')
 const isMine = computed(() => ownsArtifact(item.value))
 const workspaceLabel = computed(() => hub.workspaceLabel || hub.workspace || 'this workspace')
@@ -493,6 +501,12 @@ async function boot() {
     missing.value = true
     return
   }
+  /* A dashboard's page reads the file itself (`dashboard.read`), so the generic
+     preview — bytes, editor, media stage — is not loaded for it. */
+  if (isDashboard.value) {
+    loading.value = false
+    return
+  }
   await loadPreview()
 }
 
@@ -633,7 +647,9 @@ onBeforeUnmount(() => {
     :class="{ 'artifact-detail--media': Boolean(mediaKind) }"
     :style="{ '--abar-h': `${barHeight}px` }"
   >
-    <div v-if="loading" class="empty-note artifact-state">
+    <DashboardView v-if="isDashboard && item" :id="id" />
+
+    <div v-else-if="loading" class="empty-note artifact-state">
       <b>Opening {{ item?.name || 'artifact' }}…</b>
     </div>
 

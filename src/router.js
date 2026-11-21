@@ -23,9 +23,7 @@ const AccountView = () => import('@/views/AccountView.vue')
 const AccountProfileView = () => import('@/views/account/AccountProfileView.vue')
 const AccountSoundView = () => import('@/views/account/AccountSoundView.vue')
 const AccountNotificationsView = () => import('@/views/account/AccountNotificationsView.vue')
-const AccountMcpView = () => import('@/views/account/AccountMcpView.vue')
 const AccountHarnessView = () => import('@/views/account/AccountHarnessView.vue')
-const AccountIntegrationsView = () => import('@/views/account/AccountIntegrationsView.vue')
 const AccountBackupView = () => import('@/views/account/AccountBackupView.vue')
 const AccountUpdateView = () => import('@/views/account/AccountUpdateView.vue')
 const WorkspaceView = () => import('@/views/WorkspaceView.vue')
@@ -186,6 +184,19 @@ const router = createRouter({
           meta: { crumb: 'skills', title: 'Skill · entity' },
         },
         {
+          /* Connectors is a page of its own and a tab of Workspace settings: the
+             named route lands on the settings page's tab, so a deep link, a rail
+             row and the redirect from Account all arrive at one address. */
+          path: ':workspace/connectors',
+          name: 'connectors',
+          redirect: (to) => ({
+            name: 'workspace',
+            params: { workspace: to.params.workspace },
+            query: { ...to.query, tab: 'connectors' },
+          }),
+          meta: { crumb: 'connectors', title: 'Connectors · entity' },
+        },
+        {
           path: ':workspace/mcp',
           name: 'mcp',
           component: McpView,
@@ -201,6 +212,9 @@ const router = createRouter({
           path: ':workspace/artifacts/:id(.*)',
           name: 'artifact',
           component: ArtifactDetailView,
+          /* A `.dashboard` artifact is not a file preview: it has its own page, and
+             the branch on the artifact's kind keeps one address for both. */
+          props: (route) => ({ id: route.params.id }),
           meta: { crumb: 'artifact', title: 'Artifact · entity' },
         },
         {
@@ -253,9 +267,16 @@ const router = createRouter({
               meta: { crumb: 'account', title: 'Notifications · entity' },
             },
             {
+              /* The merged page lives in the workspace, because a connector's
+                 definition does: deep links and old habits keep working through a
+                 redirect, and nothing 404s. */
               path: 'mcp',
               name: 'account-mcp',
-              component: AccountMcpView,
+              redirect: (to) => ({
+                name: 'connectors',
+                params: { workspace: rememberedWorkspace() },
+                query: to.query,
+              }),
               meta: { crumb: 'account', title: 'MCP server · entity' },
             },
             {
@@ -267,7 +288,11 @@ const router = createRouter({
             {
               path: 'integrations',
               name: 'account-integrations',
-              component: AccountIntegrationsView,
+              redirect: (to) => ({
+                name: 'connectors',
+                params: { workspace: rememberedWorkspace() },
+                query: to.query,
+              }),
               meta: { crumb: 'account', title: 'Integrations · entity' },
             },
             {

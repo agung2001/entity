@@ -36,6 +36,7 @@ const WORKSPACE_TABS = [
   { id: 'general', label: 'General', hint: 'name, id and directory' },
   { id: 'members', label: 'Members', hint: 'who belongs to this scope' },
   { id: 'skills', label: 'Skills', hint: 'attached to the workspace' },
+  { id: 'connectors', label: 'Connectors', hint: 'services, with the scope of each' },
   { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
   { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
   { id: 'chats', label: 'Chats', hint: 'silence, archiving and removal' },
@@ -48,12 +49,11 @@ const ACCOUNT_ROWS = [
   { to: '/account/sound', label: 'Sound', hint: 'Area 51 feedback' },
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
   { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
+  /* Account → Integrations and the workspace's MCP inventory are one page now, in
+     the workspace that owns their definitions. The old addresses redirect there,
+     so this row is a shortcut, not a second surface. */
+  { to: '/account/integrations', label: 'Connectors', hint: 'services this workspace can reach' },
   { to: '/account/harnesses', label: 'Harnesses', hint: 'enable and disable agent CLIs' },
-  {
-    to: '/account/integrations',
-    label: 'Integrations',
-    hint: 'third-party services the composer can mention',
-  },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
   { to: '/account/updates', label: 'Updates', hint: 'version and releases' },
 ]

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
+import DashboardBand from '@/components/DashboardBand.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
 import VoxelMark from '@/components/VoxelMark.vue'
 import OverviewHeatmap from '@/components/OverviewHeatmap.vue'
@@ -11,8 +12,9 @@ import { emptyHeatColor, formatTokens, formatUsd, heatColors } from '@/lib/chart
 import { shortcutLabel } from '@/lib/shortcuts'
 import { themeMode } from '@/lib/theme'
 import { entities, loadEntities } from '@/stores/entities'
+import { loadDashboards, primaryDashboard, readDashboard, refreshDashboard } from '@/stores/dashboards'
 import { fleet, loadFleet } from '@/stores/fleet'
-import { ago, ensureChats, harnessById, hub, liveSummaries, machineById, snippet } from '@/stores/hub'
+import { ago, ensureChats, harnessById, hub, liveSummaries, machineById, snippet, toast } from '@/stores/hub'
 import { loadUsage, usage } from '@/stores/usage'
 import { activeWorkspace } from '@/stores/workspaces'
 
@@ -31,7 +33,44 @@ onMounted(() => {
      be a second file walk for the same list. */
   if (!entities.loaded && !entities.loading) loadEntities().catch(() => {})
   loadUsage().catch(() => {})
+  loadBand().catch(() => {})
 })
+
+/**
+ * The band: one dashboard, one snapshot, four cells.
+ *
+ * It renders nothing for a workspace that has never produced one, so the page
+ * below is the page as it always was. The list read is a directory walk; only
+ * the dashboard that has a snapshot is read and parsed in full.
+ */
+const band = ref(null)
+const bandId = ref('')
+const bandRefreshing = ref(false)
+/* Reading a cache is not spending: every member may see the band, an owner is
+   the only one whose `Refresh` will not be refused. */
+const bandCanRefresh = computed(() => hub.session?.role === 'owner')
+
+async function loadBand() {
+  await loadDashboards()
+  const item = primaryDashboard()
+  bandId.value = item?.id || ''
+  band.value = item ? await readDashboard(item.id) : null
+}
+
+async function refreshBand() {
+  if (!bandId.value || bandRefreshing.value) return
+  bandRefreshing.value = true
+  try {
+    await refreshDashboard(bandId.value)
+    await loadBand()
+  } catch (error) {
+    /* The main process refuses on every machine that is not the executor; its
+       refusal is the sentence the page shows, not a silent no-op. */
+    toast(error?.message || 'This machine does not run the pass.')
+  } finally {
+    bandRefreshing.value = false
+  }
+}
 
 const newThreadKey = shortcutLabel('new-thread')
 
@@ -427,6 +466,15 @@ const heatLegend = computed(() => [
         </article>
       </div>
     </section>
+
+    <DashboardBand
+      v-if="band"
+      :dashboard="band"
+      :id="bandId"
+      :refreshing="bandRefreshing"
+      :can-refresh="bandCanRefresh"
+      @refresh="refreshBand"
+    />
 
     <div v-if="!empty" class="ovc-bands">
       <section class="ovc-sec">
