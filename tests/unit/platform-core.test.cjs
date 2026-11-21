@@ -17,6 +17,11 @@ const assert = require('node:assert/strict')
 /* `workspace-store` resolves ROOT at require time, so this has to come first. */
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-platform-'))
 process.env.ENTITY_HOME = PROFILE
+/* These call the control plane as a person, and a shell inside a run carries
+   ENTITY_ENTITY/ENTITY_WORKSPACE — which parks a body write instead of applying it.
+   The precondition is declared here, not inherited from whoever ran the suite. */
+delete process.env.ENTITY_ENTITY
+delete process.env.ENTITY_WORKSPACE
 
 const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')

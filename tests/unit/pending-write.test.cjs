@@ -14,6 +14,12 @@ const assert = require('node:assert/strict')
 
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-write-consent-'))
 process.env.ENTITY_HOME = PROFILE
+/* A shell inside a run carries ENTITY_ENTITY/ENTITY_WORKSPACE, and the marker is
+   what makes a body write park instead of apply. The approval half of this test
+   IS the window, so the ambient marker is declared away here and each half sets
+   exactly the identity it means to test. */
+delete process.env.ENTITY_ENTITY
+delete process.env.ENTITY_WORKSPACE
 
 const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')
