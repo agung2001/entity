@@ -3,12 +3,11 @@
  * Record the README demos against the demo profile.
  *
  * Nothing here touches the real profile: the dev server it talks to is started
- * with `HOME` and `ENTITY_HOME` pointing at the throwaway home that
- * `scripts/demo-profile.mjs` seeded (see docs/assets/README.md).
+ * by `npm run demo`, which seeds the invented profile and points the app at it
+ * (see docs/assets/README.md).
  *
- *   node scripts/demo-profile.mjs --force
- *   HOME=/tmp/entity-demo ENTITY_HOME=/tmp/entity-demo/.entity VITE_DEV_PORT=5299 npm run dev
- *   node scripts/record-demos.mjs --url http://localhost:5299
+ *   npm run demo                          # seeds + serves .tmp/demo/
+ *   npm run media:record                  # records against it
  *
  * Each clip is a real interaction (hover, open, fold), recorded as WebM and then
  * encoded to the animated WebP + poster pair the documents reference. An
@@ -20,6 +19,7 @@ import { mkdirSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { encode } from './readme-media.mjs'
+import { DEMO } from './demo-profile.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -28,11 +28,17 @@ const argOf = (name, fallback = '') => {
   return at >= 0 ? args[at + 1] : fallback
 }
 
-const BASE = argOf('--url', 'http://localhost:5299')
+/* The demo server binds 127.0.0.1; the recorder default matches it rather than
+   `localhost`, which can answer from the other address family on a machine where
+   another dev server already owns the port. The clips it records are the demo
+   profile's own — `npm run demo` seeds and serves that. */
+const BASE = argOf('--url', 'http://127.0.0.1:5183')
 const OUT = path.resolve(ROOT, argOf('--out', '.tmp/demo-clips'))
 const ONLY = argOf('--only') ? new Set(argOf('--only').split(',').map((s) => s.trim())) : null
-const ACCOUNT = { email: 'studio@northwind.example', password: 'demo-northwind-24' }
-const WORKSPACE = 'northwind-studio'
+/* The account and the workspace come from the seeder: one copy, so the recipe in
+   `npm run demo` and the clips here cannot describe different profiles. */
+const ACCOUNT = { email: DEMO.email, password: DEMO.password }
+const WORKSPACE = DEMO.workspace
 const VIEW = { width: 1440, height: 1000 }
 
 const wait = (page, ms) => page.waitForTimeout(ms)
