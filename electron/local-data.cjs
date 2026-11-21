@@ -16,6 +16,7 @@ const path = require('node:path')
 const { execFile } = require('node:child_process')
 const {
   HOME,
+  MACHINE_NAME,
   tilde,
   stripQuotes,
   expandHome,
@@ -172,7 +173,7 @@ function readSshHosts() {
   })
 
   return {
-    hostname: os.hostname(),
+    hostname: MACHINE_NAME,
     platform: PLATFORM,
     configPath: SSH_CONFIG_PATH,
     displayPath:
@@ -678,7 +679,7 @@ function scanSkillNames({ machine = LOCAL_MACHINE } = {}) {
   )
   return {
     machine: LOCAL_MACHINE,
-    hostname: os.hostname(),
+    hostname: MACHINE_NAME,
     remote: false,
     items,
     count: items.length,
@@ -782,7 +783,7 @@ function scanSkillLibrary({ machine = LOCAL_MACHINE } = {}) {
 
   return {
     machine: LOCAL_MACHINE,
-    hostname: os.hostname(),
+    hostname: MACHINE_NAME,
     platform: PLATFORM,
     scannedAt: new Date().toISOString(),
     remote: false,

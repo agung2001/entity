@@ -18,7 +18,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { planSpawn } = require('./exec-plan.cjs')
 const workspaces = require('./workspace-store.cjs')
-const { expandHome, tilde } = require('./frontmatter.cjs')
+const { expandHome, MACHINE_NAME, tilde } = require('./frontmatter.cjs')
 
 const HOME = os.homedir()
 const CONFIG = path.join(workspaces.ROOT, 'harnesses.json')
@@ -453,7 +453,7 @@ function snapshot() {
     }
   })
   return {
-    hostname: os.hostname(),
+    hostname: MACHINE_NAME,
     platform: process.platform,
     arch: process.arch,
     harnesses,

@@ -22,7 +22,7 @@ const os = require('node:os')
 const path = require('node:path')
 const localData = require('./local-data.cjs')
 const { HARNESSES } = localData
-const { tilde } = require('./frontmatter.cjs')
+const { MACHINE_NAME, tilde } = require('./frontmatter.cjs')
 const { SAMPLES, sampleList } = require('./seed.cjs')
 const { withoutWatching } = require('./workspace-watch.cjs')
 
@@ -494,7 +494,7 @@ function countMcp(dir) {
 
 /** The only machine every workspace has: the one running this process. */
 function machines() {
-  const hostname = os.hostname()
+  const hostname = MACHINE_NAME
   return [
     {
       id: 'local',

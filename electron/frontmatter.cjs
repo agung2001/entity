@@ -11,6 +11,14 @@ const path = require('node:path')
 
 const HOME = os.homedir()
 
+/**
+ * The name this machine goes by. `os.hostname()` everywhere, except when a
+ * disposable profile asks for another one: a screenshot of a fleet must not
+ * publish the machine it was taken on, and neither may a test that asserts a row's
+ * label. Never a security boundary — only a label.
+ */
+const MACHINE_NAME = String(process.env.ENTITY_HOSTNAME || '').trim() || os.hostname()
+
 function stripQuotes(value) {
   const v = String(value || '').trim()
   if (
@@ -137,6 +145,7 @@ function firstParagraph(text) {
 }
 
 module.exports = {
+  MACHINE_NAME,
   HOME,
   stripQuotes,
   expandHome,

@@ -42,10 +42,10 @@
  *      never archive a shelf that was healthy elsewhere.
  */
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const workspaces = require('./workspace-store.cjs')
 const artifacts = require('./artifact-store.cjs')
+const { MACHINE_NAME } = require('./frontmatter.cjs')
 
 /* The rule is in `workspace.json`; this file is only what cannot travel: the
    moment this machine took the sweep over. */
@@ -136,7 +136,7 @@ const daysBetween = (thenMs, nowMs) => {
 const sum = (rows, key) => rows.reduce((total, row) => total + (row[key] || 0), 0)
 
 function localHost() {
-  return String(os.hostname() || 'local').replace(/\.local$/i, '')
+  return String(MACHINE_NAME || 'local').replace(/\.local$/i, '')
 }
 
 function runtimeFile(record) {

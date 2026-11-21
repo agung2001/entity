@@ -41,7 +41,8 @@
     "media:check": "node scripts/readme-media.mjs check",
     "media:demo": "node scripts/demo-profile.mjs",
     "media:record": "node scripts/record-demos.mjs",
-    "media:logo": "node scripts/logo-animation.mjs"
+    "media:logo": "node scripts/logo-animation.mjs",
+    "story": "node tests/support/story-server.mjs"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.2.1",
