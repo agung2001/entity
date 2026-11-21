@@ -1182,37 +1182,64 @@ watch(name, async () => {
               {{ tokenMissing ? 'Connect' : 'Change' }}
             </button>
           </p>
+          <!-- A `<button>` cannot hold `<dt>`/`<dd>`, so a changeable row is the
+               same `role="button"` pattern the MCP inventory rows use: a real
+               tab stop with Enter and Space, and no invalid nesting. -->
           <dl class="entp-facts mcpp-facts">
-            <button type="button" class="mcpp-fact" @click="startEdit" title="Connect or change this server">
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              title="Connect or change this server"
+              @click="startEdit"
+              @keydown.enter="startEdit"
+              @keydown.space.prevent="startEdit"
+            >
               <dt>Status</dt>
               <dd :data-tone="state.tone">{{ state.label }}<template v-if="state.note"> · {{ state.note }}</template></dd>
-            </button>
+            </div>
             <div>
               <dt>Transport</dt>
               <dd>{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</dd>
             </div>
-            <button
-              v-if="definition.url"
-              type="button"
+            <div
               class="mcpp-fact"
-              :title="`${definition.url} — connect or change`"
+              role="button"
+              tabindex="0"
+              :title="`${transport === 'http' ? definition.url : definition.command} — connect or change`"
               @click="startEdit"
+              @keydown.enter="startEdit"
+              @keydown.space.prevent="startEdit"
             >
-              <dt>URL</dt><dd class="mono">{{ definition.url }}</dd>
-            </button>
-            <button v-else type="button" class="mcpp-fact" @click="startEdit">
-              <dt>Command</dt><dd class="mono">{{ definition.command }}</dd>
-            </button>
-            <button type="button" class="mcpp-fact" @click="startEdit" title="Connect or change this server">
+              <dt>{{ definition.url ? 'URL' : 'Command' }}</dt>
+              <dd class="mono">{{ definition.url || definition.command }}</dd>
+            </div>
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              title="Connect or change this server"
+              @click="startEdit"
+              @keydown.enter="startEdit"
+              @keydown.space.prevent="startEdit"
+            >
               <dt>Token</dt>
               <dd class="mono" :data-tone="tokenMissing ? 'warn' : 'ok'">
                 {{ tokenKey || 'none' }}
               </dd>
-            </button>
-            <button type="button" class="mcpp-fact" @click="loadTools(true)" title="Ask the server again">
+            </div>
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              title="Ask the server again"
+              @click="loadTools(true)"
+              @keydown.enter="loadTools(true)"
+              @keydown.space.prevent="loadTools(true)"
+            >
               <dt>Tools</dt>
               <dd>{{ tools.list.length }}<template v-if="tools.list.length"> · {{ probedLabel }}</template></dd>
-            </button>
+            </div>
           </dl>
 
           <p class="mcpp-note">
@@ -2016,14 +2043,15 @@ watch(name, async () => {
 }
 
 /* ── the rail, as a way in ────────────────────────────────────────
-   Every fact that can be changed is a button, and so is every other server
-   this machine declares. The point of the rail is to leave the page, not to
-   count things on it. */
+   Every fact that can be changed is a button, and the whole panel is the way
+   into the server. The point of the rail is to leave the page, not to count
+   things on it.
+
+   The rows are `div`s carrying `role="button"`: `<button>` may not hold a
+   `<dt>`/`<dd>` pair, and the inventory rows already use this pattern. */
 .mcpp-facts {
   gap: 0;
 }
-/* A `<button>` inside a `<dl>` is not valid HTML, so the rows are swapped for
-   one another at the same weight: a fact row and a link row look identical. */
 .mcpp-fact,
 .mcpp-facts > div {
   display: flex;
@@ -2038,18 +2066,23 @@ watch(name, async () => {
   font: inherit;
   text-align: left;
 }
-.mcpp-facts > *:first-child {
+.mcpp-facts > div:first-child {
   border-top: 0;
 }
-button.mcpp-fact {
+.mcpp-fact {
   cursor: pointer;
   transition: background 0.13s ease, color 0.13s ease;
 }
-button.mcpp-fact:hover {
+.mcpp-fact:hover {
   background: var(--surface-2);
 }
-button.mcpp-fact:hover dt {
+.mcpp-fact:hover dt {
   color: var(--ink-2);
+}
+/* A role="button" div has no keyboard affordance of its own. */
+.mcpp-fact:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
 }
 .mcpp-fact dt,
 .mcpp-facts dt {
