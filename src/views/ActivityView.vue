@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
+import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
@@ -169,7 +170,7 @@ const pulse = computed(() => {
       key: bucket.key,
       turns: bucket.turns,
       d,
-      height: bucket.turns === 0 ? 0 : Math.max(3, Math.round((bucket.turns / peak.value) * 44)),
+      height: bucket.turns === 0 ? 0 : Math.max(3, Math.round((bucket.turns / peak.value) * 100)),
       peak: bucket.turns > 0 && bucket.turns === peak.value,
       today: bucket.key === today,
     }
@@ -210,6 +211,19 @@ const cast = computed(() => {
     .map(([entity, count]) => ({ entity, count }))
     .sort((a, b) => b.count - a.count || a.entity.localeCompare(b.entity))
 })
+
+/* The journal's entity filter, as a picker rather than a row of chips: a
+   workspace with eleven entities should not push the ledger two lines down.
+   `all` is the first row and carries the total, so the picker alone says how
+   much of the journal is on screen. */
+const castOptions = computed(() => [
+  { id: 'all', label: 'All entities', meta: String(rows.value.length) },
+  ...cast.value.map((entry) => ({
+    id: entry.entity,
+    label: entry.entity,
+    meta: String(entry.count),
+  })),
+])
 
 const filteredJournal = computed(() => {
   const q = journalQuery.value
@@ -270,10 +284,6 @@ function dayLabel(date) {
   return longDay(date)
 }
 
-const filtering = computed(
-  () => Boolean(journalQuery.value) || castFilter.value !== 'all',
-)
-
 /* The cleaned preview, not the transcript: 160 characters is the row's ceiling
    and `thread.title` is what a person typed as a title. */
 function rowTitle(thread) {
@@ -282,10 +292,6 @@ function rowTitle(thread) {
     .replace(/\s+/g, ' ')
     .trim()
   return preview ? preview.slice(0, 160) : 'New thread'
-}
-
-function toggleCast(entity) {
-  castFilter.value = castFilter.value === entity ? 'all' : entity
 }
 
 function startFirstChat() {
@@ -509,36 +515,13 @@ async function copyResume(session) {
             :data-peak="bar.peak ? '1' : undefined"
             :data-today="bar.today ? '1' : undefined"
           >
-            <i :style="{ height: `${bar.height}px` }"></i>
+            <i :style="{ height: `${bar.height}%` }"></i>
             <em v-if="bar.turns" aria-hidden="true">{{ bar.turns }}</em>
           </span>
         </div>
         <div class="act-ticks">
           <span v-for="tick in ticks" :key="tick">{{ tick }}</span>
         </div>
-      </div>
-
-      <div class="act-cast" role="group" aria-label="Filter the journal by entity">
-        <span class="lbl">Cast</span>
-        <button
-          class="act-fchip"
-          type="button"
-          :aria-pressed="castFilter === 'all' ? 'true' : 'false'"
-          @click="castFilter = 'all'"
-        >
-          all<span class="n">{{ rows.length }}</span>
-        </button>
-        <button
-          v-for="entry in cast"
-          :key="entry.entity"
-          class="act-fchip"
-          type="button"
-          :aria-pressed="castFilter === entry.entity ? 'true' : 'false'"
-          @click="toggleCast(entry.entity)"
-        >
-          <EntityMark mini :entity="entry.entity" />
-          {{ entry.entity }}<span class="n">{{ entry.count }}</span>
-        </button>
       </div>
     </section>
 
@@ -569,6 +552,14 @@ async function copyResume(session) {
 
     <template v-if="active === 'journal'">
       <div class="act-tool">
+        <PickMenu
+          class="act-cast-pick"
+          head="Entity"
+          icons="entity"
+          :options="castOptions"
+          :model-value="castFilter"
+          @update:model-value="castFilter = $event"
+        />
         <label class="act-search">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
             <circle cx="7" cy="7" r="4.6" />
@@ -593,11 +584,6 @@ async function copyResume(session) {
             ×
           </button>
         </label>
-        <span class="act-count">
-          <b>{{ filteredJournal.length }}</b>
-          <template v-if="filtering"> of {{ rows.length }} conversations</template>
-          <template v-else> {{ rows.length === 1 ? 'conversation' : 'conversations' }}</template>
-        </span>
         <button class="btn btn-sm" type="button" @click="sortDesc = !sortDesc">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
             <path d="M2.4 4.6h11.2M2.4 8h8M2.4 11.4h5" />
@@ -635,7 +621,7 @@ async function copyResume(session) {
 
       <div v-else-if="!filteredJournal.length" class="empty-note">
         <b>No conversations from {{ castFilter }} in this workspace.</b>
-        <span>Press all to read the whole journal again.</span>
+        <span>Choose <b>All entities</b> in the filter to read the whole journal again.</span>
         <div class="empty-actions">
           <button class="btn btn-sm" type="button" @click="castFilter = 'all'">All entities</button>
         </div>
