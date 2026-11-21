@@ -75,9 +75,25 @@ git grep -nE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- tests docs src 
 | `npm run test:gate` | Unit + smoke — the release gate |
 | `npm run build` | Renderer build into `dist/` |
 | `npm run package` | electron-builder distributable |
+| `npm run demo` | Seed the invented demo profile, serve it, and print its URL + credentials — for a README recording or a screenshot. `-- --screenshot <name>` takes one still and exits |
+| `npm run media:record` | Record the README clips against a running `npm run demo` |
 
 Use `ENTITY_HOME=/tmp/…` for a scratch profile when testing, so real workspaces
 are never touched.
+
+### The demo is one script — do not add another
+
+The demo profile, the README recording and a screenshot all come from `npm run demo`
+(`scripts/demo.mjs`, with the invented content in `scripts/demo-profile.mjs`). It
+sets `ENTITY_HOME`, `HOME` and `ENTITY_HOSTNAME` itself, so no caller passes an
+environment variable and no `NODE_OPTIONS` stub is needed to keep the hostname out
+of a frame.
+
+`tests/support/seed-profile.mjs` is the E2E seed and stays untouched.
+`scripts/demo-profile.mjs` is where new demo data goes — not a new script, not a new
+npm script, and not a profile in `/tmp`. And never point a demo or a screenshot at
+the real profile: `~/.entity`, `~/.ssh/config`, `auth.json` and `os.hostname()` must
+not appear in a frame.
 
 `npm run dev:lan` is `npm run dev` with `--host 0.0.0.0`: Vite's dev middleware
 in `vite.config.js` has no host or origin check, so the call table answers a LAN

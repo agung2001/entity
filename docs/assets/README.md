@@ -64,33 +64,35 @@ the only version a screen reader gets.
 ## Recording one
 
 Every demo in this repository was recorded from a **throwaway profile**, not from a
-real one. `scripts/demo-profile.mjs` seeds it with invented content — a letterpress
-studio, a bakery, a travel notebook — under its own `HOME`, so there is no account,
-no `~/.ssh/config`, no token and no real path on screen even by accident. It also
-writes a two-line `~/.ssh/config` with fake hosts, because the machines page reads
-aliases from there.
+real one. `npm run demo` seeds it with invented content — a letterpress studio, a
+bakery, a travel notebook — under its own `HOME` and serves the app against it: no
+account, no `~/.ssh/config`, no token and no real path on screen even by accident.
+It writes an invented `~/.ssh/config` into that scratch home, because the machines
+page reads aliases from there, and it names the machine itself, so no frame carries
+the recorder's hostname.
+
+One terminal serves, the other records:
 
 ```bash
-node scripts/demo-profile.mjs --force            # → /tmp/entity-demo
-HOME=/tmp/entity-demo ENTITY_HOME=/tmp/entity-demo/.entity \
-  VITE_DEV_PORT=5299 \
-  NODE_OPTIONS=--require=./scripts/demo-hostname.cjs npm run dev
-node scripts/record-demos.mjs --url http://localhost:5299 [--only chat,mcp]
+npm run demo                                     # seeds .tmp/demo/ and serves it
+npm run media:record [--only chat,mcp]           # → .tmp/demo-clips/<name>.webm
 ```
 
-`record-demos.mjs` drives the real interface with Playwright (hover, open, fold — one
-interaction per clip, ~6 s each) and writes `.tmp/demo-clips/<name>.webm`. Then:
+`npm run demo` prints the profile, the URL and the credentials as `[demo]` lines, and
+stays in the foreground until Ctrl-C. `record-demos.mjs` drives the real interface
+with Playwright (hover, open, fold — one interaction per clip, ~6 s each). Then:
 
 ```bash
 npm run media:encode -- .tmp/demo-clips/chat.webm chat
 ```
 
-The interface prints `os.hostname()` in the composer and on the machines page. The
-dev server is started with `NODE_OPTIONS=--require=./scripts/demo-hostname.cjs`, a
-tiny stub that answers `studio-mini`, which is why those screenshots show a demo
-machine rather than the recorder's laptop. `record-demos.mjs` signs in with the demo
-account `studio@northwind.example`, or with the **Continue as owner** button when the
-profile already finished first run.
+`record-demos.mjs` signs in with the demo account `studio@northwind.example`, or with
+the **Continue as owner** button when the profile already finished first run.
+
+For a still, no browser window needed: `npm run demo -- --screenshot machines` writes
+one settled `.tmp/demo-shots/machines.png` and exits. To drive the interface yourself,
+point Playwright at the printed `[demo] url` — it is already signed-in ready, and the
+`[demo] email` / `[demo] password` lines are the account it holds.
 
 ### Recording by hand
 
