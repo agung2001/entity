@@ -18,7 +18,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const workspaces = require('./workspace-store.cjs')
-const { runOneShot } = require('./oneshot.cjs')
+const { runOneShot, lastJson } = require('./oneshot.cjs')
 
 const TIMEOUT_MS = 45_000
 const MAX_VARIATIONS = 5
@@ -53,26 +53,6 @@ function countOf(value) {
   const number = Math.round(Number(value))
   if (!Number.isFinite(number) || number < 1) return 1
   return Math.min(MAX_VARIATIONS, number)
-}
-
-/**
- * The JSON object a model answered with, ignoring fences or prose around it.
- *
- * `lastJson` in `oneshot.cjs` reads the last brace pair, which is right for a
- * flat object and wrong for `{"variations":[{"text":…}]}`: the last `{` there
- * opens a variation, not the answer. This reads the outermost object instead,
- * so a nested answer parses and a refusal still comes back as `null`.
- */
-function answerJson(text) {
-  const value = String(text || '').trim()
-  const start = value.indexOf('{')
-  const end = value.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
-  try {
-    return JSON.parse(value.slice(start, end + 1))
-  } catch {
-    return null
-  }
 }
 
 /** One row per variation: non-empty, bounded, deduplicated, never more than asked. */
@@ -137,7 +117,7 @@ async function enhance({ workspace, threadId, draft, count, guide } = {}) {
     throw new Error(error?.message || 'The rewrite did not run.')
   }
 
-  const parsed = answerJson(result.text)
+  const parsed = lastJson(result.text)
   const variations = cleanVariations(parsed?.variations, wanted)
   if (!variations.length) {
     throw new Error(
@@ -147,4 +127,4 @@ async function enhance({ workspace, threadId, draft, count, guide } = {}) {
   return { variations, harness: String(thread.harness || ''), model: String(thread.model || '') }
 }
 
-module.exports = { enhance, cleanVariations, countOf, answerJson }
+module.exports = { enhance, cleanVariations, countOf }

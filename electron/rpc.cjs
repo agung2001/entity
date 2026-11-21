@@ -19,6 +19,7 @@ const chats = require('./chat-store.cjs')
 const sessions = require('./session-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
 const mcpTools = require('./mcp-tools.cjs')
+const mcpInterpret = require('./mcp-interpret.cjs')
 const mcpServer = require('./mcp-server.cjs')
 const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
@@ -261,6 +262,9 @@ function createRpc({
     'auth.setPassword': (args) => auth.setPassword(args),
     'auth.changePassword': (args) => auth.changePassword(args),
     'mcp.tools': (args) => mcpTools.tools(args),
+    /* The fallback reader for a paste the deterministic one could not parse.
+       One model call, only on a click, and the answer is whitelisted again. */
+    'mcp.interpret': (args) => mcpInterpret.interpret(args),
     'harness.list': () => harnesses.list(),
     'harness.models': (args) => harnesses.models(args),
     'harness.resolvePiModel': (args) =>

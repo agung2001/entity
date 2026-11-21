@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { call } from '@/composables/localBridge'
+import { useDialogDismiss } from '@/composables/useDialog'
 import { copyText } from '@/lib/clipboard'
-import { commandLine, definitionOf, envNames, transportOf } from '@/lib/mcp'
+import { commandLine, definitionOf, transportOf } from '@/lib/mcp'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
@@ -12,11 +13,14 @@ import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
  * One MCP server, as a page — the same shell as the entity detail page
  * (`entp-*` is the shared detail layout, not an entity-only style).
  *
- * Two columns, one question each: the main column is what it can do (`Tools`)
- * and what it needs (`Environment`); the rail is the definition — the facts,
- * the places that name it, and the verbs. Per-entity reach is not drawn here:
- * a server in `mcp.json` is offered to every entity, and an `mcp:` line is an
- * override an entity's author typed, not something this page hands out.
+ * One column answers what the server can do (`Tools`); the rail answers what it
+ * is and where it lives — each fact is a way in, and every other server on this
+ * machine is a link out. There is no `Environment` section: an MCP server is a
+ * command or a URL, and Entity does not hand it a `process.env` of its own.
+ *
+ * Per-entity reach is not drawn here: a server in `mcp.json` is offered to every
+ * entity, and an `mcp:` line is an override an entity's author typed, not
+ * something this page hands out.
  */
 const route = useRoute()
 const router = useRouter()
@@ -46,18 +50,475 @@ const globalRow = ref(null)
 const definition = computed(() => poolEntry.value || globalRow.value?.definition || null)
 const transport = computed(() => (definition.value ? transportOf(definition.value) : 'unknown'))
 const command = computed(() => (definition.value ? commandLine(definition.value) : ''))
-const envKeys = computed(() => envNames(definition.value))
 
-const tools = ref({ loading: false, error: '', list: [] })
+const tools = ref({ loading: false, error: '', list: [], readAt: '' })
+/* `readAt` is the server's own answer to "when", so a chip can say
+   `probed 2 min ago` from the same read that produced its tool list. */
 const query = ref('')
 const searchEl = ref(null)
 const kind = ref('all')
 const searchKey = shortcutLabel('inventory-search')
+/* ── reading a paste ─────────────────────────────────────────────────
+ * What a docs page gives you, turned into a definition Entity can execute.
+ *
+ * A person arriving at "connect this MCP server" has one artifact: a block of
+ * text they copied from somewhere. It is a `mcpServers` wrapper, a bare
+ * definition, a `[mcp_servers.x]` TOML table, or just a URL. This module reads
+ * all of those into the same shape without asking them to know which one they
+ * have — that is the whole point of the paste box.
+ *
+ * Pure: no Electron, no DOM, no network. The caller decides what to do with an
+ * error and this module never guesses.
+ *
+ * **The output is a whitelist, never a passthrough.** Only the keys the runtime
+ * can actually execute survive — `command`, `args`, `url`, `headers`, `env`,
+ * `type` (the same set `mcp-store.cjs` reads, and the same set
+ * `validServer` accepts). A `description` or a harness-only `exposure` copied
+ * through verbatim lands in `mcp.json` where nothing reads it, and a key
+ * nobody can execute is a key nobody can debug later. Each drop is reported.
+ */
+
+/** The aliases a definition may carry, and the only keys that survive a read. */
+const KNOWN_KEYS = ['url', 'serverUrl', 'server_url', 'command', 'args', 'headers', 'env', 'environment', 'type']
+
+/** Envelope keys, matching what `mcp-store.cjs` reads from the harness files. */
+const ENVELOPES = ['mcpServers', 'mcp', 'servers', 'mcp_servers']
+
+/** A URL, possibly with no trailing wrapper: the simplest thing a docs page gives. */
+const URL_SHAPE = /^https?:\/\/\S+$/i
+
+function textOf(value) {
+  return String(value ?? '').trim()
+}
+
+/** `command` is a string or an argv array; both become `command` + `args`. */
+function commandOf(raw, args) {
+  let command = raw
+  let rest = args
+  if (Array.isArray(command)) {
+    const [first, ...others] = command.map(textOf).filter(Boolean)
+    command = first || ''
+    rest = rest === undefined ? others : rest
+  }
+  if (typeof rest === 'string') rest = [rest]
+  if (!Array.isArray(rest)) rest = []
+  return { command: textOf(command), args: rest.map(textOf).filter(Boolean) }
+}
+
+/** `env | environment` is a name → value map, an array of names, or absent. */
+function envOf(raw) {
+  if (Array.isArray(raw)) return raw.map(textOf).filter(Boolean)
+  if (raw && typeof raw === 'object') {
+    const out = {}
+    for (const [key, value] of Object.entries(raw)) out[textOf(key)] = textOf(value)
+    return out
+  }
+  return undefined
+}
+
+function headersOf(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out = {}
+  for (const [key, value] of Object.entries(raw)) out[textOf(key)] = textOf(value)
+  return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * One server entry → a definition, plus the keys that were dropped.
+ *
+ * The aliases here are the same ones `normaliseServer` in `mcp-store.cjs` knows,
+ * because a paste that works from a harness config and one that works here must
+ * not be two different dialects.
+ */
+function entryOf(name, raw) {
+  const dropped = []
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+
+  const { command, args } = commandOf(source.command, source.args)
+  const url = textOf(source.url || source.serverUrl || source.server_url)
+  const env = envOf(source.env ?? source.environment)
+  const headers = headersOf(source.headers)
+  const type = textOf(source.type)
+
+  const definition = {}
+  if (url) definition.url = url
+  if (command) definition.command = command
+  if (args.length) definition.args = args
+  if (headers) definition.headers = headers
+  if (env !== undefined) definition.env = env
+  if (type) definition.type = type
+
+  /* Everything the whitelist does not carry, named so the box can say so. This
+     is the one list: a key the runtime cannot execute must not reach
+     `mcp.json`, where nothing would ever read or repair it. */
+  for (const key of Object.keys(source)) {
+    if (!KNOWN_KEYS.includes(key)) dropped.push(key)
+  }
+
+  return { name: textOf(name), definition, dropped }
+}
+
+/** A `[mcp_servers.x]` TOML block, read by the same rules the store uses. */
+function readToml(text) {
+  const servers = []
+  const byName = new Map()
+  let current = null
+  let envTarget = null
+
+  for (const line of text.split(/\r?\n/)) {
+    const section = line.match(/^\s*\[mcp_servers\.(.+)\]\s*$/)
+    if (section) {
+      const raw = section[1].trim()
+      if (raw.endsWith('.env')) {
+        const owner = raw.slice(0, -4).replace(/^["']|["']$/g, '')
+        current = null
+        envTarget = byName.get(owner) || null
+        continue
+      }
+      const name = raw.replace(/^["']|["']$/g, '')
+      current = { name, raw: {} }
+      envTarget = null
+      byName.set(name, current)
+      servers.push(current)
+      continue
+    }
+    if (/^\s*\[/.test(line)) {
+      current = null
+      envTarget = null
+      continue
+    }
+
+    const kv = line.match(/^\s*([A-Za-z0-9_.-]+)\s*=\s*(.+)$/)
+    if (!kv) continue
+    const key = kv[1]
+    const value = kv[2].trim()
+
+    if (envTarget) {
+      envTarget.raw.env = [...(envTarget.raw.env || []), key]
+      continue
+    }
+    if (!current) continue
+
+    if (key === 'command') current.raw.command = value.replace(/^["']|["']$/g, '')
+    else if (key === 'args') {
+      const args = []
+      for (const match of value.matchAll(/"((?:\\.|[^"])*)"/g)) args.push(match[1])
+      current.raw.args = args
+    } else if (key === 'url' || key === 'server_url') current.raw.url = value.replace(/^["']|["']$/g, '')
+    else if (key === 'env') {
+      /* an inline table: `env = { A = "1", B = "2" }` */
+      const pairs = {}
+      for (const match of value.matchAll(/([A-Za-z0-9_.-]+)\s*=\s*"((?:\\.|[^"])*)"/g)) {
+        pairs[match[1]] = match[2]
+      }
+      current.raw.env = [...(current.raw.env || []), ...Object.keys(pairs)]
+    }
+  }
+
+  return servers.map((entry) => entryOf(entry.name, entry.raw))
+}
+
+/** The first envelope that actually holds servers, in the order a person expects. */
+function unwrap(parsed) {
+  for (const key of ENVELOPES) {
+    const table = parsed[key]
+    if (table && typeof table === 'object' && !Array.isArray(table)) {
+      const names = Object.keys(table)
+      if (!names.length) continue
+      return { envelope: key, entries: names.map((name) => entryOf(name, table[name])) }
+    }
+  }
+  return null
+}
+
+/**
+ * Read one paste.
+ *
+ * Returns `{ servers, envelope, dropped, error }` and never throws: the caller
+ * is a dialog that has to show the reason in place of the answer.
+ *
+ * - `servers` is the whitelisted output, one entry per server.
+ * - `envelope` is how it was wrapped, for the chip that says so.
+ * - `dropped` names every key that could not be executed.
+ * - `error` is a sentence a person can read, and it is set only when nothing
+ *   usable came out.
+ */
+function readPaste(input) {
+  const text = textOf(input)
+  const empty = { servers: [], envelope: '', dropped: [], error: '' }
+  if (!text) {
+    return { ...empty, error: 'Paste something first — a definition, a URL, or the block from the docs page.' }
+  }
+
+  /* A bare URL is the smallest thing a docs page hands out, and it is not JSON. */
+  if (URL_SHAPE.test(text)) {
+    return {
+      servers: [{ name: '', definition: { url: text }, dropped: [] }],
+      envelope: 'url',
+      dropped: [],
+      error: '',
+    }
+  }
+
+  const looksLikeToml = /^\s*\[mcp_servers\./m.test(text)
+  if (looksLikeToml) {
+    const servers = readToml(text)
+    const dropped = [...new Set(servers.flatMap((entry) => entry.dropped))]
+    if (!servers.length) {
+      return { ...empty, error: 'That TOML block has no `[mcp_servers.<name>]` table in it.' }
+    }
+    return { servers, envelope: 'toml', dropped, error: '' }
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return {
+      ...empty,
+      error: 'That is not JSON, a TOML block, or a URL. Paste the whole block from the docs page and nothing around it.',
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      ...empty,
+      error: 'That is a JSON list or a value, not a server. Paste the object the docs page shows.',
+    }
+  }
+
+  const wrapped = unwrap(parsed)
+  const entries = wrapped ? wrapped.entries : [entryOf('', parsed)]
+  const envelope = wrapped ? wrapped.envelope : 'bare'
+
+  /* A wrapper with an empty table is a shape we recognise but cannot use. */
+  if (wrapped && !wrapped.entries.length) {
+    return { ...empty, error: `That \`${envelope}\` wrapper has no servers inside it.` }
+  }
+
+  const usable = entries.filter((entry) => entry.definition.url || entry.definition.command)
+  const dropped = [...new Set(entries.flatMap((entry) => entry.dropped))]
+
+  if (!usable.length) {
+    return {
+      ...empty,
+      envelope,
+      dropped,
+      error: 'That has neither a `url` nor a `command`, so there is nothing for Entity to run. Check the block you copied.',
+    }
+  }
+
+  return { servers: usable, envelope, dropped, error: '' }
+}
+
+/* ── the connect wizard: two steps, one box ─────────────────────────
+ * A definition is a shape *and* a credential, and the rail had a field for
+ * neither. So the modal asks the only question a non-technical person can
+ * answer — paste whatever the docs page gave you — and then reads it. Step one
+ * is a message box. Step two writes it, asks the server, and says what came
+ * back. Nothing is written until step two runs.
+ */
 const editing = ref(false)
-const draft = ref('')
-const draftError = ref('')
+/** `paste` → `test`. */
+const stage = ref('paste')
+/** What the person pasted. Never parsed until they press Next. */
+const pasted = ref('')
 const saving = ref(false)
 const confirming = ref(false)
+/** The last round trip: `{ at, ok, stale, error, tools }`. */
+const receipt = ref(null)
+/** What the reader made of the paste: `{ servers, envelope, dropped, error }`. */
+const reading = ref(null)
+/** The AI pass, when the deterministic reader could not parse the paste. */
+const fixing = ref(false)
+/** What the model answered: `{ definition, dropped, harness }`, or an error. */
+const fixed = ref(null)
+/** The exact text the model produced. The watcher below must not treat its own
+ *  output as a new paste — it fires after the assignment, so a naive clear
+ *  wipes the very banner it was about to show. */
+const modelText = ref('')
+const fixError = ref('')
+/** When this page last wrote. `mcp.tools` caches for minutes, so a probe that
+ *  answers with an older `readAt` never saw what we just saved — and saying
+ *  `ready` off it is the exact lie this flow exists to avoid. */
+const savedAt = ref(0)
+
+/* ── one state per server, derived ───────────────────────────────────
+ * The row is a chip, not a JSON blob, and the state is read off three facts
+ * this page already has: the park reason the sync wrote, whether a credential
+ * in the copy is still the sync's redaction, and what the last probe answered.
+ * `parked` outranks `needs a token`: a loopback definition parked here fails
+ * for a reason no token can fix, and a chip that says `needs: Authorization`
+ * on that row is a lie.
+ *
+ * The two placeholders are not the same thing. `***` is the *sync's* redaction,
+ * written into a definition that travelled, so it is proof the secret never
+ * arrived. `•••` is what a *read* returns, and it means a value is stored and
+ * will survive a write-back — a working server, and never an amber chip.
+ */
+const SYNC_REDACTED = '***'
+const isSyncedTemplate = (value) => String(value ?? '') === SYNC_REDACTED
+
+/** Every stored credential, so the state can tell a template from a real copy. */
+const credentials = computed(() => {
+  const found = []
+  const copy = definition.value || {}
+  for (const field of ['headers', 'env']) {
+    const map = copy[field]
+    if (!map || typeof map !== 'object' || Array.isArray(map)) continue
+    for (const [key, value] of Object.entries(map)) {
+      found.push({ field, key, value: String(value ?? '') })
+    }
+  }
+  return found
+})
+
+/** A credential arrived as `***`: the shape synced, the secret did not. */
+const templateCopy = computed(() => credentials.value.some((entry) => isSyncedTemplate(entry.value)))
+
+/** The header that carries a credential, if the definition names one. */
+const TOKEN_HEADER = /^(authorization|proxy-authorization|api[-_]?key|x-api[-_]?key|x-auth[-_]?token|token|access[-_]?token|bearer)$/i
+const tokenKey = computed(
+  () =>
+    credentials.value.find((entry) => entry.field === 'headers' && TOKEN_HEADER.test(entry.key))?.key || '',
+)
+/** Still the sync's redaction: the shape arrived and the secret did not. */
+const tokenMissing = computed(() => Boolean(tokenKey.value) && templateCopy.value)
+
+/**
+ * Did this verdict come from before the write?
+ *
+ * `mcp.tools` caches a successful `tools/list` per workspace + name for five
+ * minutes and the call table has no `force`, so the probe after a save can hand
+ * back the answer from *before* it — and calling that `connected` is the lie
+ * this whole flow exists to prevent. A cached `readAt` older than our write is
+ * not evidence about the definition we just saved, so the step says `not
+ * re-asked`.
+ *
+ * A failure is never stale: `mcp-tools` only remembers successes, so an error
+ * means the server really was asked and really refused.
+ */
+function probeIsStale() {
+  if (tools.value.error) return false
+  const readAt = Date.parse(String(tools.value.readAt || ''))
+  if (!savedAt.value) return false
+  if (!readAt) return true
+  return readAt < savedAt.value - 1000
+}
+
+const probeStatus = computed(() => {
+  const message = String(tools.value.error || '')
+  const match = message.match(/\b(\d{3})\b/)
+  return match ? match[1] : message ? 'error' : ''
+})
+
+/** "just now" / "2 min ago" — a chip that says `ready` from an old read is a small lie. */
+function agoLabel(iso) {
+  const at = Date.parse(String(iso || ''))
+  if (!at) return 'not probed'
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (seconds < 45) return 'probed just now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `probed ${minutes} min ago`
+  return `probed ${Math.round(minutes / 60)} h ago`
+}
+
+const probedLabel = computed(() => {
+  if (tools.value.loading) return 'asking…'
+  if (tools.value.error) return 'the last probe failed'
+  return agoLabel(tools.value.readAt)
+})
+
+const state = computed(() => {
+  if (!inPool.value) {
+    return globalRow.value
+      ? {
+          id: 'attachable',
+          label: 'not attached',
+          note: `${globalRow.value.harnessLabel} declares it`,
+          tone: 'mute',
+          why: `This machine's ${globalRow.value.harnessLabel} config declares this server, but this workspace has not attached it. Attaching copies that definition in verbatim; tokens differ.`,
+        }
+      : {
+          id: 'missing',
+          label: 'not attached',
+          note: 'no definition',
+          tone: 'mute',
+          why: 'No harness on this machine declares this server and this workspace has not attached it.',
+        }
+  }
+  if (parkedReason.value) {
+    return {
+      id: 'parked',
+      label: 'parked',
+      note: 'other machine',
+      tone: 'mute',
+      why: `Parked because ${parkedReason.value}. Enable it only if this machine really does run it — the pin then keeps the next sync from parking it again, and no token can fix it.`,
+    }
+  }
+  if (!enabled.value) {
+    return {
+      id: 'parked',
+      label: 'parked',
+      note: 'by you',
+      tone: 'mute',
+      why: 'Parked keeps the definition and takes it out of every turn.',
+    }
+  }
+  if (tools.value.loading) {
+    return { id: 'probing', label: 'asking…', note: '', tone: 'mute', why: '' }
+  }
+  if (templateCopy.value && !tools.value.list.length) {
+    return {
+      id: 'needs-token',
+      label: 'needs a token',
+      note: tools.value.error ? probeStatus.value : 'template',
+      tone: 'warn',
+      why: `A credential in this copy is ${SYNC_REDACTED}: the definition synced from another machine with the secret replaced, so the shape arrived and the value did not. ${
+        tools.value.error ? `The server said: ${tools.value.error}` : 'Paste the token once, below, and the row turns ready.'
+      }`,
+    }
+  }
+  if (tools.value.error) {
+    return {
+      id: 'not-answering',
+      label: 'not answering',
+      note: probeStatus.value,
+      tone: 'bad',
+      why: tools.value.error,
+    }
+  }
+  if (tools.value.list.length) {
+    return {
+      id: 'ready',
+      label: 'ready',
+      note: `${tools.value.list.length} tools`,
+      tone: 'ok',
+      why: '',
+    }
+  }
+  return {
+    id: 'no-tools',
+    label: 'ready',
+    note: 'no tools',
+    tone: 'mute',
+    why: 'The server answered but reported no tools. A server that needs a token before it lists them looks exactly like this.',
+  }
+})
+
+/* One sibling probe, then stop: a 404 at `/mcp` very often means `/sse`. It is
+   offered as a button and never run automatically — a probe never loops. */
+const sibling = computed(() => {
+  if (probeStatus.value !== '404') return null
+  const url = String(definition.value?.url || '')
+  if (/\/mcp\/?$/.test(url)) return { label: '/sse', url: url.replace(/\/mcp(\/?)$/, '/sse$1') }
+  if (/\/sse\/?$/.test(url)) return { label: '/mcp', url: url.replace(/\/sse(\/?)$/, '/mcp$1') }
+  return null
+})
+
+/* One save, one probe, and the steps stay on screen. The probe reads the stored
+   definition, so "test an unsaved draft" is not a reachable state. */
+const steps = ref([])
 
 /**
  * `write` means this call can change something over there.
@@ -170,46 +631,25 @@ const noMatchNote = computed(() =>
     : `This server has no ${kind.value} tools.`,
 )
 
-/* Where this name is defined: the workspace pool, then one row per harness. */
-const places = computed(() => {
-  const rows = [
-    {
-      id: 'workspace',
-      label: 'this workspace',
-      path: workspaces.mcp?.path || 'mcp.json',
-      on: inPool.value,
-    },
-  ]
+/**
+ * Where this name lives, and what else lives beside it.
+ *
+ * The rail is a directory, not a count: every other MCP server this machine
+ * knows is a link to its own page, grouped by the file that declares it, so
+ * this page can be navigated *through* instead of always via the inventory.
+ * Nothing here is invented — the pool names come from `workspaces.mcp`, the
+ * harness names from `mcp.globals`, and only a name that came back is listed.
+ */
+const here = computed(() => {
+  const rows = []
+  if (inPool.value) {
+    rows.push({ id: 'workspace', label: 'this workspace', path: workspaces.mcp?.path || 'mcp.json' })
+  }
   for (const group of globalGroups.value) {
-    const declares = (group.servers || []).some((server) => server.name === name.value)
-    rows.push({
-      id: group.harness,
-      label: group.label,
-      path: declares ? group.files?.[0]?.path || '' : 'not defined',
-      on: declares,
-    })
+    if (!(group.servers || []).some((server) => server.name === name.value)) continue
+    rows.push({ id: group.harness, label: group.label, path: group.files?.[0]?.path || '' })
   }
   return rows
-})
-
-const definedPlaces = computed(() => places.value.filter((place) => place.on).length)
-
-/** What the page shows by default: names and URLs, never a stored value. */
-const masked = computed(() => {
-  if (!definition.value) return ''
-  const copy = JSON.parse(JSON.stringify(definition.value))
-  /* `__remote` / `__pinned` / `__unavailable` are workspace bookkeeping, not part
-     of the definition; the page states the parked reason in prose instead. */
-  for (const key of Object.keys(copy)) {
-    if (key.startsWith('__')) delete copy[key]
-  }
-  if (copy.headers && typeof copy.headers === 'object' && !Array.isArray(copy.headers)) {
-    for (const key of Object.keys(copy.headers)) copy.headers[key] = '•••'
-  }
-  if (copy.env && typeof copy.env === 'object' && !Array.isArray(copy.env)) {
-    for (const key of Object.keys(copy.env)) copy.env[key] = '•••'
-  }
-  return JSON.stringify(copy, null, 2)
 })
 
 async function loadGlobal() {
@@ -235,15 +675,30 @@ async function loadGlobal() {
 
 async function loadTools(force = false) {
   if (!definition.value) {
-    tools.value = { loading: false, error: '', list: [] }
+    tools.value = { loading: false, error: '', list: [], readAt: '' }
     return
   }
-  tools.value = { loading: true, error: '', list: force ? [] : tools.value.list }
+  tools.value = {
+    loading: true,
+    error: '',
+    readAt: tools.value.readAt || '',
+    list: force ? [] : tools.value.list,
+  }
   try {
     const data = await call('mcp.tools', { workspace: hub.workspace, name: name.value })
-    tools.value = { loading: false, error: '', list: data?.tools || [] }
+    tools.value = {
+      loading: false,
+      error: '',
+      readAt: data?.readAt || new Date().toISOString(),
+      list: data?.tools || [],
+    }
   } catch (error) {
-    tools.value = { loading: false, error: error?.message || 'The server did not answer.', list: [] }
+    tools.value = {
+      loading: false,
+      error: error?.message || 'The server did not answer.',
+      readAt: tools.value.readAt || '',
+      list: [],
+    }
   }
 }
 
@@ -262,39 +717,238 @@ function onKey(event) {
   focusSearch()
 }
 
+/* The definition as stored, `__*` bookkeeping included: `__pinned` and
+ * `__unavailable` are what keeps a parked row explainable, so a save must
+ * write them back or editing a synced template would silently unpark it. */
+function cleanCopy() {
+  return JSON.parse(JSON.stringify(definition.value || {}))
+}
+
+/* The stored definition, as text, is what the box opens on: "connect" and
+   "change" are the same box, and seeing what is there now — remote and all —
+   is how a person knows what they are about to replace. A paste overwrites it. */
+const storedText = computed(() => {
+  if (!definition.value) return ''
+  const copy = {}
+  for (const key of ['url', 'command', 'args', 'headers', 'env', 'type']) {
+    if (definition.value[key] !== undefined) copy[key] = definition.value[key]
+  }
+  /* Values arrive masked (`•••` from a read, `***` from a sync) and are written
+     back as they came — `preserveSecrets` treats both as "keep what is there",
+     so the box never needs a real secret in it to be saved again. */
+  return JSON.stringify(copy, null, 2)
+})
+
+/** The credential in the definition about to be written, as far as the box says. */
+const pendingSecret = computed(() => {
+  const definition = reading.value?.servers?.[0]?.definition || {}
+  const headers = definition.headers && typeof definition.headers === 'object' ? definition.headers : {}
+  const key = Object.keys(headers).find((entry) => TOKEN_HEADER.test(entry)) || ''
+  if (!key) return { label: definition.url ? 'none' : 'not needed', tone: 'ok' }
+  const value = String(headers[key] ?? '')
+  if (value === SYNC_REDACTED) return { label: `${key}: still redacted`, tone: 'warn' }
+  if (value) return { label: `${key}: a value`, tone: 'ok' }
+  return { label: `${key}: empty`, tone: 'warn' }
+})
+
+/** The box still holds exactly what is stored: the person has not pasted yet. */
+const unchanged = computed(() => Boolean(storedText.value) && pasted.value === storedText.value)
+
 function startEdit() {
-  if (!definition.value) return
-  draft.value = JSON.stringify(definition.value, null, 2)
-  draftError.value = ''
+  pasted.value = storedText.value
+  modelText.value = ''
+  reading.value = null
+  receipt.value = null
+  savedAt.value = 0
+  stage.value = 'paste'
   editing.value = true
 }
 
-function cancelEdit() {
+/** Closing resets the wizard: reopening it must not resume a half-typed paste. */
+function closeWizard() {
+  if (saving.value) return
   editing.value = false
-  draftError.value = ''
+  reading.value = null
+  receipt.value = null
 }
 
+useDialogDismiss({
+  active: () => editing.value,
+  close: closeWizard,
+  guard: () => saving.value,
+})
+
+/** Two steps, and the second one is the only one that writes. */
+const stages = [
+  { id: 'paste', label: 'Definition' },
+  { id: 'test', label: 'Save & test' },
+]
+
+const stageIndex = computed(() => stages.findIndex((entry) => entry.id === stage.value))
+
+function goStage(id) {
+  if (saving.value) return
+  if (!stages.some((entry) => entry.id === id)) return
+  stage.value = id
+}
+
+/* Reading is local and cheap, so it runs on every keystroke: the chips under the
+   box are feedback ("it saw a wrapper, one server, two keys it will drop"), not
+   a result you only get after pressing Next. */
+watch(pasted, (value) => {
+  reading.value = value.trim() ? readPaste(value) : null
+  /* A different paste is a different answer: never carry a fix across. The
+     model's own output is not a new paste, so it keeps its banner. */
+  if (value === modelText.value) return
+  fixed.value = null
+  fixError.value = ''
+})
+
+/**
+ * Step one → step two.
+ *
+ * The deterministic reader runs first and usually wins: a docs-page block, a
+ * bare definition, a TOML table and a URL all parse without spending a turn.
+ * When it cannot, the machine's own model reads the paste instead — that is the
+ * whole point of the box, a person should not have to fix the format by hand.
+ * Either way nothing is written until step two.
+ */
+async function readAndContinue() {
+  if (!pasted.value.trim() || fixing.value) return
+  const local = readPaste(pasted.value)
+  reading.value = local
+  fixed.value = null
+  fixError.value = ''
+  if (!local.error) {
+    goStage('test')
+    return
+  }
+
+  fixing.value = true
+  try {
+    const data = await call('mcp.interpret', { text: pasted.value })
+    const definition = cleanWhitelist(data.definition)
+    const answer = { definition, dropped: data.dropped || [], harness: data.harness || '' }
+    /* The model's answer replaces the paste, so step two — and the page's own
+       "what it will write" summary — show the same definition it will store.
+       The watcher on `pasted` clears `fixed`, so it is set after the write. */
+    const written = JSON.stringify(definition, null, 2)
+    modelText.value = written
+    pasted.value = written
+    reading.value = readPaste(written)
+    fixed.value = answer
+    goStage('test')
+  } catch (error) {
+    fixError.value = error?.message || 'The paste could not be read.'
+  } finally {
+    fixing.value = false
+  }
+}
+
+/** The same whitelist the local reader applies, so a model cannot widen it. */
+function cleanWhitelist(definition) {
+  const out = {}
+  const source = definition && typeof definition === 'object' ? definition : {}
+  for (const key of ['url', 'command', 'args', 'headers', 'env', 'type']) {
+    if (source[key] === undefined) continue
+    out[key] = source[key]
+  }
+  return out
+}
+
+/**
+ * Write, then ask the server. One click, one round trip: `writeMcp` first, then
+ * `mcp.tools`, which reads `headers` from the file it just wrote. There is no
+ * "test an unsaved draft" — the probe would be reading a file that does not
+ * exist yet. A failure keeps the definition saved, because a rejected token is
+ * a state, not a reason to throw the shape away.
+ */
 async function save() {
   if (saving.value) return
-  let parsed
-  try {
-    parsed = JSON.parse(draft.value)
-  } catch (error) {
-    draftError.value = `That is not valid JSON: ${error?.message || error}`
+  const found = reading.value?.servers?.[0]
+  if (!found) {
+    goStage('paste')
     return
   }
   saving.value = true
-  draftError.value = ''
+  receipt.value = null
+  steps.value = [{ id: 'save', state: 'wait', what: 'writing the definition', note: '' }]
+  const started = Date.now()
   try {
     const wasEnabled = enabled.value
-    await writeMcp({ ...poolServers.value, [name.value]: parsed })
+    await writeMcp({ ...poolServers.value, [name.value]: found.definition })
+    savedAt.value = Date.now()
     /* writing always lands in the enabled pile; put a parked server back */
     if (!wasEnabled) await setMcpEnabled(name.value, false)
-    editing.value = false
-    toast(`${name.value} saved`)
+    steps.value = [
+      { id: 'save', state: 'ok', what: 'saved to mcp.json', note: `${Date.now() - started} ms` },
+    ]
+    const probeAt = Date.now()
     await loadTools(true)
+    const failed = Boolean(tools.value.error)
+    const stale = probeIsStale()
+    steps.value = [
+      ...steps.value,
+      {
+        id: 'probe',
+        state: stale ? 'wait' : failed ? 'bad' : 'ok',
+        what: stale
+          ? 'the tool list is cached from before this save — not re-asked'
+          : failed
+            ? `initialize → ${tools.value.error}`
+            : `tools/list → ${tools.value.list.length} ${tools.value.list.length === 1 ? 'tool' : 'tools'}`,
+        note: stale ? agoLabel(tools.value.readAt) : `${Date.now() - probeAt} ms`,
+      },
+    ]
+    receipt.value = {
+      at: Date.now(),
+      ok: !failed && !stale,
+      stale,
+      error: stale ? '' : tools.value.error,
+      tools: stale ? 0 : tools.value.list.length,
+    }
   } catch (error) {
-    draftError.value = error?.message || 'The server could not be saved.'
+    steps.value = [{ id: 'save', state: 'bad', what: 'not saved', note: `${Date.now() - started} ms` }]
+    receipt.value = { at: Date.now(), ok: false, stale: false, error: error?.message || 'The server could not be saved.', tools: 0 }
+  } finally {
+    saving.value = false
+  }
+}
+
+/** The one retry a 404 gets: the sibling endpoint, written once, probed once. */
+async function trySibling() {
+  if (!sibling.value || saving.value) return
+  /* Read the target once: writing it makes `sibling` recompute to null, and a
+     label read after the write would be reading a button that no longer exists. */
+  const { url } = sibling.value
+  saving.value = true
+  steps.value = [{ id: 'save', state: 'wait', what: `writing ${url}`, note: '' }]
+  try {
+    const copy = cleanCopy()
+    copy.url = url
+    await writeMcp({ ...poolServers.value, [name.value]: copy })
+    savedAt.value = Date.now()
+    const probeAt = Date.now()
+    await loadTools(true)
+    const failed = Boolean(tools.value.error)
+    const stale = probeIsStale()
+    steps.value = [
+      { id: 'save', state: 'ok', what: `saved as ${url}`, note: '' },
+      {
+        id: 'probe',
+        state: stale ? 'wait' : failed ? 'bad' : 'ok',
+        what: stale
+          ? 'the tool list is cached from before this save — not re-asked'
+          : failed
+            ? `initialize → ${tools.value.error}`
+            : `tools/list → ${tools.value.list.length} tools`,
+        note: stale ? agoLabel(tools.value.readAt) : `${Date.now() - probeAt} ms`,
+      },
+    ]
+    receipt.value = { at: Date.now(), ok: !failed && !stale, stale, error: stale ? '' : tools.value.error, tools: stale ? 0 : tools.value.list.length }
+  } catch (error) {
+    steps.value = [{ id: 'save', state: 'bad', what: 'not saved', note: '' }]
+    receipt.value = { at: Date.now(), ok: false, stale: false, error: error?.message || '', tools: 0 }
   } finally {
     saving.value = false
   }
@@ -375,6 +1029,9 @@ watch(name, async () => {
   editing.value = false
   confirming.value = false
   globalRow.value = null
+  steps.value = []
+  reading.value = null
+  receipt.value = null
   await loadGlobal()
   await loadTools()
 })
@@ -414,8 +1071,9 @@ watch(name, async () => {
           <h1>{{ name }}</h1>
           <code class="mcpp-cmd" :title="command">{{ command }}</code>
           <div class="entp-chips">
-            <span class="mcpp-chip" :data-on="inPool && enabled ? '1' : '0'">
-              <i aria-hidden="true"></i>{{ !inPool ? 'not attached' : enabled ? 'attached' : 'parked' }}
+            <span class="mcpp-chip" :data-tone="state.tone" :title="state.why">
+              <i aria-hidden="true"></i>{{ state.label }}
+              <span v-if="state.note" class="mcpp-chip-note">{{ state.note }}</span>
             </span>
             <button
               v-if="inPool"
@@ -429,12 +1087,10 @@ watch(name, async () => {
               @click="toggleEnabled"
             >{{ enabled ? 'park' : 'enable' }}</button>
             <span class="entp-chip">{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</span>
-            <span class="entp-chip">{{ tools.loading ? 'asking…' : `${counts.all} tools` }}</span>
             <span class="entp-chip">every entity</span>
           </div>
-          <p v-if="parkedReason" class="mcpp-note">
-            Parked because {{ parkedReason }}. Enable it if this machine really does run it —
-            the pin then keeps the next sync from parking it again.
+          <p v-if="state.why" class="mcpp-note" :data-bad="state.tone === 'bad' ? '1' : null">
+            {{ state.why }}
           </p>
         </div>
       </header>
@@ -445,12 +1101,26 @@ watch(name, async () => {
             <div class="entp-sec-head">
               <h2>Tools</h2>
               <span class="n">{{ toolsHead }}</span>
+              <span class="mcpp-probed">{{ probedLabel }}</span>
               <button class="r" type="button" :disabled="tools.loading" @click="loadTools(true)">
                 Refresh
               </button>
             </div>
 
-            <p v-if="tools.error" class="mcpp-note" data-bad="1">{{ tools.error }}</p>
+            <div v-if="steps.length" class="mcpp-steps" aria-label="What the last save and probe did">
+              <div v-for="step in steps" :key="step.id" :data-s="step.state">
+                <i aria-hidden="true">{{ step.state === 'ok' ? '✓' : step.state === 'bad' ? '✕' : '·' }}</i>
+                <span>{{ step.what }}</span>
+                <em>{{ step.note }}</em>
+              </div>
+            </div>
+
+            <p v-if="tools.error" class="mcpp-note" data-bad="1">
+              {{ tools.error }}
+              <button v-if="sibling" class="mcpp-inline" type="button" :disabled="saving" @click="trySibling">
+                Try {{ sibling.label }} instead
+              </button>
+            </p>
             <template v-else>
               <div class="skbar">
                 <label class="sksearch mcpp-tool-search">
@@ -501,94 +1171,83 @@ watch(name, async () => {
             </template>
           </section>
 
-          <section class="entp-sec">
-            <div class="entp-sec-head">
-              <h2>Environment</h2>
-              <span class="n">{{ envKeys.length ? `${envKeys.length} variables` : 'none' }}</span>
-            </div>
-            <div class="entp-mcp-env">
-              <span v-for="key in envKeys" :key="key" class="entp-skchip"><i></i>{{ key }}</span>
-              <span v-if="!envKeys.length" class="entp-skchip"><i></i>no variables required</span>
-            </div>
-            <p class="mcpp-note">
-              Values live in this workspace, are handed to the harness when the turn starts,
-              and are never returned by any read here.
-            </p>
-          </section>
         </div>
 
         <aside class="entp-rail mcpp-rail">
-          <p class="entp-rail-h">This server</p>
-          <dl class="entp-facts">
-            <div><dt>Status</dt><dd>{{ !inPool ? 'not attached' : enabled ? 'attached' : 'parked' }}</dd></div>
-            <div><dt>Transport</dt><dd>{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</dd></div>
-            <div v-if="definition.url">
-              <dt>URL</dt><dd class="mono" :title="definition.url">{{ definition.url }}</dd>
+          <!-- Every fact is a way in: a row that can be changed is a button, and
+               it opens the same wizard the whole page is about. A fact that is
+               only a fact (transport, the probe) says so by not being one. -->
+          <p class="entp-rail-h">
+            This server<button class="mcpp-fact-go" type="button" @click="startEdit">
+              {{ tokenMissing ? 'Connect' : 'Change' }}
+            </button>
+          </p>
+          <!-- A `<button>` cannot hold `<dt>`/`<dd>`, so a changeable row is the
+               same `role="button"` pattern the MCP inventory rows use: a real
+               tab stop with Enter and Space, and no invalid nesting. -->
+          <dl class="entp-facts mcpp-facts">
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              title="Connect or change this server"
+              @click="startEdit"
+              @keydown.enter="startEdit"
+              @keydown.space.prevent="startEdit"
+            >
+              <dt>Status</dt>
+              <dd :data-tone="state.tone">{{ state.label }}<template v-if="state.note"> · {{ state.note }}</template></dd>
             </div>
-            <div v-else><dt>Command</dt><dd class="mono">{{ definition.command }}</dd></div>
             <div>
-              <dt>Headers</dt>
-              <dd class="mono">{{ definition.headers ? Object.keys(definition.headers).join(', ') : 'none' }}</dd>
+              <dt>Transport</dt>
+              <dd>{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</dd>
             </div>
-            <div v-if="definition.args?.length">
-              <dt>Args</dt><dd class="mono" :title="definition.args.join(' ')">{{ definition.args.join(' ') }}</dd>
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              :title="`${transport === 'http' ? definition.url : definition.command} — connect or change`"
+              @click="startEdit"
+              @keydown.enter="startEdit"
+              @keydown.space.prevent="startEdit"
+            >
+              <dt>{{ definition.url ? 'URL' : 'Command' }}</dt>
+              <dd class="mono">{{ definition.url || definition.command }}</dd>
             </div>
-            <div><dt>Tools</dt><dd>{{ tools.loading ? 'asking…' : tools.list.length }}</dd></div>
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              title="Connect or change this server"
+              @click="startEdit"
+              @keydown.enter="startEdit"
+              @keydown.space.prevent="startEdit"
+            >
+              <dt>Token</dt>
+              <dd class="mono" :data-tone="tokenMissing ? 'warn' : 'ok'">
+                {{ tokenKey || 'none' }}
+              </dd>
+            </div>
+            <div
+              class="mcpp-fact"
+              role="button"
+              tabindex="0"
+              title="Ask the server again"
+              @click="loadTools(true)"
+              @keydown.enter="loadTools(true)"
+              @keydown.space.prevent="loadTools(true)"
+            >
+              <dt>Tools</dt>
+              <dd>{{ tools.list.length }}<template v-if="tools.list.length"> · {{ probedLabel }}</template></dd>
+            </div>
           </dl>
 
-          <p class="entp-rail-h">
-            Defined in<span class="n">{{ definedPlaces }} of {{ places.length }} places</span>
+          <p class="mcpp-note">
+            Defined in {{ here.length }} {{ here.length === 1 ? 'place' : 'places' }}:
+            <template v-for="(place, index) in here" :key="place.id">
+              <template v-if="index">, </template><b>{{ place.label }}</b>
+            </template>.
           </p>
-          <div class="mcpp-places">
-            <div
-              v-for="place in places"
-              :key="place.id"
-              :data-off="place.on ? '0' : '1'"
-            >
-              <i class="dot" aria-hidden="true"></i>
-              <span class="pn">{{ place.label }}</span>
-              <span class="pp" :title="place.path">{{ place.path }}</span>
-              <button
-                v-if="place.id === 'workspace' && place.on"
-                class="edit"
-                type="button"
-                :aria-expanded="editing ? 'true' : 'false'"
-                @click="editing ? cancelEdit() : startEdit()"
-              >{{ editing ? 'Cancel' : 'Edit' }}</button>
-            </div>
-
-            <div v-if="editing" class="editbox">
-              <pre class="codebox">{{ masked }}</pre>
-              <textarea
-                v-model="draft"
-                class="mcp-editor mono"
-                rows="10"
-                spellcheck="false"
-                aria-label="This workspace's JSON, values included"
-              ></textarea>
-              <p class="mcpp-note">
-                Above is what is stored, values masked. The text rewrites it here, tokens
-                included, when you save.
-              </p>
-              <p v-if="draftError" class="acct-error" role="alert">{{ draftError }}</p>
-              <div class="mcpp-actions">
-                <button class="btn btn-ink btn-sm" type="button" :disabled="saving" @click="save">
-                  {{ saving ? 'Saving…' : 'Save definition' }}
-                </button>
-              </div>
-            </div>
-
-            <p v-if="definedPlaces > 1" class="warn">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                <circle cx="8" cy="8" r="6" />
-                <path d="M8 5v3.5M8 11h.01" />
-              </svg>
-              <span>
-                Two copies, one name: a turn reads the file it runs from, so they can drift,
-                and editing here does not touch the other file.
-              </span>
-            </p>
-          </div>
 
           <p class="entp-rail-h">Manage</p>
           <div class="entp-rail-actions">
@@ -629,7 +1288,7 @@ watch(name, async () => {
                   this too; copied in verbatim, tokens differ
                 </i>
               </span>
-              <span class="hint">{{ confirming ? 'click again' : `${definedPlaces} found` }}</span>
+              <span class="hint">{{ confirming ? 'click again' : `${here.length} found` }}</span>
             </button>
             <template v-else>
               <div class="sep" aria-hidden="true"></div>
@@ -666,5 +1325,816 @@ watch(name, async () => {
         <button class="btn btn-sm" type="button" @click="back">Back to MCP</button>
       </div>
     </section>
+
+    <!-- The connect wizard. `Edit` used to open a textarea in the rail; a
+         definition is a shape *and* a credential, and the rail had no field for
+         the credential. One modal, three stages, and nothing written until
+         Save — a failed probe keeps what was saved and says why. -->
+    <!-- The connect modal: one box, two steps.
+         Step one is a message box — paste whatever the docs page gave you, in
+         any shape — because that is the only thing a person who did not write
+         the definition can actually supply. Step two reads it, writes it, asks
+         the server, and says what came back. Nothing is written until then. -->
+    <Teleport to="body">
+      <div class="scrim" :data-open="editing ? '1' : '0'" @click="closeWizard"></div>
+      <div
+        class="modal mcpp-wiz"
+        :data-open="editing ? '1' : '0'"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Connect this MCP server"
+      >
+        <div class="mo-head">
+          <h2>{{ stage === 'paste' ? 'Connect a server' : name }}</h2>
+          <p v-if="stage === 'paste'">
+            {{ unchanged
+              ? 'What this server is right now. Replace it, or save it again.'
+              : "Paste what the server's docs page gives you — a JSON block, a TOML table, or just the URL." }}
+          </p>
+          <p v-else>
+            {{ saving || receipt
+              ? 'Entity wrote it and asked the server. This is what came back.'
+              : 'About to write this and ask the server whether it answers.' }}
+          </p>
+          <button class="x mo-x" aria-label="Close" @click="closeWizard">
+            <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
+          </button>
+        </div>
+
+        <nav class="mcpp-wiz-tabs" role="tablist" aria-label="Connect steps">
+          <button
+            v-for="(entry, index) in stages"
+            :key="entry.id"
+            class="mcpp-wiz-tab"
+            type="button"
+            role="tab"
+            :aria-selected="stage === entry.id ? 'true' : 'false'"
+            :disabled="saving"
+            @click="goStage(entry.id)"
+          >
+            <em>{{ index + 1 }}</em>{{ entry.label }}
+          </button>
+        </nav>
+
+        <div class="mo-body">
+          <!-- 1 · the box -->
+          <section v-if="stage === 'paste'" class="mcpp-wiz-stage">
+            <label class="lbl" for="wiz-paste">
+              {{ storedText ? 'Stored definition — or paste a new one' : 'Paste anything from the docs page' }}
+            </label>
+            <textarea
+              id="wiz-paste"
+              v-model="pasted"
+              class="mcpp-wiz-paste mono"
+              rows="10"
+              spellcheck="false"
+              autocomplete="off"
+              :placeholder="`${'{\n'}  &quot;mcpServers&quot;: { … }\n}\n\nor just:\nhttps://mcp.example.com/mcp`"
+              aria-label="Paste the server definition, a URL, or a TOML block"
+            ></textarea>
+
+            <!-- What the reader made of it, before anything is written: the
+                 shape it saw, how many servers, and every key it will drop. -->
+            <div v-if="reading" class="mcpp-wiz-flags">
+              <span v-if="reading.error" class="mcpp-chip" data-tone="bad">
+                <i aria-hidden="true"></i>not understood
+              </span>
+              <template v-else>
+                <span class="mcpp-chip" data-tone="ok">
+                  <i aria-hidden="true"></i>{{ reading.envelope === 'bare' ? 'definition' : reading.envelope }}
+                </span>
+                <span class="mcpp-chip" data-tone="mute">
+                  <i aria-hidden="true"></i>{{ reading.servers.length }}
+                  {{ reading.servers.length === 1 ? 'server' : 'servers' }}
+                </span>
+                <span v-if="reading.dropped.length" class="mcpp-chip" data-tone="warn">
+                  <i aria-hidden="true"></i>{{ reading.dropped.length }} keys not MCP — dropped
+                </span>
+              </template>
+            </div>
+            <!-- The local reader could not parse it: say so, and say who will.
+                 This is the moment the box stops being a text field and becomes
+                 a reader — the person does not have to fix the format. -->
+            <p v-if="reading?.error && !fixing && !fixed" class="mcpp-wiz-note" data-ai="1">
+              Entity's own reader cannot parse that as it stands. Press
+              <b>Next</b> and the local model will read it and fix the format.
+            </p>
+            <p v-if="fixing" class="mcpp-wiz-note" data-ai="1">
+              Asking the local model to read the paste…
+            </p>
+            <p v-if="fixError" class="acct-error" role="alert">{{ fixError }}</p>
+            <ul v-else-if="reading && reading.dropped.length" class="mcpp-wiz-dropped">
+              <li v-for="key in reading.dropped" :key="key">
+                <b>{{ key }}</b><span>not a key Entity can run</span>
+              </li>
+            </ul>
+            <!-- Untouched: this is the server as it stands, not a paste yet. -->
+            <p v-else-if="unchanged" class="mcpp-wiz-note">
+              This is what {{ name }} is right now. Paste a block from the docs page over
+              it to replace it, or press <b>Next</b> to save it as it stands.
+            </p>
+            <p v-else-if="reading" class="mcpp-wiz-note">
+              Read. Nothing was sent anywhere and nothing is saved yet.
+            </p>
+            <p v-else class="mcpp-wiz-note">
+              Entity keeps only what it can run: the URL, the command, the arguments,
+              the headers and the env names. Everything else in the block is dropped.
+            </p>
+          </section>
+
+          <!-- 2 · the round trip -->
+          <section v-else class="mcpp-wiz-stage">
+            <div v-if="saving" class="mcpp-wiz-verdict">
+              <span class="mcpp-chip" data-tone="mute"><i aria-hidden="true"></i>asking the server…</span>
+            </div>
+            <div v-else-if="receipt" class="mcpp-wiz-verdict">
+              <span class="mcpp-chip" :data-tone="receipt.ok ? 'ok' : receipt.stale ? 'mute' : 'bad'">
+                <i aria-hidden="true"></i>{{ receipt.ok ? 'connected' : receipt.stale ? 'not re-asked' : 'not answering' }}
+                <span v-if="receipt.ok" class="mcpp-chip-note">
+                  {{ receipt.tools }} {{ receipt.tools === 1 ? 'tool' : 'tools' }}
+                </span>
+              </span>
+              <span class="mcpp-wiz-when">{{ receipt.ok ? 'the server answered' : 'the definition is saved' }}</span>
+            </div>
+
+            <ul v-if="steps.length" class="steps mcpp-wiz-steps" aria-label="What the save and probe did">
+              <li v-for="step in steps" :key="step.id" :data-s="step.state">
+                <span class="ic" aria-hidden="true">{{ step.state === 'ok' ? '✓' : step.state === 'bad' ? '✕' : '·' }}</span>
+                <span>{{ step.what }}</span>
+                <span class="t">{{ step.note }}</span>
+              </li>
+            </ul>
+
+            <p v-if="receipt && !receipt.ok && receipt.error" class="mcpp-wiz-err">{{ receipt.error }}</p>
+
+            <p v-if="receipt?.stale" class="mcpp-wiz-note">
+              The definition was written, but the tool list this page holds is cached from
+              before that write — the call table has no way to force a re-read. The chip on
+              the row is the honest state; <b>Refresh</b> asks again once the cache expires.
+            </p>
+            <p v-else-if="receipt && !receipt.ok" class="mcpp-wiz-note">
+              The definition stays saved. Paste a fresh block or a new token on the first
+              step and try again — the row keeps saying what it really is until it connects.
+            </p>
+            <div v-else-if="receipt?.ok && toolRows.length" class="mcpp-wiz-tools">
+              <span v-for="row in toolRows.slice(0, 8)" :key="row.name" class="mcpp-wiz-tool">{{ row.name }}</span>
+              <span v-if="toolRows.length > 8" class="mcpp-wiz-tool">+{{ toolRows.length - 8 }}</span>
+            </div>
+
+            <button v-if="sibling" class="mcpp-inline" type="button" :disabled="saving" @click="trySibling">
+              Try {{ sibling.label }} instead
+            </button>
+
+            <!-- Before the first save there is no verdict to report, and an empty
+                 stage reads as a broken one. Say what is about to happen, with
+                 the definition it is about to happen to. -->
+            <template v-if="!saving && !receipt">
+              <div v-if="fixed" class="mcpp-wiz-fixed" data-ai="1">
+                <b>{{ fixed.harness }} read the paste</b>
+                <span>
+                  The format was fixed on this machine and the definition below is what
+                  will be written. Nothing has been sent to the server yet.
+                </span>
+                <ul v-if="fixed.dropped.length">
+                  <li v-for="key in fixed.dropped" :key="key">{{ key }} — dropped</li>
+                </ul>
+              </div>
+
+              <dl class="mcpp-wiz-sum">
+                <div>
+                  <dt>{{ reading?.servers?.[0]?.definition.url ? 'Endpoint' : 'Command' }}</dt>
+                  <dd class="mono">
+                    {{ reading?.servers?.[0]?.definition.url
+                      || [reading?.servers?.[0]?.definition.command, ...(reading?.servers?.[0]?.definition.args || [])].filter(Boolean).join(' ') }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Token</dt>
+                  <dd class="mono" :data-tone="pendingSecret.tone">{{ pendingSecret.label }}</dd>
+                </div>
+                <div>
+                  <dt>Written to</dt>
+                  <dd class="mono">{{ workspaces.mcp?.path || 'mcp.json' }}</dd>
+                </div>
+              </dl>
+
+              <ul class="mcpp-wiz-plan">
+                <li><span class="ic" aria-hidden="true">1</span><span>Write the definition to this workspace — nothing is written until you press the button.</span></li>
+                <li><span class="ic" aria-hidden="true">2</span><span>Open the server and ask for its tool list. One round trip, and the answer is what the row will say.</span></li>
+              </ul>
+
+              <p v-if="pendingSecret.tone === 'warn'" class="mcpp-wiz-note">
+                A <code>{{ SYNC_REDACTED }}</code> token cannot be checked from here: it is a
+                sync's redaction, so the probe would just report a 401. Paste a real one on
+                the first step, or save anyway and fix it later.
+              </p>
+              <p v-else class="mcpp-wiz-note">
+                The definition is written first and the probe reads the file it just wrote,
+                so what is tested here is exactly what a turn will run.
+              </p>
+            </template>
+          </section>
+        </div>
+
+        <div class="mo-foot mcpp-wiz-foot">
+          <button
+            v-if="stage !== 'paste'"
+            class="btn btn-sm btn-ghost"
+            type="button"
+            :disabled="saving"
+            @click="goStage('paste')"
+          >← Paste again</button>
+          <span class="spacer"></span>
+          <button class="btn btn-sm" type="button" :disabled="saving" @click="closeWizard">
+            {{ receipt?.ok ? 'Done' : 'Cancel' }}
+          </button>
+          <button
+            v-if="stage === 'paste'"
+            class="btn btn-ink btn-sm"
+            type="button"
+            :disabled="saving || fixing || !pasted.trim()"
+            @click="readAndContinue"
+          >{{ fixing ? 'Reading…' : reading?.error ? 'Read it with the model →' : 'Next · save & test →' }}</button>
+          <button
+            v-else
+            class="btn btn-ink btn-sm"
+            type="button"
+            :disabled="saving || !reading?.servers?.length"
+            @click="save"
+          >{{ saving ? 'Testing…' : receipt ? 'Save & test again' : 'Save & test' }}</button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
+
+<!-- This page's own additions to the shared `.mcpp-*` vocabulary live here, not
+     in `directory.css`: the state chip, the save-and-probe ladder, the token
+     box. Everything else it paints — the shell, `.mcpp-chip`, `.mcpp-seg`,
+     `.codebox`, `.editbox` — is the MCP surface's, shared with the inventory. -->
+<style scoped>
+/* The one derived state per server. Four tones, one dot each: a green dot is a
+   server that answered, an amber one is a copy whose secret did not arrive, a
+   red one is a server that refused, and a muted one is not being asked at all.
+   The note rides in the same chip, lowercase, so the row reads as a sentence. */
+.mcpp-chip[data-tone='ok'] i {
+  background: var(--ok);
+}
+.mcpp-chip[data-tone='warn'] i {
+  background: var(--accent);
+}
+.mcpp-chip[data-tone='bad'] i {
+  background: var(--danger);
+}
+.mcpp-chip-note {
+  margin-left: 1px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.entp-facts dd[data-tone='ok'] {
+  color: var(--ok-ink);
+}
+.entp-facts dd[data-tone='warn'] {
+  color: var(--accent-ink);
+}
+.entp-facts dd[data-tone='bad'] {
+  color: var(--danger);
+}
+
+/* The save-and-probe ladder: one line per step, the note on the right. It is
+   a receipt, not a log — it holds the last click and nothing before it. */
+.mcpp-steps {
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+.mcpp-steps > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-2);
+}
+.mcpp-steps > div:first-child {
+  border-top: 0;
+}
+.mcpp-steps i {
+  flex: none;
+  width: 9px;
+  font-style: normal;
+  color: var(--muted);
+}
+.mcpp-steps span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mcpp-steps em {
+  flex: none;
+  font-style: normal;
+  color: var(--muted);
+}
+.mcpp-steps > div[data-s='ok'] i {
+  color: var(--ok-ink);
+}
+.mcpp-steps > div[data-s='bad'] {
+  color: var(--danger);
+}
+.mcpp-steps > div[data-s='bad'] i {
+  color: var(--danger);
+}
+
+/* Whose clock the tool list is on. The read is cached in the main process, so a
+   chip that says `ready` from an hour-old answer has to say so. */
+.mcpp-probed {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+/* A failure carries the one thing a person can do about it, not a paragraph. */
+.mcpp-inline {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted currentColor;
+  background: none;
+  font: inherit;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+/* The token box. The key came from the definition (or is the one header a sync
+   cannot resolve); the value is the only thing this form asks for. */
+.mcpp-token {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.mcpp-token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mcpp-token-row .acct-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  height: 32px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+.mcpp-token-row .mcpp-seg {
+  flex: 0 0 auto;
+}
+.mcpp-token code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+/* ── the connect wizard ────────────────────────────────────────────
+   Three stages in one modal. The tabs are the mockup's `1 · Token`,
+   `2 · Definition`, `3 · Save & test`: a copy that carries a redaction opens on
+   the first, a healthy one on the second, and the third only ever appears with
+   a receipt. Width is the mockup's specimen card, not the narrow dialog. */
+.mcpp-wiz {
+  width: min(720px, 94vw);
+  max-height: min(88vh, 720px);
+}
+.mcpp-wiz-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  overflow: auto;
+}
+.mcpp-wiz-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 9px 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mcpp-wiz-tab em {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  color: var(--muted);
+}
+.mcpp-wiz-tab:hover:not([disabled]) {
+  background: var(--surface);
+}
+.mcpp-wiz-tab[aria-selected='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+.mcpp-wiz-tab[aria-selected='true'] em {
+  border-color: color-mix(in oklab, var(--bg) 45%, var(--ink));
+  background: transparent;
+  color: var(--bg);
+}
+.mcpp-wiz-tab[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.mcpp-wiz-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mcpp-wiz-verdict {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.mcpp-wiz-when {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.mcpp-wiz-steps {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+.mcpp-wiz-steps li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.mcpp-wiz-steps .ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.mcpp-wiz-steps li[data-s='ok'] .ic {
+  border-color: color-mix(in oklab, var(--ok) 34%, var(--border));
+  background: color-mix(in oklab, var(--ok) 12%, var(--bg));
+  color: var(--ok-ink);
+}
+.mcpp-wiz-steps li[data-s='bad'] .ic {
+  border-color: color-mix(in oklab, var(--danger) 34%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.mcpp-wiz-steps li[data-s='wait'] .ic {
+  border-style: dashed;
+}
+.mcpp-wiz-steps li[data-s='bad'] span:not(.ic):not(.t) {
+  color: var(--danger);
+}
+.mcpp-wiz-steps .t {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.mcpp-wiz-err {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--danger) 28%, var(--border));
+  border-radius: var(--r);
+  background: var(--danger-soft);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.mcpp-wiz-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.mcpp-wiz-tool {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+}
+/* The box itself: a real textarea, monospace, sized like the paste it holds. */
+.mcpp-wiz-paste {
+  width: 100%;
+  min-height: 190px;
+  padding: 11px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  line-height: 1.65;
+  color: var(--ink);
+  resize: vertical;
+  tab-size: 2;
+}
+.mcpp-wiz-paste::placeholder {
+  color: var(--muted);
+}
+.mcpp-wiz-paste:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* What the reader saw, before anything is written. */
+.mcpp-wiz-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mcpp-wiz-dropped {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+.mcpp-wiz-dropped li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.mcpp-wiz-dropped b {
+  font-family: var(--font-body);
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.mcpp-wiz-dropped span {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.mcpp-wiz-note {
+  margin: 0;
+  max-width: 66ch;
+  font-size: var(--fs-label);
+  line-height: 1.55;
+  color: var(--muted);
+}
+.mcpp-wiz-note code {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.mcpp-wiz-foot .spacer {
+  flex: 1;
+}
+
+/* What the second step is about to do, before it does it: a summary of the
+   definition and a two-line plan. Without it the stage was blank until the
+   first save, which reads as a broken panel rather than a pending one. */
+.mcpp-wiz-sum {
+  margin: 0;
+  display: grid;
+  gap: 0;
+  font-size: var(--fs-secondary);
+}
+.mcpp-wiz-sum > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--border);
+}
+.mcpp-wiz-sum > div:last-child {
+  border-bottom: 0;
+}
+.mcpp-wiz-sum dt {
+  width: 84px;
+  flex: none;
+  padding-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mcpp-wiz-sum dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+.mcpp-wiz-sum dd.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+}
+.mcpp-wiz-sum dd[data-tone='ok'] {
+  color: var(--ok-ink);
+}
+.mcpp-wiz-sum dd[data-tone='warn'] {
+  color: var(--accent-ink);
+}
+.mcpp-wiz-plan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+.mcpp-wiz-plan li {
+  display: flex;
+  gap: 9px;
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+/* The model's pass is stated, not hidden: which CLI read it, what it dropped,
+   and that nothing has been sent yet. */
+.mcpp-wiz-note[data-ai='1'] {
+  padding: 8px 11px;
+  border: 1px dashed color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.mcpp-wiz-fixed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--border));
+  border-radius: var(--r);
+  background: var(--accent-soft);
+}
+.mcpp-wiz-fixed b {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.mcpp-wiz-fixed span {
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--accent-ink);
+}
+.mcpp-wiz-fixed ul {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--accent-ink);
+}
+.mcpp-wiz-plan .ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+/* ── the rail, as a way in ────────────────────────────────────────
+   Every fact that can be changed is a button, and the whole panel is the way
+   into the server. The point of the rail is to leave the page, not to count
+   things on it.
+
+   The rows are `div`s carrying `role="button"`: `<button>` may not hold a
+   `<dt>`/`<dd>` pair, and the inventory rows already use this pattern. */
+.mcpp-facts {
+  gap: 0;
+}
+.mcpp-fact,
+.mcpp-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 13px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.mcpp-facts > div:first-child {
+  border-top: 0;
+}
+.mcpp-fact {
+  cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+.mcpp-fact:hover {
+  background: var(--surface-2);
+}
+.mcpp-fact:hover dt {
+  color: var(--ink-2);
+}
+/* A role="button" div has no keyboard affordance of its own. */
+.mcpp-fact:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.mcpp-fact dt,
+.mcpp-facts dt {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mcpp-fact dd,
+.mcpp-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+}
+.mcpp-fact dd.mono,
+.mcpp-facts dd.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+.mcpp-fact dd[data-tone='ok'] {
+  color: var(--ok-ink);
+}
+.mcpp-fact dd[data-tone='warn'] {
+  color: var(--accent-ink);
+}
+.mcpp-fact dd[data-tone='bad'] {
+  color: var(--danger);
+}
+/* The one verb the whole panel is about, beside its own heading. */
+.mcpp-fact-go {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted var(--border-strong);
+  background: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.mcpp-fact-go:hover {
+  border-bottom-style: solid;
+  color: var(--ink);
+}
+
+</style>

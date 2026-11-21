@@ -29,11 +29,16 @@ function runOneShot({
   prompt = '',
   timeoutMs = DEFAULT_TIMEOUT_MS,
   label = 'one-shot',
+  /* The path set under Account → Harnesses. `oneShotInvocation` builds the argv
+     and names the bare command; before this, a custom path was silently ignored
+     and `$PATH` decided which binary ran. */
+  binary = '',
 } = {}) {
   const id = String(harness || '')
   const meta = harnesses.META.find((item) => item.id === id)
   if (!meta) throw new Error('Choose a local harness first.')
   const spec = oneShotInvocation(id, instruction, prompt, model)
+  if (String(binary || '').trim()) spec.cmd = String(binary)
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-oneshot-'))
 
   let child
@@ -103,13 +108,18 @@ function runOneShot({
   })
 }
 
-/** The last JSON object in a model answer, ignoring fences and prose around it. */
+/**
+ * The JSON object in a model answer, ignoring fences and prose around it.
+ *
+ * Reads the **outermost** object, not the last brace pair: `{"a":{"b":1}}` has
+ * its final `{` inside the nested value, so last-brace parsing returns `null`
+ * for every answer that carries an object — which is most of them.
+ */
 function lastJson(text) {
   const value = String(text || '')
+  const start = value.indexOf('{')
   const end = value.lastIndexOf('}')
-  if (end < 0) return null
-  const start = value.lastIndexOf('{', end)
-  if (start < 0) return null
+  if (start < 0 || end <= start) return null
   try {
     return JSON.parse(value.slice(start, end + 1))
   } catch {
