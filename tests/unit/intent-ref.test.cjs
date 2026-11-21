@@ -106,48 +106,65 @@ test('an entity this workspace does not have is not planned', () => {
   assert.equal(intent.derivePlan(text, { entities: NAMES }), null)
 })
 
-/* ── the gate ─────────────────────────────────────────────────────── */
+/* ── the two answers ─────────────────────────────────────────────── */
 
-test('only a spawn with no count is asked about', () => {
-  assert.equal(intent.wantsFanout('spawn @coder fix it'), true)
-  /* a fan-out the grammar already reads is never second-guessed */
-  assert.equal(intent.wantsFanout('spawn 3 @coder fix it'), false)
-  assert.equal(intent.wantsFanout('spawn per @youtrack:AC:bug @coder fix it'), false)
-  /* `spawn N` stays prose here; the grammar's own rule decides that, and this
-     layer never sees it */
-  assert.equal(intent.wantsFanout('spawn 3 tasks in the backlog'), false)
-  assert.equal(intent.wantsFanout('@coder fix it'), false)
-  assert.equal(intent.wantsFanout('run the tests'), false)
+test('a plan is a repeat or a row list, and nothing else', () => {
+  /* the same instruction N times */
+  assert.deepEqual(
+    intent.usable({ spawn: true, runs: 4, entity: 'coder', job: 'do it' }, NAMES),
+    { mode: 'repeat', runs: 4, entity: 'coder', job: 'do it', derived: false },
+  )
+  /* one run per row a list resolves */
+  const rows = intent.usable(
+    { spawn: true, list: '@youtrack:ENTITY:relates to: ENTITY-37 #Unresolved', entity: 'coder', job: 'do it' },
+    NAMES,
+  )
+  assert.equal(rows.mode, 'rows')
+  assert.equal(rows.list, '@youtrack:ENTITY:relates to: ENTITY-37 #Unresolved')
 })
 
-test('the ask is read in the prose before the first mention', () => {
-  /* The same window `mention-ref` reads its prefixes in: the sentence that
-     introduces the ask is part of the ask. */
-  assert.equal(intent.wantsFanout("let's spawn @coder fix it"), true)
-  /* …and a `spawn` written after a mention belongs to that job's words. */
-  assert.equal(intent.wantsFanout('ask @coder to spawn a helper'), false)
-  /* a sentence that merely mentions words after it is still prose */
-  assert.equal(intent.wantsFanout('@coder fix the backlog'), false)
+test('an explicit "nothing to fan out" is an answer, not a failed reading', () => {
+  /* this is the whole point of the classifier: a direct reply is a verdict */
+  assert.equal(intent.usable({ spawn: false }, NAMES), null)
+  assert.equal(intent.usable({ fanout: false }, NAMES), null)
+  /* and silence is not a verdict — `reader` decides what to do with that */
+  assert.equal(intent.usable(null, NAMES), null)
+})
+
+test('a plan of one run is not a fan-out', () => {
+  /* the grammar already delegates `@coder <job>`; a card in front of the path
+     that already works is a confirmation step nobody asked for */
+  assert.equal(intent.usable({ spawn: true, runs: 1, entity: 'coder', job: 'do it' }, NAMES), null)
+  assert.equal(intent.usable({ spawn: true, entity: 'coder', job: 'do it' }, NAMES), null)
+})
+
+test('a count is clamped to what the app will actually run', () => {
+  const plan = intent.usable({ spawn: true, runs: 40, entity: 'coder', job: 'do it' }, NAMES)
+  assert.equal(plan.runs, intent.MAX_RUNS)
 })
 
 test('the skill prologue the composer inserts is looked past', () => {
   /* `skill-ref` puts `/workspace:x` at the very front as `use this skill <path>` */
   const text = 'use this skill /skills/alpha\n\nspawn @coder fix it'
-  assert.equal(intent.wantsFanout(text), true)
   assert.equal(intent.bodyOf(text), 'spawn @coder fix it')
+  /* and the deterministic reading never mistakes the path for prose */
+  assert.equal(intent.derivePlan(text, { entities: NAMES }), null)
 })
 
 /* ── the seam ─────────────────────────────────────────────────────── */
 
-test('a derived plan reaches the ordinary fan-out, one run per row', async () => {
+test('a row-list plan reaches the ordinary fan-out, one run per row', async () => {
   const record = workspace()
   const jobs = []
   const out = await mention.rewrite(
     record,
     'spawn @coder fix what relates to https://youtrack.example.test/issue/ENTITY-25 #Unresolved',
     {
-      /* no reader: the deterministic reading is the fallback, not a second path */
-      intent: async (source) => intent.usable(intent.derivePlan(source, { entities: NAMES }), NAMES),
+      /* the reader is injected: what is asserted is the contract, not the model */
+      intent: async () => intent.usable(intent.derivePlan(
+        'spawn @coder fix what relates to ENTITY-25 #Unresolved',
+        { entities: NAMES },
+      ), NAMES),
       deps: deps({
         runEntity: async (_record, _entity, job) => {
           jobs.push(job)
@@ -157,52 +174,78 @@ test('a derived plan reaches the ordinary fan-out, one run per row', async () =>
     },
   )
   assert.equal(jobs.length, 3, 'one run per row, not one for the message')
-  /* the row is the run's, and it does not repeat the shared instruction */
   assert.match(jobs[0], /^fix what relates to\n\n\(Run 1 of 3: your row is "ENTITY-33 — ENTITY-33 summary"/)
   assert.deepEqual(
     out.mentions.filter((row) => row.kind === 'entity').map((row) => row.row),
     ['ENTITY-33 — ENTITY-33 summary', 'ENTITY-32 — ENTITY-32 summary', 'ENTITY-30 — ENTITY-30 summary'],
   )
-  /* the reply above is told the runs happened, so it does not delegate again */
   assert.match(out.text, /3 runs of @coder, one per row above/)
 })
 
-test('the hold sees every row before a harness exists', async () => {
+test('a counted plan reaches it too, and the card is the ordinary one', async () => {
   const record = workspace()
   const plans = []
-  let runs = 0
-  await mention.rewrite(
+  const jobs = []
+  /* The shape that used to be invisible: `spawn 3` written inside a sentence,
+     after a read, on its own line — anything but the first word of the message. */
+  const out = await mention.rewrite(
     record,
-    'spawn @coder fix what relates to https://youtrack.example.test/issue/ENTITY-25',
+    "By following A.\n\nI want B.\n\nlet's spawn 4 @coder To work on the issue.",
     {
-      intent: async (source) => intent.usable(intent.derivePlan(source, { entities: NAMES }), NAMES),
+      intent: async () =>
+        intent.usable({ spawn: true, runs: 4, entity: 'coder', job: 'To work on the issue.' }, NAMES),
       hold: async (plan) => {
         plans.push(plan)
         return { action: 'run' }
       },
       deps: deps({
-        runEntity: async () => {
-          runs += 1
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
           return { ok: true, answer: 'done', error: '' }
         },
       }),
     },
   )
-  assert.equal(plans.length, 1, 'one plan per turn')
-  assert.equal(plans[0].rows.length, 3)
-  assert.equal(runs, 3, 'the run happens after the answer, not before it')
+  /* four rows on the card, four runs after Run — the whole bug, both halves */
+  assert.equal(plans.length, 1)
+  assert.equal(plans[0].rows.length, 4)
+  assert.deepEqual(plans[0].rows.map((row) => row.share), ['1/4', '2/4', '3/4', '4/4'])
+  assert.equal(jobs.length, 4)
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 4)
+  assert.match(out.text, /4 runs of @coder/)
+})
+
+test('a message that answers directly asks nobody', async () => {
+  const record = workspace()
+  const jobs = []
+  /* `{"spawn": false}` is a verdict: the message runs exactly as it is */
+  const out = await mention.rewrite(record, '@coder why did the build fail?', {
+    intent: async () => intent.usable({ spawn: false }, NAMES),
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0], 'why did the build fail?')
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 1)
 })
 
 test('a leading skill moves into each run instead of being refused', async () => {
   const record = workspace()
   const jobs = []
-  /* this is what `skill-ref` hands us: the prologue, then the unreadable spawn */
+  /* this is what `skill-ref` hands us: the prologue, then a message the grammar
+     cannot read — and the shape that was a hard error before */
   await mention.rewrite(
     record,
     'use this skill /skills/code-milestone\n\n' +
-      'spawn @coder work the issue relating to ENTITY-25',
+      "Let's work on this milestone @youtrack:ENTITY:ENTITY-37 Work on unresolved related issues.\n" +
+      'Spawn 3 @coder To work on the issue.',
     {
-      intent: async (source) => intent.usable(intent.derivePlan(source, { entities: NAMES }), NAMES),
+      intent: async () =>
+        intent.usable({ spawn: true, runs: 3, entity: 'coder', job: 'To work on the issue.' }, NAMES),
       deps: deps({
         runEntity: async (_record, _entity, job) => {
           jobs.push(job)
@@ -212,18 +255,34 @@ test('a leading skill moves into each run instead of being refused', async () =>
     },
   )
   assert.equal(jobs.length, 3)
-  /* every run is routed by its own skill, which is the whole rule — and the
-     prologue still leads the job, or the harness will not load it */
+  /* every run is routed by its own skill, and the prologue still leads the job */
   for (const job of jobs) {
-    assert.match(job, /^use this skill .*skills[\\/]code-milestone\n\nwork the issue relating to/)
+    assert.match(job, /^use this skill .*skills[\\/]code-milestone\n\nTo work on the issue\./)
   }
-  assert.equal(jobs.filter((job) => /use this skill /.test(job)).length, 3)
+})
+
+test('a plan naming an entity this workspace lacks plans nothing', async () => {
+  const record = workspace()
+  const jobs = []
+  /* refused here, before a card is painted — the ordinary path would throw after
+     the person had already read it */
+  const out = await mention.rewrite(record, '@coder fix it', {
+    intent: async () => ({ mode: 'repeat', runs: 3, entity: 'ghost', job: 'fix it' }),
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.equal(jobs.length, 1, 'the message runs as written')
+  assert.equal(jobs[0], 'fix it')
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 1)
 })
 
 test('no reader, or a reader with nothing to say, leaves the message alone', async () => {
   const record = workspace()
   const jobs = []
-  /* exactly today's behaviour: one run, the sentence intact */
   const out = await mention.rewrite(record, 'spawn @coder write a poem', {
     intent: async () => null,
     deps: deps({
@@ -235,7 +294,7 @@ test('no reader, or a reader with nothing to say, leaves the message alone', asy
   })
   assert.equal(jobs.length, 1)
   assert.equal(jobs[0], 'write a poem')
-  assert.match(out.text, /spawn @coder write a poem/, 'the person\'s own words are the prompt')
+  assert.match(out.text, /spawn @coder write a poem/, "the person's own words are the prompt")
 })
 
 test('a reader that throws is a reader with nothing to say', async () => {
@@ -255,11 +314,42 @@ test('a reader that throws is a reader with nothing to say', async () => {
   assert.equal(runs, 1, 'a broken reader never multiplies a run')
 })
 
+test('the grammar goes first, so an exact message costs no call', async () => {
+  const record = workspace()
+  let asked = 0
+  const jobs = []
+  await mention.rewrite(record, 'spawn 2 @coder write a poem', {
+    intent: async () => {
+      asked += 1
+      return null
+    },
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.equal(asked, 0, 'an exact prefix is never second-guessed')
+  assert.equal(jobs.length, 2)
+})
+
 /* ── the plan a model or a fallback may propose ──────────────────── */
 
-test('a plan is only usable when both halves are resolvable', () => {
-  const good = { list: '@youtrack:ENTITY:relates to: ENTITY-25', entity: 'coder', job: 'fix it' }
-  assert.deepEqual(intent.usable(good, NAMES), { ...good, derived: false })
+test('a plan is only usable when its halves are resolvable', () => {
+  const good = {
+    spawn: true,
+    list: '@youtrack:ENTITY:relates to: ENTITY-25',
+    entity: 'coder',
+    job: 'fix it',
+  }
+  assert.deepEqual(intent.usable(good, NAMES), {
+    mode: 'rows',
+    list: good.list,
+    entity: 'coder',
+    job: 'fix it',
+    derived: false,
+  })
 
   /* a mention kind that cannot enumerate rows */
   assert.equal(intent.usable({ ...good, list: 'ENTITY-25' }, NAMES), null)
@@ -276,8 +366,12 @@ test('no harness means no model, so a reader is not built', () => {
   assert.equal(typeof intent.reader({ harness: 'claude' }), 'function')
 })
 
-test('the instruction refuses a fan-out it is unsure about', () => {
-  /* the prompt is the safety mechanism: an unsure model must answer false */
-  assert.match(intent.INSTRUCTION, /Choose `fanout: false` whenever you are unsure/)
+test('the instruction asks for the person\'s own words, and refuses when unsure', () => {
+  /* two safety mechanisms, both in the prompt: a copied job (not a rewrite) and
+     an explicit "answer false when unsure" */
+  assert.match(intent.INSTRUCTION, /Copy their words/)
+  assert.match(intent.INSTRUCTION, /Answer `\{"spawn": false\}` whenever you are unsure/)
   assert.match(intent.INSTRUCTION, /Never invent a filter/)
+  /* a name in passing is the false positive the prompt calls out by example */
+  assert.match(intent.INSTRUCTION, /remove @designer from the list/)
 })

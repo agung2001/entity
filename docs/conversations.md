@@ -185,23 +185,34 @@ fifteen times and edited nothing at all; the fix is the number, not a shorter cl
 queued **run** is not given this: it has no turn deadline, and a budget it does not have
 would change how the work is done for no reason.
 
-**One instruction, several sessions.** Ask for it in the prose that opens the message with `spawn N` and the mention
-runs N times, in parallel — N answers, N cards, N sessions:
+**Every message is classified, then either answered or fanned out.** A message is one of
+two things — several parallel sessions, or one direct reply — and no pattern can tell them
+apart. So the app asks the harness that is about to answer the turn, once, and gets back
+either a plan or "nothing to fan out":
 
+```json
+{"spawn": true, "runs": 4, "entity": "designer", "job": "To work on the design of each pages."}
+{"spawn": true, "list": "@youtrack:ENTITY:relates to: ENTITY-37 #Unresolved", "entity": "coder", "job": "fix it"}
+{"spawn": false}
 ```
-spawn 3 @secretary write a poem
-```
 
-The prefix is read anywhere *before the first mention*, not at the first word, because that
-is how the ask is written: `let's spawn 4 @designer review these pages` is a fan-out too.
-Each run is told which one it is (run 1 of 3, and so on) because three answers to the
-same sentence only differ if each knows it must; the sessions are titled
-`write a poem · 1/3` … `3/3`, and the parent's reply sees all three answers. `N` is
-capped at 5, and `spawn 3 tasks in the backlog` (no mention after the number) stays
-prose.
+That is what makes the ask survive however it is written — `spawn 3 @coder …`,
+`let's spawn 4 @designer …`, `Spawn 3 @coder …` on its own line after a read. Each of those
+used to be patched into the regex one at a time, and each next one still showed one card
+where several were asked for. The plan is rendered as the sentence the pipeline already
+reads, so the rows, the cap and the hold card are the ordinary ones. `{"spawn": false}`
+means the message is answered directly, exactly as written.
 
-**One run per row.** `spawn per` takes its count from a list instead of a number — the
-row *is* the run:
+Three things are decided without the model, and only because they are provable: a message
+that names no entity has nothing to delegate to; a message opening with a prefix the
+grammar reads exactly is the person's own count and is never second-guessed; and a message
+opening with a bare `spawn` is a fan-out by definition. Everything else pays one call.
+
+Each run is told which one it is (run 1 of 4, and so on) because answers to the same
+sentence only differ if each knows it must; the sessions are titled `write a poem · 1/3` …
+`3/3`, and the parent's reply sees all of them. `N` is capped at 5.
+
+**One run per row.** A plan may name a list instead of a number — then the row *is* the run:
 
 ```
 spawn per @youtrack:ENTITY:relates to: ENTITY-21 #Unresolved @coder /workspace:orca-worktree fix it
@@ -225,36 +236,22 @@ runs handle the rest"). Two rules come with it:
 - **Twelve rows, one row per run** — the reply above reads at most twelve rows, and a
   fan-out may not silently lose an answer. More rows is a hard error before anything runs;
   narrow the query.
-- **The skill belongs inside the job.** A fan-out routes each *run*, not the message, so
-  `/workspace:…` goes after the entity (`@coder /workspace:orca-worktree …`). Leading with
-  the skill is refused with that sentence, because it would route the parent instead and
-  leave seven agents in one checkout. The exception is the derived fan-out below: there the
-  composer's `/workspace:` is moved onto every run, which is what it already meant.
+- **A `/workspace:` at the front belongs to every run.** A fan-out routes each *run*, so the
+  composer's leading skill is carried onto each job — one route per run, one worktree per run.
+  A job that has its own `/workspace:` keeps that one instead of two.
 
-**A `spawn` with no count is read, once.** `spawn @coder <job>` is the shape that used to
-run once — silently, because a bare `spawn` matched no prefix and the whole sentence became
-one ordinary job, so the session looked like the summary of a fan-out that never happened.
-Before anything is parsed, the same harness that is about to answer the turn is asked what
-was meant, and its answer is handed back as the `spawn per …` sentence above. So this:
+Four things the classifier will not do:
 
-```
-/workspace:code-milestone spawn @coder entity for each issue relates to : \
-  https://youtrack.example.test/issue/ENTITY-25 #Unresolved only. let it work on the issue.
-```
-
-…becomes six sessions, one per issue that relates to `ENTITY-25` and is still unresolved.
-Four things it will not do:
-
-- **It only looks at a `spawn` with no count.** A message the grammar already reads is never
-  second-guessed, so an exact `spawn 3` or `spawn per` costs no model call at all.
 - **It proposes; you confirm.** The result is an ordinary fan-out, so the hold card lists
   the rows and their folders before a harness starts — a wrong guess costs one keystroke.
-- **It cannot invent.** The entity must be one this workspace has, and the list must be a
-  mention that resolves. A reader that errors, or a plan naming an entity that is not here,
-  is dropped and the message runs exactly as it did before.
+- **It copies your words; it does not write them.** The job is your own sentence with the
+  count or the list removed, because each run is told its own row separately.
+- **It cannot invent.** The entity must be one this workspace has, and a plan naming one
+  that is not here is dropped — the message then runs exactly as it does today.
 - **A pasted issue URL is read without a model.** `…/issue/ENTITY-25/…` means
   `relates to: ENTITY-25`, so the fan-out survives a harness that will not answer — with a
-  blunter job, never with no runs at all.
+  blunter job, never with no runs at all. An explicit `{"spawn": false}` is respected, though:
+  only silence falls back.
 
 Routing is a first-message affair: the worktree exists after that turn, and the delegatee's
 own rule sends every follow-up to the same terminal.

@@ -475,15 +475,25 @@ the composer already does: mention another entity.
   a busy thread can own a dozen sessions, and rows for them drown the list. The parent
   row carries `spawned N chats`, the count opens a tree (sessions of sessions included),
   and opening one marks the parent row active so the rail still says where you are.
-- **Fan-out is asked for, never inferred.** `spawn N @entity <job>` in the message's
-  opening prose runs the same instruction N times in parallel, one session each — capped at
-  five, and only when a mention follows the number, so "spawn 3 tasks in the backlog" is
-  prose. Every run is told which one it is (that is the only reason three answers to one
-  sentence differ), the session titles carry the share (`· 2/3`), and the reply above sees
-  all of them. The prefix is read in the prose *before the first mention*, not at the first
-  word: `let's spawn 4 @designer …` is the way people write the ask, and anchoring it to
-  `^` demoted that to one run — one card where four were asked for, with no error. A
-  `spawn` written *after* a mention is that job's own text and never starts a second run.
+- **A message is classified, not pattern-matched, into one of two answers.** Every message a
+  person sends is one of two things — several parallel sessions, or one direct reply — and no
+  regex can tell them apart. `intent-ref` asks the harness that is about to answer the turn and
+  gets back a plan (`{spawn: true, runs: 4, entity, job}` or `{spawn: true, list, entity, job}`)
+  or `{spawn: false}`. The plan is rendered as `spawn N @entity <job>` / `spawn per @list
+  @entity <job>` — the one grammar the rest of the pipeline reads — so the rows, the cap and the
+  hold stay the ordinary ones and there is no second language. `{spawn: false}` is a verdict:
+  the message runs exactly as written.
+- **Three things are decided without the model, and only because they are provable.** A message
+  that names no entity at all has nothing to delegate to; a message opening with a prefix the
+  grammar reads exactly (`spawn 3 @…`, `spawn per [a, b] @…`) is the person's own count and is
+  never second-guessed; and a message that opens with a bare `spawn` is a fan-out by definition.
+  Everything else pays one call. This is not intent parsing — it is eliding a provably empty
+  set, which is what keeps "Take your time." off the slow path.
+- **The classifier copies words; it does not write them.** `job` is the person's own sentence
+  with the count or the list removed, because every run is told its own row separately. A
+  rewritten job produced things like "work the issue relating to", which is worse than a
+  leftover clause. The prompt says so, and asks for `{"spawn": false}` whenever unsure: a
+  missed fan-out costs one retype, a wrong one starts agents on work nobody asked for.
 - **A fan-out may take its count from a list, and then the row is the run.**
   `spawn per @<list> @entity <job>` resolves the list first, copies the entity once per
   row, and titles each session with its row — seven issues read as seven sessions, not
@@ -492,24 +502,14 @@ the composer already does: mention another entity.
   list, the rows are typed: `spawn per [a, b, c] @entity <job>` — one run per bracketed row, the
   same cap, and the row is still the session title. A list that resolves nothing
   runs nothing — a delegatee holding the instruction but no row would pick one.
-- **In a fan-out the skill belongs to each run, not to the message.** `/workspace:…` goes
-  after the entity, so every run is routed; a skill at the front is a hard error that says
-  exactly that. The one exception is the fan-out `intent-ref` derives below: a skill the
-  composer put at the front is *moved onto every run* rather than refused, because that is
-  what the person's `/workspace:` already meant.
-- **A `spawn` the grammar cannot read is asked about, once.** `spawn @entity <job>` — no
-  count — used to match no prefix, so the whole sentence became ONE job and ran once,
-  silently; the session looked like a summary of the fan-out that never happened. `intent-ref`
-  now reads that shape before anything is parsed and answers a `spawn per …` sentence the
-  grammar already understands, so the rows, the cap and the hold are the ordinary ones. Three
-  rules keep it honest: it only looks at a `spawn` with no count (a message the grammar
-  reads is never second-guessed, so it costs no model call); it **proposes and the person
-  confirms**, because the result is a normal fan-out and the hold card shows every row before
-  a harness starts; and it cannot invent a name — the entity must exist here and the list
-  must be a mention that resolves. A reader that errors, or a plan naming an entity this
-  workspace does not have, is dropped and the message runs exactly as it does today. A pasted
-  issue URL (`…/issue/ENTITY-25/…`) is read deterministically as `relates to: ENTITY-25`, so a
-  lost model costs a slightly blunter job, never the fan-out.
+- **A `/workspace:` at the front is carried onto every run.** That is what the person meant by
+  it, and refusing it only taught them to retype a message the app could already read. A
+  classified fan-out moves the composer's prologue onto each job (one skill per run, one
+  worktree per run); a job with its own `/workspace:` keeps that one instead of two.
+- **Silence is not a guess.** An explicit `{"spawn": false}` is respected. Only a reader that
+  says nothing — no JSON, a non-zero exit, a timeout — falls through to `derivePlan`, which
+  still reads a pasted issue URL (`…/issue/ENTITY-25/…` → `relates to: ENTITY-25`) by itself,
+  so a lost model costs a blunter job, never the fan-out.
 - **A long turn shows its work, in the shape the answer will have.** A fan-out paints one
   delegation card per run inside the live bubble — queued, `Working…`, then that run's answer —
   and the foot carries `N of M done · elapsed`. No second panel, no spinner-only wait: the
@@ -733,9 +733,9 @@ it.
 | A 20-minute fan-out shows only "Waiting for coder…" | The runs announce themselves: cards in the live bubble, per-row status, count and clock in the foot |
 | A remote or delegated turn cannot be stopped | Whatever is running is reachable by `chat.cancel`: the parent harness *or* the delegated children, and queued runs never start |
 | Seven runs of a list all carry the shared instruction as their title | The row (issue id + title) is the mention's label and the session's title, and the block names each run by it |
-| A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | Refused before anything runs: the skill goes inside the job, one route per run |
-| `spawn @coder …` (no count) runs once and looks like the fan-out's summary | A `spawn` with no count is the one shape asked about: `intent-ref` turns it into a `spawn per …` before parsing, or leaves the message alone — never one silent run | `npm test` (`intent-ref`), `electron/intent-ref.cjs` |
-| `let's spawn 4 @designer …` shows ONE delegation card | The prefix is read in the opening prose, not at `^`: anchoring it to the first word let a sentence that introduces the ask demote it to one ordinary run. `spawnPrefix()` matches anywhere before the first mention, and returns an `end` offset so slicing still works. A `spawn` after a mention is that job's own text | `npm test` (`mention-ref`), `electron/mention-ref.cjs` (`openingProse`) |
+| A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | The prologue is carried onto every run instead of refused: a classified fan-out gives each job its own skill | `npm test` (`intent-ref`), `mention-ref.cjs` (`delegatePlan`) |
+| `spawn @coder …`, `let's spawn 4 @designer …`, or `Spawn 3` on its own line after a read — each showed ONE card | Every one of those was a regex being asked to read intent, and each shape was patched in turn while the next kept failing. The message is classified once instead: `{spawn: true, runs|list, entity, job}` or `{spawn: false}`, rendered as the sentence the grammar already reads. Never add a fourth prefix — a plan goes through `planSentence` | `npm test` (`intent-ref`, `mention-ref`), `electron/intent-ref.cjs` |
+| The classifier runs on every message, so "thanks" waits on a model | Three answers are provable without one: no entity named, an exact prefix, or a bare opening `spawn` | `npm test` (`intent-ref`), `intent-ref.cjs` (`namesEntity`) |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |

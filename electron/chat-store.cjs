@@ -1879,7 +1879,20 @@ function attachmentsBlock(attachments) {
   ].join('\n')
 }
 
-async function send({ workspace, id, text, emit = () => {}, retry = false, attachments = [], attachmentsEnabled = false }) {
+/* `intent` is a test seam: `undefined` (production) builds the real classifier
+   from the thread's own harness, and `null` says "this turn has none", which is
+   what a fixture whose stand-in is a shell script has to pass — asking it to
+   classify would run the same sleep that the test is about. */
+async function send({
+  workspace,
+  id,
+  text,
+  emit = () => {},
+  retry = false,
+  attachments = [],
+  attachmentsEnabled = false,
+  intent,
+}) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
@@ -2007,20 +2020,25 @@ async function send({ workspace, id, text, emit = () => {}, retry = false, attac
         machine: thread.machine,
         localOnly: thread.machine !== 'local',
         threadId: thread.id,
-        /* The grammar cannot read a `spawn` with no count, and that shape used to
-           run once — silently. Ask the harness that is about to answer what was
-           meant, and hand mention-ref back a `spawn per …` it already knows; the
-           rows, the cap and the hold below stay the ordinary ones. Local only:
-           a remote thread's harness is not here to ask, and its message is
-           forwarded untouched rather than guessed at. */
+        /* What the message is *for*, when a pattern cannot say. One classifier
+           call, the same harness that is about to answer the turn, decides
+           between "several parallel runs" and "answer directly"; the plan it
+           names goes through the ordinary fan-out path, so the rows, the cap and
+           the hold below stay the ones this file already has. A message the
+           grammar reads exactly (its own `spawn N`, a plain `@entity <job>`)
+           never reaches the model, and a spawned session is headless — it asks
+           nobody. Local only: a remote thread's harness is not here to ask, and
+           its message is forwarded untouched rather than guessed at. */
         intent:
-          thread.machine === 'local' &&
-          (thread.spawnedFrom ? false : intentRef.wantsFanout(applied.text)) &&
-          intentRef.reader({
-            harness: thread.harness,
-            model: thread.model,
-            entities: entities.list(record.id).map((item) => item.name),
-          }),
+          thread.machine === 'local' && !thread.spawnedFrom
+            ? intent === undefined
+              ? intentRef.reader({
+                  harness: thread.harness,
+                  model: thread.model,
+                  entities: entities.list(record.id).map((item) => item.name),
+                })
+              : intent
+            : null,
         /* `@thread:` reads through the store's own list/read, so `canAccess` and
            the entity filter are the whole privacy story — mention-ref never opens
            a chat file itself. */

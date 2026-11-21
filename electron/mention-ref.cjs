@@ -101,13 +101,12 @@ function openingProse(source) {
    backlog" stays prose. */
 const SPAWN_PREFIX = /\bspawn\s+(\d{1,2})\s+(?=@)/
 const SPAWN_PER = /\bspawn\s+per\s+(?=@)/i
-/* A `spawn` with no count is the shape that used to run once, silently: it
-   matched no prefix, so the whole sentence became one ordinary job. `intent-ref`
-   turns it into a `spawn per …` before this module sees it. Read in the same
-   opening prose as the prefixes below, so `let's spawn @coder …` is asked about
-   too — and a `spawn` written after a mention is that job's own text, never a
-   second ask. */
-const SPAWN_WITHOUT_COUNT = /\bspawn\b(?!\s+(?:per\b|\d))/i
+/* A `spawn` with no count, a `spawn` inside a sentence, a `Spawn 3` on its own
+   line after a read — the grammar cannot read intent, and every attempt to teach
+   it another shape demoted a fan-out to ONE ordinary run without saying so. Those
+   messages are no longer guessed at here: `intent-ref` classifies the message and
+   hands back the plan as one of the three sentences below, which this grammar
+   does read exactly. See `planSentence` and the `intent` seam in `rewrite`. */
 /* `spawn per [a, b, c] @entity …` — the rows are written out. A catalogue that
    lives in a JSON file has no mention that can enumerate it, and copying ten
    names is shorter than any selector syntax. */
@@ -135,6 +134,25 @@ function spawnPrefix(source) {
   const count = Number(match[1])
   if (!Number.isFinite(count) || count < 1) return null
   return { kind: 'repeat', count, end: match.index + match[0].length }
+}
+
+/**
+ * The classifier's plan, written as the sentence this grammar reads exactly.
+ *
+ * One renderer, so there is no second language: a plan becomes `spawn N @entity
+ * <job>` or `spawn per @list @entity <job>`, and everything downstream — the
+ * rows, the shares, the cap, the hold — is the ordinary path. The skill prologue
+ * is deliberately *not* copied in here: a leading `/workspace:` is carried onto
+ * every run by `rewrite`, which is what a fan-out means by it.
+ */
+function planSentence(plan) {
+  if (!plan || !plan.entity) return null
+  const job = String(plan.job || '').trim()
+  if (!job) return null
+  if (plan.mode === 'rows' && plan.list) return `spawn per ${plan.list} @${plan.entity} ${job}`
+  const runs = Math.trunc(Number(plan.runs))
+  if (!Number.isFinite(runs) || runs < 2) return null
+  return `spawn ${Math.min(runs, MAX_SPAWN_RUNS)} @${plan.entity} ${job}`
 }
 
 /**
@@ -1575,6 +1593,39 @@ function holdError(decision, ctx) {
 }
 
 /**
+ * One classified message, on the ordinary fan-out path.
+ *
+ * The classifier (`intent-ref`) has already answered "several sessions" and
+ * named the plan; this only has to turn that into the sentence the grammar reads
+ * and let the rest of `rewrite` run unchanged. The leading skill comes along: a
+ * fan-out routes each *run*, so the prologue `skill-ref` put at the front of the
+ * message is carried onto every job instead of being refused. A plan naming an
+ * entity this workspace does not have plans nothing — the ordinary path would
+ * refuse it after the person had already read a card.
+ *
+ * The classified message replaces the person's, so a mention that only the
+ * *sentence* carried (`… on @youtrack:ENTITY:ENTITY-37 …`) is not resolved: the
+ * card's **Read:** line says work already happened, and inventing a read the
+ * plan does not have would be the lie that line exists to prevent. What the run
+ * must know travels in the job, which is why the classifier copies the person's
+ * words rather than rewriting them.
+ */
+async function delegatePlan(record, source, plan) {
+  if (!plan?.entity) return null
+  const known = entities
+    .list(record.id)
+    .some((item) => item.name.toLowerCase() === String(plan.entity).toLowerCase())
+  if (!known) return null
+  const sentence = planSentence(plan)
+  if (!sentence) return null
+  const prologue = String(source || '').match(SKILL_PROLOGUE)
+  return {
+    source: prologue ? `${prologue[0].trim()}\n\n${sentence}` : sentence,
+    carriedSkill: prologue ? prologue[0].trim() : '',
+  }
+}
+
+/**
  * Resolve every mention in `text` and return the prompt to send.
  *
  * `deps` is a test seam only: production callers pass nothing and get the real
@@ -1595,52 +1646,38 @@ async function rewrite(
     stopped = null,
     /* the plan gate: present only for a person's own top-level turn */
     hold = null,
-    /* the intent reader: sees the message only when the grammar could not, and
-       answers a `spawn per …` sentence — absent in tests and the CLI */
+    /* The classifier: one call per message the grammar could not read, answering
+       a plan (`intent-ref.reader`) — absent in tests, the CLI and a spawned
+       session, which run only what the grammar reads exactly. */
     intent = null,
   } = {},
 ) {
   let source = String(text || '')
-  /* A `spawn` with no count is the one shape the grammar cannot read: it matched
-     no prefix, so the whole sentence became one ordinary job and ran once,
-     silently. Ask what was meant before parsing anything, and hand the answer
-     back as a `spawn per …` this module already understands. */
-  const skillPrefix = source.match(SKILL_PROLOGUE)
-  const gateSource = skillPrefix ? source.slice(skillPrefix[0].length) : source
   /* A `/workspace:` that led the message moves onto every run it produces:
      `skill-ref` resolved it for the message, and a fan-out routes each run. */
   let carriedSkill = ''
-  if (intent && spawnPrefix(source) === null && SPAWN_WITHOUT_COUNT.test(openingProse(gateSource))) {
+  /* The grammar first, exactly, for free. A message opening with a prefix it
+     already reads is never second-guessed — the person's own count is a better
+     answer than anything a model could return. Everything else is classified
+     once: `intent-ref` answers a plan or "answer directly", which is the two
+     cases this module could never tell apart by pattern alone. */
+  if (intent && spawnPrefix(source) === null) {
     let plan = null
     try {
       plan = await intent(source)
     } catch {
-      /* a reader that throws is a reader that had nothing to say */
+      /* a reader that throws is a reader with nothing to say */
       plan = null
     }
-    if (plan?.list && plan?.entity) {
-      const separator = /\s$/.test(String(plan.job || '')) ? '' : ' '
-      source = `spawn per ${plan.list} @${plan.entity}${separator}${plan.job}`.trim()
-      /* the prologue is now carried by every run instead of leading the message */
-      if (skillPrefix) carriedSkill = skillPrefix[0].trim()
+    const delegated = plan ? await delegatePlan(record, source, plan) : null
+    if (delegated) {
+      source = delegated.source
+      carriedSkill = delegated.carriedSkill
     }
   }
   const spawn = spawnPrefix(source)
   const parsed = parse(source)
   if (!parsed.segments.length) return { text: source, mentions: [] }
-  /* A fan-out routes each run, not the message. A leading `/workspace:` reaches
-     us as `use this skill <path>` in front of the prefix, which used to leave the
-     parent to create one desk for the whole message — the exact opposite.
-     The derived fan-out above has already taken the prologue onto its runs, so
-     there is nothing left here to refuse. */
-  const prologue = source.match(SKILL_PROLOGUE)
-  if (prologue && spawnPrefix(source.slice(prologue[0].length))) {
-    throw new Error(
-      'A fan-out routes each run, not the message: put the skill inside the job — ' +
-        '`spawn per @youtrack:… @coder /workspace:orca-worktree …` — so every run gets its own. ' +
-        'Nothing was sent.',
-    )
-  }
   if (spawn?.kind === 'repeat' && spawn.count > MAX_SPAWN_RUNS) {
     throw new Error(
       `spawn ${spawn.count} is more than ${MAX_SPAWN_RUNS} runs. Nothing was sent — lower the number.`,
@@ -1880,15 +1917,17 @@ async function rewrite(
     )
   }
 
+  /* The runs that actually answered, in order: the reply above reads them, and
+     their count is what the prompt states. A reference is not a run. */
+  const runs = segments.filter(
+    (segment) => segment.mention?.kind === 'entity' && !segment.mention.reference,
+  )
   const block = blockFor(segments, ctx.notes)
   /* A fan-out is done by the time the parent reads its prompt: the runs already
      happened. Handing it the raw `spawn per … @coder …` sentence invites a
      parent that delegates — or works — a second time, which for a routing skill
      means an extra worktree. The transcript keeps the person's words; the prompt
      states what was done. */
-  const runs = segments.filter(
-    (segment) => segment.mention?.kind === 'entity' && !segment.mention.reference,
-  )
   const fanned = spawn && (spawn.kind === 'per' || spawn.count > 1) && runs.length > 1
   const prompt = fanned
     ? `${runs.length} runs of ${tokenOf(target || runs[0])}, one per row above. They have already ` +

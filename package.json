@@ -34,6 +34,7 @@
     "test:regression": "playwright test tests/e2e/full",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "eval:intent": "node scripts/eval-intent.mjs",
     "test:all": "npm run test:unit && npm run test:e2e",
     "test:gate": "npm run test:unit && npm run test:smoke",
     "media:posters": "node scripts/readme-media.mjs posters",

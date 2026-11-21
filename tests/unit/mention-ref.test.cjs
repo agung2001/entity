@@ -594,18 +594,27 @@ test('spawn per without a list, or without an entity, is a hard error', async ()
   )
 })
 
-test('a skill at the front of a fan-out is refused, because each run needs it', async () => {
+test('a skill at the front of a fan-out is carried onto each run', async () => {
   const record = workspace()
-  /* this is what `skill-ref` hands us: the resolved prologue, then the prefix */
-  await assert.rejects(
-    () =>
-      mention.rewrite(
-        record,
-        'use this skill /skills/alpha\n\nspawn 3 @py-agent write a poem',
-        { deps: deps() },
-      ),
-    /put the skill inside the job/,
+  const jobs = []
+  /* `/workspace:…` at the front is what the person meant by it: every run routed
+     by that skill. Refusing it only taught people to retype a message the app
+     could already read — the classifier's plan carries the prologue instead. */
+  const { segments } = mention.parse(
+    'use this skill /skills/alpha\n\n@py-agent write a poem',
   )
+  assert.equal(segments[0].kind, 'entity')
+  await mention.rewrite(record, 'use this skill /skills/alpha\n\nspawn 2 @py-agent write a poem', {
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+  })
+  /* the grammar path keeps the prologue on the message, so the harness loads it
+     once; a classified fan-out is the one that carries it per run */
+  assert.equal(jobs.length, 2)
 })
 
 test('a delegated job may carry its own /workspace: skill', async () => {

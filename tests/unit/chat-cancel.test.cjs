@@ -94,6 +94,9 @@ test('a plan waits before any harness starts, and Cancel starts nothing', { skip
     workspace,
     id: thread.id,
     text: '@hold-child check the site',
+    /* no classifier: the stand-in here is `sleep 60`, and asking it to decide what
+       the message is for would wait on the very clock this test is about */
+    intent: null,
     emit: (event) => events.push(event),
   })
   t.after(() => chats.closeAll())
@@ -141,7 +144,13 @@ test('Run starts the held runs, and a second answer finds nothing to decide', { 
   harnesses.setPath({ id: 'pi', path: fake })
 
   const thread = await chats.create({ workspace, entity: 'run-parent', harness: 'pi' })
-  const turn = chats.send({ workspace, id: thread.id, text: '@run-child check the site' })
+  const turn = chats.send({
+    workspace,
+    id: thread.id,
+    text: '@run-child check the site',
+    /* the stand-in is `sleep 60`; see the note in the Cancel test above */
+    intent: null,
+  })
   t.after(() => chats.closeAll())
 
   for (let i = 0; i < 100 && !chats.heldPlan(thread.id); i += 1) await sleep(20)

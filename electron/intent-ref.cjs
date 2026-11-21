@@ -1,50 +1,42 @@
 /**
- * What the person meant, when the grammar cannot read it.
+ * What the message is *for*, when a regex cannot say.
  *
- * `mention-ref` reads a message with regexes, on purpose: a fan-out is *asked
- * for*, never inferred, so `spawn 3 @coder …` runs three times and
- * `spawn @coder …` used to run once — silently, because a bare `spawn` matches
- * no prefix and the sentence therefore became one ordinary job.
+ * `mention-ref` reads a message with regexes, on purpose: `@entity <job>` is a
+ * delegation and `spawn N @entity <job>` is N of them. That grammar is exact and
+ * cheap, and it stays the first reader. What it cannot do is read *intent* — and
+ * a fan-out is intent, so people kept writing it in ways no anchored pattern
+ * survives:
  *
- * That silent case is what this module exists for. The person typed `spawn` and
- * a count was nowhere to be found; the intent is unambiguously "one run per
- * something", and the something is usually an issue list pasted as a URL. Rather
- * than teach the grammar to guess, we ask the harness that is about to run the
- * turn, and hand `mention-ref` back a `spawn per …` sentence it already knows
- * how to read.
+ *   - `let's spawn 4 @designer …` — the ask inside a sentence;
+ *   - `… @youtrack:ENTITY:3 Work on the issues.` then, on its own line,
+ *     `Spawn 3 @coder …` — the ask after a mention, where a read swallowed it.
  *
- * Three rules keep this from becoming a second, vaguer language:
+ * Both were demoted to ONE ordinary run: one card where four were asked for, and
+ * no error to say so. Patching the pattern each time is what kept it happening,
+ * so the grammar is no longer asked to guess. It is replaced by one classifier
+ * call — the same harness that is about to answer the turn — which reads the
+ * message and answers either "this is a fan-out, here is the plan" or "nothing
+ * to fan out".
  *
- *   - **Only for an unanswered `spawn`.** `wantsFanout` is a cheap, deterministic
- *     gate: a message the grammar already understands is never second-guessed,
- *     so this costs one model call on the one shape that used to fail, and none
- *     on anything else.
- *   - **It proposes; the person confirms.** The rewrite lands in the ordinary
- *     fan-out path, so the rows, their folders and the count are on the hold card
+ * Four rules keep this from becoming a second, vaguer language:
+ *
+ *   - **The grammar goes first.** A message the grammar reads exactly never costs
+ *     a call; a message that names no entity with a job can delegate nothing, so
+ *     it never costs one either.
+ *   - **It proposes; the person confirms.** The plan lands in the ordinary
+ *     fan-out path, so every row, its folder and the count are on the hold card
  *     before a harness starts. A wrong guess costs one keystroke, not six agents.
- *   - **It cannot invent a name.** The entity must be one this workspace has, the
- *     list must be a mention `mention-ref` resolves, and a plan that fails to
- *     produce both is dropped — the message then runs exactly as it does today.
- *
- * When the model is unavailable (no harness, a CLI that errors, garbage output)
- * `derivePlan` still reads the pasted issue URL deterministically. A fallback
- * that is a little blunt beats a fan-out that silently never happens.
+ *   - **It cannot invent a name.** The entity must be one this workspace has, and
+ *     a plan that fails to produce a usable one is dropped — the message then
+ *     runs exactly as it does today.
+ *   - **Silence is not a guess.** An explicit `{"spawn": false}` is respected.
+ *     Only a reader that says nothing (no JSON, an exit code, a timeout) falls
+ *     through to `derivePlan`, which still reads a pasted issue URL by itself.
  */
 const { runOneShot, lastJson } = require('./oneshot.cjs')
 
-/* The one shape that used to swallow the request: `spawn` with no count after
-   it. `spawn 3 @x` and `spawn per @x` both parse; `spawn @x` did not.
-
-   Read in the prose *before the first mention*, which is the same window
-   `mention-ref` reads its prefixes in: `let's spawn @coder …` is the ask written
-   the way people write it, and anchoring this to `^` would run it once. */
-const SPAWN_WITHOUT_COUNT = /\bspawn\b(?!\s+(?:per\b|\d))/i
-/* The first mention's `@`, so everything before it is prose and everything
-   after it is a mention's own text. */
-const FIRST_MENTION = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/
-
 /* `skill-ref` resolves a leading `/workspace:x` into `use this skill <path>` and
-   puts it at the very front, so every check below has to look past it. */
+   puts it at the very front, so every reading below has to look past it. */
 const SKILL_PROLOGUE = /^use this skill \S+\s*\n+/i
 
 /** The message without the skill prologue the composer's `/skill` put there. */
@@ -60,28 +52,51 @@ const ISSUE_KEY = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAX_JOB = 4_000
+/* The `spawn N` ceiling, and the same number `mention-ref` enforces. Kept here
+   too so a model's guess is clamped into something runnable rather than thrown
+   back as "spawn 9 is more than 5 runs" on a card the person did not write. */
+const MAX_RUNS = 5
 
 const INSTRUCTION = [
-  'You read one message a person is about to send to a coding agent, and you decide',
-  'whether it asks for ONE job or for MANY separate runs of one instruction.',
+  'You read one message a person is about to send to a coding agent. Decide what',
+  'the message is for, and answer with JSON only — no prose, no code fences.',
   '',
-  'Answer with JSON only — no prose, no code fences:',
-  '{"fanout":true,"list":"@youtrack:…","entity":"coder","job":"…"}',
+  'Most messages are ONE conversation with an agent, or a plain request. Say so:',
+  '{"spawn": false}',
   '',
-  '- `fanout` is true only when the person wants several separate runs, one per row',
-  '  of a list (one per issue, one per file, one per scene). Asking to "create one',
-  '  issue" or to "fix this bug" is ONE run: `fanout: false`.',
-  '- `list` is the mention for that list, in exactly this grammar:',
+  'Sometimes the person wants the same instruction run SEVERAL times in parallel,',
+  'each copy in its own sub-session — the same job N times, or once per row of a',
+  'list. Say so, and name the plan:',
+  '{"spawn": true, "runs": 3, "entity": "designer", "job": "To work on the design of each pages."}',
+  '{"spawn": true, "list": "@youtrack:ENTITY:relates to: ENTITY-37 #Unresolved", "entity": "coder", "job": "…"}',
+  '',
+  '- `entity` is the agent the person addressed, without the `@`. It must be one of',
+  '  the names given below; never invent one.',
+  '- `job` is what EACH run should do, in the person\'s own words. Copy their words',
+  '  — do not rewrite, translate or shorten them. Remove two things only: the',
+  '  number of copies, and any sentence that is context for the *whole* message',
+  '  rather than an instruction to the agent ("By following the design of these',
+  '  pages", "I want to improve them"). The job is what one agent is asked to do.',
+  '- `runs` is how many parallel copies they asked for — "spawn 4", "four agents",',
+  '  "three of you", "give me 2". A number above one is what makes this a fan-out.',
+  '  Use `runs` when the copies need no shared list. Take the number out of the',
+  '  job: "three passes over the diff" is `runs: 3` with the job "passes over the',
+  '  diff", not a job that repeats the count each run already knows.',
+  '- `list` is the mention to resolve into rows, in exactly this grammar:',
   '  `@youtrack:<PROJECT KEY>:<query>` — for issues a project relates to,',
   '  `@youtrack:ENTITY:relates to: ENTITY-25 #Unresolved`. Keep any state filter',
   '  the person wrote (#Unresolved, #Resolved) verbatim. Never invent a filter.',
-  '- `entity` is the entity name the person addressed, without the `@`.',
-  '- `job` is what EACH run should do, in the person\'s own words, with the',
-  '  reference to the list itself removed — every run is told its own row',
-  '  separately, and a job that still says "for each issue" confuses it.',
+  '  Use `list` instead of `runs` when the copies come from rows.',
+  '- An explicit count WINS over a list. `Spawn 3 @coder work on the issues that',
+  '  relate to ENTITY-37` is `runs: 3`: they named the number, so give them three.',
+  '  Use `list` only when the count comes from the rows ("one per issue", "do each',
+  '  one") and no number was written.',
   '',
-  'Choose `fanout: false` whenever you are unsure. A missed fan-out runs once and',
-  'the person retypes; a wrong one starts several agents on work nobody asked for.',
+  'Answer `{"spawn": false}` whenever you are unsure. These are NOT fan-outs:',
+  'asking a question, asking for one job for one agent, naming an agent in passing',
+  '("remove @designer from the list"), or asking about work already done. A missed',
+  'fan-out costs one retype; a wrong one starts several agents on work nobody asked',
+  'for.',
 ].join('\n')
 
 function escapeRegExp(value) {
@@ -89,18 +104,19 @@ function escapeRegExp(value) {
 }
 
 /**
- * Is this the message shape that used to run once by accident?
+ * Does this message address an entity at all?
  *
- * Deliberately narrow. A message that already parses as a fan-out is not asked
- * about, because the person's own `spawn N` is the better answer than anything a
- * model could return.
+ * The one check made before the model, and it is not a parse of intent: a message
+ * that names no agent has nothing to delegate to, so the answer is provable
+ * without asking. It is what keeps "Take your time." and "why did the build
+ * fail?" on the direct path — waiting for a classifier to say `spawn: false`
+ * about a sentence with no `@` in it is latency nobody gets back.
  */
-function wantsFanout(text) {
-  const source = bodyOf(text)
-  const at = FIRST_MENTION.exec(source)
-  /* keep the `@` itself: the lookahead below needs one after the number */
-  const lead = at ? source.slice(0, at.index + at[1].length + 1) : source
-  return SPAWN_WITHOUT_COUNT.test(lead)
+function namesEntity(source, entities = []) {
+  const text = String(source || '')
+  if (!text.includes('@')) return false
+  if (!entities.length) return true
+  return entities.some((name) => new RegExp(`@${escapeRegExp(name)}\\b`, 'i').test(text))
 }
 
 /**
@@ -152,6 +168,9 @@ function stripIssueClause(source, key, entity) {
  * names one issue, and the documented query for its children is
  * `@youtrack:ENTITY:relates to: ENTITY-25`. Returns null when the message carries
  * no issue key at all, which is the signal that this is not this kind of message.
+ *
+ * This is the fallback for a reader that said *nothing* — never for one that said
+ * `{"spawn": false}`.
  */
 function derivePlan(text, { entities = [] } = {}) {
   const source = bodyOf(text)
@@ -179,48 +198,71 @@ function derivePlan(text, { entities = [] } = {}) {
   const job = stripIssueClause(source, key, entity)
   /* A job of one word is not an instruction, and it is not this layer's call to
      invent one — an unreadable message runs exactly as it does today. */
-  if (!job || job.split(/\s+/).length < 3) return null
-  return { list, entity, job: job.slice(0, MAX_JOB), derived: true }
+  if (!job || job.split(/\s+/).filter(Boolean).length < 3) return null
+  return { mode: 'rows', list, entity, job: job.slice(0, MAX_JOB), derived: true }
 }
 
-/** A plan is only usable if both halves are a shape `mention-ref` can resolve. */
+/**
+ * The one plan shape the rest of the app reads, or null for "answer directly".
+ *
+ * Two modes, because a fan-out takes its count from one of two places: `repeat`
+ * is the same instruction N times (`spawn 4 @designer …`), `rows` is one run per
+ * row a list resolves (`spawn per @youtrack:… @coder …`). A plan of one run is
+ * not a fan-out — the grammar already delegates that, and a card for it would be
+ * a confirmation step in front of something that already works.
+ */
 function usable(plan, entities = []) {
   if (!plan || typeof plan !== 'object') return null
+  /* The model's own "nothing to fan out" is an answer, not a failed read. */
+  if (plan.spawn === false || plan.fanout === false) return null
   const entity = String(plan.entity || '').replace(/^@/, '').trim()
-  const list = String(plan.list || '').trim()
-  const job = String(plan.job || '').trim()
-  /* a bare `@youtrack:` resolves nothing, so the kind has to carry a query */
-  if (!entity || !/^@?(?:youtrack|orca|artifact|maka):\S/.test(list)) return null
-  if (!job) return null
+  if (!entity) return null
   if (entities.length && !entities.map(String).includes(entity)) return null
+  const job = String(plan.job || '').trim()
+  if (!job) return null
+  const list = String(plan.list || '').trim()
+  if (list) {
+    /* a bare `@youtrack:` resolves nothing, so the kind has to carry a query */
+    if (!/^@?(?:youtrack|orca|artifact|maka):\S/.test(list)) return null
+    return {
+      mode: 'rows',
+      list: list.startsWith('@') ? list : `@${list}`,
+      entity,
+      job: job.slice(0, MAX_JOB),
+      derived: Boolean(plan.derived),
+    }
+  }
+  const runs = Math.trunc(Number(plan.runs ?? plan.count))
+  if (!Number.isFinite(runs) || runs < 2) return null
   return {
-    list: list.startsWith('@') ? list : `@${list}`,
+    mode: 'repeat',
+    runs: Math.min(runs, MAX_RUNS),
     entity,
     job: job.slice(0, MAX_JOB),
     derived: Boolean(plan.derived),
   }
 }
 
+/** The classification, or null when the answer carried no JSON at all. */
 function parseAnswer(text) {
   const parsed = lastJson(text)
-  if (!parsed || typeof parsed !== 'object') return null
-  if (parsed.fanout !== true) return null
-  return { list: parsed.list, entity: parsed.entity, job: parsed.job }
+  return parsed && typeof parsed === 'object' ? parsed : null
 }
 
 /**
- * A reader bound to one harness: the same voice that is about to run the turn
+ * A reader bound to one harness: the same voice that is about to answer the turn
  * decides what the turn is. `null` when there is no harness to ask, so callers
  * can pass it unconditionally and get only the deterministic fallback.
  */
 function reader({ harness = '', model = '', entities = [], timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const id = String(harness || '')
   if (!id) return null
-  return async function readIntent(text) {
+  const names = entities.map(String).filter(Boolean)
+  return async function readMessage(text) {
     const source = bodyOf(text)
-    if (!wantsFanout(source)) return null
-    const names = entities.map(String).filter(Boolean)
-    let plan = null
+    /* Nothing addressed, nothing to delegate to — answered without a call. */
+    if (!namesEntity(source, names)) return null
+    let verdict = null
     try {
       const result = await runOneShot({
         harness: id,
@@ -236,24 +278,26 @@ function reader({ harness = '', model = '', entities = [], timeoutMs = DEFAULT_T
           .filter(Boolean)
           .join('\n'),
         timeoutMs,
-        label: 'read intent',
+        label: 'classify message',
       })
-      plan = usable(parseAnswer(result.text), names)
+      verdict = parseAnswer(result.text)
     } catch {
-      /* A harness that will not answer is not a reason to lose the request: the
-         deterministic reading below still knows a pasted issue URL when it sees
-         one. */
-      plan = null
+      /* a harness that will not answer is a harness with nothing to say */
+      verdict = null
     }
-    return plan || usable(derivePlan(source, { entities: names }), names)
+    /* An explicit "no" is respected. Only silence falls through to the
+       deterministic reading below, which still knows a pasted issue URL. */
+    if (verdict) return usable(verdict, names)
+    return usable(derivePlan(source, { entities: names }), names)
   }
 }
 
 module.exports = {
   INSTRUCTION,
-  wantsFanout,
+  MAX_RUNS,
   bodyOf,
   derivePlan,
+  namesEntity,
   usable,
   reader,
   stripIssueClause,
