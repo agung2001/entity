@@ -26,7 +26,6 @@
   --hero-rule: color-mix(in oklab, var(--hero) 22%, var(--border));
   --hero-chip-bg: color-mix(in oklab, #fff 62%, transparent);
   --hero-chip-bd: color-mix(in oklab, var(--hero) 20%, var(--border));
-  --hero-chip-on: color-mix(in oklab, var(--hero) 18%, #fff);
   --hero-card-bg: color-mix(in oklab, #fff 66%, transparent);
   --hero-card-bd: color-mix(in oklab, var(--hero) 24%, var(--border));
   --hero-lv-bg: color-mix(in oklab, var(--hero) 10%, #fff);
@@ -207,7 +206,10 @@
   position: relative;
   z-index: 1;
   margin: 18px -22px 0;
-  padding: 12px 22px 13px;
+  /* The head sits close to the bars on purpose; the bars get their air below,
+     between the value labels and the day ticks, so a 100-turn column is not
+     wedged against the frame. */
+  padding: 16px 22px 18px;
   border-top: 1px solid var(--hero-rule);
   background: var(--hero-band);
 }
@@ -217,7 +219,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 9px;
+  margin-bottom: 14px;
 }
 .act-pulse-head .eyebrow {
   margin: 0;
@@ -238,11 +240,14 @@
   color: var(--hero-2);
   font-variant-numeric: tabular-nums;
 }
+/* The columns are tallest here and the numbers above them ride at 100% of the
+   box, so the plot gets its own air: 92 px of bar under a 20 px label strip. */
 .act-bars {
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 46px;
+  height: 112px;
+  padding-top: 20px;
 }
 .act-bar {
   position: relative;
@@ -294,75 +299,14 @@
 .act-ticks {
   display: flex;
   justify-content: space-between;
-  margin-top: 7px;
+  margin-top: 13px;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   letter-spacing: 0.02em;
   color: var(--hero-muted);
 }
 
-/* ── the cast: who is in the journal, and the filter for it ─────────── */
-.act-cast {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin: 0 -22px;
-  padding: 11px 22px 13px;
-  border-top: 1px solid var(--hero-rule);
-}
-.act-cast .lbl {
-  flex: none;
-  margin-right: 4px;
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--hero-muted);
-}
-.act-fchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 9px 0 7px;
-  border: 1px solid var(--hero-chip-bd);
-  border-radius: var(--r-pill);
-  background: var(--hero-chip-bg);
-  font-size: var(--fs-label);
-  color: var(--hero-2);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out;
-}
-.act-fchip:hover {
-  background: color-mix(in oklab, #fff 88%, transparent);
-  border-color: color-mix(in oklab, var(--hero) 45%, var(--border-strong));
-  color: var(--hero-ink);
-}
-.act-fchip .mark {
-  width: 13px;
-  height: 13px;
-  flex: none;
-}
-.act-fchip .n {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--hero-muted);
-  font-variant-numeric: tabular-nums;
-}
-.act-fchip[aria-pressed='true'] {
-  border-color: color-mix(in oklab, var(--hero) 55%, var(--border-strong));
-  background: var(--hero-chip-on);
-  color: var(--hero-ink);
-}
-.act-fchip[aria-pressed='true'] .n {
-  color: var(--hero-2);
-}
-
-/* ── the toolbar: search, count, one sort ──────────────────────────── */
+/* ── the toolbar: the entity pick, the search, one sort ─────────────── */
 .act-tool {
   display: flex;
   align-items: center;
@@ -370,12 +314,43 @@
   flex-wrap: wrap;
   margin: 14px 0 10px;
 }
+/* The entity filter is the same quiet text trigger the chat's context uses,
+   dressed as a field so it reads as the first control of the toolbar. */
+.act-cast-pick .pickwrap {
+  display: block;
+}
+.act-cast-pick .pickbtn {
+  height: 32px;
+  max-width: 220px;
+  padding: 0 9px;
+  gap: 6px;
+  border-color: var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.act-cast-pick .pickbtn .nm {
+  flex: 1;
+  text-align: left;
+}
+.act-cast-pick .pickbtn .ct {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+.act-cast-pick .pickbtn:focus-visible {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
+}
 .act-search {
   display: flex;
   align-items: center;
   gap: 7px;
-  flex: 1 1 240px;
-  max-width: 380px;
+  /* The picker takes its own width and the search takes the rest of the row:
+     a fixed 520 px ceiling left a dead gap before the sort button. */
+  flex: 1 1 260px;
+  min-width: 0;
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--field-edge);
@@ -426,6 +401,8 @@
   background: var(--surface-2);
   color: var(--ink);
 }
+/* The sessions tab keeps its count as the toolbar's leading statement; the
+   journal's is gone — the entity pick carries the total now. */
 .act-count {
   font-family: var(--mono);
   font-size: var(--fs-meta);
@@ -618,7 +595,6 @@
   --hero-rule: rgba(255, 255, 255, 0.09);
   --hero-chip-bg: rgba(255, 255, 255, 0.05);
   --hero-chip-bd: rgba(255, 255, 255, 0.14);
-  --hero-chip-on: color-mix(in oklab, var(--hero) 16%, rgba(255, 255, 255, 0.06));
   --hero-card-bg: rgba(0, 0, 0, 0.24);
   --hero-card-bd: rgba(255, 255, 255, 0.14);
   --hero-lv-bg: rgba(0, 0, 0, 0.28);
@@ -654,8 +630,8 @@
 :root[data-theme='dark'] .act-track i {
   background: linear-gradient(90deg, color-mix(in oklab, var(--hero) 70%, #6b5424), var(--hero));
 }
-:root[data-theme='dark'] .act-fchip:hover {
-  background: rgba(255, 255, 255, 0.1);
+:root[data-theme='dark'] .act-cast-pick .pickbtn:hover {
+  border-color: var(--border-strong);
   color: #f7f3df;
 }
 
@@ -680,8 +656,7 @@
   .act-hero {
     padding: 16px 16px 0;
   }
-  .act-pulse,
-  .act-cast {
+  .act-pulse {
     margin-left: -16px;
     margin-right: -16px;
     padding-left: 16px;
@@ -693,11 +668,24 @@
   .act-bar em {
     display: none;
   }
+  /* No value labels at this width, so the strip reserved for them goes with
+     them and the plot keeps a usable height. */
+  .act-bars {
+    height: 64px;
+    padding-top: 0;
+  }
   .act-tool {
     gap: 8px;
   }
   .act-search {
     flex: 1 1 100%;
+    max-width: none;
+  }
+  /* Full width once the row wraps: two half-width fields read as a form. */
+  .act-cast-pick,
+  .act-cast-pick .pickwrap,
+  .act-cast-pick .pickbtn {
+    width: 100%;
     max-width: none;
   }
   .act-tool .btn {
@@ -755,12 +743,12 @@
     display: none;
   }
 }
-/* A thumb still has to hit the clear affordance and the chips; the ledger row
-   keeps its own 74 px. */
+/* A thumb still has to hit the entity pick, the clear affordance and the sort;
+   the ledger row keeps its own 74 px. */
 @container (max-width: 460px) {
-  .act-fchip {
+  .act-cast-pick .pickbtn {
     height: 44px;
-    padding: 0 13px;
+    padding: 0 12px;
   }
   .act-search {
     height: 44px;
@@ -790,7 +778,6 @@
    `backdrops.css` already stops them. */
 @media (prefers-reduced-motion: reduce) {
   .act-bar,
-  .act-fchip,
   .act-clear,
   .act-search,
   .jr,
