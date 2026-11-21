@@ -697,6 +697,9 @@ it.
 | The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `chat-minimap.css` (`.jump-live`) |
 | `Failed` is painted on a card with no way to fix it | A failure carries its own action: retry the session it left behind, and put the count on the surface that holds the whole fan-out | `npm test` (delegation retry contract) |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
+| An agent rewrites an entity's standing instructions and the person finds out from the file's mtime | A run's `set-instructions` parks a request in `pending-write.json` and throws `needs_consent`; the card on the composer shows the diff and only `Apply` writes, conditional on the stamp the proposal was read at | `tests/unit/pending-write.test.cjs` |
+| A consent card offers `Apply` for a proposal that is identical to the file, or for a rewrite too large to review | Apply is **absent, not disabled** where pressing it would be a lie (`identical`, `denied`, `large`); the banner states the cause and the one action | `DefinitionWriteCard.vue` (`applyHidden`) |
+| The composer's card answers to the window instead of its own column | `.cp-dockwrap` is a size container (`container-name: cpdock`); the unified diff is `@container cpdock (max-width: 560px)` | `chat.css`, `definition-write.css` |
 | A capability list has no search input | Every inventory that can exceed a screen gets a visible, case-insensitive filter over harnesses and models | `npm test` (MachineDetailView contract) |
 | An attachment is typed into the prompt instead of the chip row | Prompts stay prompts; file/MCP attachments live in chips below | Review |
 | Attachments require a mode switch or hidden toggle | Use the direct clip/folder button and drop target | Review |
@@ -800,6 +803,7 @@ it.
 | Artifact document editor | `src/views/ArtifactDetailView.vue` | page surface; Save button and the catalog `save` shortcut |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
 | Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
+| Definition write (a rewrite waiting for you) | `src/components/DefinitionWriteCard.vue` | Esc = `Not now` (not while Apply is in flight); Apply is the only other answer |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
 
 ## Every searchable list says ⌘/ (⌥/ in a tab), in the same pill

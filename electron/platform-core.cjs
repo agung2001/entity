@@ -19,6 +19,7 @@ const entities = require('./entity-store.cjs')
 const localData = require('./local-data.cjs')
 const audit = require('./platform-audit.cjs')
 const pendingClones = require('./pending-clone.cjs')
+const pendingWrites = require('./pending-write.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
 /** An error with a machine-readable code, so the CLI can exit the right way. */
@@ -354,6 +355,31 @@ const verbs = {
     }
 
     const previousBytes = Buffer.byteLength(entity.instructions)
+
+    /* A run may not rewrite an entity's standing prompt behind the person's
+       back: the transcript says what it wants, the card shows the diff, and
+       only Apply comes back here — from the window, which is nobody's run. */
+    if (String(process.env.ENTITY_ENTITY || '').trim()) {
+      const request = pendingWrites.write(record, {
+        at: new Date().toISOString(),
+        workspace: record.id,
+        name: entity.name,
+        body,
+        previousBody: entity.instructions,
+        previousBytes,
+        bytes: Buffer.byteLength(body),
+        sha256: crypto.createHash('sha256').update(body).digest('hex'),
+        stamp: before,
+        requestedBy: String(process.env.ENTITY_ENTITY || ''),
+      })
+      throw new PlatformError(
+        'needs_consent',
+        `${entity.name}.md instructions are waiting for the person to apply them. ` +
+          'Nothing was written. Ask them to apply it in the window.',
+        { request },
+      )
+    }
+
     entities.write({ ...entity, instructions: body })
     const after = stamp(file)
     audit.append(record, {
