@@ -1,12 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import EntityMark from '@/components/EntityMark.vue'
-import PreferPicker from '@/components/PreferPicker.vue'
+import StartFromShelf from '@/components/StartFromShelf.vue'
 import SkillCopyDialog from '@/components/SkillCopyDialog.vue'
 import { readSkillEntry } from '@/composables/localBridge'
 import { copyText } from '@/lib/clipboard'
-import { togglePreferredSkill } from '@/stores/entities'
+import { entities, movePreferredSkill, togglePreferredSkill } from '@/stores/entities'
 import { hub, toast } from '@/stores/hub'
 import {
   attachSkill,
@@ -61,17 +60,40 @@ let token = 0
 
 const files = computed(() => entry.value?.files || [])
 
-/* Entities whose own `prefer:` line names this skill, ordered by where they put
-   it and then by name. Everyone who does not is still offered the skill. */
+/* Every entity that names this skill in its own `prefer:` line — in the order
+   the workspace lists them, because each row's number is that entity's own file
+   order, and sorting by it would interleave twelve unrelated lines. */
 const starters = computed(() =>
   hub.agents
     .map((a) => {
       const at = Array.isArray(a.prefer) ? a.prefer.indexOf(name.value) : -1
-      return at < 0 ? null : { ...a, position: at + 1 }
+      return at < 0 ? null : { ...a, at }
     })
-    .filter(Boolean)
-    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+    .filter(Boolean),
 )
+
+/* The shelf rows: one per entity, the arrows following *that* entity's own
+   `prefer:` line — an up arrow on the first name in the file is disabled even
+   when nine other entities sit above it in this list. */
+const starterRows = computed(() =>
+  starters.value.map((a) => ({
+    key: a.name,
+    name: a.name,
+    present: true,
+    position: a.at + 1,
+    meta: [a.harnessLabel, a.model].filter(Boolean).join(' · '),
+    to: { name: 'entity', params: { workspace: hub.workspace, name: a.name } },
+    up: a.at > 0,
+    down: a.at < (Array.isArray(a.prefer) ? a.prefer.length : 0) - 1,
+  })),
+)
+
+/* Everyone who does not name it, which is the half that makes this a bookmark
+   and not a grant: they all still get the skill in their own `/` menu. */
+const others = computed(() => {
+  const named = new Set(starters.value.map((a) => a.name))
+  return hub.agents.filter((a) => !named.has(a.name)).map((a) => ({ name: a.name }))
+})
 
 /* The same picker, seen from the other side: choose the entities that should
    name this skill first. It writes each entity's own `prefer:` line — there is
@@ -79,7 +101,7 @@ const starters = computed(() =>
 const entityChoices = computed(() => {
   const target = name.value
   return hub.agents.map((a) => ({
-    id: a.id,
+    id: a.name,
     label: a.name,
     meta: a.harnessLabel,
     on: Array.isArray(a.prefer) && a.prefer.includes(target),
@@ -87,18 +109,43 @@ const entityChoices = computed(() => {
 })
 
 const preferBusy = ref('')
+const preferError = ref(null)
 
-async function togglePrefer(entityName) {
-  if (!name.value || preferBusy.value) return
-  preferBusy.value = entityName
+/* A rejection is reported in the shelf, beside the card it left unchanged. The
+   file is the entity's own, not this skill's — that is where the write went. */
+async function writePrefer(entityName, fn) {
+  if (!name.value) return
+  preferError.value = null
   try {
-    await togglePreferredSkill(entityName, name.value)
+    await fn()
   } catch (error) {
-    toast(error?.message || 'The bookmark could not be written to the file.')
+    preferError.value = {
+      file: `entities/${entityName}.md`,
+      message: error?.message || 'the bookmark could not be written to the file.',
+    }
   } finally {
     preferBusy.value = ''
   }
 }
+
+function togglePrefer(entityName) {
+  if (!name.value || preferBusy.value) return
+  preferBusy.value = entityName
+  return writePrefer(entityName, () => togglePreferredSkill(entityName, name.value))
+}
+
+function movePrefer(entityName, direction) {
+  if (preferBusy.value) return
+  const agent = hub.agents.find((a) => a.name === entityName)
+  const list = Array.isArray(agent?.prefer) ? agent.prefer : []
+  const from = list.indexOf(name.value)
+  if (from < 0) return
+  const to = direction === 'up' ? from - 1 : from + 1
+  if (to < 0 || to >= list.length) return
+  preferBusy.value = entityName
+  return writePrefer(entityName, () => movePreferredSkill(entityName, from, to))
+}
+
 const currentFile = computed(() => files.value[fileIndex.value] || null)
 const version = computed(() => item.value?.version || '')
 /* the composer's `/` menu uses the same grammar; a name with a space is not a
@@ -309,42 +356,27 @@ async function attach() {
 
             <!-- Read-only evidence, never a permission list: every entity in the
                  workspace gets this skill. This only shows who names it as a
-                 starting point in their own file. -->
+                 starting point in their own file — the same shelf the entity
+                 page draws, seen from the other side. -->
             <div class="blk">
-              <h2>
-                Who starts from it
-                <span class="k">— {{ starters.length }} of {{ hub.agents.length }} entities</span>
-                <PreferPicker
-                  class="blk-prefer"
-                  head="Entities to start from this skill"
-                  label="Add entity"
-                  :options="entityChoices"
-                  :disabled="Boolean(preferBusy)"
-                  @toggle="togglePrefer"
-                />
-              </h2>
-              <div v-if="starters.length" class="ents">
-                <button
-                  v-for="a in starters"
-                  :key="a.id"
-                  class="ent"
-                  type="button"
-                  @click="router.push({ name: 'entity', params: { workspace: hub.workspace, name: a.name } })"
-                >
-                  <EntityMark :entity="a.name" />
-                  <span class="who">
-                    <span class="nm">{{ a.name }}</span>
-                    <span class="rt">{{ a.harnessLabel }}</span>
-                  </span>
-                  <span class="where">· position {{ a.position }}</span>
-                </button>
-              </div>
-              <p v-if="starters.length" class="tnote">
-                <span>Everyone else still gets it in /workspace:{{ name }}.</span>
-              </p>
-              <p v-else class="tnote">
-                <span>No entity starts from this one — every entity still gets it in its / menu.</span>
-              </p>
+              <StartFromShelf
+                head="Who starts from it"
+                :count="`${starters.length} of ${hub.agents.length} ${hub.agents.length === 1 ? 'entity' : 'entities'}`"
+                add-label="Add entity"
+                add-head="Entities to start from this skill"
+                kind="entity"
+                :pick-options="entityChoices"
+                :rows="starterRows"
+                :loading="entities.loading"
+                :rest="{ route: `${inWorkspace ? 'workspace' : item.harness}:${name}`, items: others }"
+                :busy="preferBusy"
+                :error="preferError"
+                empty-title="No entity starts from this one."
+                empty-body="Every entity still gets it in its / menu — this only says who reaches for it first."
+                @toggle="togglePrefer"
+                @move="movePrefer"
+                @remove="togglePrefer"
+              />
             </div>
           </div>
 
