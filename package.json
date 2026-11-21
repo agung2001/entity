@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
+  "desktopName": "entity.desktop",
   "bin": {
     "entity": "bin/entity"
   },
@@ -97,7 +98,8 @@
     "linux": {
       "target": "AppImage",
       "category": "Utility",
-      "icon": "build/icon.png"
+      "icon": "build/icons",
+      "syncDesktopName": true
     },
     "extraResources": [
       {
