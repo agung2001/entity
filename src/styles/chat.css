@@ -779,6 +779,10 @@
   flex: none;
 }
 .cp-dockwrap {
+  /* A size container so the card on the dock answers to the composer column and
+     not to the window: the rail is not part of this width. */
+  container-type: inline-size;
+  container-name: cpdock;
   position: absolute;
   left: 0;
   right: 0;
