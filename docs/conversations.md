@@ -185,13 +185,15 @@ fifteen times and edited nothing at all; the fix is the number, not a shorter cl
 queued **run** is not given this: it has no turn deadline, and a budget it does not have
 would change how the work is done for no reason.
 
-**One instruction, several sessions.** Start the message with `spawn N` and the mention
+**One instruction, several sessions.** Ask for it in the prose that opens the message with `spawn N` and the mention
 runs N times, in parallel — N answers, N cards, N sessions:
 
 ```
 spawn 3 @secretary write a poem
 ```
 
+The prefix is read anywhere *before the first mention*, not at the first word, because that
+is how the ask is written: `let's spawn 4 @designer review these pages` is a fan-out too.
 Each run is told which one it is (run 1 of 3, and so on) because three answers to the
 same sentence only differ if each knows it must; the sessions are titled
 `write a poem · 1/3` … `3/3`, and the parent's reply sees all three answers. `N` is

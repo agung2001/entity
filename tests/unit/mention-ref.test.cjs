@@ -323,6 +323,62 @@ test('spawn N runs one instruction N times, in parallel, one session each', asyn
   assert.equal(out.mentions[1].job, 'write a poem')
 })
 
+test('a spawn introduced by a sentence is still a fan-out', async () => {
+  const record = workspace()
+  const jobs = []
+  /* The prefix used to be anchored to the first word of the message, so a
+     request written the way people write it — the ask inside a sentence — was
+     demoted to ONE ordinary run: four cards asked for, one card shown, and no
+     error to say so. */
+  const out = await mention.rewrite(
+    record,
+    'By following the settings pages.\n\n' +
+      'I want to improve them.\n\n' +
+      "let's spawn 4 @py-agent To work on the design of each page.",
+    {
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'ok', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(jobs.length, 4)
+  assert.deepEqual(out.mentions.map((row) => row.share), ['1/4', '2/4', '3/4', '4/4'])
+  /* the job is the person's words, not the sentence that introduced them */
+  assert.equal(jobs[0], 'To work on the design of each page.\n\n(Run 1 of 4 of this same instruction. Produce a distinct result — do not coordinate with the other runs, which you cannot see.)')
+  assert.doesNotMatch(out.text, /skipped/)
+})
+
+test('a spawn after a mention is that job\'s own text, not a fan-out', () => {
+  /* `@py-agent run spawn 2 @py-agent` would otherwise start a second run
+     nobody asked for: the prefix is read in the opening prose only. */
+  const { segments } = mention.parse('ask @py-agent to spawn 3 @designer')
+  assert.deepEqual(segments.map((s) => s.kind), ['entity', 'entity'])
+  assert.equal(segments[0].job, 'to spawn 3')
+})
+
+test('a bracketed row list is the list, not the first mention', async () => {
+  const record = workspace()
+  const rows = []
+  /* `spawn per [@a, @b] @entity` is still a prefix: the `@` rows inside the
+     brackets are rows, so the opening prose has to look past them. */
+  const out = await mention.rewrite(record, "let's spawn per [one, two] @py-agent improve", {
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        rows.push(job)
+        return { ok: true, answer: 'ok', error: '' }
+      },
+    }),
+  })
+  assert.equal(rows.length, 2)
+  assert.deepEqual(
+    out.mentions.filter((row) => row.kind === 'entity').map((row) => row.row),
+    ['one', 'two'],
+  )
+})
+
 test('spawn 3 is the cap it wrote, above the two-mention rule', async () => {
   const record = workspace()
   let runs = 0

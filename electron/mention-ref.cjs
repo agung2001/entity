@@ -72,41 +72,69 @@ const ARTIFACT_SCAN_CAP = 2000
 /* A mention starts at `@` after start/space/(/[ so `me@example.com` stays text. */
 const MENTION_AT = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/g
 
-/* `spawn 3 @secretary …` and `spawn per @youtrack:… @coder …`, right at the start
-   of the message. Both only count when a mention follows, so "spawn 3 tasks in
-   the backlog" stays prose. */
-const SPAWN_PREFIX = /^\s*spawn\s+(\d{1,2})\s+(?=@)/
-const SPAWN_PER = /^\s*spawn\s+per\s+(?=@)/i
+/* The prose before the first mention — the only place a `spawn` prefix is read.
+   A fan-out is asked for by the sentence that introduces it, and people write
+   that sentence as prose: "let's spawn 4 @designer …". Anchoring the prefix to
+   the first word of the message demoted that request to ONE ordinary run — one
+   card where four were asked for, and no error to say so. It stays out of a
+   delegated job's words on purpose: a `spawn N` written after a mention is that
+   job's own text, and reading it would start runs nobody asked for. */
+function openingProse(source) {
+  const text = String(source || '')
+  /* A mention inside a bracketed row list is a row, not the entity: `spawn per
+     [@a, @b] @designer …` must still read as a prefix. */
+  const scan = new RegExp(MENTION_AT.source, 'g')
+  let match
+  while ((match = scan.exec(text))) {
+    const at = match.index + match[1].length
+    const before = text.slice(0, at)
+    const open = (before.match(/\[/g) || []).length
+    const close = (before.match(/\]/g) || []).length
+    /* keep the `@` itself: every prefix below looks ahead for one */
+    if (open <= close) return text.slice(0, at + 1)
+  }
+  return text
+}
+
+/* `spawn 3 @secretary …` and `spawn per @youtrack:… @coder …`, in the opening
+   prose. Both only count when a mention follows, so "spawn 3 tasks in the
+   backlog" stays prose. */
+const SPAWN_PREFIX = /\bspawn\s+(\d{1,2})\s+(?=@)/
+const SPAWN_PER = /\bspawn\s+per\s+(?=@)/i
 /* A `spawn` with no count is the shape that used to run once, silently: it
    matched no prefix, so the whole sentence became one ordinary job. `intent-ref`
-   turns it into a `spawn per …` before this module sees it. */
-const SPAWN_WITHOUT_COUNT = /^\s*spawn\b(?!\s+(?:per\b|\d))/i
+   turns it into a `spawn per …` before this module sees it. Read in the same
+   opening prose as the prefixes below, so `let's spawn @coder …` is asked about
+   too — and a `spawn` written after a mention is that job's own text, never a
+   second ask. */
+const SPAWN_WITHOUT_COUNT = /\bspawn\b(?!\s+(?:per\b|\d))/i
 /* `spawn per [a, b, c] @entity …` — the rows are written out. A catalogue that
    lives in a JSON file has no mention that can enumerate it, and copying ten
    names is shorter than any selector syntax. */
-const SPAWN_ROWS = /^\s*spawn\s+per\s+\[([^\]]*)\]\s+(?=@)/i
+const SPAWN_ROWS = /\bspawn\s+per\s+\[([^\]]*)\]\s+(?=@)/i
 /* `skill-ref` replaces a leading `/workspace:x` with this line before we see the
    prompt, so a skill at the front of a fan-out arrives as a prologue. */
 const SKILL_PROLOGUE = /^use this skill \S+\s*\n+/i
-const SPAWN_AFTER_SKILL = /^\s*spawn\s+(?:per\b|\d{1,2}\s+@)/i
 
+/* `end` is the offset just past the prefix in `source`, not a match length: the
+   prefix may sit mid-sentence, and every caller slices or compares against it. */
 function spawnPrefix(source) {
-  const text = String(source || '')
-  const rows = text.match(SPAWN_ROWS)
+  const lead = openingProse(source)
+  const rows = lead.match(SPAWN_ROWS)
   if (rows) {
     const list = rows[1]
       .split(/[,\n]/)
       .map((row) => row.trim())
       .filter(Boolean)
-    return { kind: 'rows', rows: list, count: list.length, end: rows[0].length }
+    return { kind: 'rows', rows: list, count: list.length, end: rows.index + rows[0].length }
   }
-  const per = text.match(SPAWN_PER)
-  if (per) return { kind: 'per', count: 0, end: per[0].length }
-  const match = text.match(SPAWN_PREFIX)
+  const per = lead.match(SPAWN_PER)
+  if (per) return { kind: 'per', count: 0, end: per.index + per[0].length }
+  const match = lead.match(SPAWN_PREFIX)
   if (!match) return null
   const count = Number(match[1])
   if (!Number.isFinite(count) || count < 1) return null
-  return { kind: 'repeat', count, end: match[0].length }
+  return { kind: 'repeat', count, end: match.index + match[0].length }
 }
 
 /**
@@ -1578,14 +1606,11 @@ async function rewrite(
      silently. Ask what was meant before parsing anything, and hand the answer
      back as a `spawn per …` this module already understands. */
   const skillPrefix = source.match(SKILL_PROLOGUE)
+  const gateSource = skillPrefix ? source.slice(skillPrefix[0].length) : source
   /* A `/workspace:` that led the message moves onto every run it produces:
      `skill-ref` resolved it for the message, and a fan-out routes each run. */
   let carriedSkill = ''
-  if (
-    intent &&
-    spawnPrefix(source) === null &&
-    SPAWN_WITHOUT_COUNT.test(skillPrefix ? source.slice(skillPrefix[0].length) : source)
-  ) {
+  if (intent && spawnPrefix(source) === null && SPAWN_WITHOUT_COUNT.test(openingProse(gateSource))) {
     let plan = null
     try {
       plan = await intent(source)
@@ -1609,7 +1634,7 @@ async function rewrite(
      The derived fan-out above has already taken the prologue onto its runs, so
      there is nothing left here to refuse. */
   const prologue = source.match(SKILL_PROLOGUE)
-  if (prologue && SPAWN_AFTER_SKILL.test(source.slice(prologue[0].length))) {
+  if (prologue && spawnPrefix(source.slice(prologue[0].length))) {
     throw new Error(
       'A fan-out routes each run, not the message: put the skill inside the job — ' +
         '`spawn per @youtrack:… @coder /workspace:orca-worktree …` — so every run gets its own. ' +

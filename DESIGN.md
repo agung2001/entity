@@ -475,12 +475,15 @@ the composer already does: mention another entity.
   a busy thread can own a dozen sessions, and rows for them drown the list. The parent
   row carries `spawned N chats`, the count opens a tree (sessions of sessions included),
   and opening one marks the parent row active so the rail still says where you are.
-- **Fan-out is asked for, never inferred.** `spawn N @entity <job>` at the start of the
-  message runs the same instruction N times in parallel, one session each — capped at
+- **Fan-out is asked for, never inferred.** `spawn N @entity <job>` in the message's
+  opening prose runs the same instruction N times in parallel, one session each — capped at
   five, and only when a mention follows the number, so "spawn 3 tasks in the backlog" is
   prose. Every run is told which one it is (that is the only reason three answers to one
   sentence differ), the session titles carry the share (`· 2/3`), and the reply above sees
-  all of them.
+  all of them. The prefix is read in the prose *before the first mention*, not at the first
+  word: `let's spawn 4 @designer …` is the way people write the ask, and anchoring it to
+  `^` demoted that to one run — one card where four were asked for, with no error. A
+  `spawn` written *after* a mention is that job's own text and never starts a second run.
 - **A fan-out may take its count from a list, and then the row is the run.**
   `spawn per @<list> @entity <job>` resolves the list first, copies the entity once per
   row, and titles each session with its row — seven issues read as seven sessions, not
@@ -732,6 +735,7 @@ it.
 | Seven runs of a list all carry the shared instruction as their title | The row (issue id + title) is the mention's label and the session's title, and the block names each run by it |
 | A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | Refused before anything runs: the skill goes inside the job, one route per run |
 | `spawn @coder …` (no count) runs once and looks like the fan-out's summary | A `spawn` with no count is the one shape asked about: `intent-ref` turns it into a `spawn per …` before parsing, or leaves the message alone — never one silent run | `npm test` (`intent-ref`), `electron/intent-ref.cjs` |
+| `let's spawn 4 @designer …` shows ONE delegation card | The prefix is read in the opening prose, not at `^`: anchoring it to the first word let a sentence that introduces the ask demote it to one ordinary run. `spawnPrefix()` matches anywhere before the first mention, and returns an `end` offset so slicing still works. A `spawn` after a mention is that job's own text | `npm test` (`mention-ref`), `electron/mention-ref.cjs` (`openingProse`) |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |

@@ -120,6 +120,16 @@ test('only a spawn with no count is asked about', () => {
   assert.equal(intent.wantsFanout('run the tests'), false)
 })
 
+test('the ask is read in the prose before the first mention', () => {
+  /* The same window `mention-ref` reads its prefixes in: the sentence that
+     introduces the ask is part of the ask. */
+  assert.equal(intent.wantsFanout("let's spawn @coder fix it"), true)
+  /* …and a `spawn` written after a mention belongs to that job's words. */
+  assert.equal(intent.wantsFanout('ask @coder to spawn a helper'), false)
+  /* a sentence that merely mentions words after it is still prose */
+  assert.equal(intent.wantsFanout('@coder fix the backlog'), false)
+})
+
 test('the skill prologue the composer inserts is looked past', () => {
   /* `skill-ref` puts `/workspace:x` at the very front as `use this skill <path>` */
   const text = 'use this skill /skills/alpha\n\nspawn @coder fix it'

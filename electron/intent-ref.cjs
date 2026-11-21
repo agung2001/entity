@@ -33,8 +33,15 @@
 const { runOneShot, lastJson } = require('./oneshot.cjs')
 
 /* The one shape that used to swallow the request: `spawn` with no count after
-   it. `spawn 3 @x` and `spawn per @x` both parse; `spawn @x` did not. */
-const SPAWN_WITHOUT_COUNT = /^\s*spawn\b(?!\s+(?:per\b|\d))/i
+   it. `spawn 3 @x` and `spawn per @x` both parse; `spawn @x` did not.
+
+   Read in the prose *before the first mention*, which is the same window
+   `mention-ref` reads its prefixes in: `let's spawn @coder …` is the ask written
+   the way people write it, and anchoring this to `^` would run it once. */
+const SPAWN_WITHOUT_COUNT = /\bspawn\b(?!\s+(?:per\b|\d))/i
+/* The first mention's `@`, so everything before it is prose and everything
+   after it is a mention's own text. */
+const FIRST_MENTION = /(^|[\s(\[])@(?=@?[A-Za-z0-9._-])/
 
 /* `skill-ref` resolves a leading `/workspace:x` into `use this skill <path>` and
    puts it at the very front, so every check below has to look past it. */
@@ -89,7 +96,11 @@ function escapeRegExp(value) {
  * model could return.
  */
 function wantsFanout(text) {
-  return SPAWN_WITHOUT_COUNT.test(bodyOf(text))
+  const source = bodyOf(text)
+  const at = FIRST_MENTION.exec(source)
+  /* keep the `@` itself: the lookahead below needs one after the number */
+  const lead = at ? source.slice(0, at.index + at[1].length + 1) : source
+  return SPAWN_WITHOUT_COUNT.test(lead)
 }
 
 /**
