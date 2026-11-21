@@ -40,12 +40,26 @@
   margin-left: auto;
 }
 
+.sf .pickwrap {
+  flex: none;
+  display: inline-flex;
+}
+
 /* The one control in the section with a visible edge, so it takes
    `--field-edge` (4.20:1 daylight, 4.34:1 at night) instead of the 1.53:1 a
    hairlined control would leave. Scoped to the shelf: the app's `.btn` keeps
    `--border-strong` everywhere else, and `PreferPicker` itself is untouched —
-   this only dresses the trigger it already renders. */
+   this only dresses the trigger it already renders.
+
+   Source-inline, and `width: auto` with it: the trigger sits in a flex head, so
+   anything that lets it become a block — or inherit a stretch — turns `+ Add
+   skill` into a 500 px bar under a normal desktop column. */
 .sf .pickbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  width: auto;
   height: 28px;
   padding: 0 9px;
   border: 1px solid var(--field-edge);
@@ -53,8 +67,10 @@
   background: var(--bg);
   font-family: var(--font);
   font-size: var(--fs-secondary);
+  font-weight: 500;
   color: var(--ink);
   white-space: nowrap;
+  cursor: pointer;
   transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
 }
 .sf .pickbtn .nm {
@@ -360,7 +376,12 @@ a.sf-name:hover {
   text-overflow: ellipsis;
 }
 
-@container (max-width: 620px) {
+/* 420 px of column, not 620: the shelf lives in the entity page's `minmax(0,1fr)`
+   column beside a 306 px rail, so it is 588 px wide at a 1440 window and 332 px
+   at 1024 — a 620 px breakpoint fired on an ordinary desk and stacked the head
+   and the rows there. At 420 the two-line row and the 44 px touch target land
+   only on a column that is actually phone-narrow. */
+@container (max-width: 420px) {
   .sf-head {
     gap: 6px;
   }
