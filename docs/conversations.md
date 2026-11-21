@@ -185,6 +185,14 @@ fifteen times and edited nothing at all; the fix is the number, not a shorter cl
 queued **run** is not given this: it has no turn deadline, and a budget it does not have
 would change how the work is done for no reason.
 
+**Two kinds of fan-out, and they are not interchangeable.** `runs` is ONE instruction N
+times. `rows` (or a `list` that resolves rows) is N *different* items, one run each. If you
+list four pages and say "spawn 4", you mean four agents on four pages — not four agents on one
+page. So a message that enumerates work is always the second kind, even when it also writes a
+number, and the last bullet list in the message is the work (an earlier list is usually
+material to read first). A row owns a line, so a page whose title contains a comma stays one
+run.
+
 **Every message is classified, then either answered or fanned out.** A message is one of
 two things — several parallel sessions, or one direct reply — and no pattern can tell them
 apart. So the app asks the harness that is about to answer the turn, once, and gets back

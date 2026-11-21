@@ -123,6 +123,46 @@ test('a plan is a repeat or a row list, and nothing else', () => {
   assert.equal(rows.list, '@youtrack:ENTITY:relates to: ENTITY-37 #Unresolved')
 })
 
+test('a listed set of items is one run per item, not N of one instruction', () => {
+  /* This is the difference the person feels: `runs: 4` over four pages gives four
+     agents the same sentence — four redesigns of one page — when they asked for
+     one page each. `rows` is how a plan says "one page each". */
+  const plan = intent.usable(
+    {
+      spawn: true,
+      rows: ['settings?tab=mcp', 'account/harnesses', 'account/integrations', 'account'],
+      entity: 'coder',
+      job: 'improve the design of this page',
+    },
+    NAMES,
+  )
+  assert.equal(plan.mode, 'typed')
+  assert.equal(plan.rows.length, 4)
+  assert.deepEqual(plan.rows, [
+    'settings?tab=mcp',
+    'account/harnesses',
+    'account/integrations',
+    'account',
+  ])
+})
+
+test('a row is one item, so a duplicate cannot become two runs', () => {
+  /* a comma is the list separator: leaving one inside a row silently splits it,
+     and two agents would work on one item */
+  const plan = intent.usable(
+    { spawn: true, rows: ['a, b', 'a, b', '  ', 'c'], entity: 'coder', job: 'do it' },
+    NAMES,
+  )
+  /* a comma is part of a row's own words, so `a, b` stays ONE row; the repeated
+     pair collapses and `  ` is nothing */
+  assert.deepEqual(plan.rows, ['a, b', 'c'])
+  const dup = intent.usable(
+    { spawn: true, rows: ['a', 'a', 'b'], entity: 'coder', job: 'do it' },
+    NAMES,
+  )
+  assert.deepEqual(dup.rows, ['a', 'b'], 'the same item twice is one run')
+})
+
 test('an explicit "nothing to fan out" is an answer, not a failed reading', () => {
   /* this is the whole point of the classifier: a direct reply is a verdict */
   assert.equal(intent.usable({ spawn: false }, NAMES), null)
@@ -334,6 +374,146 @@ test('the grammar goes first, so an exact message costs no call', async () => {
   assert.equal(jobs.length, 2)
 })
 
+/* ── the list on screen, which no model gets to paraphrase ─────── */
+
+const BULLETS =
+  '@orca:entity\n' +
+  'By following the design of :\n' +
+  '- http://localhost:5183/artistudio/settings?tab=skills\n' +
+  '- http://localhost:5183/artistudio/settings?tab=machines\n\n' +
+  'I want to improve the design of these pages : \n' +
+  '- http://localhost:5183/artistudio/settings?tab=mcp\n' +
+  '- http://localhost:5183/artistudio/settings?tab=harnesses\n' +
+  '- http://localhost:5183/artistudio/settings?tab=integrations\n' +
+  '- http://localhost:5183/artistudio/settings?tab=account -> use the avatar, not an animation\n\n' +
+  "let's spawn 4 @designer To work on the design of each pages."
+
+test('the list is the last one, not the material quoted at the top', () => {
+  /* the message above opens with two pages to READ and then lists four to
+     IMPROVE. Fanning out over all six would have two agents redesign a page that
+     only needed reading. */
+  const rows = intent.listedItems(BULLETS)
+  assert.equal(rows.length, 4)
+  assert.match(rows[0], /tab=mcp$/)
+  assert.match(rows[3], /tab=account/)
+  assert.doesNotMatch(rows.join(' '), /tab=skills|tab=machines/)
+})
+
+test('prose someone bulleted is not a list of work', () => {
+  assert.deepEqual(intent.listedItems('- one thing\n- another thing'), [])
+  assert.deepEqual(intent.listedItems('- http://example.test/a'), [], 'one row is not a fan-out')
+  assert.deepEqual(intent.listedItems('no bullets at all'), [])
+})
+
+test('a written count over a list is repaired to one run per item', () => {
+  /* the model answered `runs: 4` — four agents, one sentence, four redesigns of
+     one page. The list is on screen, so it is read from the text. */
+  const wrong = { mode: 'repeat', runs: 4, entity: 'designer', job: 'To work on the design of each pages.' }
+  const fixed = intent.repairWithList(BULLETS, wrong, NAMES.concat('designer'))
+  assert.equal(fixed.mode, 'typed')
+  assert.equal(fixed.rows.length, 4)
+  /* the instruction still travels with the list */
+  assert.match(fixed.job, /design of each pages/)
+})
+
+test('a plan that already names its rows is left alone', () => {
+  /* the model saw something better than a bullet list; do not overrule it */
+  const plan = { mode: 'typed', rows: ['a', 'b'], entity: 'coder', job: 'do it' }
+  assert.deepEqual(intent.repairWithList(BULLETS, plan, NAMES), plan)
+  const rowsPlan = { mode: 'rows', list: '@youtrack:AC:bug', entity: 'coder', job: 'do it' }
+  assert.deepEqual(intent.repairWithList(BULLETS, rowsPlan, NAMES), rowsPlan)
+})
+
+test('a direct reply stays direct when the message has no list', () => {
+  const direct = { mode: 'repeat', runs: 3, entity: 'coder', job: 'do it' }
+  assert.equal(intent.repairWithList('spawn 3 @coder do it', direct, NAMES), direct)
+})
+
+test('a typed plan becomes the sentence the grammar reads, one row each', async () => {
+  const record = workspace()
+  const cards = []
+  const jobs = []
+  /* the whole point of the row: the card says WHICH page, and the run is told to
+     do only that page — not four agents handed one sentence */
+  /* the shape that used to collapse: a written count AND a list. The list wins,
+     because the rows are four different pages. */
+  await mention.rewrite(
+    record,
+    `let's spawn 4 @coder improve each page
+- settings?tab=mcp
+- account/harnesses
+- account/integrations
+- account`,
+    {
+    intent: async () =>
+      intent.usable(
+        {
+          spawn: true,
+          rows: ['settings?tab=mcp', 'account/harnesses', 'account/integrations', 'account'],
+          entity: 'coder',
+          job: 'improve the design of this page',
+        },
+        NAMES,
+      ),
+      hold: async (plan) => {
+        cards.push(...plan.rows.map((row) => row.row))
+        return { action: 'run' }
+      },
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.deepEqual(cards, ['settings?tab=mcp', 'account/harnesses', 'account/integrations', 'account'])
+  assert.equal(jobs.length, 4)
+  /* every run is told its own row, in its own words */
+  assert.match(jobs[0], /your row is "settings\?tab=mcp"/)
+  assert.match(jobs[3], /your row is "account"/)
+  /* the shared instruction is not repeated as the title of each run */
+  assert.match(jobs[0], /^improve the design of this page/)
+})
+
+test('a comma inside a row is part of the row, not a separator', async () => {
+  const record = workspace()
+  const cards = []
+  /* "use the avatar, not an animation" is ONE page with a comma in its title. The
+     sentence this becomes is split on commas AND newlines, so a row must own a
+     line — joining with ", " turned this into two runs on half a sentence each. */
+  await mention.rewrite(
+    record,
+    "let's spawn 2 @coder improve these\n" +
+      '- settings/account -> use the avatar, not an animation\n' +
+      '- settings/mcp',
+    {
+      intent: async () =>
+        intent.usable(
+          {
+            spawn: true,
+            rows: [
+              'settings/account -> use the avatar, not an animation',
+              'settings/mcp',
+            ],
+            entity: 'coder',
+            job: 'improve this page',
+          },
+          NAMES,
+        ),
+      hold: async (plan) => {
+        cards.push(...plan.rows.map((row) => row.row))
+        return { action: 'run' }
+      },
+      deps: deps({ runEntity: async () => ({ ok: true, answer: 'done', error: '' }) }),
+    },
+  )
+  assert.deepEqual(cards, [
+    'settings/account -> use the avatar, not an animation',
+    'settings/mcp',
+  ])
+})
+
 /* ── the plan a model or a fallback may propose ──────────────────── */
 
 test('a plan is only usable when its halves are resolvable', () => {
@@ -366,12 +546,14 @@ test('no harness means no model, so a reader is not built', () => {
   assert.equal(typeof intent.reader({ harness: 'claude' }), 'function')
 })
 
-test('the instruction asks for the person\'s own words, and refuses when unsure', () => {
-  /* two safety mechanisms, both in the prompt: a copied job (not a rewrite) and
-     an explicit "answer false when unsure" */
-  assert.match(intent.INSTRUCTION, /Copy their words/)
-  assert.match(intent.INSTRUCTION, /Answer `\{"spawn": false\}` whenever you are unsure/)
-  assert.match(intent.INSTRUCTION, /Never invent a filter/)
-  /* a name in passing is the false positive the prompt calls out by example */
-  assert.match(intent.INSTRUCTION, /remove @designer from the list/)
+test('the instruction teaches the three shapes and refuses when unsure', () => {
+  /* the prompting is the safety mechanism, so it is asserted like code */
+  assert.match(intent.INSTRUCTION, /"spawn": false/)
+  assert.match(intent.INSTRUCTION, /"rows"/)
+  assert.match(intent.INSTRUCTION, /"runs"/)
+  /* kind B exists because four agents handed one sentence redesign one page */
+  assert.match(intent.INSTRUCTION, /"rows".*one run per item|one run per item/s)
+  /* the words are copied, never composed */
+  assert.match(intent.INSTRUCTION, /copied as words from the message|Never paraphrase/)
+  assert.match(intent.INSTRUCTION, /Unsure\? \{"spawn": false\}/)
 })

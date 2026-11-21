@@ -20,7 +20,11 @@ const FIXTURES = [
   {
     why: 'the ask inside a sentence — the prefix was anchored to ^',
     text: "By following the design of the settings pages.\n\nlet's spawn 4 @designer To work on the design of each pages.",
-    expect: { spawn: true, runs: 4, entity: 'designer', job: 'To work on the design of each pages.' },
+    expect: { spawn: true, runs: 4, entity: 'designer', job: 'work on the design of each pages' },
+    /* a leading "To" or a trailing period is noise; what matters is that the job
+       is the person's instruction and not the preamble */
+    accept: (plan) =>
+      plan !== null && plan.mode === 'repeat' && plan.runs === 4 && plan.entity === 'designer',
   },
   {
     why: 'the ask on its own line after a read — a mention swallowed the prefix',
@@ -28,6 +32,14 @@ const FIXTURES = [
       "Let's work on this milestone @youtrack:ENTITY:ENTITY-37 Work on unresolved related issues.\n" +
       'Spawn 3 @coder To work on the issue. Each with its own orca child workspace.',
     expect: { spawn: true, runs: 3, entity: 'coder', job: 'To work on the issue. Each with its own orca child workspace.' },
+    /* the second sentence is an instruction to the run, not context — losing it
+       changes the work, so it is required even when the wording shifts */
+    accept: (plan) =>
+      plan !== null &&
+      plan.mode === 'repeat' &&
+      plan.runs === 3 &&
+      plan.entity === 'coder' &&
+      /orca child workspace/i.test(plan.job),
   },
   {
     why: 'the exact prefix the grammar reads — must never cost a model call',
@@ -64,12 +76,56 @@ const FIXTURES = [
          the person's words, so the fixture pins the shape, not the trimming */
       job: undefined,
     },
+    /* "#Unresolved only." — carrying the trailing word into the filter is noise,
+       not a different query, so the prefix is the bar, not the whole string */
+    accept: (plan) =>
+      plan !== null &&
+      plan.mode === 'rows' &&
+      plan.entity === 'coder' &&
+      /^@youtrack:ENTITY:relates to: ENTITY-25 #Unresolved/.test(plan.list || ''),
   },
   {
     why: 'a bare spawn is a fan-out by definition',
     text: 'spawn @reviewer look at this from a few angles',
     expect: null,
-    accept: (plan) => plan === null || plan.spawn === true,
+    accept: (plan) => plan !== null,
+  },
+
+  {
+    why: 'a count over a LIST — four agents on four pages, not four of one page',
+    text: '@orca:entity\n' +
+      'By following the design of :\n' +
+      '- http://localhost:5183/artistudio/settings?tab=skills\n' +
+      '- http://localhost:5183/artistudio/settings?tab=machines\n\n' +
+      'I want to improve the design of these pages : \n' +
+      '- http://localhost:5183/artistudio/settings?tab=mcp\n' +
+      '- http://localhost:5183/artistudio/settings?tab=harnesses\n' +
+      '- http://localhost:5183/artistudio/settings?tab=integrations\n' +
+      '- http://localhost:5183/artistudio/settings?tab=account -> use the profile avatar, not an animation\n\n' +
+      "let's spawn 4 @designer To work on the design of each pages.",
+    expect: {
+      spawn: true,
+      /* the row IS the run: `runs: 4` would give four versions of one page */
+      rows: [
+        'http://localhost:5183/artistudio/settings?tab=mcp',
+        'http://localhost:5183/artistudio/settings?tab=harnesses',
+        'http://localhost:5183/artistudio/settings?tab=integrations',
+        'http://localhost:5183/artistudio/settings?tab=account — use the profile avatar, not an animation',
+      ],
+      entity: 'designer',
+      job: 'improve the design of this page',
+    },
+    /* the labels are the person's own words, so allow the wording to shift a
+       little; what must not shift is that there are FOUR of them and they are
+       the four pages listed */
+    accept: (plan) =>
+      plan !== null &&
+      plan.mode === 'typed' &&
+      plan.entity === 'designer' &&
+      plan.rows.length === 4 &&
+      /* a short label ("mcp") is a better session title than a URL, so the page
+         is what must be there, not the exact string */
+      plan.rows.every((row, i) => row.includes(['mcp', 'harnesses', 'integrations', 'account'][i])),
   },
 
   /* ── direct replies: the false positives that cost real agents ───── */

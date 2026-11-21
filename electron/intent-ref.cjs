@@ -52,55 +52,127 @@ const ISSUE_KEY = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAX_JOB = 4_000
+/* A typed row list is capped like a resolved one, and for the same reason: the
+   reply above reads a bounded number of rows, and a fan-out may not silently
+   lose an answer. Kept equal to `mention-ref`'s `MAX_FANOUT_ROWS`. */
+const MAX_FANOUT_ROWS = 12
 /* The `spawn N` ceiling, and the same number `mention-ref` enforces. Kept here
    too so a model's guess is clamped into something runnable rather than thrown
    back as "spawn 9 is more than 5 runs" on a card the person did not write. */
 const MAX_RUNS = 5
 
 const INSTRUCTION = [
-  'You read one message a person is about to send to a coding agent. Decide what',
-  'the message is for, and answer with JSON only — no prose, no code fences.',
+  'Read one message a person is sending to a coding agent. Answer what it is for.',
+  'JSON only, no prose.',
   '',
-  'Most messages are ONE conversation with an agent, or a plain request. Say so:',
+  'ONE conversation or one plain request — the usual case:',
   '{"spawn": false}',
   '',
-  'Sometimes the person wants the same instruction run SEVERAL times in parallel,',
-  'each copy in its own sub-session — the same job N times, or once per row of a',
-  'list. Say so, and name the plan:',
-  '{"spawn": true, "runs": 3, "entity": "designer", "job": "To work on the design of each pages."}',
-  '{"spawn": true, "list": "@youtrack:ENTITY:relates to: ENTITY-37 #Unresolved", "entity": "coder", "job": "…"}',
+  'SEVERAL parallel runs. Use `rows` when they listed the items (one run per item),',
+  'or `runs` when they asked for the same job N times:',
+  '{"spawn": true, "rows": ["a", "b", "c"], "entity": "designer", "job": "improve this page"}',
+  '{"spawn": true, "runs": 3, "entity": "reviewer", "job": "review again"}',
+  '{"spawn": true, "list": "@youtrack:ENTITY:relates to: ENTITY-25", "entity": "coder", "job": "fix it"}',
   '',
-  '- `entity` is the agent the person addressed, without the `@`. It must be one of',
-  '  the names given below; never invent one.',
-  '- `job` is what EACH run should do, in the person\'s own words. Copy their words',
-  '  — do not rewrite, translate or shorten them. Remove two things only: the',
-  '  number of copies, and any sentence that is context for the *whole* message',
-  '  rather than an instruction to the agent ("By following the design of these',
-  '  pages", "I want to improve them"). The job is what one agent is asked to do.',
-  '- `runs` is how many parallel copies they asked for — "spawn 4", "four agents",',
-  '  "three of you", "give me 2". A number above one is what makes this a fan-out.',
-  '  Use `runs` when the copies need no shared list. Take the number out of the',
-  '  job: "three passes over the diff" is `runs: 3` with the job "passes over the',
-  '  diff", not a job that repeats the count each run already knows.',
-  '- `list` is the mention to resolve into rows, in exactly this grammar:',
-  '  `@youtrack:<PROJECT KEY>:<query>` — for issues a project relates to,',
-  '  `@youtrack:ENTITY:relates to: ENTITY-25 #Unresolved`. Keep any state filter',
-  '  the person wrote (#Unresolved, #Resolved) verbatim. Never invent a filter.',
-  '  Use `list` instead of `runs` when the copies come from rows.',
-  '- An explicit count WINS over a list. `Spawn 3 @coder work on the issues that',
-  '  relate to ENTITY-37` is `runs: 3`: they named the number, so give them three.',
-  '  Use `list` only when the count comes from the rows ("one per issue", "do each',
-  '  one") and no number was written.',
+  'Rows win when the message enumerates work (bullets, several URLs, files, pages) —',
+  'even if it also says a number. `runs` is for a count with nothing listed.',
+  'A written count beats a tracker query: `Spawn 3 @coder work on the issues',
+  'related to ENTITY-37` is `runs: 3`, not `list`. Use `list` only when they',
+  'pointed at a query INSTEAD of giving any number.',
   '',
-  'Answer `{"spawn": false}` whenever you are unsure. These are NOT fan-outs:',
-  'asking a question, asking for one job for one agent, naming an agent in passing',
-  '("remove @designer from the list"), or asking about work already done. A missed',
-  'fan-out costs one retype; a wrong one starts several agents on work nobody asked',
-  'for.',
+  '- `entity`: the agent addressed, without `@`, from the names below.',
+  '- `job`: what ONE run does, copied as words from the message. Drop the count and',
+  '  the items. Never paraphrase or add a clause. Keep EVERY sentence that tells the',
+  '  agent something to do — dropping one silently changes the work.',
+  '- `rows`/`list`: the items, one per run, in their words.',
+  '',
+  'The word `spawn` immediately before an agent (`spawn @coder …`) is always a',
+  'fan-out, even with no number — pick a sensible `runs` (3) and let the',
+  'confirmation card correct it. "spawn 3 tasks in the backlog" is not (no agent).',
+  '',
+  'Unsure? {"spawn": false}. Not fan-outs: a question, one job for one agent, naming',
+  'an agent in passing, work already done.',
 ].join('\n')
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * A number of copies the message asks for, written down.
+ *
+ * `spawn 4`, `Spawn 3`, `spawn 2` — the grammar's own prefix, read from the same
+ * opening prose. Used only to keep a plan honest: a model that answers `rows`
+ * over a sentence with a count and no list has invented the items.
+ */
+function writtenCount(source) {
+  const match = /\bspawn\s+(\d{1,2})\b/i.exec(String(source || ''))
+  const count = match ? Number(match[1]) : 0
+  return Number.isFinite(count) && count >= 2 ? count : 0
+}
+
+/**
+ * The items a message enumerates, if it enumerates any.
+ *
+ * A markdown bullet list is the one structural hint a message gives about
+ * itself, and it is the same hint that means "one run per item": four bullets
+ * are four things, and four agents handed one sentence would each redesign the
+ * same page. Reading the list here — from the text, cheaply — is not a guess
+ * about intent, it is reading what is literally on screen. The classifier is
+ * told to prefer `rows` for a list; this is what happens when it does not,
+ * including when it read a written count instead.
+ *
+ * Deliberately narrow: bullets that carry a URL, a path, or a short phrase, and
+ * at least two of them. Prose bullets inside a paragraph are not a list, and a
+ * single bullet is not a fan-out.
+ */
+function listedItems(source) {
+  const lines = String(source || '').split(/\r?\n/)
+  const isBullet = (line) => /^\s*[-*+]\s+\S/.test(line)
+  /* The LAST list is the work. A message often opens with one list of material
+     to read ("By following the design of:") and then lists what to touch
+     ("I want to improve the design of these pages:"). Only one of those is the
+     fan-out, and it is the one nearest the instruction at the end. */
+  let end = -1
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (isBullet(lines[index])) {
+      end = index
+      break
+    }
+  }
+  if (end < 0) return []
+  /* Walk back to the start of that run of bullets, over blank lines only. */
+  let start = end
+  for (let index = end - 1; index >= 0; index -= 1) {
+    if (isBullet(lines[index])) start = index
+    else if ('' === lines[index].trim()) continue
+    else break
+  }
+  const rows = lines
+    .slice(start, end + 1)
+    .filter(isBullet)
+    .map((line) => line.replace(/^\s*[-*+]\s+/, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+  if (rows.length < 2) return []
+  /* At least two real references — a URL, an `@`-path, or a path-like token — or
+     it is prose someone bulleted, not work to split. */
+  const concrete = rows.filter((row) => /https?:\/\/|@[\w./-]+|[\w-]+\/[\w./-]+/.test(row))
+  if (concrete.length < 2) return []
+  return rows.slice(0, MAX_FANOUT_ROWS)
+}
+
+/**
+ * The last thing the message says after its list — the instruction that applies
+ * to every item ("let's spawn 4 @designer To work on the design of each pages").
+ */
+function afterList(source) {
+  const lines = String(source || '').split(/\r?\n/)
+  let last = -1
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*[-*+]\s+\S/.test(lines[index])) last = index
+  }
+  if (last < 0) return ''
+  return lines.slice(last + 1).join('\n').trim()
 }
 
 /**
@@ -220,6 +292,23 @@ function usable(plan, entities = []) {
   if (entities.length && !entities.map(String).includes(entity)) return null
   const job = String(plan.job || '').trim()
   if (!job) return null
+  /* Items the person wrote themselves. They become `spawn per [a, b] …`, so a
+     row is a session title and a different page per run — the thing a repeat
+     cannot express. Capped like every other list, and a duplicate row would be
+     two agents on one page, so it is dropped here rather than run twice. */
+  if (Array.isArray(plan.rows)) {
+    const rows = plan.rows
+      /* A newline separates two items; a comma does NOT. "account -> use the
+         profile avatar, not an animation" is one page with a comma in its name,
+         and splitting it would invent a fifth run on half a sentence. */
+      .flatMap((row) => String(row ?? '').split(/\n/))
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .filter((row, index, all) => all.indexOf(row) === index)
+      .slice(0, MAX_FANOUT_ROWS)
+    if (rows.length < 2) return null
+    return { mode: 'typed', rows, entity, job: job.slice(0, MAX_JOB), derived: Boolean(plan.derived) }
+  }
   const list = String(plan.list || '').trim()
   if (list) {
     /* a bare `@youtrack:` resolves nothing, so the kind has to carry a query */
@@ -287,9 +376,57 @@ function reader({ harness = '', model = '', entities = [], timeoutMs = DEFAULT_T
     }
     /* An explicit "no" is respected. Only silence falls through to the
        deterministic reading below, which still knows a pasted issue URL. */
-    if (verdict) return usable(verdict, names)
-    return usable(derivePlan(source, { entities: names }), names)
+    const plan = verdict ? usable(verdict, names) : usable(derivePlan(source, { entities: names }), names)
+    return repairWithList(source, plan, names)
   }
+}
+
+/**
+ * A bulleted message is a list, whatever the model said.
+ *
+ * The classifier is told to prefer `rows` for an enumerated message, and it
+ * still sometimes answers `runs: 4` — which gives four agents the same sentence
+ * and four redesigns of one page, the exact failure this layer exists to stop.
+ * The list is on screen, so it is read from the text rather than trusted to a
+ * model that may be paraphrasing. Narrow on purpose:
+ *
+ *   - only a plan that is missing the rows is repaired (a model that already
+ *     answered `rows`/`typed` is left alone, it saw something better);
+ *   - only a `repeat`/direct plan over a message with 2+ concrete bullets;
+ *   - the entity must still be one the model named, or one this workspace has.
+ */
+function repairWithList(source, plan, entities = []) {
+  /* A written count is a written count: `Spawn 3 @coder …` with nothing bulleted
+     is three runs whatever query a model read into the sentence. Turning that
+     into `rows` invents items the person did not list. */
+  if (plan && plan.mode !== 'repeat') {
+    if (plan.mode !== 'rows') return plan
+    const written = writtenCount(source)
+    if (!written) return plan
+    const rowsHere = listedItems(source)
+    if (rowsHere.length >= 2) return plan
+    return {
+      mode: 'repeat',
+      runs: Math.min(written, MAX_RUNS),
+      entity: plan.entity,
+      job: plan.job,
+      derived: true,
+    }
+  }
+  const rows = listedItems(source)
+  if (rows.length < 2) return plan
+  /* The agent is the one the classifier named, else the one the message names. */
+  const entity =
+    plan?.entity ||
+    entities
+      .map(String)
+      .find((name) => new RegExp(`@${escapeRegExp(name)}\\b`, 'i').test(source))
+  if (!entity) return plan
+  /* The instruction travels with the list: the last thing said after it. */
+  const tail = afterList(source)
+  const job = String(plan?.job || '').trim() || tail.replace(/^\s*spawn\s+\d+\s+/i, '')
+  if (!job) return plan
+  return { mode: 'typed', rows, entity, job: job.slice(0, MAX_JOB), derived: true }
 }
 
 module.exports = {
@@ -297,8 +434,11 @@ module.exports = {
   MAX_RUNS,
   bodyOf,
   derivePlan,
+  listedItems,
   namesEntity,
+  repairWithList,
   usable,
+  writtenCount,
   reader,
   stripIssueClause,
 }

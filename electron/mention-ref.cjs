@@ -121,8 +121,12 @@ function spawnPrefix(source) {
   const lead = openingProse(source)
   const rows = lead.match(SPAWN_ROWS)
   if (rows) {
+    /* A newline separates rows when there is one; otherwise a comma does. Splitting
+       on both at once cannot express a row that legitimately contains a comma
+       ("account -> use the avatar, not an animation"), which a typed plan emits
+       one-per-line for exactly that reason. */
     const list = rows[1]
-      .split(/[,\n]/)
+      .split(rows[1].includes('\n') ? /\n/ : /,/)
       .map((row) => row.trim())
       .filter(Boolean)
     return { kind: 'rows', rows: list, count: list.length, end: rows.index + rows[0].length }
@@ -149,6 +153,17 @@ function planSentence(plan) {
   if (!plan || !plan.entity) return null
   const job = String(plan.job || '').trim()
   if (!job) return null
+  if (plan.mode === 'typed' && plan.rows?.length) {
+    /* One row per line, never comma-separated. `SPAWN_ROWS` splits on commas AND
+       newlines, so a row of its own cannot be broken by a comma it legitimately
+       contains — "account -> use the avatar, not an animation" is ONE page, and
+       joining with ", " would render it as two runs on half a sentence each. */
+    const rows = plan.rows
+      .map((row) => String(row).replace(/\n/g, ' ').trim())
+      .filter(Boolean)
+    if (rows.length < 2) return null
+    return `spawn per [\n${rows.join('\n')}\n] @${plan.entity} ${job}`
+  }
   if (plan.mode === 'rows' && plan.list) return `spawn per ${plan.list} @${plan.entity} ${job}`
   const runs = Math.trunc(Number(plan.runs))
   if (!Number.isFinite(runs) || runs < 2) return null
@@ -1656,12 +1671,21 @@ async function rewrite(
   /* A `/workspace:` that led the message moves onto every run it produces:
      `skill-ref` resolved it for the message, and a fan-out routes each run. */
   let carriedSkill = ''
-  /* The grammar first, exactly, for free. A message opening with a prefix it
-     already reads is never second-guessed — the person's own count is a better
-     answer than anything a model could return. Everything else is classified
-     once: `intent-ref` answers a plan or "answer directly", which is the two
-     cases this module could never tell apart by pattern alone. */
-  if (intent && spawnPrefix(source) === null) {
+  /* The grammar first, for free — but only when it is the whole story. A message
+     opening with a prefix it reads exactly is never second-guessed: the person's
+     own count is a better answer than anything a model could return.
+
+     Except when the message also enumerates items. `let's spawn 4 @coder …` over
+     a four-item bullet list is four DIFFERENT pages, and reading just the count
+     gives four agents one sentence — four redesigns of one page, the failure
+     this layer exists to stop. The grammar cannot see a list, so that message is
+     classified: it is the one case where a written count is not the whole ask. */
+  const barePrefix = spawnPrefix(source)
+  /* required here, not imported at load: `intent-ref` is a sibling that already
+     requires this module, and a load-time edge would be a cycle. */
+  const enumerates =
+    barePrefix !== null && require('./intent-ref.cjs').listedItems(source).length >= 2
+  if (intent && (barePrefix === null || enumerates)) {
     let plan = null
     try {
       plan = await intent(source)

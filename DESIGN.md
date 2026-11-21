@@ -489,11 +489,27 @@ the composer already does: mention another entity.
   never second-guessed; and a message that opens with a bare `spawn` is a fan-out by definition.
   Everything else pays one call. This is not intent parsing — it is eliding a provably empty
   set, which is what keeps "Take your time." off the slow path.
+- **Two kinds of fan-out, and the difference is the whole point.** `runs` is ONE instruction
+  N times (`runs: 3`, "spawn 4"). `rows`/`typed` is N *different* items, one run each. Four
+  agents handed one sentence produce four versions of one page, when the person asked for one
+  page each — so a message that enumerates work (a bullet list, several URLs, a set of files
+  or pages) is always the second kind, even when it also writes a number.
+- **A list on screen is read from the screen.** `intent-ref.listedItems()` takes the **last**
+  run of bullets in the message — the work, not the material quoted at the top ("By following
+  the design of:" … then "I want to improve these pages:") — and `repairWithList()` promotes a
+  `repeat` plan over 2+ concrete bullets into one run per row. That is not a second guess at
+  intent: it is reading what is literally written, and it removes the variance where a model
+  read the count and ignored the list. A plan that already named its rows is left alone.
+- **A row owns a line, never a comma.** `SPAWN_ROWS` splits on newlines when the list spans
+  lines, and on commas only for the inline `[a, b, c]` form. A typed plan is therefore rendered
+  one row per line, so a page whose title contains a comma ("use the avatar, not an animation")
+  is one run, not two runs on half a sentence each.
 - **The classifier copies words; it does not write them.** `job` is the person's own sentence
-  with the count or the list removed, because every run is told its own row separately. A
-  rewritten job produced things like "work the issue relating to", which is worse than a
-  leftover clause. The prompt says so, and asks for `{"spawn": false}` whenever unsure: a
-  missed fan-out costs one retype, a wrong one starts agents on work nobody asked for.
+  with the count, the items and the whole-message context removed, because every run is told
+  its own row separately. A rewritten job produced things like "work the issue relating to",
+  which is worse than a leftover clause. Every instruction sentence must survive — dropping one
+  silently changes the work. The prompt says so, and asks for `{"spawn": false}` whenever
+  unsure: a missed fan-out costs one retype, a wrong one starts agents on work nobody asked for.
 - **A fan-out may take its count from a list, and then the row is the run.**
   `spawn per @<list> @entity <job>` resolves the list first, copies the entity once per
   row, and titles each session with its row — seven issues read as seven sessions, not
@@ -735,7 +751,9 @@ it.
 | Seven runs of a list all carry the shared instruction as their title | The row (issue id + title) is the mention's label and the session's title, and the block names each run by it |
 | A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | The prologue is carried onto every run instead of refused: a classified fan-out gives each job its own skill | `npm test` (`intent-ref`), `mention-ref.cjs` (`delegatePlan`) |
 | `spawn @coder …`, `let's spawn 4 @designer …`, or `Spawn 3` on its own line after a read — each showed ONE card | Every one of those was a regex being asked to read intent, and each shape was patched in turn while the next kept failing. The message is classified once instead: `{spawn: true, runs|list, entity, job}` or `{spawn: false}`, rendered as the sentence the grammar already reads. Never add a fourth prefix — a plan goes through `planSentence` | `npm test` (`intent-ref`, `mention-ref`), `electron/intent-ref.cjs` |
-| The classifier runs on every message, so "thanks" waits on a model | Three answers are provable without one: no entity named, an exact prefix, or a bare opening `spawn` | `npm test` (`intent-ref`), `intent-ref.cjs` (`namesEntity`) |
+| The classifier runs on every message, so "thanks" waits on a model | Three answers are provable without one: no entity named, an exact prefix, or a bare opening `spawn` — and an exact prefix over a bullet list is classified anyway, because the count is not the whole ask | `npm test` (`intent-ref`), `intent-ref.cjs` (`namesEntity`, `listedItems`) |
+| Four cards, one prompt — four agents redesign the same page | `runs` is one instruction N times; `rows`/`typed` is N different items. A message that enumerates is the second kind even with a number written, and a bullet list is repaired to one run per row rather than trusted to the model | `npm test` (`intent-ref`), `intent-ref.cjs` (`repairWithList`) |
+| A page title containing a comma becomes two runs | A row owns a line: typed plans render one row per line, and `SPAWN_ROWS` splits on newlines when there are any | `npm test` (`intent-ref`), `mention-ref.cjs` (`planSentence`, `spawnPrefix`) |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |
