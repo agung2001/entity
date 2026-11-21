@@ -303,7 +303,13 @@ function runEntity(action, rest, flags, target, output) {
           fail("--if-unchanged takes the `stamp` object from `entity get`, as JSON.")
         }
       }
-      const data = unwrap(core.call('entity.setInstructions', { workspace, name, body, expect }))
+      const result = core.call('entity.setInstructions', { workspace, name, body, expect })
+      /* A parked write names itself, so the agent can repeat this exact command
+         once the person has applied it. The clone path surfaces one the same way. */
+      if (result?.code === 'needs_consent' && result.data && !result.data.command) {
+        result.data.command = `entity set-instructions ${name} --body-stdin`
+      }
+      const data = unwrap(result)
       if (output === 'table') {
         return write(`  ${data.name}.md written (${data.bytes} bytes, was ${data.previousBytes})`)
       }

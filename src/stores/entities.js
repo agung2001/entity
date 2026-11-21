@@ -157,6 +157,25 @@ export async function dismissCloneRequest(id) {
   return call('clone.dismiss', { workspace: hub.workspace, id })
 }
 
+/** An instruction rewrite a run proposed, waiting here for its person. */
+export async function pendingWriteRequest(workspace = hub.workspace) {
+  return call('write.pending', { workspace })
+}
+
+export async function pendingWriteProposal(workspace, id) {
+  return call('write.proposal', { workspace, id })
+}
+
+export async function approveWriteRequest(workspace, id) {
+  const written = await call('write.approve', { workspace, id })
+  await loadEntities(workspace)
+  return written
+}
+
+export async function dismissWriteRequest(workspace, id) {
+  return call('write.dismiss', { workspace, id })
+}
+
 export async function cloneEntity({ from, to, name, nextName = '', mark = null }) {
   const copy = await call('entity.clone', {
     from,

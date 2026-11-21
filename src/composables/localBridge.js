@@ -31,7 +31,9 @@ async function request(path, init) {
   }
   const payload = await response.json()
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error || `Local request failed (${response.status}).`)
+    const error = new Error(payload?.error || `Local request failed (${response.status}).`)
+    error.code = String(payload?.code || 'error')
+    throw error
   }
   return payload
 }
@@ -39,12 +41,16 @@ async function request(path, init) {
 /**
  * One call shape for every read and write. The main process decides what the
  * name costs; the renderer never passes a path, a command or a shell string.
+ *
+ * A refusal carries its machine-readable `code` on the thrown error
+ * (`conflict`, `denied`, `not_found`), because a card has to tell "somebody
+ * edited the file" apart from "the disk said no" — the message alone cannot.
  */
 export async function call(fn, args = {}) {
   if (hasDesktopBridge()) {
     /* Vue state reaches plenty of call sites; IPC can only clone plain data. */
     const result = await bridge().call(fn, toPlain(args))
-    if (!result?.ok) throw new Error(result?.error || `${fn} failed.`)
+    if (!result?.ok) throw failureOf(fn, result)
     return result.data
   }
   const payload = await request('/call', {
@@ -53,6 +59,12 @@ export async function call(fn, args = {}) {
     body: JSON.stringify({ fn, args }),
   })
   return payload?.data
+}
+
+function failureOf(fn, result) {
+  const error = new Error(result?.error || `${fn} failed.`)
+  error.code = String(result?.code || 'error')
+  return error
 }
 
 /**
