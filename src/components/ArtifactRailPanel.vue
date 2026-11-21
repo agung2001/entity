@@ -125,10 +125,16 @@ async function onFiles(event) {
   }
 }
 
+/* One route, two surfaces: a `.dashboard` file opens the dashboard page, which
+   `ArtifactDetailView` branches to on the artifact's kind. The shelf only has to
+   send the id. */
 function open(item) {
   hub.rail.artifacts = false
   router.push({ name: 'artifact', params: { workspace: hub.workspace, id: item.id } })
 }
+
+const isDashboard = (item) => item?.kind === 'dashboard'
+const kindLabel = (item) => (isDashboard(item) ? 'dashboard' : item.ext || 'file')
 
 const filtersActive = computed(() => ext.value !== 'all' || sort.value !== 'newest')
 
@@ -251,6 +257,8 @@ defineExpose({ pickUpload })
         <span class="t">
           <b>{{ item.name }}</b>
           <span class="m">
+            <span v-if="isDashboard(item)" class="dash-kind">{{ kindLabel(item) }}</span>
+            <span v-if="isDashboard(item)" aria-hidden="true">·</span>
             <template v-if="item.scope === 'shared'">
               <span class="own" :data-mine="ownsArtifact(item) ? '1' : '0'">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

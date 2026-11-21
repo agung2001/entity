@@ -650,6 +650,12 @@ function evaluate({ workspace, now = new Date() } = {}) {
        artifact lives under `.personal/`, syncs nowhere and belongs to one
        account, so it is not this rule's population — the card says so. */
     shelf = listed.items.filter((item) => item.scope !== 'personal')
+    /* A dashboard is a cache, not a document somebody finished with: the next pass
+       writes it again, and archiving one would make the page say "no dashboard"
+       while its producer is still running. It is exempt by *kind* (the shelf
+       already reports it — `artifact-store.kindFor`), so no second rule about file
+       names lives here. */
+    shelf = shelf.filter((item) => item.kind !== 'dashboard')
   } catch {
     shelf = []
   }

@@ -25,6 +25,7 @@ const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
+const connectorStore = require('./connector-store.cjs')
 const turnTimeout = require('./turn-timeout-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
@@ -40,6 +41,9 @@ const enhancement = require('./enhance.cjs')
 const backups = require('./backup-store.cjs')
 const retention = require('./retention-store.cjs')
 const artifactRetention = require('./artifact-retention-store.cjs')
+const dashboardStore = require('./dashboard-store.cjs')
+const dashboardSchedule = require('./dashboard-schedule.cjs')
+const dashboardRun = require('./dashboard-run.cjs')
 const voice = require('./voice.cjs')
 const { createUpdateStore } = require('./update-store.cjs')
 const { createTerminal } = require('./terminal-store.cjs')
@@ -156,6 +160,14 @@ function createRpc({
     host,
   })
   artifactRetention.start({ log: (line) => console.log(`[entity] ${line}`) })
+  /* Dashboards are the same kind of clock one step further out: one boot tick for
+     the pass a closed laptop missed, then a poll. The producer is a harness turn,
+     so the scheduler is handed the runner and refuses to run on any machine that
+     is not this workspace's executor (see `dashboard-store.executorFor`). */
+  dashboardSchedule.start({
+    log: (line) => console.log(`[entity] ${line}`),
+    run: ({ workspace, id, doc }) => dashboardRun.runPass({ runner, workspace, id, doc }),
+  })
   /* One shell per panel, owned by this process. Absent in the server build. */
   const terminals = terminal ? createTerminal({ emit }) : null
   const shellOnly = () => {
@@ -287,6 +299,35 @@ function createRpc({
     'integrations.setEnabled': (args) => integrations.setEnabled(args),
     'integrations.saveCredential': (args) => integrations.saveCredential(args),
     'integrations.test': (args) => integrations.test(args),
+
+    /* connectors: one merged list of the three services, this workspace's pool
+       and the harness servers on this machine, with the scope on every row. The
+       writes go through the store that already owns each field. */
+    'connector.list': (args) => connectorStore.list(args),
+    'connector.add': (args) => connectorStore.add(args),
+    'connector.adopt': (args) => connectorStore.adopt(args),
+    'connector.copy': (args) => connectorStore.copyFromMachine(args),
+    'connector.remove': (args) => connectorStore.remove(args),
+
+    /* dashboards: one inert file per producer pass. `list` is the directory walk
+       the Overview band needs before it decides to render at all; `read` is the
+       document; `refresh` is the only call in this table that spends money. */
+    'dashboard.list': (args) => dashboardStore.list(args),
+    'dashboard.read': (args) => dashboardStore.read(args),
+    'dashboard.write': (args) => dashboardStore.write(args),
+    'dashboard.refresh': async (args) => {
+      /* The leadership rule first: a reader's refresh is refused with a sentence,
+         before a run id, a token or a cent is spent. */
+      dashboardStore.executorFor(args?.workspace)
+      const pass = await dashboardRun.runPass({
+        runner,
+        workspace: args?.workspace,
+        id: args?.id,
+        doc: null,
+      })
+      return { ...pass, item: dashboardStore.list({ workspace: args?.workspace }) }
+    },
+    'dashboard.schedule': (args) => dashboardStore.setSchedule(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
@@ -598,6 +639,9 @@ function createRpc({
       }
       remoteSync.stop()
       backups.stop()
+      /* The dashboard tick is unref'd like the others, but a reload in the dev
+         server would otherwise stack a second interval on top of the first. */
+      dashboardSchedule.stop()
       update.stop()
       await mcpServer.stop()
     },

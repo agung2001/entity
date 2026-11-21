@@ -175,11 +175,11 @@ test('the turn deadline is a setting the page actually offers', () => {
   assert.match(backend, /RANGE_MS/, 'nothing bounds the number')
 })
 
-test('account integrations paints its rows before it probes the CLIs', () => {
-  const view = fs.readFileSync(
-    path.join(SRC, 'views', 'account', 'AccountIntegrationsView.vue'),
-    'utf8',
-  )
+test('the connectors page paints its rows before it probes the CLIs', () => {
+  /* Account → Integrations and Account → MCP are one page now, in the workspace
+     that owns their definitions: `ConnectorsView` is the surface, and the rule it
+     was paid for — rows first, status second, cached — still holds. */
+  const view = fs.readFileSync(path.join(SRC, 'views', 'ConnectorsView.vue'), 'utf8')
   const store = fs.readFileSync(path.join(SRC, 'stores', 'integrations.js'), 'utf8')
   const backend = fs.readFileSync(path.join(ROOT, 'electron', 'integrations-store.cjs'), 'utf8')
   const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
@@ -188,21 +188,33 @@ test('account integrations paints its rows before it probes the CLIs', () => {
   assert.match(rpc, /'integrations\.probe'/, 'the status line needs its own call')
   assert.match(backend, /async function probe\(/, 'the probe is a function of its own')
   assert.match(backend, /PROBE_TTL/, 'the probe has to be cached')
-  assert.match(store, /export async function probeIntegrations/, 'the renderer owns the second read')
+  const connectorStore = fs.readFileSync(path.join(SRC, 'stores', 'connectors.js'), 'utf8')
+  assert.match(connectorStore, /export async function probeConnectors/, 'the renderer owns the second read')
   assert.ok(
-    view.indexOf('probeIntegrations({') > view.indexOf('await loadIntegrations({'),
+    connectorStore.indexOf('probeIntegrations({') > connectorStore.indexOf('await loadIntegrations({'),
     'the rows must land before the probe is asked for',
   )
-  assert.match(view, /int-refresh/, 'a cached read needs a way to refresh it')
+  assert.match(rpc, /'connector\.list'/, 'the merged row list needs its own call')
 
   /* a roster is a table, and one searchable */
   assert.match(view, /type="search"/, 'the roster needs a visible filter')
   assert.match(view, /shortcutLabel\('inventory-search'\)/, 'the search carries the catalog key')
-  assert.match(view, /class="skt int-t"/, 'the roster is the table grammar, not a card grid')
+  assert.match(view, /role="table"/, 'the roster is a table, not a card grid')
+  assert.match(view, /class="ct-head"/, 'the roster needs its own head')
   const css = allStyles()
-  const table = css.match(/\n\.int-t \.row \{[^}]*\}/)
-  assert.ok(table, '.int-t .row has no base rule')
+  const table = css.match(/\n\.ct-head,\n\.ct-row \{[^}]*\}/)
+  assert.ok(table, '.ct-head/.ct-row have no base track rule')
   assert.match(table[0], /minmax\(0,/, 'a column has to be able to shrink')
+
+  /* the merge's own rule: every row states a scope, a machine row may only be
+     copied, an unmanaged row may only be adopted */
+  const row = fs.readFileSync(path.join(SRC, 'components', 'ConnectorRow.vue'), 'utf8')
+  assert.match(row, /Copy here/, 'a machine row needs its one verb')
+  assert.match(row, /Adopt/, 'an unmanaged row must be adoptable')
+  assert.match(row, /row\.scope === 'machine'/, 'the scope is a column on every row')
+  assert.match(row, /<button[\s\S]{0,200}aria-expanded/, 'the row opens through a real button')
+  assert.doesNotMatch(row, /<a[\s>]/, 'a row is not an anchor: its control is a button')
+  assert.match(view, /Nothing was saved/, 'a rejected credential must say nothing was written')
 })
 
 test('the machine capability page brands harnesses and offers search', () => {

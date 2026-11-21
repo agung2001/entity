@@ -24,6 +24,7 @@ const CODE_EXT = new Set(['.js', '.jsx', '.ts', '.tsx', '.css', '.py', '.sh', '.
 const name = computed(() => {
   const kind = String(props.kind || '')
   const ext = String(props.ext || '').toLowerCase()
+  if (kind === 'dashboard') return 'dashboard'
   if (kind === 'image') return 'image'
   if (ext === '.html' || ext === '.htm') return 'page'
   if (kind === 'pdf') return 'pdf'
@@ -35,7 +36,12 @@ const name = computed(() => {
 </script>
 
 <template>
-  <svg v-if="name === 'image'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+  <svg v-if="name === 'dashboard'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+    <rect x="1.8" y="2.6" width="12.4" height="10.8" rx="1.4" />
+    <path d="M1.8 5.8h12.4" />
+    <path d="M4.6 12V8.9M8 12V7.2M11.4 12V9.8" />
+  </svg>
+  <svg v-else-if="name === 'image'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
     <rect x="1.7" y="2.6" width="12.6" height="10.8" rx="1.6" />
     <circle cx="5.6" cy="6.4" r="1.2" />
     <path d="M2.4 11.6l3.4-3.6 2.6 2.4 2.3-2.6 3 3.4" />
