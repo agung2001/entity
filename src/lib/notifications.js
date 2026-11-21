@@ -199,7 +199,7 @@ async function showBrowserNotification(title, body, tag, route, silent = false) 
     tag,
     silent: Boolean(silent),
     requireInteraction: true,
-    icon: assetUrl('favicon.svg'),
+    icon: assetUrl('icon-192.png'),
     data: { route },
   }
   const registration = await ensureWorker()
