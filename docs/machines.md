@@ -76,10 +76,24 @@ Three things about that shell are deliberate:
 
 | column | what it answers |
 | --- | --- |
-| Machine | the alias, its kind (`this machine`, `ssh`, `sync host`, `git`), and the address |
+| Machine | the alias — **clickable** — its kind (`this machine`, `ssh`, `sync host`, `git`), and the address |
+
 | State | `scanned`, `testing`, `unreachable`, `available`, `not tested`, `not a host` |
 | Inventory | what a scan found — or **why it found nothing**, which is the line that used to be a toast |
 | Actions | *Test & scan* on a host that was never read, *Open*, and the sweep control on the two machines that can run it |
+
+**Every column resizes.** Drag the edge of a header cell: the strip sits in the
+gutter after its column, so it never covers a cell's text; arrows nudge a focused
+handle 12px and a double-click puts every column back. The width belongs to the
+window (`localStorage`, `entity.machines.cols`), like the rail's.
+
+**One glyph per row.** The station's tile in the first column *is* the drawing of a
+machine; a server glyph beside the name said the same thing one row down, so it is
+gone.
+
+**The name is the link, the row is not** (`DESIGN.md`): the alias is what a person
+aims at, so it carries the route; the row wraps buttons and the address is text. A
+git remote's name is not clickable, because there is no machine page to open.
 
 The roster never grows the page: one bounded scroll box (`min(62vh, 620px)`), a sticky
 desk, and 60 px rows. A failure stays on its row, so the next glance still knows why a

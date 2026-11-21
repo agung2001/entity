@@ -87,10 +87,14 @@
   height: 38px;
 }
 
-/* ── the bar above the roster ───────────────────────────────────────────
-   One field, the band's full width. It is the page's only filter: a half-width
-   input beside a sentence nobody needed was the gallery's leftovers, and the
-   count already sits under the section head. */
+/* ── the field above the roster ─────────────────────────────────────────
+   One field, the band's full width: the page's only filter, opening the roster.
+
+   `.wsl-search` (directory.css) is a 32px box around a 20px input, so the caret
+   and the placeholder sit high in the field and the glyph reads as glued to the
+   first letter. The app's other search field (`.sksearch`, skill.css) is taller
+   and padding-carried; this one matches it — a 34px box, and 9px between the
+   glyph and the text's first pixel. */
 /* `.entp-sec` is `margin-top: 30px` because on the entity page a section follows
    a chart. Here the facts row closes the hero, so the roster starts straight
    under it — no heading, no 30px of air, no gap between the field and the table. */
@@ -99,11 +103,33 @@
 }
 .mbar {
   display: flex;
-  margin-bottom: 0;
+  /* No gap *above* — the field opens the roster, straight under the facts row.
+     A gap *below*, because the field's own bottom border and the table's top
+     border were touching: two hairlines a pixel apart read as one thick rule and
+     the field looked welded to the table. */
+  margin-bottom: 12px;
 }
 .mbar .wsl-search {
   flex: 1 1 100%;
   min-width: 0;
+  height: 34px;
+  gap: 9px;
+  padding: 0 11px;
+}
+.mbar .wsl-search svg {
+  width: 14px;
+  height: 14px;
+}
+.mbar .wsl-search input {
+  /* the box is 34px; without a height the input is only as tall as its own line
+     box and its text floats to the top of the field */
+  height: 100%;
+  padding: 0;
+  font-size: var(--fs-small);
+}
+/* the key hint keeps clear of the caret at the end of a typed query */
+.mbar .wsl-search .search-kbd {
+  margin-left: 6px;
 }
 
 /* ── the roster ──────────────────────────────────────────────────────────
@@ -141,23 +167,21 @@
 .mfhead,
 .mrow {
   display: grid;
-  /* Five tracks, and two of them may not float. `auto` and `max-content`
-     resolve *per row*, so the desk and the cells below it would each get their
-     own columns and `MACHINE STATE INVENTORY` would run together over a 267px
-     name track. Every row must share one set of columns, so they are lengths.
+  /* The same grammar as the skills roster (`.skt`, skill.css): ONE flexible
+     track that eats the spare width, three fixed ones, a uniform 14px of padding
+     and gutter, and a desk whose last label is right-aligned over a right-aligned
+     action column.
 
-     The name is capped rather than proportional: its longest value is 270 px
-     (`ada-macbook` + a `this machine` tag) and anything more is dead
-     space between the identifier and its state. The spare goes to the inventory,
-     which is where a wide count actually reads better
-     (`5 harnesses · 1278 models`), and 180 px is its floor. */
-  grid-template-columns: 30px minmax(0, 292px) 116px minmax(180px, 1fr) 148px;
-  gap: 12px;
+     What this page adds is that the flexible track and the three fixed ones are
+     the reader's to drag — `fleetTracks` writes the same template for the desk
+     and every cell. `auto` and `max-content` may never be one: they resolve *per
+     row*, so the desk and the cells under it would each get their own columns. */
+  grid-template-columns: minmax(190px, 1fr) minmax(92px, 116px) minmax(150px, 260px) 148px;
+  column-gap: 14px;
+  /* the desk hangs a handle after every column, out of flow */
+  position: relative;
   align-items: center;
-  /* 12, not the roster grammar's 14: at 1440 the inventory is 8 px short of
-     `6 harnesses · 1315 models` at 14, and the extra 4 px of track is cheaper
-     than clipping the count. */
-  padding: 0 12px;
+  padding: 0 14px;
 }
 .mfhead {
   position: sticky;
@@ -174,7 +198,7 @@
 }
 .mrow {
   min-height: 60px;
-  padding: 9px 14px;
+  padding: 11px 14px;
   border-top: 1px solid var(--border);
   transition: background 0.12s ease;
 }
@@ -214,7 +238,97 @@
   color: var(--muted);
 }
 
-/* the station's slot: a 30 px tile in the mark's own recipe */
+/* ── the column handles ──────────────────────────────────────────────────
+   `AppRail`'s `.rail-resize`, one turn of the screw: a 7px strip that sits in
+   the gutter *after* its column, so the hit area never covers a cell's text, and
+   a 1px rule that shows only on hover, on focus or mid-drag. The desk is the one
+   row that is always fully visible — the data rows scroll under it — so the
+   handles live there and nowhere else. */
+/* The handle's own cell: zero width, pinned to the same track as the column it
+   resizes. A grid places its children in flow, so `justify-self` alone puts each
+   handle in the next free cell — the first attempt had Machine's handle sitting
+   after Actions. Naming the track is what makes it follow the column. */
+.mfhead .col-grip-cell {
+  position: relative;
+  justify-self: end;
+  grid-row: 1;
+  width: 0;
+  height: 100%;
+  pointer-events: none;
+}
+.mfhead .col-grip-cell.g0 {
+  grid-column: 1;
+}
+.mfhead .col-grip-cell.g1 {
+  grid-column: 2;
+}
+.mfhead .col-grip-cell.g2 {
+  grid-column: 3;
+}
+.mfhead .col-grip-cell.g3 {
+  grid-column: 4;
+}
+/* the labels own their tracks too, or they are pushed aside by the handles */
+.mfhead > .c0 {
+  grid-column: 1;
+}
+.mfhead > .c1 {
+  grid-column: 2;
+}
+.mfhead > .c2 {
+  grid-column: 3;
+}
+.mfhead > .c3 {
+  grid-column: 4;
+  /* the actions cell ends at the table's edge, so its label does too */
+  justify-self: end;
+}
+.mfhead .col-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 13px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  translate: -50% 0;
+  pointer-events: auto;
+}
+.mfhead .col-grip::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+/* a handle sits in the gutter, so it must not paint over a label's last letters */
+.mfhead > span[role='columnheader'] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mfhead .col-grip:hover::after,
+.mfhead .col-grip:focus-visible::after,
+.mfhead .col-grip[data-resizing='1']::after {
+  background: var(--accent);
+}
+.mfhead .col-grip:focus-visible {
+  outline: none;
+}
+/* a phone has no gutter to drag in, and the row is three lines there anyway */
+@media (max-width: 460px) {
+  .mfhead .col-grip {
+    display: none;
+  }
+}
+
+/* the station's tile, the way `.skt .sig-tile` sits inside a skill's name cell:
+   a glyph in the cell, not a track of its own */
 .mvslot {
   display: grid;
   place-items: center;
@@ -237,6 +351,15 @@
 }
 
 .mfhost {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+/* the name and the address: the cell's own column, beside the tile */
+.mfhost-text {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 .mfhost b {
@@ -257,19 +380,31 @@
    their last five characters */
 /* The glyph is inside `.nm` and stays inline with the identifier, so the two can
    never wrap apart: a 12 px server icon on its own line reads as a stray mark.
-   The name wraps by word first and only anywhere as a last resort. */
+   The name wraps by word first and only anywhere as a last resort.
+
+   It is also the row's link — `DESIGN.md` → "The name is the link, the row is
+   not" — so it carries the underline and the focus ring, and nothing else on the
+   row does. */
 .mfhost b .nm {
   min-width: 0;
   overflow-wrap: break-word;
+  text-decoration: none;
 }
-.mfhost b .ic {
-  display: inline-flex;
-  flex: none;
-  color: var(--muted);
+.mfhost b a.nm {
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.12s ease;
+}
+.mfhost b a.nm:hover {
+  border-bottom-color: var(--border-strong);
+}
+.mfhost b a.nm:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-2xs);
 }
 .mfhost .addr {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -277,15 +412,7 @@
   font-size: var(--fs-meta);
   color: var(--muted);
 }
-/* the address is where the row goes: the one anchor a person aims at */
-.mfhost .addr a {
-  border-bottom: 1px dotted var(--border-strong);
-  color: inherit;
-  text-decoration: none;
-}
-.mfhost .addr a:hover {
-  color: var(--ink-2);
-}
+/* the address is text now: the name above it is the row's one link */
 
 .mfcap {
   min-width: 0;
@@ -532,19 +659,20 @@
   .mfhead {
     display: none;
   }
+  /* Two tracks under the desk: the machine cell (tile + name + address, with the
+     state at its right) and the inventory, each a full-width line. */
   .mrow {
-    grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 2px 10px;
     padding: 11px 12px;
     min-height: 0;
   }
-  .mvslot {
+  .mfhost {
     grid-column: 1;
     grid-row: 1;
   }
-  .mfhost {
-    grid-column: 2;
-    grid-row: 1;
+  .mfhost-text {
+    flex: 1 1 auto;
   }
   /* the name is the one thing that may take two lines here. The glyph is
      inside `.nm`, so it can never wrap away from the identifier it belongs to */
@@ -554,9 +682,10 @@
     overflow-wrap: anywhere;
   }
   .mrow .state {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
     white-space: nowrap;
+    align-self: start;
   }
   .mfhost .addr {
     grid-column: 2 / -1;
@@ -575,8 +704,8 @@
     overflow-wrap: anywhere;
   }
   .mfact {
-    grid-column: 2 / -1;
-    grid-row: 4;
+    grid-column: 1 / -1;
+    grid-row: 3;
     justify-content: flex-start;
     margin-top: 7px;
   }

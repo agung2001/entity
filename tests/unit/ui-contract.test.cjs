@@ -291,6 +291,12 @@ test('the machines page is a roster with a rail, not a card gallery', () => {
   assert.doesNotMatch(view, /class="entp-sec-head"/, 'the roster needs no heading')
   assert.match(view, /class="mbar"[\s\S]*?class="mftable"/, 'the field sits straight on the table')
 
+  /* DESIGN.md → "The name is the link, the row is not": the name carries the
+     route, the row wraps buttons, and the address is text */
+  assert.match(view, /<router-link[\s\S]{0,400}?class="nm"/, 'the host name is the link')
+  assert.doesNotMatch(view, /class="addr"[^>]*>\s*<router-link/, 'the address must not be a second link')
+  assert.doesNotMatch(view, /class="mrow"[^>]*\n?\s*<router-link/, 'the row is not an anchor')
+
   /* one filter, the band's full width — no sentence beside it */
   assert.match(view, /class="mbar"/, 'the search bar is missing')
   assert.match(view, /id="inventory-search"/, 'the roster needs its one filter')
@@ -315,10 +321,38 @@ test('the machines page is a roster with a rail, not a card gallery', () => {
   const css = allStyles()
   assert.match(css, /\.mrow \{[^}]*min-height: 60px/, 'a data row is 60 px')
   assert.match(css, /\.mfhead \{[^}]*position: sticky/, 'the desk sticks to the scroll box')
-  /* the row is a grid of exactly five tracks in the base rule */
-  const row = css.match(/\n\.mfhead,\n\.mrow \{[^}]*grid-template-columns: ([^;]+);/)
-  assert.ok(row, '.mfhead/.mrow have no shared track rule')
-  assert.equal(row[1].trim().split(/\s+(?![^(]*\))/).filter(Boolean).length, 5, 'the row is five columns')
+  /* The row is a grid of exactly five tracks, and the desk and the cells take
+     the SAME template — written by `fleetTracks`, because a reader may drag it.
+     A track list in CSS would be a second source of truth and the header would
+     drift off the cells. */
+  const row = css.match(/\n\.mfhead,\n\.mrow \{[^}]*grid-template-columns:([^;]+);/)
+  assert.ok(row, '.mfhead/.mrow have no base track rule')
+  assert.equal(row[1].trim().split(/\s+(?![^(]*\))/).filter(Boolean).length, 4, 'the row is four columns')
+  assert.match(view, /FLEET_COLS\s*=\s*\[/, 'the five columns are declared once')
+  assert.match(view, /const fleetTracks = computed/, 'one template for the desk and the cells')
+  /* one bound style, so the desk and every cell cannot disagree */
+  assert.match(view, /const gridStyle = computed\(/, 'the template needs one binding')
+  /* the desk, the skeleton rows and the data rows are three bindings of one
+     value — three places that would otherwise each keep their own copy */
+  assert.equal(
+    (view.match(/:style="gridStyle"/g) || []).length,
+    3,
+    'the desk and both kinds of row must take the same template',
+  )
+  /* and it is applied only in the band that uses five columns */
+  assert.match(view, /narrow\.value\s*\?\s*null/, 'a bound template wins over the mobile container query')
+  /* a column a reader may drag needs a floor, or its header label is truncated */
+  /* one flexible track that eats the spare width, three fixed ones */
+  assert.match(
+    view,
+    /const ceiling = index === 0 \? '1fr' : `\$\{width\}px`/,
+    'the machine track is the flexible one',
+  )
+  for (const id of ['host', 'state', 'cap', 'fact']) {
+    assert.match(view, new RegExp(`id: '${id}', label: '[^']+', min: \\d+, max: \\d+`), `${id} has no bounds`)
+  }
+  /* `auto` / `max-content` resolve per element, which is what misaligns a desk */
+  assert.doesNotMatch(view, /fleetTracks[\s\S]{0,400}?(auto|max-content)/, 'tracks must be lengths')
 })
 
 test('the account has a reachable backups page with smart as the default', () => {

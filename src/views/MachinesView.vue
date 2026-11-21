@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import MachineIcon from '@/components/MachineIcon.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import VoxelMark from '@/components/VoxelMark.vue'
 import { isEditable } from '@/lib/dom'
@@ -311,7 +310,160 @@ const addressOf = (host) => host.hostName || host.spec || host.alias
 
 /* Whether the rows are still being read. `fleet.loaded` is false until the first
    answer, so this is the only state that draws a skeleton. */
+const gridStyle = computed(() =>
+  fleetTracks.value ? { gridTemplateColumns: fleetTracks.value } : null,
+)
+
 const loading = computed(() => fleet.loading && !fleet.loaded)
+
+/* ── column widths ────────────────────────────────────────────────────────
+   A roster is a table, and a table's columns are the reader's business: the
+   inventory is wide or narrow depending on the fleet, and the name track is the
+   one that has to hold `build-box-west` and `build-box-east` apart.
+
+   The drag handle is `AppRail`'s (`rail-resize`): pointer down, rAF-throttled
+   move, `localStorage`, arrow-key nudge, double-click to reset. The difference
+   is that a track's minimum is content-derived rather than a constant — the
+   header's own label cannot be truncated — so `MIN` is a floor and the
+   `minmax()` in CSS repeats it for the same reason. */
+const FLEET_COLS_KEY = 'entity.machines.cols'
+/* Four columns, the skills roster's grammar: one flexible track that eats the
+   spare width, and three fixed ones. The station's tile lives inside the machine
+   cell rather than in a track of its own — a 30px track and a 14px gutter is 44px
+   of air spent before the name every row has to read. */
+const FLEET_COLS = [
+  { id: 'host', label: 'Machine', min: 220, max: 700, base: 400 },
+  { id: 'state', label: 'State', min: 96, max: 240, base: 116 },
+  { id: 'cap', label: 'Inventory', min: 150, max: 720, base: 260 },
+  { id: 'fact', label: 'Actions', min: 124, max: 360, base: 148 },
+]
+const colWidths = ref(FLEET_COLS.map((col) => col.base))
+
+function clampCol(index, width) {
+  const col = FLEET_COLS[index]
+  return Math.min(col.max, Math.max(col.min, Math.round(width)))
+}
+
+try {
+  const stored = JSON.parse(localStorage.getItem(FLEET_COLS_KEY) || 'null')
+  if (Array.isArray(stored) && stored.length === FLEET_COLS.length) {
+    colWidths.value = stored.map((width, index) =>
+      Number.isFinite(width) ? clampCol(index, width) : FLEET_COLS[index].base,
+    )
+  }
+} catch {
+  /* private mode, or a shape this build no longer writes: start from the base */
+}
+
+function storeCols() {
+  try {
+    localStorage.setItem(FLEET_COLS_KEY, JSON.stringify(colWidths.value))
+  } catch {
+    /* session-only */
+  }
+}
+
+/* One template, so the desk and every row share it — `auto` and `max-content`
+   resolve per element, which is what misaligns a header.
+
+   It is applied through a bound style only while the five-column band is the
+   one on screen. Under 460px a row is three lines in a single column, and an
+   inline `grid-template-columns` outranks a container query every time: the
+   handles would drag a template the layout is not using, and the row would
+   scroll sideways inside its own box. */
+const fleetTracks = computed(() =>
+  narrow.value
+    ? null
+    : colWidths.value
+        .map((width, index) => {
+          /* Every track is `minmax(floor, ceiling)`, and the first one carries the
+             flexible ceiling so it eats the spare width — the skills roster's
+             shape. A drag moves a track's own bound, and on the flexible one that
+             bound is its floor, so its handle is dragged with the usual
+             left-is-narrower sense. */
+          const floor = FLEET_COLS[index].min
+          const ceiling = index === 0 ? '1fr' : `${width}px`
+          return index === colWidths.value.length - 1
+            ? `${width}px`
+            : `minmax(${floor}px, ${ceiling})`
+        })
+        .join(' '),
+)
+
+/* the width the roster is drawn at: 460 is where the row stops being five cells
+   (`machines-fleet.css` → the 460 breakpoint) */
+const narrow = ref(false)
+const shelfEl = ref(null)
+const NARROW = 460
+function readNarrow() {
+  narrow.value = (shelfEl.value?.clientWidth || window.innerWidth) <= NARROW
+}
+onMounted(() => {
+  readNarrow()
+  window.addEventListener('resize', readNarrow)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', readNarrow))
+
+const resizing = ref(-1)
+let dragStartX = 0
+let dragStartWidth = 0
+let dragWidth = 0
+let dragFrame = 0
+
+function startColResize(index, event) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  resizing.value = index
+  dragStartX = event.clientX
+  dragStartWidth = colWidths.value[index]
+  dragWidth = dragStartWidth
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onColResizeMove)
+  window.addEventListener('pointerup', stopColResize)
+}
+
+function onColResizeMove(event) {
+  if (resizing.value < 0) return
+  dragWidth = clampCol(resizing.value, dragStartWidth + event.clientX - dragStartX)
+  if (dragFrame) return
+  dragFrame = requestAnimationFrame(() => {
+    dragFrame = 0
+    if (resizing.value < 0) return
+    colWidths.value = colWidths.value.map((width, index) =>
+      index === resizing.value ? dragWidth : width,
+    )
+  })
+}
+
+function stopColResize() {
+  if (dragFrame) cancelAnimationFrame(dragFrame)
+  dragFrame = 0
+  if (resizing.value < 0) return
+  resizing.value = -1
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('pointermove', onColResizeMove)
+  window.removeEventListener('pointerup', stopColResize)
+  storeCols()
+}
+
+/* the keyboard's share: a handle is a control, so arrows must move it too */
+function nudgeCol(index, event) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  colWidths.value = colWidths.value.map((width, i) =>
+    i === index ? clampCol(index, width + (event.key === 'ArrowRight' ? 12 : -12)) : width,
+  )
+  storeCols()
+}
+
+function resetCols() {
+  colWidths.value = FLEET_COLS.map((col) => col.base)
+  storeCols()
+}
+
+onBeforeUnmount(() => stopColResize())
 </script>
 
 <template>
@@ -373,7 +525,7 @@ const loading = computed(() => fleet.loading && !fleet.loaded)
     </div>
   </div>
 
-  <section class="mach-shelf">
+  <section class="mach-shelf" ref="shelfEl">
     <!-- ── the hero ────────────────────────────────────────────────────
          The entity page's cabinet, saying the fleet's one sentence. The mark slot
          holds the workspace's space station rather than a character: a fleet is a
@@ -541,7 +693,12 @@ const loading = computed(() => fleet.loading && !fleet.loaded)
             <span></span><span>Machine</span><span>State</span>
             <span>Inventory</span><span>Actions</span>
           </div>
-          <div v-for="n in 3" :key="n" class="mrow">
+          <div
+            v-for="n in 3"
+            :key="n"
+            class="mrow"
+            :style="gridStyle"
+          >
             <span class="mvslot"><span class="mskel btn"></span></span>
             <span class="mfhost">
               <b><span class="mskel nm"></span></b>
@@ -580,12 +737,40 @@ const loading = computed(() => fleet.loading && !fleet.loaded)
 
       <div v-else class="mftable" role="table" aria-label="The machines in this fleet">
         <div class="mftable-scroll">
-          <div class="mfhead" role="row">
-            <span role="columnheader" aria-label="Kind"></span>
-            <span role="columnheader">Machine</span>
-            <span role="columnheader">State</span>
-            <span role="columnheader">Inventory</span>
-            <span role="columnheader">Actions</span>
+          <!-- The desk carries the resize handles, because it is the only row
+               that is always fully visible (the data rows scroll under it). A
+               handle is a real `<button>`: it takes focus, arrows nudge it 12px
+               and a double-click puts every column back. -->
+          <div class="mfhead" role="row" :style="gridStyle">
+            <template v-for="(col, index) in FLEET_COLS" :key="col.id">
+              <span
+                role="columnheader"
+                :class="`c${index}`"
+                :title="`${col.label} — drag the edge to resize`"
+              >{{ col.label }}</span>
+              <!-- The handle is pinned to the column's own cell, because a grid
+                   puts every child in flow: two `position: absolute` handles
+                   without an offset both resolve against the desk and land on top
+                   of each other, which is how the first drag moved Actions
+                   instead of Machine. -->
+              <span class="col-grip-cell" :class="`g${index}`" aria-hidden="true">
+                <button
+                  class="col-grip"
+                  type="button"
+                  :aria-label="`Resize the ${col.label} column`"
+                  :title="`Drag to resize ${col.label} · double-click to reset every column`"
+                  :aria-valuemin="col.min"
+                  :aria-valuemax="col.max"
+                  :aria-valuenow="colWidths[index]"
+                  role="separator"
+                  aria-orientation="vertical"
+                  :data-resizing="resizing === index ? '1' : null"
+                  @pointerdown="startColResize(index, $event)"
+                  @keydown="nudgeCol(index, $event)"
+                  @dblclick="resetCols"
+                ></button>
+              </span>
+            </template>
           </div>
 
           <!-- A row is always exactly five children, in this order: the station's
@@ -598,42 +783,46 @@ const loading = computed(() => fleet.loading && !fleet.loaded)
             :data-probe="stateOf(host)"
             :data-host="isHostForAgents(host) ? '1' : '0'"
             :aria-current="host.thisMachine ? 'true' : null"
+            :style="gridStyle"
             role="row"
           >
-            <span
-              class="mvslot"
-              :data-kind="host.syncHost ? 'sync' : host.thisMachine ? undefined : 'ssh'"
-              role="cell"
-              aria-hidden="true"
-            >
-              <VoxelMark shape="station" />
-            </span>
-
             <span class="mfhost" role="cell">
+              <!-- the station's tile rides inside this cell, the way a skill's
+                   sigil rides inside `.skt .nm` — one track for the name and its
+                   glyph, not two -->
+              <span
+                class="mvslot"
+                :data-kind="host.syncHost ? 'sync' : host.thisMachine ? undefined : 'ssh'"
+                aria-hidden="true"
+              >
+                <VoxelMark shape="station" />
+              </span>
+              <span class="mfhost-text">
+              <!-- `DESIGN.md` → "The name is the link, the row is not." The name
+                   is what a person aims at, so the name is what goes; the row
+                   wraps buttons, so it cannot be an anchor itself. A host that is
+                   not a run target (a git remote) keeps the same layout and simply
+                   has no name to click. -->
               <b>
-                <span class="nm">
-                  <span v-if="host.thisMachine" class="ic"><MachineIcon :size="12" /></span>{{
-                    host.label
-                  }}</span>
+                <router-link
+                  v-if="isHostForAgents(host)"
+                  class="nm"
+                  :to="machineLink(host)"
+                  :title="`Open ${host.alias}`"
+                >
+                  {{ host.label }}</router-link>
+                <span v-else class="nm">{{ host.label }}</span>
                 <span v-if="host.thisMachine" class="tag">this machine</span>
                 <span v-else-if="host.syncHost" class="tag">sync host</span>
                 <span v-else class="tag">ssh</span>
                 <span v-if="!isHostForAgents(host)" class="tag">git</span>
               </b>
-              <!-- The address is where the row goes, but it is not the row: the
-                   Open action is its own anchor. -->
-              <span class="addr">
-                <template v-if="isHostForAgents(host)">
-                  <router-link :to="machineLink(host)" :title="`Open ${host.alias}`">{{
-                    addressOf(host)
-                  }}</router-link>
-                  <template v-if="host.user"> · {{ host.user }}</template>
-                  <template v-if="host.port"> · port {{ host.port }}</template>
-                </template>
-                <template v-else>
+                <!-- The address says where the link goes; it is not a second one. -->
+                <span class="addr">
                   {{ addressOf(host) }}
                   <template v-if="host.user"> · {{ host.user }}</template>
-                </template>
+                  <template v-if="host.port"> · port {{ host.port }}</template>
+                </span>
               </span>
             </span>
 

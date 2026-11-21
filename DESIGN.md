@@ -288,6 +288,29 @@ machine runs the artifact sweep.
   (`style="--hero: var(--accent)"`), or every `color-mix(in oklab, var(--hero) …)` is
   invalid and the hero falls back to `background: none` — a white rectangle with a
   `currentColor` border. `background: none` on a shared surface is the tell.
+- **A roster with a glyph column folds the glyph into the row's first cell.** A
+  30px track plus its 14px gutter is 44px of air before the name every row has to
+  read; `.skt .nm` puts a skill's sigil inside the name cell for the same reason.
+  Keep one flexible track that eats the spare width and three fixed ones, and let the
+  last label right-align over its column — that is the grammar both rosters use.
+- **A roster with a glyph column folds the glyph into the row's first cell.** A
+  30px track plus its 14px gutter is 44px of air before the name every row has to
+  read; `.skt .nm` puts a skill's sigil inside the name cell for the same reason.
+  Keep one flexible track that eats the spare width and three fixed ones, a uniform
+  14px everywhere, and let the last label right-align over its column — that is the
+  grammar both rosters use.
+- **A table's columns are the reader's.** One `FLEET_COLS` declares all four with
+  `min`/`max`/`base`, and `fleetTracks` writes the single template the desk and the
+  cells both take. A handle lives in the desk (the one row always fully visible), is a
+  real `<button>` — focusable, arrow-nudgeable, double-click resets — and sits pinned to
+  its own track, because a grid places in flow and unpinned absolute children all land
+  in the first free cell.
+- **No column takes the whole spare track.** A count needs a reading column, not the
+  widest one: an inventory handed 420px beside a 292px name is a table that looks
+  broken even though nothing overflows.
+- **One drawing per fact per row.** The station's tile in the first column already
+  draws a machine; a server glyph beside the name is the same claim twice, one row
+  down from the first.
 - **`auto` and `max-content` in a table's track list resolve per row.** The desk and the
   cells below it then get different columns and the header labels run together. Use
   lengths, and cap the track whose content is bounded rather than letting a fraction
@@ -606,6 +629,15 @@ it.
 | Escape does nothing while an artifact preview has focus | A frame never receives the window's keydown: forward it from the frame's own document | `tests/e2e/full/16-artifact-scope.spec.js` |
 | A dialog opens with focus still on the page behind it | Focus the first control on open, and give the dialog its confirm combo | `tests/e2e/full/01-thread-lifecycle.spec.js` |
 | A scan result is announced only by a toast, so a red row explains nothing afterwards | The reason is a cell on the row (`data-fail="1"`), with the last known count beside it | `npm test` (`ui-contract`), `tests/e2e/full/24-machines-fleet.spec.js` |
+| A table hands one column the whole spare track | Size every track to its content and let the reader drag: a 420px inventory beside a 292px name is what "the table width is weird" means | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A resizable column has no floor, so its header truncates | Each track carries `min`/`max` in one declaration, and the desk's label is what sets the floor | `npm test` (`ui-contract`) |
+| A grid's resize handles all resolve against the row | Name each handle's track (`grid-column`), or every absolute child lands in the first free cell and one drag moves the wrong column | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A bound `grid-template-columns` wins over the mobile container query | Apply the template only in the band that uses it (`null` below 460) | `tests/e2e/full/24-machines-fleet.spec.js` |
+| Two glyphs on one row say the same thing | The station's tile already draws a machine; a server icon beside the name is the second one | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A field's bottom border touches the table's top border | Two hairlines a pixel apart read as one thick rule: the field wants a gap *below*, even when it wants none above | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A right-aligned column has a left-aligned header | Align the desk's label to the cell's own `justify-content`, or it reads as a different column | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A field's glyph reads as glued to the first letter | `.wsl-search` is a 32px box around a 20px input; give the input `height: 100%` and the field the app's other field's gap (9px) | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A host name is plain text while a tiny arrow beside it goes somewhere | The name is the link, the row is not: the alias carries the route, the arrow is its shortcut, the address is text | `npm test` (`ui-contract`) |
 | A second row is inset 28px from the nav above it | `.entp-bar` shares `.topbar`'s gutter; it bleeds the window and pads its own contents | `tests/e2e/full/24-machines-fleet.spec.js` |
 | Two different actions share (or nearly share) one drawing | Vendored iconoir glyphs, one meaning each; a fleet verb never reuses a row verb's shape | `npm test` (`ui-contract`) |
 | A section head repeats a count the hero already states | Drop it, and let the field open the table with no gap | `tests/e2e/full/24-machines-fleet.spec.js` |

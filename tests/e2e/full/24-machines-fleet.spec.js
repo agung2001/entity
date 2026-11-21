@@ -23,20 +23,24 @@ async function openFleet(page) {
 const rowCount = (page) => page.locator('.mrow').count()
 
 test.describe('workspace settings → machines', () => {
-  test('a row is exactly five cells, in the order the grid depends on', async ({ page }) => {
+  test('a row is exactly four cells, in the order the grid depends on', async ({ page }) => {
     await openFleet(page)
-    /* station · host · state · inventory · actions. A sixth child reflows the
-       row and nothing else in the suite would notice. */
+    /* host · state · inventory · actions — the skills roster's grammar, with the
+       station's tile folded into the host cell the way a skill's sigil rides
+       inside `.skt .nm`. A fourth cell moved, or a fifth added, reflows the row
+       and nothing else in the suite would notice. */
     const shapes = await page.locator('.mrow').evaluateAll((rows) =>
       rows.map((row) => ({
         children: row.children.length,
         classes: [...row.children].map((cell) => cell.className.split(' ')[0]),
+        tileInside: Boolean(row.querySelector('.mfhost .mvslot')),
       })),
     )
     expect(shapes.length).toBeGreaterThan(1)
     for (const row of shapes) {
-      expect(row.children).toBe(5)
-      expect(row.classes).toEqual(['mvslot', 'mfhost', 'state', 'mfcap', 'mfact'])
+      expect(row.children).toBe(4)
+      expect(row.classes).toEqual(['mfhost', 'state', 'mfcap', 'mfact'])
+      expect(row.tileInside).toBe(true)
     }
   })
 
@@ -93,6 +97,65 @@ test.describe('workspace settings → machines', () => {
       })
       expect(gap).toBe(0)
     }
+  })
+
+  test('the field is not welded to the table below it', async ({ page }) => {
+    await openFleet(page)
+    /* The field opens the roster, so it wants no gap above — but its own bottom
+       border and the table's top border touched, and two hairlines a pixel apart
+       read as one thick rule. */
+    const box = await page.evaluate(() => {
+      const field = document.querySelector('.mbar .wsl-search').getBoundingClientRect()
+      const table = document.querySelector('.mftable').getBoundingClientRect()
+      const above = document.querySelector('.mach-strip').getBoundingClientRect()
+      return {
+        below: Math.round(table.top - field.bottom),
+        above: Math.round(field.top - above.bottom),
+      }
+    })
+    expect(box.below).toBeGreaterThanOrEqual(10)
+    expect(box.above).toBeLessThanOrEqual(24)
+  })
+
+  test('the Actions column and its header end on the same edge', async ({ page }) => {
+    await openFleet(page)
+    /* the cell is `justify-content: flex-end`; a left-aligned header over a
+       right-aligned column reads as a different column */
+    const edges = await page.evaluate(() => {
+      const header = [...document.querySelectorAll('.mfhead > span[role="columnheader"]')].pop()
+      const cell = document.querySelector('.mrow .mfact')
+      return {
+        header: Math.round(header.getBoundingClientRect().right),
+        cell: Math.round(cell.getBoundingClientRect().right),
+      }
+    })
+    expect(Math.abs(edges.header - edges.cell)).toBeLessThanOrEqual(8)
+  })
+
+  test('the filter has room around its glyph and its text is centred', async ({ page }) => {
+    await openFleet(page)
+    /* `.wsl-search` is a 32px box around a 20px input, which sat the caret high
+       and glued the glyph to the first letter. The app's other search field is
+       taller and padding-carried; this one matches it. */
+    const box = await page.locator('.mbar .wsl-search').evaluate((el) => {
+      const input = el.querySelector('input')
+      const glyph = el.querySelector('svg')
+      const field = el.getBoundingClientRect()
+      const line = input.getBoundingClientRect()
+      const icon = glyph.getBoundingClientRect()
+      return {
+        height: Math.round(field.height),
+        inputHeight: Math.round(line.height),
+        gap: Math.round(line.left - icon.right),
+        centered: Math.abs(line.top + line.height / 2 - (field.top + field.height / 2)) < 2,
+      }
+    })
+    expect(box.height).toBeGreaterThanOrEqual(34)
+    /* the input fills the box, so its text cannot float to the top */
+    expect(box.inputHeight).toBeGreaterThanOrEqual(box.height - 2)
+    expect(box.centered).toBe(true)
+    /* 8px read as glued at 34px; the app's other field carries more */
+    expect(box.gap).toBeGreaterThanOrEqual(9)
   })
 
   test('the one filter takes the band, with no sentence beside it', async ({ page }) => {
@@ -166,6 +229,85 @@ test.describe('workspace settings → machines', () => {
     expect(clipped).toEqual([])
   })
 
+  test('a column can be resized, and the width holds', async ({ page }) => {
+    await openFleet(page)
+    await page.evaluate(() => localStorage.removeItem('entity.machines.cols'))
+    await page.reload()
+    await expect(page.locator('.mrow').first()).toBeVisible({ timeout: 20_000 })
+
+    const tracks = () =>
+      page.locator('.mrow').first().evaluate((el) => getComputedStyle(el).gridTemplateColumns)
+    const deskTracks = () =>
+      page.locator('.mfhead').evaluate((el) => getComputedStyle(el).gridTemplateColumns)
+    const base = await tracks()
+    expect(await deskTracks()).toBe(base)
+
+    /* The Machine track is `minmax(floor, 1fr)` — the flexible one — so a drag
+       moves its floor. Drag the Inventory handle instead: a fixed track's drag
+       changes a number you can read back from the template. */
+    const grip = page.locator('.mfhead .col-grip[aria-label="Resize the Inventory column"]')
+    const box = await grip.boundingBox()
+    const before = await page.evaluate(() =>
+      Math.round(document.querySelector('.mrow .mfcap').getBoundingClientRect().width),
+    )
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 8 })
+    await page.mouse.up()
+
+    const dragged = await tracks()
+    expect(dragged).not.toBe(base)
+    /* it moved the column it named, and the desk followed */
+    expect(await deskTracks()).toBe(dragged)
+    const after = await page.evaluate(() =>
+      Math.round(document.querySelector('.mrow .mfcap').getBoundingClientRect().width),
+    )
+    expect(after).toBeGreaterThan(before + 40)
+
+    /* a reader's table is worth remembering across a reload */
+    await page.reload()
+    await expect(page.locator('.mrow').first()).toBeVisible({ timeout: 20_000 })
+    expect(await tracks()).toBe(dragged)
+
+    /* a handle is a control: arrows nudge it, a double-click resets every column */
+    await page.locator('.mfhead .col-grip[aria-label="Resize the Inventory column"]').focus()
+    await page.keyboard.press('ArrowLeft')
+    expect(await tracks()).not.toBe(dragged)
+    await page.locator('.mfhead .col-grip[aria-label="Resize the Inventory column"]').dblclick({ force: true })
+    expect(await tracks()).toBe(base)
+  })
+
+  test('no column is lopsided against its neighbour', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await openFleet(page)
+    /* after a navigation: a blank page denies localStorage */
+    await page.evaluate(() => localStorage.removeItem('entity.machines.cols'))
+    await page.reload()
+    await expect(page.locator('.mrow').first()).toBeVisible({ timeout: 20_000 })
+    /* the inventory used to be handed the whole spare track — 420px against the
+       name's 292 — which is what made the table look wrong. A count needs a
+       reading column, not the widest one. */
+    const widths = await page.locator('.mrow').first().evaluate((el) =>
+      [...el.children].map((cell) => Math.round(cell.getBoundingClientRect().width)),
+    )
+    const [machine, state, inventory, actions] = widths
+    /* the skills roster's shape: one wide track that eats the spare width and
+       three narrow ones. The machine track owns the band. */
+    expect(machine).toBeGreaterThan(state * 3)
+    expect(machine).toBeGreaterThan(inventory * 1.5)
+    expect(actions).toBeGreaterThanOrEqual(124)
+    expect(actions).toBeLessThan(inventory)
+  })
+
+  test('the row wears one glyph, not two', async ({ page }) => {
+    await openFleet(page)
+    /* the station's tile drew the machine; a server glyph beside the name said it
+       again, one row down from the drawing */
+    await expect(page.locator('.mfhost .ic')).toHaveCount(0)
+    await expect(page.locator('svg.machine-icon')).toHaveCount(0)
+    await expect(page.locator('.mrow .mvslot .vx').first()).toBeVisible()
+  })
+
   test('the desk stays on the cells\' tracks', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await openFleet(page)
@@ -233,6 +375,32 @@ test.describe('workspace settings → machines', () => {
       expect(seen.roster, `the roster scrolls sideways at ${width}px`).toBe(0)
       expect(seen.nameClipped, `a host name clips at ${width}px`).toBe(false)
     }
+  })
+
+  test('the name is the link, and the row is not', async ({ page }) => {
+    await openFleet(page)
+    /* DESIGN.md → "The name is the link, the row is not": the name is what a
+       person aims at, the row wraps buttons. */
+    const shapes = await page.locator('.mrow').evaluateAll((rows) =>
+      rows.map((row) => ({
+        current: row.getAttribute('aria-current') === 'true',
+        host: row.getAttribute('data-host') === '1',
+        nameAnchor: Boolean(row.querySelector('.mfhost b a.nm')),
+        addrAnchor: Boolean(row.querySelector('.mfhost .addr a')),
+        rowAnchor: Boolean(row.querySelector(':scope > a')),
+      })),
+    )
+    for (const row of shapes) {
+      /* no row is ever itself an anchor, and the address never is one */
+      expect(row.rowAnchor).toBe(false)
+      expect(row.addrAnchor).toBe(false)
+      /* a run target's name goes somewhere; a git remote's does not */
+      expect(row.nameAnchor).toBe(row.host && true)
+    }
+    /* and it points at the machine it names */
+    const first = page.locator('.mrow[data-host="1"] .mfhost b a.nm').first()
+    await expect(first).toBeVisible()
+    expect(await first.getAttribute('href')).toMatch(/\/machines\/[^/]+$/)
   })
 
   test('a row that was never scanned carries the one primary action', async ({ page }) => {
