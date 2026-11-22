@@ -1,18 +1,22 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import SkillCopyDialog from '@/components/SkillCopyDialog.vue'
+import SkillInstallDialog from '@/components/SkillInstallDialog.vue'
 import VoxelMark from '@/components/VoxelMark.vue'
 import { COLORS } from '@/composables/entityMark'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { call } from '@/composables/localBridge'
 import { copyText } from '@/lib/clipboard'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { BOARDS, boards, loadBoard, readStamp, retryInMinutes } from '@/lib/skillsh'
 import { hub, toast } from '@/stores/hub'
 import {
   attachSkill,
   detachSkill,
+  loadHashedLibrary,
   loadLibrary,
   workspaces,
 } from '@/stores/workspaces'
@@ -23,21 +27,23 @@ const props = defineProps({
 })
 
 /**
- * One page, two scopes — workspace first.
+ * One page, three sources — and only one of them is expensive.
  *
- * `workspace` is intent: the skills this workspace owns (real copies). It is drawn
- * as a dense table, because a roster is an inventory and a card grid gives a
- * two-line description the height of a card.
+ * `workspace` is intent: the skills this workspace owns (real copies). `local` is
+ * what is already on this machine, grouped by name because `hyperframes-core` is
+ * not seven skills, it is one skill in seven folders. `libraries` is the network:
+ * three boards skills.sh publishes, read only after the tab is opened, so opening
+ * Skills costs one directory read and nothing else.
  *
- * `harness libraries` is discovery: every skill each harness on this machine
- * already carries, read from `~/.pi`, `~/.claude`, `~/.codex`, … Scanning all of
- * them walks six directory trees, so it is paid for only when that scope is
- * opened, and the result is cached for the session.
+ * The tab is the URL's (`?scope=local`), so a link lands on the tab it names and
+ * a reload keeps it — the same rule Workspace → Artifacts follows for its shelf.
  */
-const tab = ref('workspace')
+const route = useRoute()
+const router = useRouter()
+const SCOPES = ['workspace', 'local', 'libraries']
+const scope = ref(SCOPES.includes(String(route.query.scope)) ? String(route.query.scope) : 'workspace')
 const harness = ref('all')
 const busy = ref('')
-
 /* roster state: the query, the directory read, and the row that is mid-action */
 const query = ref('')
 const searchEl = ref(null)
@@ -47,32 +53,277 @@ const confirming = ref('')
 const copying = ref('')
 const searchKey = shortcutLabel('inventory-search')
 
-/* lazy: nothing is scanned until the library scope is actually shown, and a
-   half-armed row is dropped when the scope changes under it */
-watch(tab, (value) => {
-  confirming.value = ''
-  closeMenu()
-  if (value === 'library' && !workspaces.library) loadLibrary()
+/**
+ * The tab is a place, not a setting: `?tab=skills&scope=local` keeps it.
+ * `router.replace`, because walking the tabs is not walking the history.
+ */
+function setScope(next) {
+  if (!SCOPES.includes(next) || next === scope.value) return
+  scope.value = next
+  const query = { ...route.query, tab: 'skills' }
+  if (next === 'workspace') delete query.scope
+  else query.scope = next
+  router.replace({ name: 'workspace', params: { workspace: route.params.workspace }, query })
+}
+
+/* A link, a reload and Back all reach this page through the URL. */
+watch(
+  () => route.query.scope,
+  (value) => {
+    const next = SCOPES.includes(String(value)) ? String(value) : 'workspace'
+    if (next !== scope.value) scope.value = next
+  },
+)
+
+/*
+ * `Libraries` is the only tab that costs a network read, so it owns the lazy
+ * read too: All time is the page — it carries lifetime installs, which is what
+ * Trending's comparison column needs — and Trending and Hot are read only when
+ * that sub-tab is opened. One fetch per board per open, and nothing at all for
+ * the other two tabs.
+ */
+const sub = ref('all')
+const BOARD_IDS = BOARDS.map((board) => board.id)
+
+const boardRows = computed(() => boards.rows[sub.value] || [])
+
+/** `1,527,932` — the same grouping the app prints for every other count. */
+const count = (value) => Number(value || 0).toLocaleString('en-US')
+
+/** The lifetime count behind a Trending row, and what share of it moved. */
+function lifetimeOf(row) {
+  const lifetime = boards.lifetime[String(row.name || '').toLowerCase()]
+  if (!Number.isFinite(lifetime) || lifetime <= 0) return ''
+  const share = Math.round((row.installs / lifetime) * 1000) / 10
+  return `${count(lifetime)} · ${share}%`
+}
+
+/** `+0.3%` from the last two weeks; '' when the board carries no history. */
+function weeklyDelta(row) {
+  const weeks = row.weeklyInstalls || []
+  if (weeks.length < 2) return ''
+  const last = weeks[weeks.length - 1]
+  const before = weeks[weeks.length - 2]
+  if (!before) return ''
+  const percent = ((last - before) / before) * 100
+  return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`
+}
+
+/**
+ * `weeklyInstalls` as an SVG polyline in a 56 × 15 box — the sparkline the
+ * mock-up draws beside the install count.
+ *
+ * The page already ships this series; the Skills Manager app parses it and
+ * throws it away, which is why its rows rank a board with no visible reason.
+ * Eight points, scaled to the box with a 1px inset so the stroke is not clipped,
+ * and a flat series draws a flat line rather than dividing by zero.
+ */
+function sparkPoints(row) {
+  const weeks = (row.weeklyInstalls || []).filter((n) => Number.isFinite(n))
+  if (weeks.length < 2) return ''
+  const max = Math.max(...weeks)
+  const min = Math.min(...weeks)
+  const span = max - min || 1
+  const step = 56 / (weeks.length - 1)
+  return weeks
+    .map((value, index) => `${(index * step).toFixed(1)},${(14 - ((value - min) / span) * 12).toFixed(1)}`)
+    .join(' ')
+}
+
+/** The sparkline's tone follows its own last-week change, same as its label. */
+const sparkTrend = (row) => (weeklyDelta(row).startsWith('-') ? 'down' : 'up')
+
+/** A sub-tab switch is one page read, and only for the board it names. */
+function setSub(next) {
+  if (!BOARD_IDS.includes(next) || next === sub.value) return
+  sub.value = next
+  loadBoard(next)
+}
+
+/* Both strips are `role=tablist`: arrows move, Enter/Space is the button's own
+   click. One helper per strip, so the two cannot disagree about wrapping. */
+function step(list, current, delta) {
+  const at = list.indexOf(current)
+  if (at < 0) return list[0]
+  return list[(at + delta + list.length) % list.length]
+}
+const stepScope = (delta) => setScope(step(SCOPES, scope.value, delta))
+const stepSub = (delta) => setSub(step(BOARD_IDS, sub.value, delta))
+
+const SCOPE_TABS = [
+  { id: 'workspace', label: 'In this workspace' },
+  { id: 'local', label: 'Local' },
+  { id: 'libraries', label: 'Libraries' },
+]
+
+/** The count after each tab label: folders here, names there, rows on a board. */
+function scopeCount(id) {
+  if (id === 'local') return workspaces.hashedLibrary ? localRows.value.length : '…'
+  if (id === 'libraries') return boardRows.value.length || '…'
+  return items.value.length
+}
+
+const searchPlaceholder = computed(() => {
+  if (scope.value === 'local') return `Search ${localRows.value.length} skills on this machine…`
+  if (scope.value === 'libraries') return 'Search skills.sh · 2 characters or more…'
+  return 'Search name, description or path…'
 })
 
-const library = computed(() => workspaces.library)
+const searchLabel = computed(() => {
+  if (scope.value === 'local') return 'Search skills in the harness folders on this machine'
+  if (scope.value === 'libraries') return 'Search skills.sh'
+  return 'Search skills in this workspace'
+})
+
+/* One column per board, and it says which number it ranks: All time is lifetime
+   installs, Trending is a recent window, Hot is today against yesterday. */
+const boardHead = computed(() => {
+  if (sub.value === 'trending') return 'Recent window'
+  if (sub.value === 'hot') return 'Installs today'
+  /* the number is lifetime, the line beside it is the shipped eight-week series:
+     one label that names both, or the header claims the wrong one */
+  return 'Installs · 8-week trend'
+})
+
+const boardCompareHead = computed(() => {
+  if (sub.value === 'trending') return 'Lifetime · how much of it'
+  if (sub.value === 'hot') return 'Yesterday · change'
+  return 'Last week'
+})
+
+function boardCompare(row) {
+  if (sub.value === 'trending') return lifetimeOf(row) || '—'
+  if (sub.value === 'hot') {
+    const change = row.change >= 0 ? `+${row.change}` : String(row.change)
+    return `${count(row.installsYesterday)} · ${change}`
+  }
+  const weeks = row.weeklyInstalls || []
+  return weeks.length ? count(weeks[weeks.length - 1]) : '—'
+}
+
+const originLabel = computed(() => {
+  if (scope.value === 'libraries') {
+    return boards.readAt[sub.value] ? `skills.sh · read ${readStamp(boards.readAt[sub.value])}` : 'skills.sh · not read yet'
+  }
+  if (scope.value === 'local') {
+    return `${realFolders.value} of ${localFolders.value} folders are real · ${localRows.value.length} names`
+  }
+  return 'read from disk · no network'
+})
+
+const localFolders = computed(() => (library.value?.items || []).length)
+
+/* how many of those folders are real rather than a link into one: the number a
+   write must respect, and the one the Local footnote is about */
+const realFolders = computed(
+  () => (library.value?.items || []).filter((item) => !item.link).length,
+)
+
+const sortnote = computed(() => {
+  if (scope.value === 'libraries') {
+    if (boards.error) {
+      const cachedAt = boards.savedAt ? readStamp(boards.savedAt) : ''
+      const retry = retryInMinutes()
+      return `${boards.error} ${cachedAt ? `The last good read (${cachedAt}) is still shown.` : 'No read has landed on this machine yet.'} In this workspace and Local are unaffected — they read the disk.${retry ? ` retry in ${retry} min.` : ''}`
+    }
+    if (!boards.readAt[sub.value]) return 'Nothing has been read yet.'
+    return `${count(boardRows.value.length)} rows · read ${readStamp(boards.readAt[sub.value])} · at most one fetch per open`
+  }
+  if (scope.value === 'local') {
+    return `${library.value?.count || 0} folders · ${realFolders.value} real · ${localRows.value.length} names. One row is one name, whatever carries it.`
+  }
+  return `${hub.workspacePath}/skills · ${items.value.length} folders · ${bytes(totalBytes.value)} · no network request was made to draw this tab`
+})
+
+/* lazy, and only the tab that was asked for: `local` reads the folders with a
+   hash per folder (one walk + 79 digests), `libraries` reads the network. The
+   workspace tab reads nothing new — `loadScope` already did.
+
+   `immediate`, because a link can land straight on `?scope=libraries`. The
+   half-armed row and the open row menu are dropped by the second watcher below,
+   which runs after those refs exist. */
+watch(
+  scope,
+  (value) => {
+    harness.value = 'all'
+    if (value === 'local' && !workspaces.hashedLibrary) loadHashedLibrary()
+    if (value === 'libraries') loadBoard(sub.value)
+  },
+  { immediate: true },
+)
+
+/* The hero's meter needs one number and no digests: on any tab, the plain scan
+   is what tells a person how much of the machine this workspace has adopted. */
+if (!workspaces.library) loadLibrary()
+
+const library = computed(() => workspaces.hashedLibrary || workspaces.library)
 const items = computed(() => workspaces.skills)
 
 const attachedNames = computed(
   () => new Set(items.value.map((item) => item.name.toLowerCase())),
 )
+/* name → this workspace's copy, so a row can compare its own hash with a
+   harness folder's without a second read */
+const attachedByName = computed(() => {
+  const map = new Map()
+  for (const item of items.value) map.set(item.name.toLowerCase(), item)
+  return map
+})
+
+/*
+ * `Local` is grouped by **name**, because `hyperframes-core` is not seven skills —
+ * it is one skill in seven harness folders. One row per name, with the folders
+ * that carry it, the real one first so the row's marks read left to right.
+ */
+const localRows = computed(() => {
+  const byName = new Map()
+  for (const item of library.value?.items || []) {
+    const key = String(item.name || '').toLowerCase()
+    const row = byName.get(key) || { name: item.name, folders: [] }
+    row.folders.push(item)
+    byName.set(key, row)
+  }
+  return [...byName.values()]
+    .map((row) => {
+      const folders = [...row.folders].sort(
+        (a, b) => Number(a.link) - Number(b.link) || a.harness.localeCompare(b.harness),
+      )
+      const real = folders.filter((item) => !item.link)
+      const lead = real[0] || folders[0]
+      return {
+        ...lead,
+        name: row.name,
+        folders,
+        real: real.length,
+        bytes: real.reduce((sum, item) => sum + (Number(item.bytes) || 0), 0),
+        size: real[0]?.size || lead.size,
+        updatedAt: real.reduce(
+          (newest, item) => (!newest || String(item.updatedAt) > newest ? item.updatedAt : newest),
+          '',
+        ),
+      }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+})
 
 const filters = computed(() => [
-  { id: 'all', label: 'All', count: library.value?.count || 0 },
-  ...(library.value?.harnesses || [])
-    .filter((entry) => entry.count > 0)
-    .map((entry) => ({ id: entry.id, label: entry.label, count: entry.count })),
+  { id: 'all', label: 'Any harness', count: localRows.value.length },
+  ...(library.value?.harnesses || []).map((entry) => ({
+    id: entry.id,
+    label: entry.label,
+    count: library.value?.items?.filter(
+      (item) => item.harness === entry.id && !(harness.value !== 'all' && harness.value !== entry.id),
+    ).length || 0,
+    /* a harness with no folder at all is its own state: not a zero count */
+    installed: (entry.roots || []).some((root) => root.exists),
+  })),
 ])
 
-const visibleLibrary = computed(() => {
-  const all = library.value?.items || []
-  if (harness.value === 'all') return all
-  return all.filter((item) => item.harness === harness.value)
+const filteredLocal = computed(() => {
+  if (harness.value === 'all') return localRows.value
+  return localRows.value.filter((row) =>
+    row.folders.some((item) => item.harness === harness.value),
+  )
 })
 
 /* ── the sigil ──────────────────────────────────────────────────────────────
@@ -111,7 +362,11 @@ function sigil(name) {
 }
 
 /* one badge per row, computed once per filter pass rather than per render */
-const shelf = computed(() => (tab.value === 'library' ? visibleLibrary.value : items.value))
+const shelf = computed(() => {
+  if (scope.value === 'local') return filteredLocal.value
+  if (scope.value === 'libraries') return boardRows.value
+  return items.value
+})
 
 /**
  * Search over everything the row can show, not just the name: a person hunting a
@@ -122,7 +377,7 @@ const rows = computed(() => {
   const list = shelf.value.map((item) => ({ ...item, sig: sigil(item.name) }))
   if (!needle) return list
   return list.filter((item) =>
-    [item.name, item.description, item.path, item.size, item.harnessLabel]
+    [item.name, item.description, item.path, item.size, item.harnessLabel, item.source]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -130,9 +385,11 @@ const rows = computed(() => {
   )
 })
 
-const scopeTotal = computed(() =>
-  tab.value === 'library' ? library.value?.count || 0 : items.value.length,
-)
+const scopeTotal = computed(() => {
+  if (scope.value === 'local') return filteredLocal.value.length
+  if (scope.value === 'libraries') return boardRows.value.length
+  return items.value.length
+})
 
 /* a name that is not a slash token would resolve to nothing, so it gets no call
    sign at all — the typeahead in the composer accepts nothing else */
@@ -141,11 +398,18 @@ const callSign = (name) => `/workspace:${name}`
 
 const missing = computed(() => items.value.filter((item) => item.missing).length)
 
-/* the library total, once the lazy scan has answered — 0 is a real answer
-   ("this machine has no libraries") and is told apart from "not scanned" */
+/*
+ * The library total, once a scan has answered — 0 is a real answer ("this
+ * machine has no libraries") and is told apart from "not scanned".
+ *
+ * It reads the hashed scan when the Local tab has paid for it and falls back to
+ * the plain one, so the meter is never `9 / —` on a page where the folders are
+ * already known. The visible tab is what triggers a read; the hero never does.
+ */
 const libraryTotal = computed(() => {
-  if (!library.value || library.value.error) return 0
-  return library.value.count || 0
+  const scan = workspaces.hashedLibrary || workspaces.library
+  if (!scan || scan.error) return 0
+  return scan.count || 0
 })
 
 const percent = computed(() => {
@@ -161,9 +425,8 @@ const entitiesLabel = computed(() => {
   return count === 1 ? '1 entity can call them' : `${count} entities can call them`
 })
 
-/* how many copies of one name live in the harness libraries: `general-video` is
-   in three and `cua-driver` in two, and three identical rows cannot say which
-   `Attach` is which */
+/* how many folders one name lives in: `general-video` is in six and `cua-driver`
+   in two, and three identical rows cannot say which `Attach` is which */
 const copiesByName = computed(() => {
   const counts = new Map()
   for (const item of library.value?.items || []) {
@@ -177,6 +440,22 @@ const copies = (name) => copiesByName.value.get(String(name || '').toLowerCase()
 
 const isAttached = (item) => attachedNames.value.has(item.name.toLowerCase())
 const busyKey = (item) => `${item.harness}:${item.name}`
+
+/**
+ * Does the copy in this workspace differ from the library's?
+ *
+ * Answers with the workspace copy when the bytes moved on, `null` when they are
+ * the same or when either hash is missing. A same-size edit changes the hash only
+ * when the bytes change, which is the whole point of hashing both sides.
+ */
+function drifted(item) {
+  const here = attachedByName.value.get(String(item.name || '').toLowerCase())
+  if (!here || here.missing) return null
+  if (!here.sha256 || !item.sha256) return null
+  return here.sha256 === item.sha256 ? null : here
+}
+
+const shortHash = (value) => String(value || '').slice(0, 8)
 
 const when = (iso) => {
   if (!iso) return 'unknown'
@@ -208,8 +487,11 @@ const descriptionOf = (item) => {
   if (item.missing) {
     return 'Its entry file is gone. The folder is still attached, so the workspace now points at nothing.'
   }
+  if (scope.value === 'libraries') {
+    return item.source ? `@${item.source}` : 'Its skills.sh entry names no source repository.'
+  }
   if (item.description) return item.description
-  return tab.value === 'library'
+  return scope.value === 'local'
     ? 'Its SKILL.md frontmatter carries no description.'
     : 'Attached skill. Its frontmatter has no description.'
 }
@@ -219,9 +501,25 @@ const footerNote = computed(
     `${items.value.length} ${items.value.length === 1 ? 'skill' : 'skills'} · ${bytes(totalBytes.value)}`,
 )
 
-const skeleton = computed(() =>
-  tab.value === 'workspace' ? loading.value : !library.value,
-)
+const skeleton = computed(() => {
+  if (scope.value === 'local') return !library.value
+  if (scope.value === 'libraries') return boards.loading === sub || (!boardRows.value.length && !boards.error)
+  return loading.value
+})
+
+/* The skeleton is the real grid at the real row height, so nothing jumps when
+   the read answers; its two middle labels are the ones the finished table has. */
+const skeletonHead = computed(() => {
+  if (scope.value === 'libraries') return [boardHead.value, boardCompareHead.value]
+  if (scope.value === 'local') return ['Harness folders', 'Size · updated']
+  return ['Hash', 'Size · updated']
+})
+
+const skeletonLabel = computed(() => {
+  if (scope.value === 'libraries') return 'Reading skills.sh'
+  if (scope.value === 'local') return 'Reading the skill folders on this machine'
+  return 'Skills attached to this workspace'
+})
 
 /**
  * The roster reads its own directory.
@@ -352,6 +650,13 @@ function cancelConfirm() {
   confirming.value = ''
 }
 
+/* A scope switch under an open row menu closes it: the menu's items act on the
+   roster that opened it, which is no longer the roster on screen. */
+watch(scope, () => {
+  confirming.value = ''
+  closeMenu()
+})
+
 /** The copy sheet needs a skill and a workspace to read it from. */
 function openCopy(item) {
   closeMenu()
@@ -392,6 +697,26 @@ async function attach(item) {
   } finally {
     busy.value = ''
   }
+}
+
+/* ── the Install sheet ────────────────────────────────────────────────────────
+   One sheet for a Local row and a Libraries row: "where does this go?" is the
+   same question from either side, and `Install` is the only filled control on
+   this page. */
+const installing = ref(null)
+
+function openInstall(item, from) {
+  if (!item) return
+  installing.value = { item, from }
+}
+
+/* A row opens the sheet on click and on Enter/Space; the button inside the row
+   stays the one keyboard stop, so there is no second activation path. */
+function onRowKey(event, item, from) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  if (event.target instanceof Element && event.target.closest('button, a')) return
+  event.preventDefault()
+  openInstall(item, from)
 }
 
 onMounted(() => {
@@ -495,6 +820,30 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
+      <!--
+        Three tabs, one strip. `In this workspace` is intent, `Local` is what the
+        machine already has, `Libraries` is the only one that costs a network read
+        — which is why it is a tab and not a board bolted onto the others.
+      -->
+      <div class="sk-tabs skscopes" role="tablist" aria-label="Skill scope">
+        <button
+          v-for="entry in SCOPE_TABS"
+          :key="entry.id"
+          role="tab"
+          type="button"
+          :aria-selected="scope === entry.id ? 'true' : 'false'"
+          :tabindex="scope === entry.id ? 0 : -1"
+          @click="setScope(entry.id)"
+          @keydown.left.prevent="stepScope(-1)"
+          @keydown.right.prevent="stepScope(1)"
+        >
+          {{ entry.label }} <span class="n">{{ scopeCount(entry.id) }}</span>
+        </button>
+        <span class="where">{{ originLabel }}</span>
+      </div>
+
+      <!-- the search field alone: the tab strip above already carries the count,
+           and a second `600 of 600` beside it is a number nobody can act on -->
       <div class="skbar">
         <label class="sksearch">
           <svg
@@ -511,36 +860,51 @@ onBeforeUnmount(() => {
             ref="searchEl"
             v-model="query"
             type="search"
-            placeholder="Search name, description or path…"
-            :aria-label="
-              tab === 'library'
-                ? 'Search skills in the harness libraries on this machine'
-                : 'Search skills in this workspace'
-            "
+            :placeholder="searchPlaceholder"
+            :aria-label="searchLabel"
             spellcheck="false"
           />
           <kbd class="sksearch-key search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
         </label>
+      </div>
 
-        <div class="sk-seg" role="group" aria-label="Skill scope">
-          <button
-            type="button"
-            :aria-pressed="tab === 'workspace' ? 'true' : 'false'"
-            @click="tab = 'workspace'"
-          >
-            Workspace <span>{{ items.length }}</span>
-          </button>
-          <button
-            type="button"
-            :aria-pressed="tab === 'library' ? 'true' : 'false'"
-            @click="tab = 'library'"
-          >
-            Harness libraries
-            <span v-if="libraryTotal">{{ libraryTotal }}</span>
-          </button>
-        </div>
+      <!-- Only Local has per-harness folders to narrow by; the other two tabs
+           are one row per name already. A harness with no folder is its own
+           state, not a zero: it is disabled and says so. -->
+      <div v-if="scope === 'local' && library" class="filters" role="group" aria-label="Harness">
+        <button
+          v-for="f in filters"
+          :key="f.id"
+          class="hint"
+          type="button"
+          :aria-pressed="harness === f.id ? 'true' : 'false'"
+          :disabled="f.installed === false"
+          :title="f.installed === false ? `${f.label} has no skill folder on this machine` : ''"
+          @click="harness = f.id"
+        >
+          <!-- the mock-up draws no mark on the leading chip: it is not a harness -->
+          <HarnessIcon v-if="f.id !== 'all'" :name="f.id" />
+          {{ f.label }} <span class="hint-n">{{ f.installed === false ? 'not installed' : f.count }}</span>
+        </button>
+      </div>
 
-        <span class="skbar-where">{{ rows.length }} of {{ scopeTotal }}</span>
+      <!-- Only Libraries has three boards; they are the three pages skills.sh
+           publishes, never a fourth invented name. -->
+      <div v-if="scope === 'libraries'" class="subtabs" role="tablist" aria-label="skills.sh board">
+        <button
+          v-for="entry in BOARDS"
+          :key="entry.id"
+          role="tab"
+          type="button"
+          :aria-selected="sub === entry.id ? 'true' : 'false'"
+          :tabindex="sub === entry.id ? 0 : -1"
+          @click="setSub(entry.id)"
+          @keydown.left.prevent="stepSub(-1)"
+          @keydown.right.prevent="stepSub(1)"
+        >
+          {{ entry.label }}
+        </button>
+        <span class="where">{{ originLabel }}</span>
       </div>
 
       <!-- the real grid while the read is in flight, so nothing jumps when it
@@ -550,30 +914,28 @@ onBeforeUnmount(() => {
         class="skt"
         role="table"
         aria-busy="true"
-        :aria-label="tab === 'library' ? 'Skills in the harness libraries on this machine' : 'Skills attached to this workspace'"
+        :aria-label="skeletonLabel"
       >
         <div class="row head" role="row">
           <span class="k1" role="columnheader">Skill</span>
-          <span class="k2" role="columnheader">Files</span>
-          <span class="k3" role="columnheader">{{ tab === 'library' ? 'Version · age' : 'Updated' }}</span>
-          <span class="acts-head k4" role="columnheader">
-            {{ tab === 'library' ? 'Actions' : 'Call · actions' }}
-          </span>
+          <span class="k2" role="columnheader">{{ skeletonHead[0] }}</span>
+          <span class="k3" role="columnheader">{{ skeletonHead[1] }}</span>
+          <span class="acts-head k4" role="columnheader">Action</span>
         </div>
         <div v-for="n in 3" :key="n" class="row" role="row" aria-hidden="true">
           <div class="nm k1" role="cell">
             <span class="sig-tile sk"></span>
-            <span class="sk" :style="{ display: 'block', width: `${64 - n * 6}px`, height: '11px' }"></span>
+            <span class="nn">
+              <span class="sk" :style="{ display: 'block', width: `${64 - n * 6}px`, height: '11px' }"></span>
+              <!-- one description line, exactly, so the skeleton row measures
+                   the same as a real one -->
+              <span class="sk" :style="{ display: 'block', height: '1.4em', marginTop: '1px', width: `${72 - n * 8}%` }"></span>
+            </span>
           </div>
-          <!-- one description line, exactly: 1.4em of --fs-secondary, so the
-               skeleton row measures the same 69px as a real one-line row -->
-          <p class="d k1" role="cell">
-            <span class="sk" :style="{ display: 'block', height: '1.4em', width: `${72 - n * 8}%` }"></span>
-          </p>
-          <span class="files k2" role="cell">
+          <span class="ev k2" role="cell">
             <span class="sk" style="display: inline-block; height: 10px; width: 52px"></span>
           </span>
-          <span class="upd k3" role="cell">
+          <span class="ev k3" role="cell">
             <span class="sk" style="display: inline-block; height: 10px; width: 38px"></span>
           </span>
           <div class="acts k4" role="cell">
@@ -583,7 +945,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <template v-else-if="tab === 'workspace'">
+      <template v-else-if="scope === 'workspace'">
         <div v-if="loadError" class="empty-note err" role="alert">
           <b>Could not read {{ hub.workspacePath }}/skills.</b>
           <span class="mono">{{ loadError }}</span>
@@ -593,14 +955,15 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else-if="!items.length" class="empty-note">
-          <b>No skills in this workspace yet.</b>
+          <b>No skills in {{ hub.workspace || 'this workspace' }} yet.</b>
           <span>
-            Attaching a skill copies it into this workspace, so a backup or another
-            machine takes it along.
+            Local has {{ localRows.length }} names this machine already reads. One click copies a
+            folder here, so a backup or another machine takes it along.
           </span>
           <div class="empty-actions">
-            <button class="btn btn-sm" type="button" @click="tab = 'library'">
-              Open the harness libraries
+            <button class="btn btn-sm" type="button" @click="setScope('local')">Open Local</button>
+            <button class="btn btn-sm" type="button" @click="setScope('libraries')">
+              Browse Libraries
             </button>
           </div>
         </div>
@@ -620,11 +983,16 @@ onBeforeUnmount(() => {
           <div class="skt" role="table" aria-label="Skills attached to this workspace">
             <div class="row head" role="row">
               <span class="k1" role="columnheader">Skill</span>
-              <span class="k2" role="columnheader">Files</span>
-              <span class="k3" role="columnheader">Updated</span>
-              <span class="acts-head k4" role="columnheader">Call · actions</span>
+              <span class="k2" role="columnheader">Hash</span>
+              <span class="k3" role="columnheader">Size · updated</span>
+              <span class="acts-head k4" role="columnheader">Action</span>
             </div>
 
+            <!--
+              `div[role=row]` with a real `<button>` inside it, never a `<button>`
+              wrapping one: the browser reparents the inner button and the roster
+              collapses into 33 unrelated links.
+            -->
             <div
               v-for="item in rows"
               :key="item.name"
@@ -654,24 +1022,26 @@ onBeforeUnmount(() => {
                     </g>
                   </svg>
                 </span>
-                <router-link
-                  class="nm-t"
-                  :title="item.name"
-                  :to="{ name: 'skill', params: { workspace: hub.workspace, name: item.name } }"
-                >
-                  {{ item.name }}
-                </router-link>
+                <span class="nn">
+                  <span class="nm-line">
+                    <router-link
+                      class="nm-t"
+                      :title="item.name"
+                      :to="{ name: 'skill', params: { workspace: hub.workspace, name: item.name } }"
+                    >
+                      {{ item.name }}
+                    </router-link>
+                    <span v-if="drifted(item)" class="tg" data-t="drift">differs elsewhere</span>
+                  </span>
+                  <span class="d" :title="item.description || ''">{{ descriptionOf(item) }}</span>
+                </span>
               </div>
 
-              <p class="d k1" role="cell" :title="item.description || ''">
-                {{ descriptionOf(item) }}
-              </p>
-
-              <span class="files k2" role="cell">
-                {{ item.missing ? '—' : `${item.files || 0} · ${item.size || '—'}` }}
+              <span class="ev k2" role="cell" :title="item.sha256 || 'no hash yet'">
+                {{ item.sha256 ? shortHash(item.sha256) : '—' }}
               </span>
-              <span class="upd k3" role="cell">
-                {{ item.missing ? '—' : when(item.updatedAt) }}
+              <span class="ev k3" role="cell">
+                {{ item.missing ? '—' : `${item.size || '—'} · ${when(item.updatedAt)}` }}
               </span>
 
               <div class="acts k4" role="cell">
@@ -716,70 +1086,69 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <p class="skfoot">
-            <span class="mono">{{ hub.workspacePath }}/skills</span>
-            <span>{{ footerNote }}</span>
-          </p>
+          <p class="sortnote">{{ sortnote }}</p>
         </template>
       </template>
 
-      <template v-else>
-        <div v-if="library.error" class="empty-note err" role="alert">
+      <!--
+        Local: one row per **name**, because `hyperframes-core` is not seven skills
+        — it is one skill in seven harness folders. The marks say which apps carry
+        it; `N folders · M real` says how much of it is a real folder and how much
+        is a link, which is the number a write must respect.
+      -->
+      <template v-else-if="scope === 'local'">
+        <div v-if="library?.error" class="empty-note err" role="alert">
           <b>{{ library.error }}</b>
-          <span>The harness libraries on this machine could not be read.</span>
+          <span>The skill folders on this machine could not be read.</span>
           <div class="empty-actions">
-            <button class="btn btn-sm" type="button" @click="loadLibrary({ force: true })">
+            <button class="btn btn-sm" type="button" @click="loadHashedLibrary({ force: true })">
               Try again
             </button>
           </div>
         </div>
 
-        <template v-else>
-          <div class="lib-bar">
-            <div class="hints" role="group" aria-label="Filter by harness">
-              <button
-                v-for="f in filters"
-                :key="f.id"
-                class="hint"
-                type="button"
-                :aria-pressed="harness === f.id ? 'true' : 'false'"
-                @click="harness = f.id"
-              >
-                <HarnessIcon :name="f.id" />
-                {{ f.label }} <span class="hint-n">{{ f.count }}</span>
-              </button>
-            </div>
+        <div v-else-if="!rows.length && query.trim()" class="empty-note">
+          <b>No skill matches “{{ query.trim() }}”.</b>
+          <span>
+            {{ localRows.length }} {{ localRows.length === 1 ? 'name is' : 'names are' }} on this
+            machine. Search covers name, description and path.
+          </span>
+          <div class="empty-actions">
+            <button class="btn btn-sm" type="button" @click="query = ''">Clear the search</button>
           </div>
+        </div>
 
-          <div
-            v-if="rows.length"
-            class="skt lib-t"
-            role="table"
-            aria-label="Skills in the harness libraries on this machine"
-           
-          >
+        <div v-else-if="!rows.length" class="empty-note">
+          <b>No skills in the harness folders.</b>
+          <span v-if="harness !== 'all'">Switch to Any harness, or add a skill folder for it.</span>
+          <span v-else>No harness skill directory was found on this machine.</span>
+        </div>
+
+        <template v-else>
+          <div class="skt" role="table" aria-label="Skills in the harness folders on this machine">
             <div class="row head" role="row">
               <span class="k1" role="columnheader">Skill</span>
-              <span class="k2" role="columnheader">Files</span>
-              <span class="k3" role="columnheader">Version · age</span>
-              <span class="acts-head k4" role="columnheader">Actions</span>
+              <span class="k2" role="columnheader">Harness folders</span>
+              <span class="k3" role="columnheader">Size · updated</span>
+              <span class="acts-head k4" role="columnheader">Action</span>
             </div>
 
             <div
               v-for="item in rows"
-              :key="item.id || item.name"
-              class="row lib"
-              :class="{ on: isAttached(item) }"
+              :key="item.name"
+              class="row"
               role="row"
               tabindex="0"
+              @click="openInstall(item, 'local')"
+              @keydown="onRowKey($event, item, 'local')"
             >
               <div class="nm k1" role="cell">
-                <!-- on a harness shelf the question is "which harness carries
-                     this", so the row wears that harness's own mark -->
+                <!-- every Local row is a harness folder, so its badge is that
+                     harness's own mark, not a name-hashed sigil -->
                 <span class="sig-tile" :title="item.harnessLabel">
-                  <HarnessIcon :name="item.harness" :size="14" />
+                  <HarnessIcon :name="item.harness" :size="13" />
                 </span>
-                <span class="nm-stack">
+                <span class="nn">
                   <span class="nm-line">
                     <router-link
                       class="nm-t"
@@ -792,50 +1161,228 @@ onBeforeUnmount(() => {
                     >
                       {{ item.name }}
                     </router-link>
-                    <!-- three identical `general-video` rows cannot say which
-                         Attach is which; the badge names the copies -->
+                    <span v-if="isAttached(item)" class="tg" data-t="here">in this workspace</span>
                     <span
-                      v-if="copies(item.name) > 1"
-                      class="dupe"
-                      :title="`${copies(item.name)} copies of this skill on this machine`"
+                      v-else-if="drifted(item)"
+                      class="tg"
+                      data-t="drift"
+                      :title="`this workspace has ${shortHash(drifted(item).sha256)}; the library has ${shortHash(item.sha256)}`"
                     >
-                      {{ copies(item.name) }} copies
+                      differs elsewhere
                     </span>
                   </span>
-                  <span class="path" :title="item.path">{{ item.path }}</span>
+                  <span class="d" :title="item.description || ''">{{ descriptionOf(item) }}</span>
                 </span>
               </div>
 
-              <p class="d k1" role="cell" :title="item.description || ''">
-                {{ descriptionOf(item) }}
-              </p>
+              <!-- the marks are the whole point of the grouping: one row, every
+                   app that carries this name -->
+              <span class="marks k2" role="cell">
+                <HarnessIcon
+                  v-for="mark in item.folders.slice(0, 4)"
+                  :key="mark.harness"
+                  :name="mark.harness"
+                  :title="`${mark.harnessLabel}${mark.link ? ' · a link' : ''}`"
+                />
+                <span v-if="item.folders.length > 4" class="more">
+                  +{{ item.folders.length - 4 }}
+                </span>
+              </span>
 
-              <span class="files k2" role="cell">{{ item.files || 0 }} · {{ item.size || '—' }}</span>
-              <span class="upd k3" role="cell">{{ item.version || when(item.updatedAt) }}</span>
+              <span class="ev k3" role="cell">
+                <b>{{ item.folders.length }} {{ item.folders.length === 1 ? 'folder' : 'folders' }} · {{ item.real }} real</b>
+                <span>{{ item.size || '—' }} · {{ when(item.updatedAt) }}</span>
+              </span>
 
               <div class="acts k4" role="cell">
+                <!-- a workspace copy that drifted is never replaced blind from a
+                     list: the row offers the skill's own page, where both hashes
+                     are visible -->
+                <router-link
+                  v-if="drifted(item)"
+                  class="btn btn-sm"
+                  :to="{ name: 'skill', params: { workspace: hub.workspace, name: item.name } }"
+                  @click.stop
+                >
+                  Open
+                </router-link>
                 <button
-                  v-if="!isAttached(item)"
+                  v-else-if="!isAttached(item)"
                   class="btn btn-sm"
                   type="button"
                   :disabled="busy === busyKey(item)"
-                  :title="`Attach ${item.name} to this workspace`"
-                  :aria-label="`Attach ${item.name} to this workspace`"
-                  @click="attach(item)"
+                  :title="`Install ${item.name} into a workspace`"
+                  :aria-label="`Install ${item.name} into a workspace`"
+                  @click.stop="openInstall(item, 'local')"
                 >
-                  {{ busy === busyKey(item) ? 'Attaching…' : 'Attach' }}
+                  Install…
                 </button>
-                <span v-else class="on-badge"><i></i>attached</span>
+                <span v-else class="on-badge"><i></i>Installed</span>
               </div>
             </div>
           </div>
 
-          <div v-else class="empty-note">
-            <b>No skills in this harness library.</b>
-            <span v-if="harness !== 'all'">Switch to All, or add a skill directory for it.</span>
-            <span v-else>No harness skill directories were found on this machine.</span>
-          </div>
+          <p class="sortnote">{{ sortnote }}</p>
         </template>
+      </template>
+
+      <!--
+        Libraries: the one tab that touches the network, and only after it is
+        opened. The last good read stays on screen when the read fails, stamped,
+        with the moment a retry is allowed — never an empty page and never a
+        spinner over nothing.
+      -->
+      <template v-else>
+        <div v-if="boards.error" class="empty-note err" role="alert">
+          <b>skills.sh did not answer.</b>
+          <span>
+            Nothing was lost: the last read is kept and still shown, stamped with its date.
+            <b>In this workspace</b> and <b>Local</b> are unaffected — they read the disk.
+          </span>
+          <span v-if="boards.savedAt" class="mono">
+            last good read · {{ readStamp(boards.savedAt) }}
+            <template v-if="retryInMinutes()"> · retry in {{ retryInMinutes() }} min</template>
+          </span>
+          <div class="empty-actions">
+            <button
+              class="btn btn-sm"
+              type="button"
+              :disabled="Boolean(boards.loading)"
+              @click="loadBoard(sub, { force: true })"
+            >
+              {{ boards.loading ? 'Reading…' : 'Try again' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="!rows.length && !skeleton" class="empty-note">
+          <b>No rows on this board yet.</b>
+          <span>
+            {{ boards.readAt[sub] ? 'The read landed, but it carried no names this build could read.' : 'Nothing has been read from skills.sh in this window.' }}
+          </span>
+        </div>
+
+        <div
+          v-else-if="rows.length"
+          class="skt lib-t"
+          role="table"
+          :aria-label="`skills.sh ${sub}`"
+        >
+          <div class="row head" role="row">
+            <span class="k1" role="columnheader">Skill</span>
+            <span class="k2" role="columnheader">{{ boardHead }}</span>
+            <span class="k3" role="columnheader">{{ boardCompareHead }}</span>
+            <span class="acts-head k4" role="columnheader">Action</span>
+          </div>
+
+          <div
+            v-for="(item, index) in rows"
+            :key="item.name"
+            class="row"
+            role="row"
+            tabindex="0"
+            @click="openInstall(item, 'libraries')"
+            @keydown="onRowKey($event, item, 'libraries')"
+          >
+            <span class="nm k1" role="cell">
+              <span class="rank">{{ index + 1 }}</span>
+              <span class="sig-tile">
+                <svg
+                  class="sig"
+                  viewBox="0 0 3 3"
+                  shape-rendering="crispEdges"
+                  :style="{ '--sg': item.sig.hue }"
+                  aria-hidden="true"
+                >
+                  <g fill="currentColor">
+                    <rect
+                      v-for="(cell, cellIndex) in item.sig.cells"
+                      :key="cellIndex"
+                      :x="cell[0]"
+                      :y="cell[1]"
+                      width="1"
+                      height="1"
+                    />
+                  </g>
+                </svg>
+              </span>
+              <span class="nn">
+                <span class="nm-line">
+                  <!-- the name is the link, the row is not: the skill page is
+                       where a person decides, and it carries the Install button -->
+                  <router-link
+                    class="nm-t"
+                    :title="`Open ${item.name}`"
+                    :to="{
+                      name: 'skill',
+                      params: { workspace: hub.workspace, name: item.name },
+                      query: { board: sub },
+                    }"
+                    @click.stop
+                  >
+                    {{ item.name }}
+                  </router-link>
+                  <span v-if="isAttached(item)" class="tg" data-t="here">on this machine</span>
+                  <span v-if="item.isOfficial" class="tg">official</span>
+                </span>
+                <span class="d" :title="item.source">{{ descriptionOf(item) }}</span>
+              </span>
+            </span>
+
+            <span class="ev k2" role="cell">
+              <span class="inst">
+                <!-- the series the page already carries, drawn: a board that ranks
+                     by a number shows the number's own shape -->
+                <svg
+                  v-if="sparkPoints(item)"
+                  class="spark"
+                  viewBox="0 0 56 15"
+                  :data-trend="sparkTrend(item)"
+                  aria-hidden="true"
+                >
+                  <polyline
+                    :points="sparkPoints(item)"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span class="iv">
+                  <b>{{ count(item.installs) }}</b>
+                  <span
+                    v-if="weeklyDelta(item)"
+                    class="ids"
+                    :data-up="weeklyDelta(item).startsWith('+') ? '1' : '-1'"
+                  >
+                    {{ weeklyDelta(item) }}
+                  </span>
+                </span>
+              </span>
+            </span>
+
+            <span class="ev k3" role="cell">
+              <b>{{ boardCompare(item) }}</b>
+            </span>
+
+            <div class="acts k4" role="cell">
+              <span v-if="isAttached(item)" class="on-badge"><i></i>Installed</span>
+              <button
+                v-else
+                class="btn btn-sm"
+                type="button"
+                :title="`Install ${item.name}`"
+                :aria-label="`Install ${item.name}`"
+                @click.stop="openInstall(item, 'libraries')"
+              >
+                Install…
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p class="sortnote">{{ sortnote }}</p>
       </template>
 
       <Teleport to="body">
@@ -902,6 +1449,16 @@ onBeforeUnmount(() => {
       :name="copying"
       :source="hub.workspace"
       @close="copying = ''"
+    />
+
+    <!-- one sheet for Local and Libraries: the row says where, the sheet ticks
+         which workspace, and `Install` is the page's only filled control -->
+    <SkillInstallDialog
+      v-if="installing"
+      :item="installing.item"
+      :from="installing.from"
+      @close="installing = null"
+      @installed="installing = null"
     />
   </div>
 </template>
