@@ -1,7 +1,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import ConnectorKindPicker from '@/components/ConnectorKindPicker.vue'
 import IntegrationMark from '@/components/IntegrationMark.vue'
+import { readPaste } from '@/lib/mcp-paste'
 import ConnectorRow from '@/components/ConnectorRow.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
@@ -43,6 +45,7 @@ const props = defineProps({
   embedded: { type: Boolean, default: false },
 })
 
+const router = useRouter()
 const query = ref('')
 const scope = ref('all')
 const kind = ref('all')
@@ -126,44 +129,46 @@ const addForm = ref({
 const pasteNote = ref('')
 
 /**
- * Read the three shapes a docs page hands out into the fields below.
+ * Read a paste into the fields below, with the same reader the MCP wizard uses.
  *
- * Deliberately not a copy of `McpServerView`'s reader: that one parses a paste
- * into a *definition* and drives a two-step wizard with a model fallback. Here a
- * paste only fills the form — one URL, one command line, a `command` + `args`
- * pair — because this dialog writes an index row and a binding, and the wizard
- * that owns credentials is one link away.
+ * One parser, two doors: `src/lib/mcp-paste.js` is pure, so the surface that
+ * writes a definition and the surface that opens a two-step wizard cannot
+ * disagree about what a docs page meant.
  */
 function readPasteIntoForm() {
   const text = String(addForm.value.paste || '').trim()
   pasteNote.value = ''
   if (!text) return
-  const url = text.match(/https?:\/\/\S+/)
-  if (url && !text.startsWith('{') && !text.startsWith('[')) {
-    addForm.value.command = url[0]
-    pasteNote.value = 'Read as a URL.'
+  const read = readPaste(text)
+  if (read.error && !read.servers.length) {
+    pasteNote.value = read.error
     return
   }
-  try {
-    const parsed = JSON.parse(text)
-    const servers = parsed?.mcpServers || parsed?.mcp || parsed?.servers || null
-    const first = servers ? Object.entries(servers)[0] : ['', parsed]
-    if (!first) {
-      pasteNote.value = 'That wrapper has no servers inside it.'
-      return
-    }
-    const [name, def] = first
-    if (name && !addForm.value.id) addForm.value.id = name
-    if (!addForm.value.label && name) addForm.value.label = name
-    addForm.value.command = def?.url || def?.command || ''
-    addForm.value.args = Array.isArray(def?.args) ? def.args.join('\n') : ''
-    addForm.value.env = Object.keys(def?.env || {}).join(', ') || (Array.isArray(def?.env) ? def.env.join(', ') : '')
-    pasteNote.value = name ? `Read “${name}” out of the paste.` : 'Read one definition out of the paste.'
-  } catch {
-    pasteNote.value = 'Not JSON — the fields below are unchanged. A command line pasted here goes in “command or URL”.'
-    if (!addForm.value.command) addForm.value.command = text.split(/\r?\n/)[0].trim()
+  const first = read.servers[0]
+  if (!first) {
+    pasteNote.value = 'That paste held no server.'
+    return
+  }
+  const definition = first.definition || {}
+  if (first.name) {
+    if (!addForm.value.id) addForm.value.id = first.name
+    if (!addForm.value.label) addForm.value.label = first.name
+  }
+  addForm.value.command = definition.url || definition.command || ''
+  addForm.value.args = Array.isArray(definition.args) ? definition.args.join('\n') : ''
+  const env = definition.env
+  addForm.value.env = Array.isArray(env)
+    ? env.join(', ')
+    : env && typeof env === 'object'
+      ? Object.keys(env).join(', ')
+      : ''
+  const more = read.servers.length > 1 ? ` — ${read.servers.length} found, the first was used` : ''
+  pasteNote.value = `${first.name ? `Read “${first.name}”` : 'Read one definition'} out of the paste${more}.`
+  if (read.dropped?.length) {
+    pasteNote.value += ` Dropped: ${read.dropped.join(', ')}.`
   }
 }
+
 const addError = ref('')
 const addNotice = ref('')
 
@@ -372,22 +377,28 @@ async function saveAdd() {
   busy.value = 'add'
   addError.value = ''
   try {
-    /* Verify before save, always: the row count must not change on a rejected
-       credential, and the sentence must be able to say so. */
-    try {
-      await testConnector({
-        kind: addKind.value,
-        id: String(form.id || label).trim(),
-        token: form.token,
-        host: form.host,
-      })
-    } catch (error) {
-      addError.value = `${String(error?.message || error)} Nothing was saved.`
-      return
+    /* Verify before save — except for `mcp`, where there is nothing to verify
+       yet: the server is not in `mcp.json` until this call writes it, so asking
+       `tools/list` here would always fail. An MCP connector is verified by the
+       `Connect a server` wizard on its page, which writes first and probes the
+       file it just wrote. Every other kind is checked before anything is stored,
+       and a refusal leaves the row count unchanged. */
+    if (addKind.value !== 'mcp') {
+      try {
+        await testConnector({
+          kind: addKind.value,
+          id: String(form.id || label).trim(),
+          token: form.token,
+          host: form.host,
+        })
+      } catch (error) {
+        addError.value = `${String(error?.message || error)} Nothing was saved.`
+        return
+      }
     }
     /* An MCP connector's definition is what the harness runs, so the form's
        command/URL is the binding written before the index row. */
-    await addConnector({
+    const created = await addConnector({
       id: String(form.id || label).trim(),
       label,
       kind: addKind.value,
@@ -401,6 +412,17 @@ async function saveAdd() {
     const count = rows.value.length
     addOpen.value = false
     toast(`${label} added · ${count} connectors in this workspace.`)
+    /* An MCP connector is finished on the page that owns its definition and its
+       credential: this dialog collects a name and a paste, and `Connect a server`
+       writes and tests. So hand over rather than duplicate that wizard here. */
+    const id = String(form.id || label).trim()
+    if (addKind.value === 'mcp' && created) {
+      router.push({
+        name: 'mcp-server',
+        params: { workspace: hub.workspace, name: id },
+        query: { edit: '1' },
+      })
+    }
   } catch (error) {
     addError.value = String(error?.message || error)
   } finally {
@@ -522,8 +544,12 @@ const kindLabel = computed(
       <div class="ct" role="table" :aria-label="pane === 'builtin' ? 'Built-in connectors' : 'Connectors'">
         <div class="ct-head" role="row">
           <span role="columnheader">Connector</span>
-          <span v-if="pane === 'builtin'" role="columnheader" data-col="kind">Kind</span>
-          <span v-if="pane === 'builtin'" role="columnheader" data-col="scope">Needs</span>
+          <!-- Five tracks, five labels — the row always has five cells, so the
+               head must always have five too or the labels sit over the wrong
+               columns. Below a 560px container the two middle cells are hidden
+               and these two labels hide with them. -->
+          <span role="columnheader" data-col="kind">Kind</span>
+          <span role="columnheader" data-col="scope">Scope</span>
           <span role="columnheader">Status</span>
           <span role="columnheader">Action</span>
         </div>

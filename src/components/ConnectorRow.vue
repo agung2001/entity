@@ -15,6 +15,7 @@
  * The name is the only link and the row is not — a row-wrapped anchor around the
  * verbs would nest two interactive elements (`DESIGN.md`).
  */
+import HarnessIcon from '@/components/HarnessIcon.vue'
 import IntegrationMark from '@/components/IntegrationMark.vue'
 import { hub } from '@/stores/hub'
 
@@ -53,11 +54,23 @@ const sourceOf = (row) => row?.binding || row?.statusDetail || ''
 /* Kind and scope have their own columns where there is room. The meta line still
    carries them, hidden by CSS in the wide state and shown again below 560px — one
    string, so the two states cannot disagree about what the row says. */
-const metaOf = (row) =>
-  [row?.kind, row?.scope, sourceOf(row), row?.mention].filter(Boolean).join(' · ')
+const metaOf = (row) => {
+  const parts = [row?.kind, row?.scope]
+  if (!machineRow(row)) parts.push(sourceOf(row))
+  parts.push(row?.mention)
+  return parts.filter(Boolean).join(' · ')
+}
 
-/* One machine row covers every harness that declares the server, so the tooltip
-   names all of them and the row shows one mark per source. */
+/* A machine connector is often declared by several harnesses, and the *files* are
+   what a person needs when they go looking for the MCP — so the status cell wears
+   one harness mark per source, each carrying its own path in the tooltip. The
+   list of harness names in the meta line is gone: it said "in 3 harnesses" where
+   three marks say the same thing and name them.
+ */
+const sourcesOf = (row) => (Array.isArray(row?.sources) ? row.sources : [])
+/* A machine row's path lives in each mark's tooltip, so the two text slots that
+   used to carry it stay quiet. */
+const machineRow = (row) => sourcesOf(row).length > 0
 const scopeTitle = (row) => {
   const list = Array.isArray(row?.sources) ? row.sources.map((entry) => entry.file).filter(Boolean) : []
   return list.length ? `${row.scope} · ${list.join(', ')}` : row?.scope || ''
@@ -77,9 +90,6 @@ const scopeTitle = (row) => {
       </span>
     </router-link>
 
-    <span v-if="row.sources?.length > 1" class="ct-marks" role="cell" :title="scopeTitle(row)">
-      <span v-for="source in row.sources" :key="source.file" class="ct-mark-chip">{{ source.harness }}</span>
-    </span>
     <span class="ct-kind" role="cell" :title="row.kind">{{ row.kind }}</span>
     <span class="ct-scope" role="cell" :title="scopeTitle(row)">{{ row.scope }}</span>
 
@@ -87,10 +97,21 @@ const scopeTitle = (row) => {
       <span class="ct-s1">
         <span class="dot" aria-hidden="true"></span>
         <span class="ct-word" :title="row.status">{{ row.status }}</span>
+        <!-- one mark per harness that declares it; hover names the file -->
+        <span v-if="sourcesOf(row).length" class="ct-srcs">
+          <span
+            v-for="source in sourcesOf(row)"
+            :key="source.file"
+            class="ct-src"
+            :title="`${source.label || source.harness} · ${source.file}`"
+          >
+            <HarnessIcon :name="source.harness" :size="12" />
+          </span>
+        </span>
       </span>
-      <!-- the stamp of the last check belongs with the status it stamps, not in
-           the verb column, whose header is `Action` -->
-      <small v-if="row.statusDetail" class="ct-detail-line" :title="row.statusDetail">{{ row.statusDetail }}</small>
+      <small v-if="row.statusDetail && !machineRow(row)" class="ct-detail-line" :title="row.statusDetail">
+        {{ row.statusDetail }}
+      </small>
       <small v-if="row.verified" class="ct-when" :title="row.verified">{{ row.verified }}</small>
     </span>
 

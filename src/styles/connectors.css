@@ -622,20 +622,28 @@ a.ct-who:hover .ct-name {
   padding-left: 4px;
 }
 
-/* A machine row that several harnesses declare: one chip per file. */
-.ct-marks {
-  display: flex;
+
+/* One harness mark per file that declares a machine connector. The mark is the
+   identity; the path is one hover away, because the row has no width to give a
+   second path column. */
+.ct-srcs {
+  display: inline-flex;
+  align-items: center;
   gap: 3px;
-  min-width: 0;
-  overflow: hidden;
-}
-.ct-mark-chip {
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-2xs);
-  background: var(--surface);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
+  flex: none;
+  margin-left: 2px;
   color: var(--muted);
-  white-space: nowrap;
+}
+.ct-src {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+}
+.ct-src svg {
+  width: 11px;
+  height: 11px;
 }
