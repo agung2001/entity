@@ -10,6 +10,7 @@
  * overwriting a line nobody reviewed.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import EntityMark from '@/components/EntityMark.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { copyText } from '@/lib/clipboard'
 import { diffRows } from '@/lib/diff'
@@ -399,6 +400,9 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
     <!-- Settled: one line in the same slot, like the delegation hold. -->
     <template v-if="settled">
       <div class="dw-settled" :data-out="settledLine.out" role="status">
+        <!-- The settled line is one line tall, so the person keeps a small mark
+             to know whose file this was; larger and it is no longer one line. -->
+        <EntityMark class="dw-mark dw-mark--settled" :entity="name" mini />
         <span class="dot" aria-hidden="true"></span>
         <span class="txt"><b>{{ settledLine.head }}</b> · {{ settledLine.rest }}</span>
         <span class="when">{{ settledAt }}</span>
@@ -442,6 +446,12 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
 
     <template v-else>
       <div class="dw-head">
+        <!-- The entity the card is *about*, as itself: the voxel character in its
+             own shape, colour and mood badge, driven by the shared frame loop like
+             every other mark. `animate` keeps the gaze and blink; a `mini` mark
+             never animates. A create shows the new name's default mark — the same
+             one the create dialog previews — because that file has no look yet. -->
+        <EntityMark class="dw-mark" :entity="name" animate />
         <span class="dw-kick">{{ isCreate ? 'Create' : 'Write' }} · {{ name }}.md</span>
         <span class="dw-title">{{ title }}</span>
         <span class="dw-tag">{{ tag }}</span>

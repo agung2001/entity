@@ -24,13 +24,46 @@
   border-left-color: var(--accent);
 }
 
-/* ① kicker · ② title · ③ tag — one baseline row, wrapping */
+/* ① mark · kicker · title · tag — one row, wrapping.
+   The mark is the entity that asked, in its own shape, colour and mood: it is
+   what makes "who is this about" readable before the name is. It is a block of
+   its own, so the baseline row aligns the *text* and the block sits centred. */
 .dw-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   gap: 7px;
-  padding: 0 1px 3px;
+  padding: 0 1px 4px;
+}
+.dw-head .dw-kick,
+.dw-head .dw-title {
+  align-self: baseline;
+}
+.dw-mark.mark {
+  width: 22px;
+  height: 22px;
+  margin-right: 1px;
+}
+/* `mark` is on the element itself, so the settled size needs both classes to
+   beat `.dw-mark.mark`'s 22px. It is one line tall: no mood sticker. */
+.dw-mark.mark.dw-mark--settled {
+  width: 18px;
+  height: 18px;
+  margin-right: 0;
+}
+.dw-mark--settled .mood {
+  display: none;
+}
+/* the sticker is 18px on a 22px block: it would cover the whole face, so the
+   card pins it to the corner a hair tighter than the list rows do */
+.dw-mark .mood {
+  right: -7px;
+  bottom: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-micro);
 }
 .dw-kick {
   font-family: var(--mono);
