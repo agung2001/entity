@@ -197,6 +197,31 @@ function write(entity) {
   return read(entity.workspace, name)
 }
 
+/* ── the look a new entity gets ─────────────────────────────────────
+   A file with no `shape`/`color`/`mood` renders as a bare squircle with no
+   sticker, because the badge in `EntityMark` is `:empty`-hidden. The create
+   dialog and the seeds both hand a new entity a look, so the one path that
+   never did — `entity create` from a run — used to add a faceless agent. Derive
+   one from the name: the same djb2 hash the dialog uses, over the same ids, so
+   the card's preview and the file that lands cannot disagree.
+
+   Kept as plain id lists here (not `entityMark.js`, which is renderer code and
+   owns the glyphs) because this module is also the CLI's: a name that hashes to
+   `mint`/`happy` must mean the same thing in both processes. */
+const MARK_SHAPES = ['blob', 'pebble', 'bean', 'egg', 'tablet', 'crystal', 'shield', 'leaf', 'cloud']
+const MARK_COLORS = ['sun', 'ember', 'lime', 'mint', 'sky', 'orchid']
+const MARK_MOODS = ['happy', 'cool', 'focus', 'sleepy', 'hype']
+
+function derivedMark(name) {
+  let hash = 5381
+  for (const char of String(name || '')) hash = ((hash * 33) ^ char.charCodeAt(0)) >>> 0
+  return {
+    shape: MARK_SHAPES[hash % MARK_SHAPES.length],
+    color: MARK_COLORS[(hash >>> 7) % MARK_COLORS.length],
+    mood: MARK_MOODS[(hash >>> 13) % MARK_MOODS.length],
+  }
+}
+
 function scaffold({
   workspace,
   name,
@@ -212,6 +237,14 @@ function scaffold({
   const safe = safeName(name)
   const file = entityPath(workspace, safe)
   if (fs.existsSync(file)) throw new Error(`${safe}.md already exists in this workspace.`)
+  /* A caller that names nothing gets the name's own look, not a faceless block.
+     A caller that names even one part keeps exactly what it asked for. */
+  if (!shape && !color && !mood) {
+    const look = derivedMark(safe)
+    shape = look.shape
+    color = look.color
+    mood = look.mood
+  }
   const brief = String(description || '').trim()
   const oneLine = brief.replace(/\s+/g, ' ').trim()
   const instructions = String(body || '').trim()
@@ -328,5 +361,6 @@ module.exports = {
   locate,
   resolveDir,
   safeName,
+  derivedMark,
   problemsFor,
 }

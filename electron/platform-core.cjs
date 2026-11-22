@@ -212,6 +212,14 @@ const verbs = {
       body: text(input.body ?? '', 'body'),
     }
 
+    /* A run that names no look still gets one, and the *request* has to carry it:
+       the parked doc is what the card previews, and `scaffold` would otherwise
+       derive a different-ordered look at apply time than the card showed. Fill it
+       here, once, so the diff and the file agree. */
+    if (!fields.shape && !fields.color && !fields.mood) {
+      Object.assign(fields, entities.derivedMark(safe))
+    }
+
     /* A run may not add an agent to the roster unasked — a new entity is a new
        standing prompt, and the person should read it before it exists. Every
        check above already ran, so "that name is taken" fails the run rather

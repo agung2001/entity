@@ -88,6 +88,14 @@ const loaded = computed(() => phase.value !== 'loading' && (isCreate.value || ro
 
 /** The brief a new entity would carry — the same shape `scaffold` writes when no
     custom body is given, so the card shows the file rather than a summary of it. */
+/* The look the new file gets. `entity-store.scaffold` derives one from the name
+   when the caller named nothing, and the request carries whatever the run named,
+   so this is exactly what will land — the card previews it rather than inventing
+   a second derivation. A blank mood is an invisible badge (`:empty`), which is
+   why an agent-created entity used to arrive faceless. */
+const markMood = computed(() => proposal.value?.mood || '')
+const markShape = computed(() => proposal.value?.shape || '')
+
 const briefBody = computed(() => {
   const read = proposal.value || {}
   const body = String(read.body || '').trim()
@@ -402,7 +410,13 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
       <div class="dw-settled" :data-out="settledLine.out" role="status">
         <!-- The settled line is one line tall, so the person keeps a small mark
              to know whose file this was; larger and it is no longer one line. -->
-        <EntityMark class="dw-mark dw-mark--settled" :entity="name" mini />
+        <EntityMark
+          class="dw-mark dw-mark--settled"
+          :entity="name"
+          :mood="markMood"
+          :shape="markShape"
+          mini
+        />
         <span class="dot" aria-hidden="true"></span>
         <span class="txt"><b>{{ settledLine.head }}</b> · {{ settledLine.rest }}</span>
         <span class="when">{{ settledAt }}</span>
@@ -451,7 +465,13 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
              every other mark. `animate` keeps the gaze and blink; a `mini` mark
              never animates. A create shows the new name's default mark — the same
              one the create dialog previews — because that file has no look yet. -->
-        <EntityMark class="dw-mark" :entity="name" animate />
+        <EntityMark
+          class="dw-mark"
+          :entity="name"
+          :mood="markMood"
+          :shape="markShape"
+          animate
+        />
         <span class="dw-kick">{{ isCreate ? 'Create' : 'Write' }} · {{ name }}.md</span>
         <span class="dw-title">{{ title }}</span>
         <span class="dw-tag">{{ tag }}</span>

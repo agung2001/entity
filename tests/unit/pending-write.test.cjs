@@ -134,6 +134,10 @@ test('approval creates only the entity the person was shown', async (t) => {
   const shown = await rpc.call('write.proposal', { workspace: workspace.id, id: pending.data.id })
   assert.equal(shown.data.kind, 'create')
   assert.match(shown.data.description, /likes jokes/)
+  /* The card previews a look, so the new agent is not faceless: the request
+     carries the same mark the scaffold will write. */
+  assert.match(shown.data.mood, /^(happy|cool|focus|sleepy|hype)$/)
+  assert.ok(shown.data.shape && shown.data.color)
 
   /* Somebody made it first: approval refuses rather than overwriting anything. */
   entities.scaffold({ workspace: workspace.id, name: 'test', harness: 'claude' })
@@ -167,5 +171,8 @@ test('approval creates only the entity the person was shown', async (t) => {
   assert.equal(created.data.name, 'test')
   assert.equal(created.data.harness, 'pi')
   assert.match(created.data.instructions, /likes jokes/)
+  /* what the card previewed is what landed */
+  assert.equal(created.data.mark.mood, shown.data.mood)
+  assert.equal(created.data.mark.shape, shown.data.shape)
   assert.equal(pendingWrites.read(record), null)
 })

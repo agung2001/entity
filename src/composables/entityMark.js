@@ -584,8 +584,24 @@ export function markFor(workspace, entity, fallback = null) {
       color: saved?.color || fallback?.color || 'sun',
       shape: shapeById(saved?.shape || fallback?.shape).id,
       custom: /^#[0-9a-f]{6}$/i.test(String(saved?.custom || '')) ? saved.custom : '',
+      /* `picked` separates "the defaults, because nothing said otherwise yet"
+         from "the person chose what is there now". A record built before the
+         entity list loaded has no fallback to read, and without this it would
+         keep `mood: none` for the life of the page — the badge is `:empty`-hidden,
+         so the emoji simply never appeared. */
+      picked: Boolean(saved),
     })
     entityMarks.set(key, mark)
+  }
+  /* a record that was only ever a default adopts the entity's own look once its
+     file (or the roster) is readable; a value somebody picked is never rewritten */
+  if (!mark.picked && fallback) {
+    if (mark.mood === 'none' && fallback.mood) mark.mood = fallback.mood
+    if (fallback.color && mark.color === 'sun') mark.color = fallback.color
+    if (fallback.shape) {
+      const shaped = shapeById(fallback.shape).id
+      if (mark.shape === DEFAULT_SHAPE) mark.shape = shaped
+    }
   }
   return mark
 }
@@ -735,6 +751,8 @@ export function setMark({
   persist = true,
 } = {}) {
   const target = entity ? markFor(workspace, entity) : markSettings
+  /* from here on the record is the person's, not a default waiting for a file */
+  if (entity) target.picked = true
   if (mood !== undefined) target.mood = mood
   if (color) target.color = color
   if (shape !== undefined) target.shape = shapeById(shape).id
