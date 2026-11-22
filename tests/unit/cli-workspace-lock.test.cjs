@@ -112,11 +112,12 @@ test('workspace list names every room without a pinned run', () => {
 })
 
 
-test('an agent can create an entity with the CLI and no direct file write', () => {
+test('an agent proposes an entity, and a person at a shell creates it', () => {
   const workspace = workspaces.create({ label: 'create-cli' })
   entities.scaffold({ workspace: workspace.id, name: 'lead', harness: 'pi' })
 
-  const result = run(
+  /* A run's create parks: `entity create` is a consent path like a rewrite. */
+  const parked = run(
     [
       'entity',
       'create',
@@ -129,16 +130,35 @@ test('an agent can create an entity with the CLI and no direct file write', () =
     ],
     { workspace: workspace.id, entity: 'lead', input: '# researcher\n\nFind sources.\n' },
   )
+  assert.equal(parked.status, 1, parked.stderr || parked.stdout)
+  assert.equal(parked.json?.code, 'needs_consent')
+  assert.match(String(parked.json?.data?.command), /entity create researcher/)
+  assert.equal(fs.existsSync(entities.locate({ workspace: workspace.id, name: 'researcher' })), false)
+
+  /* The same command from a shell that is nobody's run writes it. */
+  const result = run(
+    [
+      'entity',
+      'create',
+      'researcher',
+      '--description',
+      'Researches questions on the web.',
+      '--body-stdin',
+      '--output',
+      'json',
+    ],
+    { workspace: workspace.id, input: '# researcher\n\nFind sources.\n' },
+  )
   assert.equal(result.status, 0, result.stderr || result.stdout)
   assert.equal(result.json?.ok, true)
   assert.equal(result.json?.data?.name, 'researcher')
-  assert.equal(result.json?.data?.harness, 'pi')
 
   const file = entities.locate({ workspace: workspace.id, name: 'researcher' })
   assert.match(fs.readFileSync(file, 'utf8'), /Find sources\./)
   const audit = fs.readFileSync(path.join(PROFILE, 'workspaces', workspace.id, 'audit.jsonl'), 'utf8')
   assert.match(audit, /entity\.create/)
 
+  /* A taken name is provable, so a run fails on it rather than parking. */
   const duplicate = run(
     ['entity', 'create', 'researcher', '--harness', 'pi', '--output', 'json'],
     { workspace: workspace.id, entity: 'lead' },

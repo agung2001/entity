@@ -35,6 +35,8 @@ const RELEVANT = [
   /* A pinned run asking to copy into another workspace. Without this the
      request lands on disk and the window never shows the consent card. */
   /^pending-clone\.json$/,
+  /* The same for a run proposing an instruction rewrite. */
+  /^pending-write\.json$/,
 ]
 
 /** `<id>/entities/foo.md` → `{ id, rest }` */

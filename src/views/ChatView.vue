@@ -5,6 +5,7 @@ import ArtifactDialog from '@/components/ArtifactDialog.vue'
 import ChatHarnessDialog from '@/components/ChatHarnessDialog.vue'
 import ChatMcpDialog from '@/components/ChatMcpDialog.vue'
 import CloneConsentCard from '@/components/CloneConsentCard.vue'
+import DefinitionWriteCard from '@/components/DefinitionWriteCard.vue'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import MessageList from '@/components/MessageList.vue'
@@ -28,7 +29,12 @@ import { clearFollowups, ensureFollowups, followupsFor } from '@/lib/followups'
 import { deletionTarget } from '@/lib/delete-intent'
 import { shareHref } from '@/lib/share-url'
 import { loadArtifacts } from '@/stores/artifacts'
-import { approveCloneRequest, dismissCloneRequest, pendingCloneRequest } from '@/stores/entities'
+import {
+  approveCloneRequest,
+  dismissCloneRequest,
+  pendingCloneRequest,
+  pendingWriteRequest,
+} from '@/stores/entities'
 import { fleet, loadFleet, machineChoices } from '@/stores/fleet'
 import { loadRemote } from '@/stores/remote'
 import {
@@ -88,6 +94,10 @@ const tagBusy = ref(false)
 const pendingClone = ref(null)
 const cloneBusy = ref(false)
 let pendingCloneToken = 0
+/* An instruction rewrite a run proposed, waiting in this workspace. The card
+   renders it, so this keeps only the request and a re-fetch of a settled one. */
+const pendingWrite = ref(null)
+let pendingWriteToken = 0
 const composer = ref(null)
 /* A draft handed over by another page (annotations on an artifact preview).
    It waits here until the composer is on screen, then it is restored once. */
@@ -826,6 +836,21 @@ async function loadPendingClone() {
   }
 }
 
+async function loadPendingWrite() {
+  const workspace = hub.workspace
+  if (!workspace) {
+    pendingWrite.value = null
+    return
+  }
+  const token = ++pendingWriteToken
+  try {
+    const request = await pendingWriteRequest(workspace)
+    if (token === pendingWriteToken) pendingWrite.value = request || null
+  } catch {
+    if (token === pendingWriteToken) pendingWrite.value = null
+  }
+}
+
 async function approvePendingClone() {
   const request = pendingClone.value
   if (!request || cloneBusy.value) return
@@ -854,6 +879,16 @@ async function dismissPendingClone() {
   } finally {
     cloneBusy.value = false
   }
+}
+
+async function applyPendingWrite(result) {
+  /* The card settles itself; the roster behind it now holds a new body. */
+  if (result?.name) toast(`${result.name}.md instructions applied`)
+  await loadPendingWrite()
+}
+
+async function dismissPendingWrite() {
+  pendingWrite.value = null
 }
 
 /* Voice mode shares the composer's path for a normal turn, so attachments,
@@ -891,7 +926,12 @@ async function voiceInterrupt(text) {
 function onLiveEvent(event) {
   if (!event) return
   if (event.kind === 'workspace-changed') {
-    if (event.workspace === hub.workspace) loadPendingClone()
+    if (event.workspace !== hub.workspace) return
+    loadPendingClone()
+    /* A proposal lands on disk once; every other artifact write in this
+       workspace must not re-fetch it. A plain workspace switch has no paths. */
+    const paths = event.paths || []
+    if (!paths.length || paths.includes('pending-write.json')) loadPendingWrite()
     return
   }
   if (event.kind !== 'chat.turn') return
@@ -1014,8 +1054,10 @@ function onLiveEvent(event) {
     playReaction(hub.workspace, event.entity || hub.chat.threads[id]?.entity || thread.value?.entity)
     /* an entity may have written a document or screenshot during the turn */
     loadArtifacts().catch(() => {})
-    /* and a pinned run may have parked a cross-workspace copy for approval */
+    /* and a pinned run may have parked a cross-workspace copy or an
+       instruction rewrite for approval */
     loadPendingClone()
+    loadPendingWrite()
   }
 }
 
@@ -1044,6 +1086,7 @@ onMounted(async () => {
   syncThreadUrl()
   consumeNewQuery()
   loadPendingClone()
+  loadPendingWrite()
 })
 
 onBeforeUnmount(() => {
@@ -1114,8 +1157,10 @@ watch(
     metadataOpen.value = false
     tagOpen.value = false
     pendingClone.value = null
+    pendingWrite.value = null
     await openInitialThread()
     loadPendingClone()
+    loadPendingWrite()
   },
 )
 
@@ -1384,6 +1429,14 @@ watch(
               @dragleave.prevent="onDockDragLeave"
               @drop.prevent="onDockDrop"
             >
+              <DefinitionWriteCard
+                v-if="pendingWrite"
+                :workspace="hub.workspace"
+                :request="pendingWrite"
+                @applied="applyPendingWrite"
+                @dismissed="dismissPendingWrite"
+                @gone="pendingWrite = null"
+              />
               <CloneConsentCard
                 v-if="pendingClone"
                 :request="pendingClone"

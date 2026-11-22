@@ -19,6 +19,7 @@ const entities = require('./entity-store.cjs')
 const localData = require('./local-data.cjs')
 const audit = require('./platform-audit.cjs')
 const pendingClones = require('./pending-clone.cjs')
+const pendingWrites = require('./pending-write.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
 /** An error with a machine-readable code, so the CLI can exit the right way. */
@@ -200,9 +201,7 @@ const verbs = {
 
     /* No skill or MCP list: those belong to the workspace and every entity gets
        all of them, so there is nothing here to validate or to store. */
-    const created = entities.scaffold({
-      workspace: record.id,
-      name: safe,
+    const fields = {
       harness,
       model: text(input.model ?? '', 'model'),
       description: text(input.description ?? '', 'description'),
@@ -211,6 +210,42 @@ const verbs = {
       mood: text(input.mood ?? '', 'mood'),
       dir,
       body: text(input.body ?? '', 'body'),
+    }
+
+    /* A run that names no look still gets one, and the *request* has to carry it:
+       the parked doc is what the card previews, and `scaffold` would otherwise
+       derive a different-ordered look at apply time than the card showed. Fill it
+       here, once, so the diff and the file agree. */
+    if (!fields.shape && !fields.color && !fields.mood) {
+      Object.assign(fields, entities.derivedMark(safe))
+    }
+
+    /* A run may not add an agent to the roster unasked — a new entity is a new
+       standing prompt, and the person should read it before it exists. Every
+       check above already ran, so "that name is taken" fails the run rather
+       than parking a request no card could apply. */
+    if (String(process.env.ENTITY_ENTITY || '').trim()) {
+      const request = pendingWrites.write(record, {
+        at: new Date().toISOString(),
+        workspace: record.id,
+        kind: 'create',
+        name: safe,
+        ...fields,
+        sha256: crypto.createHash('sha256').update(JSON.stringify(fields)).digest('hex'),
+        requestedBy: String(process.env.ENTITY_ENTITY || ''),
+      })
+      throw new PlatformError(
+        'needs_consent',
+        `${safe}.md is waiting for the person to create it. Nothing was written. ` +
+          'Ask them to apply it in the window.',
+        { request },
+      )
+    }
+
+    const created = entities.scaffold({
+      workspace: record.id,
+      name: safe,
+      ...fields,
     })
     const bytes = Buffer.byteLength(created.instructions)
     audit.append(record, { verb: 'entity.create', target: created.name, harness, bytes })
@@ -354,6 +389,32 @@ const verbs = {
     }
 
     const previousBytes = Buffer.byteLength(entity.instructions)
+
+    /* A run may not rewrite an entity's standing prompt behind the person's
+       back: the transcript says what it wants, the card shows the diff, and
+       only Apply comes back here — from the window, which is nobody's run. */
+    if (String(process.env.ENTITY_ENTITY || '').trim()) {
+      const request = pendingWrites.write(record, {
+        at: new Date().toISOString(),
+        workspace: record.id,
+        kind: 'write',
+        name: entity.name,
+        body,
+        previousBody: entity.instructions,
+        previousBytes,
+        bytes: Buffer.byteLength(body),
+        sha256: crypto.createHash('sha256').update(body).digest('hex'),
+        stamp: before,
+        requestedBy: String(process.env.ENTITY_ENTITY || ''),
+      })
+      throw new PlatformError(
+        'needs_consent',
+        `${entity.name}.md instructions are waiting for the person to apply them. ` +
+          'Nothing was written. Ask them to apply it in the window.',
+        { request },
+      )
+    }
+
     entities.write({ ...entity, instructions: body })
     const after = stamp(file)
     audit.append(record, {

@@ -10,6 +10,11 @@ import { hub } from '@/stores/hub'
  *
  * Pass `entity` to make the mark wear that entity's own mood and colour. The
  * brand mark (rail, sign-in) has no entity and keeps the hub-wide settings.
+ *
+ * `mood` is for a file that does not exist yet: a create-type card previews an
+ * entity that is not in the roster, so there is no record to look up and the
+ * caller's own value is the only truth. It is a fallback, never an override — a
+ * real entity's stored mark still wins, so the picker and the card agree.
  */
 const props = defineProps({
   mini: { type: Boolean, default: false },
@@ -18,14 +23,21 @@ const props = defineProps({
   entity: { type: String, default: '' },
   workspace: { type: String, default: '' },
   shape: { type: String, default: '' },
+  mood: { type: String, default: '' },
   badge: { type: Boolean, default: true },
 })
 
 const el = ref(null)
 const reacts = computed(() => Boolean(props.entity) && !props.hop)
-const seed = computed(() =>
-  props.entity ? hub.agents.find((agent) => agent.name === props.entity)?.mark || null : null,
-)
+const seed = computed(() => {
+  const found = props.entity ? hub.agents.find((agent) => agent.name === props.entity) : null
+  /* an entity the roster does not know yet keeps the caller's preview fields */
+  if (found) return found.mark || null
+  if (!props.mood && !props.shape) return null
+  return { mood: props.mood, shape: props.shape, color: '' }
+})
+/* `markFor` adopts the fallback for a record that is still only a default, so a
+   card mounted before the roster loaded still gets its entity's look. */
 const mark = computed(() => markFor(props.workspace || hub.workspace, props.entity, seed.value))
 
 function mount() {
@@ -60,6 +72,7 @@ watch(
     () => props.shape,
     () => mark.value.shape,
     () => seed.value,
+    () => props.mood,
     () => reacts.value,
     () => hub.workspace,
   ],

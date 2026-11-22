@@ -30,6 +30,8 @@ const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const platform = require('./platform-core.cjs')
 const pendingClones = require('./pending-clone.cjs')
+const pendingWrites = require('./pending-write.cjs')
+const { tilde } = require('./frontmatter.cjs')
 const audit = require('./platform-audit.cjs')
 const remoteSync = require('./remote-sync.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
@@ -446,6 +448,81 @@ function createRpc({
     'clone.dismiss': ({ workspace, id } = {}) => {
       const record = workspaces.open(workspace)
       return { dismissed: pendingClones.clear(record, id) }
+    },
+
+    /* An instruction rewrite or a new entity a run proposed. `pending` carries
+       metadata only — the bodies and the brief are read by `proposal`, when a
+       card is actually on screen. */
+    'write.pending': ({ workspace }) => {
+      const request = pendingWrites.read(workspaces.open(workspace))
+      if (!request) return null
+      const { id, at, kind, name, requestedBy, bytes, previousBytes, stamp } = request
+      /* the card names the file it will write, so the row carries the path */
+      const file = entities.list(workspace).find((row) => row.name === name)
+      const displayPath = file?.displayPath || tilde(entities.locate({ workspace, name }))
+      return { id, at, kind, name, requestedBy, bytes, previousBytes, stamp, displayPath }
+    },
+    'write.proposal': ({ workspace, id } = {}) => {
+      const request = pendingWrites.read(workspaces.open(workspace))
+      if (!request) throw new Error('There is no pending write in this workspace.')
+      if (id && request.id !== id) throw new Error('That write request is no longer current. Ask again.')
+      /* The window renders a kind it knows and refuses the rest, rather than
+         guessing what a newer producer meant. */
+      if (request.kind === 'create') {
+        const { harness, model, description, shape, color, mood, dir, body } = request
+        return { id: request.id, kind: 'create', name: request.name, harness, model, description, shape, color, mood, dir, body }
+      }
+      if (request.kind !== 'write') throw new Error('That request is not one this window can show.')
+      return {
+        id: request.id,
+        kind: 'write',
+        name: request.name,
+        previousBody: request.previousBody,
+        body: request.body,
+        stamp: request.stamp,
+      }
+    },
+    'write.approve': ({ workspace, id } = {}) => {
+      const record = workspaces.open(workspace)
+      const request = pendingWrites.read(record)
+      if (!request) throw new Error('There is no pending write in this workspace.')
+      if (id && request.id !== id) throw new Error('That write request is no longer current. Ask again.')
+      /* The window is nobody's run, so this takes the direct path; a create is
+         checked again (`the name is taken now` is a conflict, not an overwrite)
+         and a rewrite carries the stamp the proposal was read at. */
+      const result =
+        request.kind === 'create'
+          ? platform.call('entity.create', {
+              workspace,
+              name: request.name,
+              spec: {
+                harness: request.harness,
+                model: request.model,
+                description: request.description,
+                shape: request.shape,
+                color: request.color,
+                mood: request.mood,
+                dir: request.dir,
+                body: request.body,
+              },
+            })
+          : platform.call('entity.setInstructions', {
+              workspace,
+              name: request.name,
+              body: request.body,
+              expect: request.stamp,
+            })
+      if (!result.ok) {
+        const failure = new Error(result.error)
+        failure.code = result.code
+        throw failure
+      }
+      pendingWrites.clear(record, request.id)
+      return result.data
+    },
+    'write.dismiss': ({ workspace, id } = {}) => {
+      const record = workspaces.open(workspace)
+      return { dismissed: pendingWrites.clear(record, id) }
     },
 
     'entity.learn': (args) => learning.review(args),

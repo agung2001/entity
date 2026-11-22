@@ -17,6 +17,11 @@ const assert = require('node:assert/strict')
 /* `workspace-store` resolves ROOT at require time, so this has to come first. */
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-platform-'))
 process.env.ENTITY_HOME = PROFILE
+/* These call the control plane as a person, and a shell inside a run carries
+   ENTITY_ENTITY/ENTITY_WORKSPACE — which parks a body write instead of applying it.
+   The precondition is declared here, not inherited from whoever ran the suite. */
+delete process.env.ENTITY_ENTITY
+delete process.env.ENTITY_WORKSPACE
 
 const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')
@@ -223,14 +228,16 @@ test('a described entity can be duplicated and deleted', () => {
   assert.deepEqual(entities.list(workspace).map((item) => item.name), ['reviewer-copy'])
 })
 
-test('an agent can create an entity without touching the filesystem', () => {
+test('an agent proposes a new entity, and the person creates it', () => {
   const workspace = freshWorkspace('create')
   entities.scaffold({ workspace, name: 'lead', harness: 'claude' })
   const previous = process.env.ENTITY_ENTITY
   process.env.ENTITY_ENTITY = 'lead'
 
   try {
-    const created = core.call('entity.create', {
+    /* The run gets a parked request, not a file: a new entity is a new standing
+       prompt, and the person reads it before it exists. */
+    const parked = core.call('entity.create', {
       workspace,
       name: 'researcher',
       spec: {
@@ -241,16 +248,48 @@ test('an agent can create an entity without touching the filesystem', () => {
         mood: 'focus',
       },
     })
+    assert.equal(parked.ok, false)
+    assert.equal(parked.code, 'needs_consent')
+    assert.equal(parked.data.request.kind, 'create')
+    assert.equal(parked.data.request.harness, 'claude', 'defaults to the creating entity harness')
+    assert.equal(entities.read(workspace, 'researcher'), null, 'the run created the file anyway')
+
+    /* Every refusal that is provable still fails the run instead of parking a
+       request no card could apply. */
+    const duplicate = core.call('entity.create', { workspace, name: 'lead', spec: {} })
+    assert.equal(duplicate.ok, false)
+    assert.equal(duplicate.code, 'conflict')
+
+    const badHarness = core.call('entity.create', {
+      workspace,
+      name: 'bad',
+      spec: { harness: 'not-a-harness' },
+    })
+    assert.equal(badHarness.ok, false)
+    assert.equal(badHarness.code, 'invalid')
+
+    /* A person's own shell (no ENTITY_ENTITY) writes the file. `harness` is
+       explicit here because the "creating entity's harness" default only exists
+       inside a run, which is exactly the identity that was just removed. */
+    delete process.env.ENTITY_ENTITY
+    const created = core.call('entity.create', {
+      workspace,
+      name: 'researcher',
+      spec: {
+        harness: 'claude',
+        description: 'Researches questions on the web\nand returns sources.',
+        body: '# researcher\n\nResearches questions on the web.\n\n## Rules\n- Open the page before citing it.\n',
+        shape: 'hex',
+        color: 'mint',
+        mood: 'focus',
+      },
+    })
     assert.equal(created.ok, true, created.error)
     assert.equal(created.data.name, 'researcher')
-    assert.equal(created.data.harness, 'claude', 'defaults to the creating entity harness')
+    assert.equal(created.data.harness, 'claude')
     assert.equal(created.data.description, 'Researches questions on the web and returns sources.')
     assert.deepEqual(created.data.mark, { shape: 'hex', color: 'mint', mood: 'focus' })
-    assert.equal(created.data.frontmatter.shape, 'hex')
     assert.equal(created.data.ok, true)
-    const got = core.call('entity.get', { workspace, name: 'researcher' })
-    assert.deepEqual(got.data.mark, { shape: 'hex', color: 'mint', mood: 'focus' })
-    assert.equal(got.data.frontmatter.description, 'Researches questions on the web and returns sources.')
 
     const file = entities.locate({ workspace, name: 'researcher' })
     const text = fs.readFileSync(file, 'utf8')
@@ -264,18 +303,6 @@ test('an agent can create an entity without touching the filesystem', () => {
     )
     assert.match(audited, /entity\.create/)
     assert.match(audited, /researcher/)
-
-    const duplicate = core.call('entity.create', { workspace, name: 'researcher', spec: {} })
-    assert.equal(duplicate.ok, false)
-    assert.equal(duplicate.code, 'conflict')
-
-    const badHarness = core.call('entity.create', {
-      workspace,
-      name: 'bad',
-      spec: { harness: 'not-a-harness' },
-    })
-    assert.equal(badHarness.ok, false)
-    assert.equal(badHarness.code, 'invalid')
 
     /* `skills`/`mcp` are not entity create fields any more, so a script that
        still sends them does not silently believe it narrowed anything. */
