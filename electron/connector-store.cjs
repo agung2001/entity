@@ -28,6 +28,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const workspaces = require('./workspace-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
+const catalog = require('./connector-catalog.cjs')
 const integrations = require('./integrations-store.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
@@ -40,6 +41,23 @@ const initialOf = (label) => {
   return first ? first.toUpperCase() : '·'
 }
 const text = (value, max = 200) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+
+/**
+ * `{ argv, okExit }` or null. An argv is what actually runs; anything else is
+ * dropped rather than stored as a promise the probe cannot keep.
+ */
+function normaliseVerify(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const argv = Array.isArray(raw.argv)
+    ? raw.argv.map((value) => text(value, 120)).filter(Boolean)
+    : String(raw.argv || '')
+        .split(/\s+/)
+        .map((value) => text(value, 120))
+        .filter(Boolean)
+  if (!argv.length) return null
+  const okExit = Number.isFinite(Number(raw.okExit)) ? Number(raw.okExit) : 0
+  return { argv, okExit }
+}
 
 function fileOf(record) {
   return path.join(record.path, FILE)
@@ -75,12 +93,18 @@ function integrationRows(workspace) {
       id,
       label,
       initial: initialOf(label),
+      /* The three the app ships with: they are a definition Entity owns, and the
+         row wears their own brand mark. A custom connector has none. */
+      builtIn: id,
       kind,
       scope: 'workspace',
       /* The definition travels; the credential does not. YouTrack's token lives in
          this workspace's `mcp.json`, a CLI's in its own store on this machine. */
       binding: kind === 'mcp' ? 'mcp.json' : 'the CLI on this machine',
-      mention: `@${id}:`,
+      mention: catalog.mentionOf(id) || '',
+      /* The shipped contract: what this mention produces, and which resolver
+         answers it. `null` for a connector nobody ships a resolver for. */
+      work: catalog.workOf(id),
       status: 'not probed',
       statusDetail: '',
       managed: true,
@@ -107,10 +131,12 @@ function poolRows(record, index) {
       id: name,
       label: adopted?.label || name,
       initial: initialOf(adopted?.label || name),
+      builtIn: '',
       kind: 'mcp',
       scope: 'workspace',
       binding: 'mcp.json',
       mention: adopted?.mention || '',
+      work: adopted ? catalog.workOf(name) : (catalog.workOf(name) || null),
       status: isParked ? 'parked' : 'in the pool',
       statusDetail: String(definition?.url || definition?.command || ''),
       /* No connector row means no definition this page wrote: it arrived by a
@@ -124,6 +150,14 @@ function poolRows(record, index) {
   return rows
 }
 
+/**
+ * One row per server *name*, with every harness that declares it.
+ *
+ * Three harness files declaring `cua` is one server available in three places,
+ * not three servers: the old list showed 13 rows for 8 names and read as
+ * duplication. The evidence is kept — `sources` names each file and harness — so
+ * `Copy here` copies one definition and the row still says where it came from.
+ */
 function machineRows() {
   let globals = { groups: [] }
   try {
@@ -131,24 +165,39 @@ function machineRows() {
   } catch {
     globals = { groups: [] }
   }
-  const seen = new Set()
-  const rows = []
+  const byName = new Map()
   for (const group of globals.groups || []) {
     for (const server of group.servers || []) {
-      const alias = `${group.harness}/${server.name}`
-      if (seen.has(alias)) continue
-      seen.add(alias)
+      const name = String(server.name || '').trim()
+      if (!name) continue
       const file = String(server.configPath || group.files?.[0]?.path || '')
-      rows.push({
-        id: alias,
-        label: server.name,
-        initial: initialOf(server.name),
+      const hit = byName.get(name)
+      const source = {
+        harness: group.harness,
+        label: group.label,
+        file: tilde(file),
+        definition: server.definition || null,
+      }
+      if (hit) {
+        /* the same server in a second harness file: keep the first definition
+           (they are the same command) and record the additional source */
+        if (!hit.sources.some((entry) => entry.file === source.file)) hit.sources.push(source)
+        continue
+      }
+      byName.set(name, {
+        id: name,
+        label: name,
+        initial: initialOf(name),
+        builtIn: '',
         kind: 'mcp',
         scope: 'machine',
         binding: file,
         mention: '',
+        work: null,
         status: 'found',
         statusDetail: `${group.label} · ${tilde(file)}`,
+        /* every harness that declares it, so one row can show three marks */
+        sources: [source],
         /* Machine rows are another application's configuration: this page may
            copy one into the workspace and may not edit it in place. */
         managed: false,
@@ -157,44 +206,122 @@ function machineRows() {
       })
     }
   }
-  return rows
+  return [...byName.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
 
 /**
- * Everything one page draws, in one call.
+ * Is this connector installed in this workspace?
  *
- * `counts` are the filter segment's numbers and they are computed here, from the
- * same rows — a segment that recounts in the view is a segment that can disagree
- * with the list under it.
+ * `connectors.json` is the record. But a workspace can hold a working `mcp.json`
+ * entry that no index row ever claimed — a teammate's sync, the older add path, a
+ * harness attach — and it may be the *only* place a token lives. So the rule is
+ * additive, never subtractive:
+ *
+ *   - an index row installs a connector;
+ *   - a definition in `mcp.json` counts as installed even with no row (backfilled
+ *     on the next write), so nothing that runs can vanish from the list;
+ *   - a catalog entry with neither is **available, not installed**.
+ *
+ * Without the middle clause this change would make six live servers disappear
+ * from a real workspace on the first read.
  */
+function installedIds(index, pool) {
+  const out = new Set(Object.keys(index.rows || {}))
+  for (const name of Object.keys(pool.servers || {})) out.add(name)
+  for (const name of Object.keys(pool.disabled || {})) out.add(name)
+  return out
+}
+
 function list({ workspace } = {}) {
   const record = workspaces.open(workspace)
   const index = readIndex(record)
-  let rows = []
+  let pool = { servers: {}, disabled: {} }
   try {
-    rows = integrationRows(workspace)
+    pool = workspaces.mcp(record.id)
   } catch {
-    rows = []
+    pool = { servers: {}, disabled: {} }
   }
-  const pool = poolRows(record, index)
-  /* A pool server named like an integration row (a YouTrack binding is exactly
-     that) is the same connector: one row, the pool's own binding as its detail. */
+  const installed = installedIds(index, pool)
+
+  /* Installed: the catalog's entries where they are installed, plus anything the
+     pool holds that no index row claims. A catalog entry is not a row until it is
+     installed — that is what the Built-in tab offers. */
+  const rows = integrationRows(workspace).filter((row) => installed.has(row.id))
+  const poolOnly = poolRows(record, index)
+
+  /* A pool server named like an installed integration row (a YouTrack binding is
+     exactly that) is one connector: the pool's own binding becomes its detail. */
   const merged = rows.map((row) => {
-    const twin = pool.find((entry) => entry.id === row.id)
+    const twin = poolOnly.find((entry) => entry.id === row.id)
     return twin
       ? { ...row, binding: twin.binding, statusDetail: twin.statusDetail, status: twin.status }
       : row
   })
-  const extras = pool.filter((entry) => !merged.some((row) => row.id === entry.id))
-  const all = [...merged, ...extras, ...machineRows()]
-  const counts = {
-    workspace: all.filter((row) => row.scope === 'workspace').length,
-    machine: all.filter((row) => row.scope === 'machine').length,
-  }
+  const extras = poolOnly.filter((entry) => !merged.some((row) => row.id === entry.id))
+
+  /* A connector a person added that the catalogue does not ship: its row comes
+     from the index alone. Without this, `add()` wrote a row nobody rendered — the
+     roster only ever listed catalogue entries and pool servers. */
+  const known = new Set([...merged, ...extras].map((row) => row.id))
+  const custom = Object.entries(index.rows || {})
+    .filter(([id, entry]) => !known.has(id) && (entry.kind === 'cli' || entry.kind === 'rest'))
+    .map(([id, entry]) => ({
+      id,
+      label: entry.label || id,
+      initial: initialOf(entry.label || id),
+      builtIn: '',
+      kind: entry.kind,
+      scope: 'workspace',
+      binding: entry.binding || (entry.kind === 'cli' ? 'the CLI on this machine' : 'this workspace'),
+      mention: '',
+      work: catalog.workOf(id),
+      /* A declared self-report is what makes it answerable at all. */
+      binary: entry.binary || '',
+      verify: entry.verify || null,
+      status: 'not probed',
+      statusDetail: entry.verify ? `${entry.binary || id} ${entry.verify.argv.join(' ')}` : 'no verify command',
+      managed: true,
+      unmanaged: false,
+      editable: true,
+    }))
+  const workspaceRows = [...merged, ...custom, ...extras]
+
+  /* Catalog entries installed nowhere in this workspace: read-only, one verb. */
+  const available = catalog
+    .INSTALLABLE.filter((id) => !installed.has(id))
+    .map((id) => {
+      const entry = catalog.entryOf(id)
+      return {
+        id,
+        label: entry.label,
+        initial: initialOf(entry.label),
+        builtIn: id,
+        kind: entry.kind,
+        scope: 'workspace',
+        binding: entry.kind === 'mcp' ? 'mcp.json' : 'the CLI on this machine',
+        mention: '',
+        work: catalog.workOf(id),
+        status: 'not installed',
+        statusDetail: entry.work?.needs || '',
+        managed: false,
+        unmanaged: false,
+        installed: false,
+        available: true,
+        editable: false,
+      }
+    })
+
+  const machine = machineRows()
   return {
-    rows: all,
-    counts,
-    unmanaged: all.filter((row) => row.unmanaged).length,
+    rows: workspaceRows,
+    available,
+    machine,
+    counts: {
+      workspace: workspaceRows.length,
+      machine: machine.length,
+      available: available.length,
+    },
+    unmanaged: workspaceRows.filter((row) => row.unmanaged).length,
     path: tilde(fileOf(record)),
     poolPath: tilde(path.join(record.path, 'mcp.json')),
     /* Stated once, on the page, rather than only in a document. */
@@ -222,10 +349,48 @@ function definitionOf(server) {
 }
 
 /** Every write goes through the store that owns the field, then re-reads. */
-function add({ workspace, id, label, kind, scope } = {}) {
+/**
+ * One connector, added by a person.
+ *
+ * `verify` is stored, not guessed: a `cli` row's honesty is that it can say *why*
+ * it is not ready, and only the person knows what its self-report is (`gh auth
+ * status` is right for one binary and wrong for the next). Shape:
+ * `{ argv: ['auth', 'status'], okExit: 0 }` — an argv and the exit code that means
+ * "usable", nothing more. A row without one is `not verified`, never `found`.
+ */
+function add({ workspace, id, label, kind, scope, command, url, args, env, verify, binary } = {}) {
   const record = workspaces.open(workspace)
   const name = text(id || label, 60).replace(/[^A-Za-z0-9._-]+/g, '-')
   if (!name) throw new Error('A connector needs a name.')
+  /* An `mcp` connector is a *pointer* into `mcp.json`, so the binding is written
+     first and the index second (plan §2.3) — an index row without a definition is
+     a row the runtime cannot resolve. `validServer` rejects a definition with
+     neither a command nor a URL, which is the check that keeps that true. */
+  if (kind === 'mcp') {
+    const definition = {}
+    if (text(url, 400)) definition.url = text(url, 400)
+    if (text(command, 200)) definition.command = text(command, 200)
+    const list = Array.isArray(args)
+      ? args.map((value) => text(value, 200)).filter(Boolean)
+      : String(args || '').split('\n').map((value) => text(value, 200)).filter(Boolean)
+    if (list.length) definition.args = list
+    const names = Array.isArray(env)
+      ? env.map((value) => text(value, 80)).filter(Boolean)
+      : String(env || '').split(',').map((value) => text(value, 80)).filter(Boolean)
+    if (names.length) definition.env = names
+    if (!definition.url && !definition.command) {
+      throw new Error('An MCP connector needs a command or a URL — that is what the harness runs.')
+    }
+    const pool = workspaces.mcp(record.id)
+    if (pool.servers?.[name] || pool.disabled?.[name]) {
+      throw new Error(`This workspace already has a server called "${name}".`)
+    }
+    workspaces.writeMcp({
+      id: record.id,
+      servers: { ...(pool.servers || {}), [name]: definition },
+      disabled: pool.disabled || {},
+    })
+  }
   const index = readIndex(record)
   index.rows = {
     ...index.rows,
@@ -233,13 +398,80 @@ function add({ workspace, id, label, kind, scope } = {}) {
       label: text(label, 80) || name,
       kind: ['mcp', 'cli', 'rest'].includes(kind) ? kind : 'mcp',
       scope: 'workspace',
-      mention: `@${name}:`,
+      /* A mention is offered only where a resolver exists, and nothing ships one
+         for a name a person just typed — so a custom connector carries no syntax
+         instead of promising an `@id:` that resolves to silence. */
+      mention: '',
       createdAt: new Date().toISOString(),
       /* A row a page creates is a definition; a secret is never part of it. */
       adoptedFrom: scope === 'machine' ? 'machine' : '',
+      binding: kind === 'mcp' ? 'mcp.json' : 'the CLI on this machine',
+      /* Only a `cli` row has a self-report to declare. */
+      binary: kind === 'cli' ? text(binary, 120) : '',
+      verify: kind === 'cli' ? normaliseVerify(verify) : null,
     },
   }
   writeIndex(record, index)
+  return list({ workspace })
+}
+
+/**
+ * Install a catalog entry into this workspace.
+ *
+ * A definition, never a credential: the index row records the intent, and a `cli`
+ * row is done there (the binary and its sign-in are this machine's). An `mcp` entry
+ * writes a *placeholder* binding only when the workspace has none — the real one
+ * arrives from the docs page or a harness file, and installing must not invent a
+ * URL. `verify` is what turns the row from `not probed` into `found`.
+ */
+function install({ workspace, id } = {}) {
+  const record = workspaces.open(workspace)
+  const name = text(id, 60)
+  const entry = catalog.entryOf(name)
+  if (!entry) throw new Error(`No built-in connector called "${name}".`)
+  const index = readIndex(record)
+  if (index.rows[name]) return list({ workspace })
+  index.rows = {
+    ...index.rows,
+    [name]: {
+      label: entry.label,
+      kind: entry.kind,
+      scope: 'workspace',
+      mention: entry.work?.mention || '',
+      createdAt: new Date().toISOString(),
+      installedFrom: 'catalog',
+    },
+  }
+  writeIndex(record, index)
+  return list({ workspace })
+}
+
+/**
+ * Uninstall: remove the connector from *this workspace*.
+ *
+ * The definition goes; a credential does not. A `cli` row's sign-in belongs to the
+ * CLI, and an `mcp` row's headers belong to `mcp.json` — which this removes with
+ * the binding, because a binding nobody points at is the drift the `unmanaged`
+ * state exists to report. The catalog entry returns to the Built-in tab.
+ */
+function uninstall({ workspace, id } = {}) {
+  const record = workspaces.open(workspace)
+  const name = text(id, 60)
+  if (!name) throw new Error('Which connector should be uninstalled?')
+  const index = readIndex(record)
+  if (!index.rows[name]) throw new Error('That connector is not installed in this workspace.')
+  const next = { ...index.rows }
+  delete next[name]
+  index.rows = next
+  writeIndex(record, index)
+  const pool = workspaces.mcp(record.id)
+  if (pool.servers?.[name] || pool.disabled?.[name]) {
+    const servers = { ...(pool.servers || {}) }
+    const disabled = { ...(pool.disabled || {}) }
+    delete servers[name]
+    delete disabled[name]
+    workspaces.writeMcp({ id: record.id, servers, disabled })
+  }
   return list({ workspace })
 }
 
@@ -332,15 +564,74 @@ function remove({ workspace, id } = {}) {
   return list({ workspace })
 }
 
+/**
+ * Everything the composer may offer, in its own shape.
+ *
+ * Gated twice, and both gates are the point:
+ *
+ *   1. **a shipped resolver** — a mention with nothing behind it is worse than no
+ *      mention, so a custom connector contributes no syntax;
+ *   2. **installed in this workspace** — the catalog's entry for an uninstalled
+ *      connector is a row in the Built-in tab, not a thing you can type. Without
+ *      this the composer offered `@orca:` on a workspace that had uninstalled it.
+ *
+ * With no workspace the answer is the catalog alone: the call is also used where
+ * there is no workspace in hand (a test, the palette), and "offered everywhere" is
+ * a worse default than "offered where the catalog says it exists".
+ */
+function mentionKinds({ workspace } = {}) {
+  const kinds = catalog.mentionKinds()
+  if (!workspace) return kinds
+  let installed = null
+  try {
+    const record = workspaces.open(workspace)
+    const index = readIndex(record)
+    let pool = { servers: {}, disabled: {} }
+    try {
+      pool = workspaces.mcp(record.id)
+    } catch {
+      pool = { servers: {}, disabled: {} }
+    }
+    installed = installedIds(index, pool)
+  } catch {
+    installed = null
+  }
+  if (!installed) return kinds
+  /* internal parsers (`@artifact:`, `@thread:`) are not connectors and are never
+     gated by installation — they name a workspace object, not a service. */
+  return kinds.filter((entry) => !entry.builtIn || installed.has(entry.id))
+}
+
+/** Is this connector installed in this workspace? The one question the three gates share. */
+function isInstalled({ workspace, id } = {}) {
+  try {
+    const record = workspaces.open(workspace)
+    const index = readIndex(record)
+    let pool = { servers: {}, disabled: {} }
+    try {
+      pool = workspaces.mcp(record.id)
+    } catch {
+      pool = { servers: {}, disabled: {} }
+    }
+    return installedIds(index, pool).has(String(id || ''))
+  } catch {
+    return false
+  }
+}
+
 module.exports = {
   FILE,
   SCHEMA,
+  mentionKinds,
+  isInstalled,
   initialOf,
   definitionOf,
   readIndex,
   list,
   add,
   adopt,
+  install,
+  uninstall,
   copyFromMachine,
   remove,
 }

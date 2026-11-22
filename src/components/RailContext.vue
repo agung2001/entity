@@ -37,7 +37,6 @@ const WORKSPACE_TABS = [
   { id: 'members', label: 'Members', hint: 'who belongs to this scope' },
   { id: 'skills', label: 'Skills', hint: 'attached to the workspace' },
   { id: 'connectors', label: 'Connectors', hint: 'services, with the scope of each' },
-  { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
   { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
   { id: 'chats', label: 'Chats', hint: 'silence, archiving and removal' },
   { id: 'artifacts', label: 'Artifacts', hint: 'shelf age, archiving and removal' },
@@ -48,11 +47,6 @@ const ACCOUNT_ROWS = [
   { to: '/account', label: 'Profile', hint: 'identity and password' },
   { to: '/account/sound', label: 'Sound', hint: 'Area 51 feedback' },
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
-  { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
-  /* Account → Integrations and the workspace's MCP inventory are one page now, in
-     the workspace that owns their definitions. The old addresses redirect there,
-     so this row is a shortcut, not a second surface. */
-  { to: '/account/integrations', label: 'Connectors', hint: 'services this workspace can reach' },
   { to: '/account/harnesses', label: 'Harnesses', hint: 'enable and disable agent CLIs' },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
   { to: '/account/updates', label: 'Updates', hint: 'version and releases' },
@@ -130,7 +124,8 @@ const section = computed(() => {
 })
 
 /* The workspace pool and the harness configs on this machine are two scopes of
-   the same list — the switch `McpView` already has, sized for the panel. */
+   the same list, sized for this panel. The panel is the list beside one server's
+   page (`:workspace/mcp/:name`); the whole inventory is the Connectors roster. */
 const mcpScope = ref('workspace')
 const mcpQuery = ref('')
 const mcpHarness = ref('all')

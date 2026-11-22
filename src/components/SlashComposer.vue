@@ -89,6 +89,13 @@ let mentionAsked = false
 const MENTION_KINDS = computed(() => {
   const on = mentionSources.value?.integrations || {}
   const gated = (kind) => on[kind] !== false
+  /* The connector catalogue owns the service kinds: it is the same table the
+     Connectors page renders, so a mention offered here is a mention that
+     resolves. A connector with no shipped resolver contributes no entry — which
+     is why a custom connector is not offered as `@id:`. */
+  const services = (mentionSources.value?.kinds || [])
+    .filter((entry) => gated(entry.id))
+    .map((entry) => ({ name: entry.name, desc: entry.desc, kind: 'mention' }))
   return [
     {
       name: '@file:',
@@ -96,15 +103,14 @@ const MENTION_KINDS = computed(() => {
       kind: 'attachment-file',
     },
     ...(props.machine === 'local'
-      ? [{ name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' }]
+      ? [
+          { name: '@mcp:', desc: 'A workspace MCP server for this turn', kind: 'attachment-mcp' },
+          /* A custom connector has no resolver, so there is no query syntax — but
+             it can still be attached as context, which is the honest form. */
+          { name: '@connector:', desc: 'A custom connector, as context for this turn', kind: 'attachment-connector' },
+        ]
       : []),
-    ...(gated('orca') ? [{ name: '@orca:', desc: 'A path from an Orca project — project:file' }] : []),
-    { name: '@artifact:', desc: 'A file on this workspace’s artifact shelf' },
-    { name: '@maka:', desc: 'A note in a Maka vault — vault:query' },
-    ...(gated('youtrack') ? [{ name: '@youtrack:', desc: 'An issue — project:query' }] : []),
-    ...(gated('github')
-      ? [{ name: '@github:', desc: 'A repository — owner/repo, or a search' }]
-      : []),
+    ...services,
     { name: '@thread:', desc: 'Another conversation in this workspace' },
   ]
 })
@@ -149,7 +155,7 @@ async function loadMentionSources() {
   if (mentionAsked) return
   mentionAsked = true
   try {
-    mentionSources.value = await call('mention.sources')
+    mentionSources.value = await call('mention.sources', { workspace: hub.workspace })
   } catch {
     mentionSources.value = { orca: [], integrations: {} }
   }
@@ -353,15 +359,16 @@ function removeAttachment(index) {
 
 function attachmentLabel(entry) {
   if (entry.kind === 'mcp') return `MCP · ${entry.name || entry.value}`
+  if (entry.kind === 'connector') return `Connector · ${entry.name || entry.value}`
   const value = String(entry.value || entry.path || entry.name || '')
   return `File · ${value.split(/[\\/]/).pop() || 'file'}`
 }
 
-/** Move complete `@file:` / `@mcp:` tokens below the prompt. */
+/** Move complete `@file:` / `@mcp:` / `@connector:` tokens below the prompt. */
 function harvestAttachments(final = false) {
   const pattern = final
-    ? /(^|[\s([])@(file|mcp):(?:"([^"]+)"|([^\s]+))(?=\s|$)/g
-    : /(^|[\s([])@(file|mcp):(?:"([^"]+)"|([^\s]+))(?=\s)/g
+    ? /(^|[\s([])@(file|mcp|connector):(?:"([^"]+)"|([^\s]+))(?=\s|$)/g
+    : /(^|[\s([])@(file|mcp|connector):(?:"([^"]+)"|([^\s]+))(?=\s)/g
   const matches = [...String(draft.value || '').matchAll(pattern)]
   if (!matches.length) return false
   let text = draft.value
@@ -369,7 +376,8 @@ function harvestAttachments(final = false) {
   const seen = new Set(next.map((entry) => `${entry.kind}:${entry.value || entry.name || ''}`))
   for (const match of [...matches].reverse()) {
     const value = String(match[3] || match[4] || '').trim()
-    if (!value || (match[2] === 'mcp' && props.machine !== 'local')) continue
+    if (!value) continue
+    if ((match[2] === 'mcp' || match[2] === 'connector') && props.machine !== 'local') continue
     const start = match.index + match[1].length
     const end = match.index + match[0].length
     text = `${text.slice(0, start)}${text.slice(end)}`

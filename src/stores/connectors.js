@@ -17,19 +17,24 @@ import { call } from '@/composables/localBridge'
 import { hub } from '@/stores/hub'
 import { loadIntegrations, probeIntegrations } from '@/stores/integrations'
 
+
+const PROBED = new Set()
+
+/* Three populations, three panes: what this workspace has, what the app ships and
+   this workspace has not installed, and what another app holds on this machine. */
 export const connectors = reactive({
   workspace: '',
   loading: false,
   loaded: false,
   error: '',
   rows: [],
-  counts: { workspace: 0, machine: 0 },
+  available: [],
+  machine: [],
+  counts: { workspace: 0, machine: 0, available: 0 },
   path: '',
   poolPath: '',
   note: 'definitions travel with the workspace; tokens stay on this machine.',
 })
-
-const PROBED = new Set()
 
 export function resetConnectors() {
   connectors.workspace = ''
@@ -37,14 +42,18 @@ export function resetConnectors() {
   connectors.loaded = false
   connectors.error = ''
   connectors.rows = []
-  connectors.counts = { workspace: 0, machine: 0 }
+  connectors.available = []
+  connectors.machine = []
+  connectors.counts = { workspace: 0, machine: 0, available: 0 }
   PROBED.clear()
 }
 
 function adopt(answer) {
   if (!answer) return
   connectors.rows = answer.rows || []
-  connectors.counts = answer.counts || { workspace: 0, machine: 0 }
+  connectors.available = answer.available || []
+  connectors.machine = answer.machine || []
+  connectors.counts = answer.counts || { workspace: 0, machine: 0, available: 0 }
   connectors.path = answer.path || ''
   connectors.poolPath = answer.poolPath || ''
   if (answer.note) connectors.note = answer.note
@@ -67,6 +76,8 @@ export async function loadConnectors(workspace = hub.workspace) {
   } catch (error) {
     connectors.error = error?.message || 'Could not read this workspace\'s connectors.'
     connectors.rows = []
+    connectors.available = []
+    connectors.machine = []
     connectors.loaded = false
     return []
   } finally {
@@ -110,8 +121,31 @@ export async function probeConnectors({ workspace = hub.workspace, force = false
 /* ── the verbs ─────────────────────────────────────────────────────── */
 
 /** `Add connector` writes to the workspace by default: it is the case that syncs. */
-export async function addConnector({ id, label, kind }) {
-  const answer = await call('connector.add', { workspace: hub.workspace, id, label, kind })
+export async function addConnector({ id, label, kind, command, url, args, env, binary, verify }) {
+  const answer = await call('connector.add', {
+    workspace: hub.workspace,
+    id,
+    label,
+    kind,
+    command,
+    url,
+    args,
+    env,
+    binary,
+    verify,
+  })
+  adopt(answer)
+  return answer
+}
+
+export async function installConnector(id) {
+  const answer = await call('connector.install', { workspace: hub.workspace, id })
+  adopt(answer)
+  return answer
+}
+
+export async function uninstallConnector(id) {
+  const answer = await call('connector.uninstall', { workspace: hub.workspace, id })
   adopt(answer)
   return answer
 }
@@ -143,7 +177,7 @@ export async function removeConnector(id) {
  * `verify.path` expecting 2xx. A failure is the service's sentence plus the one
  * fact that matters — nothing was written.
  */
-export async function testConnector({ kind, id, token, host } = {}) {
+export async function testConnector({ kind, id, token, host, verify, binary } = {}) {
   if (kind === 'mcp') {
     const answer = await call('mcp.tools', { workspace: hub.workspace, name: id })
     const count = Array.isArray(answer?.tools) ? answer.tools.length : 0
@@ -153,8 +187,20 @@ export async function testConnector({ kind, id, token, host } = {}) {
     }
   }
   if (kind === 'cli') {
-    const answer = await call('integration.test', { workspace: hub.workspace, id })
-    return { ok: true, detail: answer?.detail || 'The CLI answered.' }
+    /* `integrations.test`, not `integration.test`: the call table registers the
+       plural, the same noun as the store that answers it. */
+    /* A shipped row is tested by the app's own code; a custom one carries the
+       self-report its person declared, so the call needs both. */
+    const answer = await call('integrations.test', { workspace: hub.workspace, id, verify, binary })
+    /* Carry the probe's own facts through: a project list or an identity is the
+       difference between "it answered" and "it is the one I meant". */
+    return {
+      ok: true,
+      detail: answer?.detail || 'The CLI answered.',
+      samples: Array.isArray(answer?.samples) ? answer.samples : [],
+      total: answer?.total ?? null,
+      samplesLabel: answer?.samplesLabel || '',
+    }
   }
   /* rest: the credential write is itself the verify (it is rolled back on
      failure), so the test is the same call the save makes */
@@ -167,5 +213,6 @@ export async function testConnector({ kind, id, token, host } = {}) {
   return {
     ok: true,
     detail: answer?.host ? `${answer.host} · token verified` : 'The endpoint answered.',
+    samples: answer?.host ? [answer.host] : [],
   }
 }

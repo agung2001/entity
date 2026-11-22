@@ -38,8 +38,19 @@ const mcpTools = require('./mcp-tools.cjs')
 const mcpRuntime = require('./mcp-runtime.cjs')
 const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
+const catalog = require('./connector-catalog.cjs')
 
-const KINDS = new Set(['orca', 'artifact', 'maka', 'youtrack', 'github', 'thread'])
+/* The heads the parser accepts, derived from the catalog rather than written a
+   second time here. A connector that ships a resolver contributes its mention; one
+   without a resolver contributes nothing, so a custom connector can never offer a
+   `@id:` form that would resolve to silence. `KINDS` stays a Set of bare heads
+   because that is what the parser compares against. */
+const KINDS = new Set(
+  catalog
+    .mentionKinds()
+    .map((entry) => String(entry.name || '').replace(/^@/, '').replace(/:$/, ''))
+    .filter(Boolean),
+)
 
 const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 12

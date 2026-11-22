@@ -99,22 +99,10 @@ const navigationItems = computed(() => [
     act: () => router.push('/account/notifications'),
   },
   {
-    id: 'nav:account-mcp',
-    label: 'MCP server',
-    meta: 'Status, bearer token and tools',
-    act: () => router.push('/account/mcp'),
-  },
-  {
     id: 'nav:account-harnesses',
     label: 'Harnesses',
     meta: 'enable and disable agent CLIs on this machine',
     act: () => router.push('/account/harnesses'),
-  },
-  {
-    id: 'nav:account-integrations',
-    label: 'Connectors',
-    meta: 'services this workspace can reach, and each one’s scope',
-    act: () => router.push('/account/integrations'),
   },
   {
     id: 'nav:account-backups',
@@ -151,12 +139,6 @@ const navigationItems = computed(() => [
     label: 'Skills',
     meta: 'Workspace skills and harness libraries',
     act: () => router.push({ name: 'skills', params: { workspace: hub.workspace } }),
-  },
-  {
-    id: 'nav:mcp',
-    label: 'MCP',
-    meta: 'Workspace servers and global configs',
-    act: () => router.push({ name: 'mcp', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:machines',

@@ -222,9 +222,17 @@ function createRpc({
     /* Orca project names for the composer's `@` menu; cached in main for a minute.
        The `gated` map rides along because the menu, not the resolver, is where an
        integration that is off stops being offered (see Account → Integrations). */
-    'mention.sources': async () => ({
+    /* The composer's kind list comes from the connector catalog — the same table
+       the roster renders — so the menu and the page cannot disagree about what a
+       mention does. `integrations` stays for the three machine-wide switches
+       (they gate a *scope*, not a syntax); a kind with no shipped resolver is
+       never in `kinds`, which is why a custom connector has no `@id:` form. */
+    'mention.sources': async ({ workspace } = {}) => ({
       ...(await mentionRef.sources()),
       integrations: await integrations.enabled(),
+      /* Gated by the catalog *and* by this workspace's installation — an
+         uninstalled connector is a row in the Built-in tab, not a syntax. */
+      kinds: connectorStore.mentionKinds({ workspace }),
     }),
     /* the worktree a delegated row works in, *now* — the renderer sends a
        ticket key and the run's cwd, and only a path Orca itself returned is

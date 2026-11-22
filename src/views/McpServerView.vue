@@ -28,6 +28,10 @@ const router = useRouter()
 const name = computed(() => String(route.params.name || ''))
 const poolServers = computed(() => workspaces.mcp?.servers || {})
 const poolDisabled = computed(() => workspaces.mcp?.disabled || {})
+
+/* This server's shipped mention contract, if the catalog knows it. The roster and
+   this page render the same block from the same table, so they cannot disagree. */
+const work = ref(null)
 const inPool = computed(
   () => Boolean(poolServers.value[name.value]) || Boolean(poolDisabled.value[name.value]),
 )
@@ -1021,6 +1025,11 @@ onMounted(async () => {
   window.addEventListener('keydown', onKey)
   await loadGlobal()
   await loadTools()
+  try {
+    work.value = await call('connector.work', { id: name.value })
+  } catch {
+    work.value = null
+  }
 })
 
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
@@ -1248,6 +1257,25 @@ watch(name, async () => {
               <template v-if="index">, </template><b>{{ place.label }}</b>
             </template>.
           </p>
+
+          <p v-if="work" class="entp-rail-h">In the chat</p>
+          <div v-if="work" class="mcpp-work">
+            <p>
+              <code class="mono">{{ work.mention }}</code>
+              resolves <strong>{{ work.resolves }}</strong>.
+            </p>
+            <p class="mcpp-work-syntax"><code class="mono">{{ work.syntax }}</code></p>
+            <ul>
+              <li v-for="example in work.examples" :key="example">
+                <code class="mono">{{ example }}</code>
+              </li>
+            </ul>
+            <p class="mcpp-work-returns">{{ work.returns }}.</p>
+            <p class="mcpp-work-needs">
+              <template v-if="work.needs">Needs {{ work.needs }}.</template>
+              Resolved by Entity's <code class="mono">{{ work.resolver }}</code> resolver.
+            </p>
+          </div>
 
           <p class="entp-rail-h">Manage</p>
           <div class="entp-rail-actions">

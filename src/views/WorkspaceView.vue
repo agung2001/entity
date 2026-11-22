@@ -5,7 +5,6 @@ import ActivityView from '@/views/ActivityView.vue'
 import WorkspaceChatsView from '@/views/WorkspaceChatsView.vue'
 import WorkspaceArtifactsView from '@/views/WorkspaceArtifactsView.vue'
 import SkillsView from '@/views/SkillsView.vue'
-import McpView from '@/views/McpView.vue'
 import ConnectorsView from '@/views/ConnectorsView.vue'
 import MachinesView from '@/views/MachinesView.vue'
 import { ROLES, hub, roleById, toast } from '@/stores/hub'
@@ -20,7 +19,7 @@ import { activeWorkspace, updateWorkspace } from '@/stores/workspaces'
 const router = useRouter()
 const route = useRoute()
 const current = computed(() => activeWorkspace.value)
-const TABS = ['general', 'members', 'skills', 'connectors', 'mcp', 'machines', 'chats', 'artifacts', 'activity']
+const TABS = ['general', 'members', 'skills', 'connectors', 'machines', 'chats', 'artifacts', 'activity']
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
 
 /* The tab is part of the URL, so a link can land on Activity and Back works. */
@@ -174,11 +173,13 @@ async function save() {
 </script>
 
 <template>
-  <!-- Machines is drawn as the entity profile page — its own second row and the
-     detail measure — so this tab carries `.detail-view` and pays no gutter of
-     its own: the bar and the sections inside it pad themselves. Every other
-     settings tab keeps the narrow `.view` measure. -->
-  <div :class="tab === 'machines' ? 'view detail-view' : 'view'">
+  <!-- Machines and Connectors are lists that open a detail pane, so they are drawn
+     with the detail measure rather than the narrow settings column: a five-column
+     roster beside a reading rail would have ~178px for its identity. Both carry
+     `.detail-view` and pay no gutter of their own — the bar and the sections
+     inside them pad themselves. Every other settings tab keeps the narrow
+     `.view` measure. -->
+  <div :class="tab === 'machines' || tab === 'connectors' ? 'view detail-view' : 'view'">
     <div v-if="tab === 'general' || tab === 'members'" class="acct-page ws-page">
       <form class="acct-card" @submit.prevent="save">
         <template v-if="tab === 'general'">
@@ -346,7 +347,6 @@ async function save() {
 
     <SkillsView v-else-if="tab === 'skills'" embedded />
     <ConnectorsView v-else-if="tab === 'connectors'" embedded />
-    <McpView v-else-if="tab === 'mcp'" embedded />
     <MachinesView v-else-if="tab === 'machines'" embedded />
     <WorkspaceChatsView v-else-if="tab === 'chats'" />
     <WorkspaceArtifactsView v-else-if="tab === 'artifacts'" />

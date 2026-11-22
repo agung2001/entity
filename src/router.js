@@ -14,8 +14,8 @@ const ChatView = () => import('@/views/ChatView.vue')
 const EntityDetailView = () => import('@/views/EntityDetailView.vue')
 const SkillsView = () => import('@/views/SkillsView.vue')
 const SkillDetailView = () => import('@/views/SkillDetailView.vue')
-const McpView = () => import('@/views/McpView.vue')
 const McpServerView = () => import('@/views/McpServerView.vue')
+const ConnectorPageView = () => import('@/views/ConnectorPageView.vue')
 const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
 const MachinesView = () => import('@/views/MachinesView.vue')
 const MachineDetailView = () => import('@/views/MachineDetailView.vue')
@@ -197,10 +197,26 @@ const router = createRouter({
           meta: { crumb: 'connectors', title: 'Connectors · entity' },
         },
         {
+          /* The bulk MCP list is the Connectors roster now. This address keeps
+             working as a redirect — the rail's MCP tab, old links and the
+             `:workspace/mcp/:name` page it used to lead to all still resolve. */
           path: ':workspace/mcp',
           name: 'mcp',
-          component: McpView,
-          meta: { crumb: 'mcp', title: 'MCP · entity' },
+          redirect: (to) => ({
+            name: 'workspace',
+            params: { workspace: to.params.workspace },
+            query: { ...to.query, tab: 'connectors' },
+          }),
+          meta: { crumb: 'connectors', title: 'Connectors · entity' },
+        },
+        {
+          /* A cli/rest connector's own page. An MCP server is not drawn here: it
+             already has `:workspace/mcp/:name`, which knows its transport, tools
+             and binding, and the row links to whichever fits its kind. */
+          path: ':workspace/connectors/:id',
+          name: 'connector-page',
+          component: ConnectorPageView,
+          meta: { crumb: 'connectors', title: 'Connector · entity' },
         },
         {
           path: ':workspace/mcp/:name',
