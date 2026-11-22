@@ -12,7 +12,7 @@ import EntityLearnDialog from '@/components/EntityLearnDialog.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ModelInput from '@/components/ModelInput.vue'
 import PickMenu from '@/components/PickMenu.vue'
-import PreferPicker from '@/components/PreferPicker.vue'
+import StartFromShelf from '@/components/StartFromShelf.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import {
@@ -26,8 +26,10 @@ import {
   toast,
 } from '@/stores/hub'
 import {
+  entities,
   findEntity,
   loadEntities,
+  movePreferredSkill,
   revealEntity,
   saveEntity,
   togglePreferredSkill,
@@ -114,14 +116,29 @@ const threadLink = (thread) => ({
 const statusState = computed(() =>
   agent.value?.status === 'running' ? 'live' : agent.value?.status === 'error' ? 'fail' : 'idle',
 )
-/* The entity's own bookmark order, with the workspace's answer beside each name.
-   A name the workspace does not have is a note, not a problem: `prefer:` is a
-   bookmark, so a stale entry never makes the entity wrong. */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/* The one sentence that kills the permission reading. The word `only` does the
+   work; the empty state says the same thing in its own words. */
+const noteLine = `Order only. Every workspace skill stays reachable in this entity's / menu — these just sit at the top of it.`
+
+/* The entity's own bookmark order — file order, and the row number is the
+   position the `/` menu gives it. A name the workspace does not have is a note,
+   not a problem: `prefer:` is a bookmark, so a stale entry never makes the
+   entity wrong, and it keeps its index. */
 const preferred = computed(() =>
-  (agent.value?.prefer || []).map((name) => ({
-    name,
-    present: hub.skills.some((skill) => skill.name === name && !skill.missing),
-  })),
+  (agent.value?.prefer || []).map((name) => {
+    const skill = hub.skills.find((item) => item.name === name && !item.missing)
+    return {
+      key: name,
+      name,
+      present: Boolean(skill),
+      /* the manifest the row links to already has both numbers */
+      meta: skill ? [Number.isFinite(skill.files) ? plural(skill.files, 'file') : '', skill.size].filter(Boolean).join(' · ') : '',
+      /* a gone name has no page to open: it is a note in the file, not a link */
+      to: skill ? { name: 'skill', params: { workspace: route.params.workspace, name } } : null,
+    }
+  }),
 )
 
 /* What the picker offers: every callable skill the workspace actually has. A
@@ -140,18 +157,39 @@ const skillChoices = computed(() => {
 })
 
 const preferBusy = ref('')
+const preferError = ref(null)
 
-/* Both pickers write the same `prefer:` line through the same store call. */
-async function togglePrefer(name) {
-  if (!agent.value || preferBusy.value) return
-  preferBusy.value = name
+/* Both the sheet and the shelf write the same `prefer:` line through the same
+   store call. A rejection is reported in the shelf, next to the card it left
+   unchanged — the file path is the thing a person can act on. */
+async function writePrefer(fn) {
+  if (!agent.value) return
+  preferError.value = null
   try {
-    await togglePreferredSkill(agent.value.name, name)
+    await fn()
   } catch (error) {
-    toast(error?.message || 'The bookmark could not be written to the file.')
+    preferError.value = {
+      file: agent.value.displayPath || `entities/${agent.value.name}.md`,
+      message: error?.message || 'the bookmark could not be written to the file.',
+    }
   } finally {
     preferBusy.value = ''
   }
+}
+
+function togglePrefer(name) {
+  if (!agent.value || preferBusy.value) return
+  preferBusy.value = name
+  return writePrefer(() => togglePreferredSkill(agent.value.name, name))
+}
+
+function movePrefer(rowKey, direction) {
+  if (!agent.value) return
+  const from = (agent.value.prefer || []).indexOf(rowKey)
+  const to = direction === 'up' ? from - 1 : from + 1
+  if (from < 0 || to < 0 || to >= (agent.value.prefer || []).length) return
+  preferBusy.value = rowKey
+  return writePrefer(() => movePreferredSkill(agent.value.name, from, to))
 }
 
 /* ── config diff ──────────────────────────────────────────────────── */
@@ -441,44 +479,25 @@ async function copyPath() {
           </section>
 
           <section class="entp-sec">
-            <div class="entp-sec-head">
-              <h2>Starts from</h2>
-              <span class="n">{{ preferred.length }} first · {{ hub.skills.length }} available</span>
-              <PreferPicker
-                class="entp-prefer"
-                head="Skills to start from"
-                label="Add skill"
-                :options="skillChoices"
-                :disabled="Boolean(preferBusy)"
-                @toggle="togglePrefer"
-              />
-            </div>
-            <div v-if="preferred.length" class="entp-chips">
-              <span v-for="skill in preferred" :key="skill.name" class="entp-skpick">
-                <router-link
-                  class="entp-skchip"
-                  :data-gone="skill.present ? '0' : '1'"
-                  :to="{ name: 'skill', params: { workspace: route.params.workspace, name: skill.name } }"
-                >
-                  <i></i>{{ skill.name }}<template v-if="!skill.present"> · gone · not in this workspace</template>
-                </router-link>
-                <button
-                  class="entp-skx"
-                  type="button"
-                  :disabled="Boolean(preferBusy)"
-                  :aria-label="`Stop starting from ${skill.name}`"
-                  title="Remove from this entity's file"
-                  @click="togglePrefer(skill.name)"
-                >×</button>
-              </span>
-            </div>
-            <p class="entp-note">
-              <template v-if="preferred.length">
-                A starting point, not a grant — every workspace skill stays reachable in
-                this entity's / menu.
-              </template>
-              <template v-else>no preference — the / menu is in its default order</template>
-            </p>
+            <StartFromShelf
+              head="Starts from"
+              :count="`${preferred.length} of ${plural(hub.skills.length, 'skill')}`"
+              add-label="Add skill"
+              add-head="Skills to start from"
+              kind="skill"
+              :pick-options="skillChoices"
+              :rows="preferred"
+              :loading="entities.loading"
+              :disabled="saving"
+              :busy="preferBusy"
+              :error="preferError"
+              :note="preferred.length ? noteLine : ''"
+              empty-title="No starting point yet."
+              :empty-body="`The / menu lists every workspace skill in its default order.`"
+              @toggle="togglePrefer"
+              @move="movePrefer"
+              @remove="togglePrefer"
+            />
           </section>
         </div>
 
