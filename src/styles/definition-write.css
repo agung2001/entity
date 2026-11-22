@@ -40,9 +40,11 @@
   align-self: baseline;
 }
 .dw-mark.mark {
-  width: 22px;
-  height: 22px;
-  margin-right: 1px;
+  /* 26px, not the 30px default: the head is a 12px text row, and the sticker
+     needs room to stay legible without the block becoming its own line. */
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
 }
 /* `mark` is on the element itself, so the settled size needs both classes to
    beat `.dw-mark.mark`'s 22px. It is one line tall: no mood sticker. */
@@ -54,16 +56,19 @@
 .dw-mark--settled .mood {
   display: none;
 }
-/* the sticker is 18px on a 22px block: it would cover the whole face, so the
-   card pins it to the corner a hair tighter than the list rows do */
+/* The sticker keeps the app's readable size (`--fs-secondary`, the same as a
+   list row) rather than being shrunk to fit the block. At `--fs-micro` on a
+   22px mark it renders as a smudge — a 9px emoji is not an emoji anyone can
+   name, which defeats the point of showing it. Slightly larger block, and the
+   corner pin moves out by the difference so the face stays clear. */
 .dw-mark .mood {
-  right: -7px;
+  right: -8px;
   bottom: -6px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 2px;
-  border-radius: var(--r-pill);
-  font-size: var(--fs-micro);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  font-size: var(--fs-secondary);
+  line-height: 1;
 }
 .dw-kick {
   font-family: var(--mono);
