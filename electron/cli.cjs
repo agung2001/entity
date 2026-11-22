@@ -246,7 +246,13 @@ function runEntity(action, rest, flags, target, output) {
       else if (typeof flags['body-file'] === 'string') {
         spec.body = fs.readFileSync(path.resolve(flags['body-file']), 'utf8')
       } else if (typeof flags.body === 'string') spec.body = flags.body
-      return emitJson(unwrap(core.call('entity.create', { workspace, name, spec })))
+      const result = core.call('entity.create', { workspace, name, spec })
+      /* A parked create names the command to repeat once it is applied, the same
+         way a parked rewrite does. */
+      if (result?.code === 'needs_consent' && result.data && !result.data.command) {
+        result.data.command = `entity create ${name} --body-stdin`
+      }
+      return emitJson(unwrap(result))
     }
 
     case 'clone': {

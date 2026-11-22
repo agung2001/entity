@@ -201,9 +201,7 @@ const verbs = {
 
     /* No skill or MCP list: those belong to the workspace and every entity gets
        all of them, so there is nothing here to validate or to store. */
-    const created = entities.scaffold({
-      workspace: record.id,
-      name: safe,
+    const fields = {
       harness,
       model: text(input.model ?? '', 'model'),
       description: text(input.description ?? '', 'description'),
@@ -212,6 +210,34 @@ const verbs = {
       mood: text(input.mood ?? '', 'mood'),
       dir,
       body: text(input.body ?? '', 'body'),
+    }
+
+    /* A run may not add an agent to the roster unasked — a new entity is a new
+       standing prompt, and the person should read it before it exists. Every
+       check above already ran, so "that name is taken" fails the run rather
+       than parking a request no card could apply. */
+    if (String(process.env.ENTITY_ENTITY || '').trim()) {
+      const request = pendingWrites.write(record, {
+        at: new Date().toISOString(),
+        workspace: record.id,
+        kind: 'create',
+        name: safe,
+        ...fields,
+        sha256: crypto.createHash('sha256').update(JSON.stringify(fields)).digest('hex'),
+        requestedBy: String(process.env.ENTITY_ENTITY || ''),
+      })
+      throw new PlatformError(
+        'needs_consent',
+        `${safe}.md is waiting for the person to create it. Nothing was written. ` +
+          'Ask them to apply it in the window.',
+        { request },
+      )
+    }
+
+    const created = entities.scaffold({
+      workspace: record.id,
+      name: safe,
+      ...fields,
     })
     const bytes = Buffer.byteLength(created.instructions)
     audit.append(record, { verb: 'entity.create', target: created.name, harness, bytes })
@@ -363,6 +389,7 @@ const verbs = {
       const request = pendingWrites.write(record, {
         at: new Date().toISOString(),
         workspace: record.id,
+        kind: 'write',
         name: entity.name,
         body,
         previousBody: entity.instructions,

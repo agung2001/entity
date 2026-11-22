@@ -278,6 +278,19 @@
   color: var(--muted);
 }
 
+/* The brief a create would write: the file itself, not a diff of it. Same body,
+   same cap, same mono — so the two decisions read as one card. */
+.dw-brief-body {
+  margin: 0;
+  padding: 8px 9px;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ⑥ the target: the path that is written, once, next to a copy */
 .dw-target {
   display: flex;

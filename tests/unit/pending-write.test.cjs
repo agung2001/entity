@@ -73,6 +73,7 @@ test('approval writes only the body the person was shown', async (t) => {
   const proposal = pendingWrites.write(record, {
     at: new Date().toISOString(),
     workspace: workspace.id,
+    kind: 'write',
     name: 'researcher',
     body: `${before}\n\nCite the counter-paper.\n`,
     previousBody: before,
@@ -97,5 +98,74 @@ test('approval writes only the body the person was shown', async (t) => {
   assert.equal((await rpc.call('write.dismiss', { workspace: workspace.id, id: 'stale' })).data.dismissed, false)
   assert.equal(pendingWrites.read(record)?.id, first.id)
   assert.equal((await rpc.call('write.dismiss', { workspace: workspace.id, id: first.id })).data.dismissed, true)
+  assert.equal(pendingWrites.read(record), null)
+})
+
+/* A create is the same decision about a different file: a standing prompt that
+   does not exist yet. The window re-runs the verb as a person, so a name taken
+   between the ask and the click is a conflict, not a second entity. */
+test('approval creates only the entity the person was shown', async (t) => {
+  const workspace = workspaces.create({ label: 'create-consent' })
+  const record = workspaces.open(workspace.id)
+
+  process.env.ENTITY_ENTITY = 'coder'
+  let parked
+  try {
+    parked = platform.call('entity.create', {
+      workspace: workspace.id,
+      name: 'test',
+      spec: { harness: 'pi', description: 'A dummy entity for testing. It likes jokes.' },
+    })
+  } finally {
+    delete process.env.ENTITY_ENTITY
+  }
+  assert.equal(parked.ok, false)
+  assert.equal(parked.code, 'needs_consent')
+  assert.equal(entities.read(workspace.id, 'test'), null, 'the run created the entity anyway')
+
+  const rpc = createRpc({ emit: () => {} })
+  t.after(() => rpc.closeAll())
+
+  const pending = await rpc.call('write.pending', { workspace: workspace.id })
+  assert.equal(pending.data.kind, 'create')
+  assert.equal(pending.data.name, 'test')
+  assert.match(pending.data.displayPath, /entities\/test\.md$/)
+
+  const shown = await rpc.call('write.proposal', { workspace: workspace.id, id: pending.data.id })
+  assert.equal(shown.data.kind, 'create')
+  assert.match(shown.data.description, /likes jokes/)
+
+  /* Somebody made it first: approval refuses rather than overwriting anything. */
+  entities.scaffold({ workspace: workspace.id, name: 'test', harness: 'claude' })
+  const raced = await rpc.call('write.approve', { workspace: workspace.id, id: pending.data.id })
+  assert.equal(raced.ok, false)
+  assert.match(raced.error, /already exists/)
+  assert.equal(entities.read(workspace.id, 'test').harness, 'claude', 'the raced file was overwritten')
+  assert.equal(pendingWrites.read(record)?.id, pending.data.id, 'a conflict cleared the request')
+
+  /* Cleared, then proposed again: the approval writes the brief that was read. */
+  await rpc.call('write.dismiss', { workspace: workspace.id, id: pending.data.id })
+  entities.remove({ workspace: workspace.id, name: 'test' })
+  const second = pendingWrites.write(record, {
+    at: new Date().toISOString(),
+    workspace: workspace.id,
+    kind: 'create',
+    name: 'test',
+    harness: 'pi',
+    model: '',
+    description: 'A dummy entity for testing. It likes jokes.',
+    shape: '',
+    color: '',
+    mood: '',
+    dir: '~',
+    body: '',
+    sha256: 'x',
+    requestedBy: 'coder',
+  })
+  const created = await rpc.call('write.approve', { workspace: workspace.id, id: second.id })
+  assert.equal(created.ok, true, created.error)
+  assert.equal(created.data.name, 'test')
+  assert.equal(created.data.harness, 'pi')
+  assert.match(created.data.instructions, /likes jokes/)
   assert.equal(pendingWrites.read(record), null)
 })

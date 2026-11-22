@@ -34,6 +34,12 @@ append to `audit.jsonl`: the command already writes the file and its audit row.
 Do not inspect the Entity source tree to learn the format — `entity get` shows
 the full frontmatter, including the mark keys.
 
+A create is a consent path too: `entity create` returns `needs_consent` and
+writes nothing until the person applies the card in the window, because a new
+file is a new standing prompt. Tell them the name and the one-line purpose, then
+retry the same command after they apply it. A name already taken is a `conflict`
+and fails the run rather than parking anything.
+
 If someone asks you to create a new workspace skill, propose the name and the
 one-line description first, then write it with `skill create`. The new skill is
 attached to this workspace and usable as `/workspace:<name>` immediately; do not

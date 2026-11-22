@@ -43,6 +43,9 @@ const settledAt = ref('')
 let armTimer = null
 
 const name = computed(() => props.request?.name || '')
+/* Which decision this is: `write` rewrites a body, `create` adds a new file. */
+const kind = computed(() => props.request?.kind || 'write')
+const isCreate = computed(() => kind.value === 'create')
 const previousBytes = computed(() => Number(props.request?.previousBytes || 0))
 const bytes = computed(() => Number(props.request?.bytes || 0))
 const escKey = shortcutLabel('escape')
@@ -57,7 +60,9 @@ onMounted(async () => {
   try {
     const read = await pendingWriteProposal(props.workspace, props.request.id)
     proposal.value = read
-    rows.value = diffRows(read.previousBody, read.body)
+    /* A create has no "before" to diff: it shows the brief the new file will
+       carry. A rewrite shows what would change. */
+    rows.value = read.kind === 'create' ? [] : diffRows(read.previousBody, read.body)
     phase.value = 'ready'
   } catch (failure) {
     cause.value = String(failure?.message || failure)
@@ -78,7 +83,19 @@ onBeforeUnmount(() => {
 })
 
 /** Whether a body was read at all; the count strip and the table depend on it. */
-const loaded = computed(() => phase.value !== 'loading' && rows.value.length > 0)
+const loaded = computed(() => phase.value !== 'loading' && (isCreate.value || rows.value.length > 0))
+
+/** The brief a new entity would carry — the same shape `scaffold` writes when no
+    custom body is given, so the card shows the file rather than a summary of it. */
+const briefBody = computed(() => {
+  const read = proposal.value || {}
+  const body = String(read.body || '').trim()
+  if (body) return body
+  const one = String(read.description || '').trim()
+  return `# ${name.value}\n\n${one || 'What this entity is for.'}\n\n## Rules\n- One rule per line.\n`
+})
+const briefLines = computed(() => briefBody.value.split('\n').filter((line) => line.length > 0).length)
+const briefBytes = computed(() => new TextEncoder().encode(briefBody.value).length)
 
 const changed = computed(() => rows.value.filter((row) => row.kind !== 'same').length)
 const added = computed(() => rows.value.filter((row) => row.kind === 'add' || row.kind === 'change').length)
@@ -102,9 +119,12 @@ const settled = computed(() => phase.value === 'applied' || phase.value === 'dis
 const busy = computed(() => phase.value === 'busy')
 
 /* `ready` has three outcomes of its own, so it is named here rather than left to
-   the template: Apply must not be offered where pressing it would be a lie. */
+   the template: Apply must not be offered where pressing it would be a lie. A
+   create has no diff to be identical to and nothing to cap — its brief is one
+   small file — so it is always decidable. */
 const state = computed(() => {
   if (phase.value !== 'ready') return phase.value
+  if (isCreate.value) return 'pending'
   if (!changed.value) return 'identical'
   if (changed.value > CAP) return 'large'
   return 'pending'
@@ -125,13 +145,21 @@ const variant = computed(() => {
 })
 
 const title = computed(() => {
-  if (state.value === 'loading') return `Reading ${name.value}.md to build the diff`
+  const rewrite = `${name.value} wants to rewrite its instructions`
+  const create = `${name.value} wants to join this workspace`
+  if (state.value === 'loading') {
+    return isCreate.value ? `Reading the brief for ${name.value}.md` : `Reading ${name.value}.md to build the diff`
+  }
   if (state.value === 'identical') return 'The proposal is the file\u2019s current content'
   if (state.value === 'large') return 'This is a rewrite, not an edit'
   if (state.value === 'denied') return 'Refused before it was built'
-  if (state.value === 'stale') return `${name.value}.md moved under the proposal`
-  if (state.value === 'failed') return 'The diff is fine; the write was not'
-  return `${name.value} wants to rewrite its instructions`
+  if (state.value === 'stale') {
+    return isCreate.value ? `${name.value}.md exists now` : `${name.value}.md moved under the proposal`
+  }
+  if (state.value === 'failed') {
+    return isCreate.value ? 'The brief is fine; the create was not' : 'The diff is fine; the write was not'
+  }
+  return isCreate.value ? create : rewrite
 })
 
 const tag = computed(() => {
@@ -183,6 +211,16 @@ const banner = computed(() => {
     }
   }
   if (state.value === 'stale') {
+    /* A create cannot go stale from a drift — it goes stale when somebody added
+       the file first, which is the same answer: read it again, do not clobber. */
+    if (isCreate.value) {
+      return {
+        info: false,
+        alert: true,
+        head: `${name.value}.md already exists in this workspace.`,
+        body: 'This proposal would have created it. Nothing was written — pick another name, or edit the file that is there.',
+      }
+    }
     return {
       info: false,
       alert: true,
@@ -231,6 +269,12 @@ const primaryLabel = computed(() => {
 })
 
 const summary = computed(() => {
+  if (isCreate.value && loaded.value) {
+    const read = proposal.value || {}
+    const where = String(read.dir || '~')
+    const harness = String(read.harness || 'the default harness')
+    return `${harness} · ${where} · ${briefLines.value} lines · frontmatter is new`
+  }
   if (!loaded.value) {
     return state.value === 'loading'
       ? 'Reading the file to build the diff'
@@ -243,9 +287,17 @@ const summary = computed(() => {
 
 const settledLine = computed(() => {
   if (state.value === 'applied') {
-    return { out: 'ok', head: `${name.value}.md written`, rest: `${changed.value} lines changed · ${delta.value}` }
+    return {
+      out: 'ok',
+      head: `${name.value}.md written`,
+      rest: isCreate.value ? 'added to the roster' : `${changed.value} lines changed · ${delta.value}`,
+    }
   }
-  return { out: 'none', head: 'Not applied', rest: `${name.value}.md is unchanged` }
+  return {
+    out: 'none',
+    head: 'Not applied',
+    rest: isCreate.value ? `${name.value}.md was not created` : `${name.value}.md is unchanged`,
+  }
 })
 
 /** The cell shade for one side of a row; `blank` is the empty half of an insert
@@ -311,7 +363,8 @@ async function apply() {
 }
 
 async function copyBody() {
-  const body = proposal.value?.body
+  /* A rewrite copies the proposal; a create copies the brief it would write. */
+  const body = isCreate.value ? briefBody.value : proposal.value?.body
   if (!body) return
   const copied = await copyText(body)
   toast(copied ? 'Proposed instructions copied' : 'Could not copy to the clipboard')
@@ -352,17 +405,23 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
       </div>
       <div class="dw-foot">
         <span class="dw-sum">
-          audit <b>entity.setInstructions</b> ·
+          audit <b>{{ isCreate ? 'entity.create' : 'entity.setInstructions' }}</b> ·
           {{ state === 'applied' ? 'applied by you' : 'not applied' }}
         </span>
         <span class="dw-acts">
-          <button class="dw-lk" type="button" @click="showDiff = !showDiff">
+          <button v-if="!isCreate" class="dw-lk" type="button" @click="showDiff = !showDiff">
             {{ showDiff ? 'Hide what changed' : 'Show what changed' }}
+          </button>
+          <button v-else class="dw-lk" type="button" @click="showDiff = !showDiff">
+            {{ showDiff ? 'Hide the brief' : 'Show the brief' }}
           </button>
           <button class="dw-lk dw-copy" type="button" @click="copyBody">Copy body</button>
         </span>
       </div>
-      <div v-if="showDiff" class="dw-diff" role="table" :aria-label="`What changed in ${name}.md`">
+      <div v-if="showDiff && isCreate" class="dw-diff dw-brief" role="region" :aria-label="`The brief ${name}.md carries`">
+        <pre class="dw-brief-body"><code>{{ briefBody }}</code></pre>
+      </div>
+      <div v-else-if="showDiff" class="dw-diff" role="table" :aria-label="`What changed in ${name}.md`">
         <div class="dw-diff-head" role="row">
           <span class="wide" role="columnheader">Current instructions</span>
           <span class="wide" role="columnheader">Proposed</span>
@@ -383,7 +442,7 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
 
     <template v-else>
       <div class="dw-head">
-        <span class="dw-kick">Write · {{ name }}.md</span>
+        <span class="dw-kick">{{ isCreate ? 'Create' : 'Write' }} · {{ name }}.md</span>
         <span class="dw-title">{{ title }}</span>
         <span class="dw-tag">{{ tag }}</span>
       </div>
@@ -394,8 +453,14 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
         <span>asked by <b>{{ request.requestedBy || name }}</b></span>
         <i v-if="askedAgo" aria-hidden="true">·</i>
         <span v-if="askedAgo">{{ askedAgo }}</span>
-        <i aria-hidden="true">·</i>
-        <span>read at <b>{{ stampBytes }}</b> bytes</span>
+        <template v-if="!isCreate">
+          <i aria-hidden="true">·</i>
+          <span>read at <b>{{ stampBytes }}</b> bytes</span>
+        </template>
+        <template v-else-if="proposal">
+          <i aria-hidden="true">·</i>
+          <span>new file · <b>{{ proposal.harness || 'default harness' }}</b></span>
+        </template>
       </p>
 
       <div
@@ -418,7 +483,15 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
         </span>
       </div>
 
-      <div v-if="loaded && state !== 'large' && state !== 'identical'" class="dw-count">
+      <!-- A create has no delta to count: it states the fields the new file gets,
+           which is the whole of what a person is agreeing to. -->
+      <div v-if="isCreate && loaded" class="dw-count">
+        <span class="dw-chip" data-kind="add"><b>{{ briefLines }}</b> lines</span>
+        <span class="dw-chip"><b>{{ proposal?.harness || 'default' }}</b> harness</span>
+        <span class="dw-chip" v-if="proposal?.dir"><b>{{ proposal.dir }}</b></span>
+        <span class="dw-bytes">{{ size(briefBytes) }} new file</span>
+      </div>
+      <div v-else-if="loaded && state !== 'large' && state !== 'identical'" class="dw-count">
         <span class="dw-chip" data-kind="change"><b>{{ changed }}</b> changed</span>
         <span class="dw-chip" data-kind="add"><b>{{ added }}</b> added</span>
         <span class="dw-chip" data-kind="del"><b>{{ removed }}</b> removed</span>
@@ -430,6 +503,18 @@ useDialogDismiss({ active: () => !settled.value, close: dismiss, guard: () => bu
            how a card teaches somebody to press Apply blind. -->
       <div v-if="state === 'loading'" class="dw-diff dw-skel" aria-hidden="true">
         <span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span>
+      </div>
+
+      <!-- A create shows the file it would add, whole: the brief is the thing a
+           person is agreeing to, and there is no "before" to compare it to. -->
+      <div
+        v-else-if="isCreate && loaded && state !== 'large'"
+        class="dw-diff dw-brief"
+        :data-stale="state === 'stale' ? '1' : '0'"
+        role="region"
+        :aria-label="`The brief ${name}.md would carry`"
+      >
+        <pre class="dw-brief-body"><code>{{ briefBody }}</code></pre>
       </div>
 
       <div
