@@ -76,9 +76,6 @@ const MIME = {
 }
 
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', '.svg'])
-/* A dashboard is inert JSON with a suffix of its own: it is a kind (its own row,
-   its own icon, its own page) and not a text file the editor should open. */
-const DASHBOARD_EXT = '.dashboard'
 const TEXT_EXT = new Set([
   '.md',
   '.txt',
@@ -309,9 +306,6 @@ function mimeFor(name) {
 function kindFor(name) {
   const ext = path.extname(String(name || '')).toLowerCase()
   if (IMAGE_EXT.has(ext)) return 'image'
-  /* A dashboard is claimed before the generic `text` rule: it is JSON on disk,
-     but the shelf row, the icon and the page it opens are all its own kind. */
-  if (ext === DASHBOARD_EXT) return 'dashboard'
   if (TEXT_EXT.has(ext) || mimeFor(name).startsWith('text/')) return 'text'
   if (ext === '.pdf') return 'pdf'
   if (ext === '.zip') return 'archive'
@@ -402,12 +396,6 @@ function capabilitiesFor(name) {
   const ext = path.extname(String(name || '')).toLowerCase()
   const kind = kindFor(name)
   const out = ['reveal']
-  if (kind === 'dashboard') {
-    /* The page reads it; `dashboard` never gets the raw JSON editor, because a
-       hand-edited snapshot is a number with no producer behind it. */
-    out.push('dashboard')
-    return out
-  }
   if (kind === 'text') out.push('editor')
   if (BROWSER_EXT.has(ext)) out.push('browser')
   return out

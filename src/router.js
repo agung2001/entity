@@ -212,9 +212,6 @@ const router = createRouter({
           path: ':workspace/artifacts/:id(.*)',
           name: 'artifact',
           component: ArtifactDetailView,
-          /* A `.dashboard` artifact is not a file preview: it has its own page, and
-             the branch on the artifact's kind keeps one address for both. */
-          props: (route) => ({ id: route.params.id }),
           meta: { crumb: 'artifact', title: 'Artifact · entity' },
         },
         {
