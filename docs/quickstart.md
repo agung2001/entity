@@ -36,7 +36,10 @@ here; [Onboarding](onboarding.md) walks through the three steps.
 | `npm run test:gate` | Unit + smoke — the release gate |
 | `npm run package` | Builds a distributable for the current platform → `release/` |
 | `npm run package:mac` | Universal macOS DMG → `release/` (macOS only) |
+| `npm run package:mac:install` | Builds the universal macOS DMG, then installs/replaces `Entity.app` in `/Applications` (set `ENTITY_APP_DIR` to use another folder) |
 | `npm run package:win` | x64 Windows installer → `release/` (run on Windows; needs Wine on macOS) |
+| `npm run package:linux` | x64 Linux AppImage → `release/` (Linux only) |
+| `npm run package:linux:install` | Builds the Linux AppImage, then installs/replaces it for the current user in `~/Applications` (launcher entry, icons and `~/.local/bin` symlink included) |
 | `npm run serve` | The shared server against the built renderer |
 | `npm run clean:dev` | Stops a dev server or headless browser this checkout left behind |
 
