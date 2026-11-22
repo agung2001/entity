@@ -21,6 +21,7 @@ const skillRef = require('./skill-ref.cjs')
 const mentionRef = require('./mention-ref.cjs')
 const intentRef = require('./intent-ref.cjs')
 const attachmentRef = require('./attachment-ref.cjs')
+const connectorStore = require('./connector-store.cjs')
 const remoteRunner = require('./remote-runner.cjs')
 const mcpRuntime = require('./mcp-runtime.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
@@ -1836,6 +1837,28 @@ function resolveAttachments(record, list, baseDir = '') {
       out.push({ kind: 'mcp', name })
       continue
     }
+    if (entry.kind === 'connector') {
+      const id = String(entry.value || entry.name || '').trim()
+      if (!id) continue
+      /* Context only: the connector must be installed here, and what travels is
+         its definition and status — never a credential. */
+      if (!connectorStore.isInstalled({ workspace: record.id, id })) {
+        throw new Error(`@connector:${id} is not installed in this workspace.`)
+      }
+      const row = connectorStore.list({ workspace: record.id }).rows.find((item) => item.id === id)
+      const key = `connector:${id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({
+        kind: 'connector',
+        id,
+        label: row?.label || id,
+        connectorKind: row?.kind || '',
+        binding: row?.binding || '',
+        work: row?.work || null,
+      })
+      continue
+    }
     if (entry.kind !== 'file') continue
     let file = ''
     if (entry.data) {
@@ -1872,11 +1895,24 @@ function resolveAttachments(record, list, baseDir = '') {
 
 function attachmentsBlock(attachments) {
   const files = (attachments || []).filter((entry) => entry.kind === 'file' && entry.path)
-  if (!files.length) return ''
-  return [
-    'Attached files (available on this machine):',
-    ...files.map((entry) => `- ${entry.path}`),
-  ].join('\n')
+  const connectors = (attachments || []).filter((entry) => entry.kind === 'connector')
+  const lines = []
+  if (files.length) {
+    lines.push('Attached files (available on this machine):', ...files.map((entry) => `- ${entry.path}`))
+  }
+  if (connectors.length) {
+    /* A connector is not a tool list — it is a fact the entity may use. Saying so
+       is what keeps "attached" from reading as "Entity will call this for you". */
+    lines.push(
+      '',
+      'Attached connectors (context only — use your own tools to reach them):',
+      ...connectors.map((entry) => {
+        const bits = [entry.connectorKind, entry.binding].filter(Boolean).join(' · ')
+        return `- ${entry.label}${bits ? ` (${bits})` : ''}${entry.work?.resolves ? ` — ${entry.work.resolves}` : ''}`
+      }),
+    )
+  }
+  return lines.join('\n')
 }
 
 /* `intent` is a test seam: `undefined` (production) builds the real classifier

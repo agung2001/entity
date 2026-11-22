@@ -25,6 +25,7 @@ const auth = require('./auth-store.cjs')
 const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
+const connectorStore = require('./connector-store.cjs')
 const turnTimeout = require('./turn-timeout-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
@@ -236,9 +237,17 @@ function createRpc({
     /* Orca project names for the composer's `@` menu; cached in main for a minute.
        The `gated` map rides along because the menu, not the resolver, is where an
        integration that is off stops being offered (see Account → Integrations). */
-    'mention.sources': async () => ({
+    /* The composer's kind list comes from the connector catalog — the same table
+       the roster renders — so the menu and the page cannot disagree about what a
+       mention does. `integrations` stays for the three machine-wide switches
+       (they gate a *scope*, not a syntax); a kind with no shipped resolver is
+       never in `kinds`, which is why a custom connector has no `@id:` form. */
+    'mention.sources': async ({ workspace } = {}) => ({
       ...(await mentionRef.sources()),
       integrations: await integrations.enabled(),
+      /* Gated by the catalog *and* by this workspace's installation — an
+         uninstalled connector is a row in the Built-in tab, not a syntax. */
+      kinds: connectorStore.mentionKinds({ workspace }),
     }),
     /* the worktree a delegated row works in, *now* — the renderer sends a
        ticket key and the run's cwd, and only a path Orca itself returned is
@@ -302,6 +311,22 @@ function createRpc({
     'integrations.setEnabled': (args) => integrations.setEnabled(args),
     'integrations.saveCredential': (args) => integrations.saveCredential(args),
     'integrations.test': (args) => integrations.test(args),
+
+    /* connectors: one merged list of the three services, this workspace's pool
+       and the harness servers on this machine, with the scope on every row. The
+       writes go through the store that already owns each field. */
+    'connector.list': (args) => connectorStore.list(args),
+    /* One connector's shipped mention contract, for its own page. Read-only and
+       cheap: the catalog is a literal in this process. */
+    'connector.work': ({ id } = {}) => require('./connector-catalog.cjs').workOf(id),
+    'connector.add': (args) => connectorStore.add(args),
+    'connector.adopt': (args) => connectorStore.adopt(args),
+    /* Install / uninstall a catalog entry. A definition only: a `cli` row is done
+       at the index, an `mcp` row keeps its binding in `mcp.json`. */
+    'connector.install': (args) => connectorStore.install(args),
+    'connector.uninstall': (args) => connectorStore.uninstall(args),
+    'connector.copy': (args) => connectorStore.copyFromMachine(args),
+    'connector.remove': (args) => connectorStore.remove(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),

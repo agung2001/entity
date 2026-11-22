@@ -36,7 +36,7 @@ const WORKSPACE_TABS = [
   { id: 'general', label: 'General', hint: 'name, id and directory' },
   { id: 'members', label: 'Members', hint: 'who belongs to this scope' },
   { id: 'skills', label: 'Skills', hint: 'attached to the workspace' },
-  { id: 'mcp', label: 'MCP', hint: 'servers this scope consumes' },
+  { id: 'connectors', label: 'Connectors', hint: 'services, with the scope of each' },
   { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
   { id: 'chats', label: 'Chats', hint: 'silence, archiving and removal' },
   { id: 'artifacts', label: 'Artifacts', hint: 'shelf age, archiving and removal' },
@@ -47,13 +47,7 @@ const ACCOUNT_ROWS = [
   { to: '/account', label: 'Profile', hint: 'identity and password' },
   { to: '/account/sound', label: 'Sound', hint: 'Area 51 feedback' },
   { to: '/account/notifications', label: 'Notifications', hint: 'replies and failures' },
-  { to: '/account/mcp', label: 'MCP server', hint: 'agent-facing endpoint' },
   { to: '/account/harnesses', label: 'Harnesses', hint: 'enable and disable agent CLIs' },
-  {
-    to: '/account/integrations',
-    label: 'Integrations',
-    hint: 'third-party services the composer can mention',
-  },
   { to: '/account/backups', label: 'Backups', hint: 'workspace snapshots' },
   { to: '/account/updates', label: 'Updates', hint: 'version and releases' },
 ]
@@ -90,11 +84,22 @@ const section = computed(() => {
   if (name === 'machines') {
     return { id: 'machines', title: 'Machines', count: railHosts.value.length, back: 'workspace' }
   }
-  if (name === 'machine') {
-    return { id: 'machines', title: 'Machines', count: railHosts.value.length, back: 'machines' }
+  /* A *detail* page is not its list: opening one machine used to turn the
+     subrail into all fifteen machines, which is a second list to read past on the
+     way to the page you already opened. Detail pages show the workspace settings
+     list instead — the place you navigate from — and keep the way back to their
+     own list in the header. */
+  if (name === 'machine' || name === 'skill' || name === 'connector-page') {
+    const back = name === 'machine' ? 'machines' : name === 'skill' ? 'skills' : 'connectors'
+    return {
+      id: 'workspace',
+      title: hub.workspaceLabel || hub.workspace || 'Workspace',
+      count: null,
+      back,
+    }
   }
-  if (name === 'skills' || name === 'skill') {
-    return { id: 'skills', title: 'Skills', count: hub.skills.length }
+  if (name === 'skills') {
+    return { id: 'skills', title: 'Skills', count: hub.skills.length, back: 'workspace' }
   }
   if (name === 'workspace') {
     return {
@@ -116,9 +121,18 @@ const section = computed(() => {
   ) {
     return { id: 'account', title: 'Account', count: null }
   }
-  /* The server page is the same list with one row current: the panel must not
-     lose the inventory when the address gains a name. */
-  if (name === 'mcp' || name === 'mcp-server') {
+  /* A server's own page is a detail page like a machine's: it shows the
+     workspace list, not the inventory it came from. The inventory lives on the
+     Connectors roster now, so listing it here was a third copy of the same rows. */
+  if (name === 'mcp-server') {
+    return {
+      id: 'workspace',
+      title: hub.workspaceLabel || hub.workspace || 'Workspace',
+      count: null,
+      back: 'connectors',
+    }
+  }
+  if (name === 'mcp') {
     /* One section, two scopes: the head counts what the rows count. */
     return {
       id: 'mcp',
@@ -130,7 +144,8 @@ const section = computed(() => {
 })
 
 /* The workspace pool and the harness configs on this machine are two scopes of
-   the same list — the switch `McpView` already has, sized for the panel. */
+   the same list, sized for this panel. The panel is the list beside one server's
+   page (`:workspace/mcp/:name`); the whole inventory is the Connectors roster. */
 const mcpScope = ref('workspace')
 const mcpQuery = ref('')
 const mcpHarness = ref('all')
@@ -269,6 +284,14 @@ function goBack() {
     router.push({ name: 'machines', params: { workspace: hub.workspace } })
     return
   }
+  if (to === 'skills') {
+    router.push({ name: 'skills', params: { workspace: hub.workspace } })
+    return
+  }
+  if (to === 'connectors') {
+    router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'connectors' } })
+    return
+  }
   if (to === 'workspace') {
     router.push({ name: 'workspace', params: { workspace: hub.workspace } })
     return
@@ -279,6 +302,8 @@ function goBack() {
 
 const backLabel = computed(() => {
   if (section.value.back === 'machines') return 'Back to machines'
+  if (section.value.back === 'skills') return 'Back to skills'
+  if (section.value.back === 'connectors') return 'Back to connectors'
   if (section.value.back === 'workspace') return 'Back to workspace settings'
   return 'Back to workspaces'
 })

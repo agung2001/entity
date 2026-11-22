@@ -1,0 +1,649 @@
+/* ── connectors ─────────────────────────────────────────────────────────
+   Workspace settings → Connectors: one list, three kinds, two scopes.
+
+   **One table at every width.** `Connector | Status | Action`, on the repo's own
+   roster grammar (`DESIGN.md` → "A roster is a table"; `inventory.css` for the
+   tracks). The head and every row read one `--ct-tracks`, so no state can lose a
+   column and keep its label — the earlier version forked into 5, 3 and 2 tracks
+   and hid the head below 520px, which left a 10px status line with no labels.
+
+   **One bounded scroll box** holds all three groups: the page height stays put
+   while the roster scrolls inside it, and the head sticks to the box.
+
+   **Kind and scope are stated once**, in the mono line under the name
+   (`mcp · workspace · mcp.json · @orca:`). They were 40 bordered pills across 20
+   rows, saying what that line already said. */
+
+.cxn-page {
+  /* the query container: every rule below that changes shape is a `@container`
+     on this box, so the collapse follows the measure it is given */
+  container: cxn / inline-size;
+  min-width: 0;
+}
+
+/* The row template, declared once. It lives on `.ct`, not `.cxn-page`, because a
+   `@container` rule may not style its own container. Lengths, never `max-content`:
+   a content-sized track resolves per element, so the head and the row would size
+   the same column to two different widths. Five tracks, fixed at every width:
+   identity · kind · scope · status · action. The action track fits `Copy here` on
+   one line; kind and scope are short enough to be a fixed width, which leaves the
+   identity and the status sentence the flexible rest. */
+.ct {
+  /* Sized to what the cells actually hold, measured on the live page: `kind` is a
+     3–4 letter word (18px of text), `scope` is `workspace` (54px), and the widest
+     verb is `Copy here` in a 53px button. An over-wide track steals from the two
+     columns that carry sentences. */
+  --ct-tracks: minmax(0, 1.4fr) 30px 68px minmax(0, 1.2fr) 96px;
+  --ct-gap: 12px;
+}
+
+/* One bounded scroll area around the three groups: a 200-connector roster keeps
+   the page height fixed and the box scrolls (`max-height: min(60vh, 560px)`). */
+.ct-box {
+  margin-top: 10px;
+  max-height: min(60vh, 560px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+}
+
+/* ── page head: the title and the page's one action ───────────────────── */
+
+.conn-head-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.conn-head-id {
+  min-width: 0;
+  flex: 1;
+}
+.conn-head-id .eyebrow {
+  margin-bottom: 2px;
+}
+.conn-head h1 {
+  font-family: var(--font);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0;
+}
+.cxn-embedded > .conn-head h2 {
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.conn-head .sub {
+  margin: 6px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  max-width: 76ch;
+}
+
+/* ── the bar: the field takes the room, the segment hugs its content ────── */
+
+.conn-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The search field every roster in this app wears, one class, one look. */
+.cxn-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+  flex: 1 1 220px;
+  min-width: 220px;
+}
+.cxn-search svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.6;
+  flex: none;
+}
+.cxn-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-secondary);
+  outline: none;
+}
+.cxn-search input::placeholder {
+  color: var(--muted);
+}
+
+/* A filter segment, not a tab: the counts stay visible and both scopes are one
+   list's two halves. */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  flex: 0 0 auto;
+}
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg button[aria-pressed='true'] {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+.seg button .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  padding-left: 3px;
+}
+
+/* ── the table: one template for the head and every row ───────────────── */
+
+.ct-head,
+.ct-row {
+  display: grid;
+  grid-template-columns: var(--ct-tracks);
+  gap: var(--ct-gap);
+  align-items: center;
+}
+/* One separator system: no border on the head, `border-top` on every row. */
+.ct-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 14px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ct-head > :last-child {
+  text-align: right;
+}
+
+.ct-row {
+  padding: 0 14px;
+  height: 58px;
+  border-top: 1px solid var(--border);
+}
+.ct-row:hover {
+  background: var(--surface);
+}
+.ct-row[data-open='1'] {
+  background: var(--surface);
+  border-bottom-color: transparent;
+}
+
+/* ── identity: name over one mono meta line ───────────────────────────── */
+
+.ct-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-align: left;
+}
+/* The name is the link, the row is not: the row holds the verbs, so wrapping it
+   in an anchor would nest interactive elements. */
+a.ct-who {
+  text-decoration: none;
+  color: inherit;
+}
+a.ct-who:hover .ct-name {
+  text-decoration: underline;
+}
+.ct-mk {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+.ct-mk[data-brand='1'] {
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface));
+  color: var(--accent-ink);
+}
+/* A brand mark keeps its own colours; only the mono one follows the row's tone.
+   These three were drawn for the deleted integrations page and are reused, not
+   redrawn. */
+.ct-mk .int-mark-img {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  object-fit: contain;
+}
+.ct-mk .int-mark-svg {
+  display: block;
+  flex: none;
+}
+.ct-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  align-content: center;
+}
+/* Kind and scope are columns now, so they are words — the pills that used to say
+   the same thing 40 times are gone. */
+.ct-kind,
+.ct-scope {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* The one-line cells truncate the same way, so the declarations are written once. */
+.ct-name,
+.ct-word,
+.field .v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ct-name {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+/* The meta line carries kind, scope, binding and mention — it is the only home
+   for all four, so it has to be readable (`--fs-meta`, 10px, not the 9px kbd/stamp
+   size) and it has to fit: one line clipped 20 of 20 rows at a 493px column
+   (`cli · workspace · the CLI on this machi…`), so it wraps to two and clamps
+   there. The copy block is 50px inside a 58px row, which the row already had
+   unused. */
+.ct-line {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 15px;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.ct-status small {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+/* A path is data a person needs, not decoration: the detail clamps at two lines
+   (14px each) instead of ellipsising on one. Measured on the live page at a 493px
+   column: 20 of 20 details render in full and the status cell measures 34–48px,
+   inside a 58px row. */
+.ct-detail-line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  /* A URL has no space to break at, so without this the clamp cannot wrap it and
+     the tail is cut instead: `https://mcp.notion.com/mcp` is 157px in a 151px box. */
+  overflow-wrap: anywhere;
+  line-height: 14px;
+  font-size: var(--fs-meta);
+}
+
+/* ── the three question cells ─────────────────────────────────────────── */
+
+/* The word and its detail share a wide cell badly: `in the pool` is 59.5px of a
+   154.9px cell and left the detail 66–77px, so every path clipped. They stack
+   instead — dot+word on line one, the detail on line two, both single lines. The
+   cell used 18px of a 58px row, so two lines cost nothing. */
+.ct-status {
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  min-width: 0;
+  align-content: center;
+}
+.ct-s1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+/* The word is the status and never shrinks; only a genuinely long path clips. */
+.ct-status .ct-word {
+  flex: none;
+}
+.ct-status .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+.ct-status[data-s='fail'] .dot {
+  background: var(--danger);
+}
+.ct-status[data-s='off'] .dot {
+  background: var(--border-strong);
+}
+.ct-status[data-s='warn'] .dot {
+  background: var(--accent);
+}
+/* The word is the sentence; the detail is the reason and truncates first. */
+
+.ct-act {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.ct-act .btn {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: var(--fs-secondary);
+  white-space: nowrap;
+}
+
+/* An unmanaged row is paper, not a warning: it is a connector that arrived
+   another way, and the action is what matters. */
+.unmanaged .ct-row {
+  background: repeating-linear-gradient(135deg, transparent 0 8px,
+    color-mix(in oklab, var(--surface) 70%, transparent) 8px 9px);
+}
+
+.cxn-acts,
+.cxn-acts .spacer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cxn-acts .spacer {
+  flex: 1;
+}
+
+/* ── the kind picker ──────────────────────────────────────────────────── */
+
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.kind {
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+.kind:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.kind[aria-pressed='true'] {
+  border-color: var(--field-edge);
+  background: var(--surface);
+}
+.kind .kn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.kind .ki {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.kind .ki svg {
+  width: 12px;
+  height: 12px;
+}
+.kind p,
+.kind .where {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.kind .where b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* ── the add sheet: teleported to `<body>`, so `vw` is the window ────────── */
+
+.cxn-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 10, 10, 0.24);
+}
+.cxn-dialog {
+  width: min(520px, 94vw);
+  max-height: min(86vh, 640px);
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  box-shadow: 0 28px 70px rgba(10, 10, 10, 0.16);
+}
+.cxn-dialog h2 {
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  margin: 0;
+}
+.cxn-dialog .sub {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.cxn-fields {
+  display: grid;
+  gap: 8px;
+}
+.cxn-fields label {
+  display: grid;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cxn-fields input,
+.cxn-fields select {
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* One notice box, two tones: a rejected save and a successful test. */
+.cxn-error,
+.cxn-ok {
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in oklab, var(--tone) 30%, var(--border));
+  color: var(--ink-2);
+  font-size: var(--fs-secondary);
+}
+.cxn-error {
+  --tone: var(--danger);
+  background: var(--danger-soft);
+}
+.cxn-ok {
+  --tone: var(--ok);
+  background: color-mix(in oklab, var(--ok) 8%, var(--bg));
+}
+
+.cxn-empty {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+
+/* ── what still changes with the measure, and only that ───────────────────
+   The columns do not: one table, one template, one head. What a narrower box
+   still needs is the bar folding (a field and a segment cannot share 380px) and
+   the detail pane's two-column field grid dropping to one. */
+
+/* Below 560px of container the hint chip is 30px the field cannot spare: the
+   shortcut still works and the guide still lists it, but the field keeps the room.
+   The threshold is the container, not the window — at a 493px settings column the
+   container measures 508px, which a 499.99px rule never reached. */
+@container cxn (max-width: 559.99px) {
+  .cxn-search .search-kbd {
+    display: none;
+  }
+  /* Three tracks again: at this width the two fixed columns cost the two sentence
+     columns more than they are worth. Kind and scope stay visible in the meta
+     line, and the head drops the same two labels so it cannot drift. */
+  .ct {
+    --ct-tracks: minmax(0, 1.4fr) minmax(0, 1.2fr) 96px;
+  }
+  .ct-kind,
+  .ct-scope,
+  .ct-head > [data-col='kind'],
+  .ct-head > [data-col='scope'] {
+    display: none;
+  }
+  .ct-line .meta-kind {
+    display: inline;
+  }
+}
+
+@container cxn (max-width: 470px) {
+  .conn-bar {
+    flex-wrap: wrap;
+  }
+  /* the segment keeps hugging its content on its own line */
+  .seg {
+    flex: 0 0 auto;
+  }
+  .conn-head-top {
+    flex-wrap: wrap;
+  }
+  .kinds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── the three panes ──────────────────────────────────────────────────── */
+.cxn-panes {
+  display: flex;
+  gap: 2px;
+  margin-top: 16px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+.cxn-panes button {
+  padding: 7px 10px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cxn-panes button[aria-selected='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.cxn-panes .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  padding-left: 4px;
+}
+
+
+/* One harness mark per file that declares a machine connector. The mark is the
+   identity; the path is one hover away, because the row has no width to give a
+   second path column. */
+.ct-srcs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin-left: 2px;
+  color: var(--muted);
+}
+.ct-src {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+}
+.ct-src svg {
+  width: 11px;
+  height: 11px;
+}

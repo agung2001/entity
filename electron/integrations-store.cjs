@@ -44,6 +44,9 @@ const TOKENS = { orca: '@orca:', youtrack: '@youtrack:', github: '@github:' }
 const CREDENTIAL = { orca: 'none', youtrack: 'required', github: 'none' }
 
 const PROBE_TIMEOUT_MS = 4000
+/* How many facts a probe reports back. Enough to recognise the thing (a project
+   list, an identity and its scopes), short enough to read on one line. */
+const SAMPLE_LIMIT = 6
 const VERIFY_LIMIT = 5
 const VERIFY_TTL = 60_000
 /* a repository list, a signed-in CLI and a YouTrack token are not facts that
@@ -150,17 +153,23 @@ async function probeOrca() {
     return { usable: false, word: 'not runnable', detail: reason, path: found, problem: reason }
   }
   const count = repos.length
+  const names = repos.map((repo) => repo.displayName || path.basename(String(repo.path || '')) || repo.id)
   return {
     usable: true,
     word: 'found',
     detail: `${count} ${count === 1 ? 'project' : 'projects'}`,
+    /* What the row shows: the projects themselves, not a count. A number answers
+       "is it alive"; the list answers "is this the Orca I think it is", and it is
+       the same list `@orca:` offers. */
+    samples: names.slice(0, SAMPLE_LIMIT),
+    total: count,
+    samplesLabel: 'projects',
     path: found,
     problem: '',
     version: version.stdout.trim().split(/\r?\n/)[0],
   }
 }
 
-/** GitHub CLI: a version string and one yes/no, never a scopes essay. */
 async function probeGithub() {
   const bin = harnesses.which('gh')
   if (!bin) {
@@ -184,15 +193,33 @@ async function probeGithub() {
       version: release,
     }
   }
+  /* `auth status` says a token exists; it does not say whom it belongs to. One
+     read of `/user` does, and the owner plus the scopes is the only answer that
+     tells a person whether *this* is the account they meant. Bounded: 4s, and a
+     failure here never fails the probe — the token is still usable. */
+  const user = await run(bin, ['api', 'user', '--jq', '.login'])
+  const scopes = (auth.stdout.match(/Token scopes:\s*(.+)/) || [])[1] || ''
+  const login = String(user.stdout || '').trim()
+  const granted = scopes
+    .split(/[,\s]+/)
+    .map((scope) => scope.replace(/['"]/g, '').trim())
+    .filter(Boolean)
+    .slice(0, SAMPLE_LIMIT)
   return {
     usable: true,
     word: 'found',
-    detail: `${who} · signed in`,
+    detail: login ? `${who} · @${login}` : `${who} · signed in`,
+    /* `@login` is the identity; the scopes are what the token may touch. Both are
+       short, both are facts a person can check against what they expect. */
+    samples: [login ? `@${login}` : '', ...granted].filter(Boolean),
+    total: granted.length + (login ? 1 : 0),
+    samplesLabel: login ? `@${login}` : 'granted',
     path: bin,
     problem: '',
     version: release,
   }
 }
+
 
 /** `<ws>/mcp.json` is the credential store: `servers.youtrack.headers.Authorization`.
     Only presence and the host leave this module — never the value. */
@@ -267,6 +294,10 @@ async function probeYoutrack(workspace, { force = false } = {}) {
       detail: `${count} ${count === 1 ? 'issue searched' : 'issues searched'}`,
       path: host,
       problem: '',
+      /* the endpoint (where the token points) and what the search covered */
+      samples: [host, count ? `${count} ${count === 1 ? 'issue' : 'issues'} answered` : 'no issues matched'].filter(Boolean),
+      total: count,
+      samplesLabel: 'answered',
     }
     verified.set(key, { at: Date.now(), value })
     return { ...value, hasCredential: true, host }
@@ -306,6 +337,11 @@ function rowOf(id, enabled, probe) {
     path: String(probe.path || ''),
     problem: String(probe.problem || ''),
     available: Boolean(enabled && probe.usable),
+    /* What the probe actually saw — the projects, the identity and its scopes,
+       the endpoint. A count says it is alive; this says it is the right one. */
+    samples: Array.isArray(probe.samples) ? probe.samples : [],
+    total: Number.isFinite(probe.total) ? probe.total : null,
+    samplesLabel: String(probe.samplesLabel || ''),
   }
 }
 
@@ -585,7 +621,49 @@ async function saveCredential({ workspace, id, token, host } = {}) {
 }
 
 /** The same verify, read-only: no file is written, so nothing can be lost. */
-async function test({ workspace, id } = {}) {
+/**
+ * One `cli` connector that is not one of the three the app ships.
+ *
+ * The person told us what its self-report is (`verify.argv`) and what exit code
+ * means usable, so this runs exactly that and reports the last line the binary
+ * printed. Nothing is inferred from the name: a binary called `gh` on someone
+ * else's machine is not GitHub's CLI.
+ */
+async function testDeclared(bin, verify) {
+  const found = path.isAbsolute(bin) ? bin : harnesses.which(bin)
+  if (!found) return { ok: false, usable: false, word: 'not on PATH', detail: bin, problem: '' }
+  const args = Array.isArray(verify?.argv) ? verify.argv : []
+  const wanted = Number.isFinite(Number(verify?.okExit)) ? Number(verify.okExit) : 0
+  const result = await run(found, args)
+  const printed = `${result.stdout || ''}\n${result.stderr || ''}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const code = result.error?.code === undefined ? 0 : result.error.code
+  if (result.error && code !== wanted) {
+    return {
+      ok: false,
+      usable: false,
+      word: 'not ready',
+      detail: `${bin} ${args.join(' ')} exited ${code}`,
+      problem: reasonOf(result),
+      path: found,
+    }
+  }
+  return {
+    ok: true,
+    usable: true,
+    word: 'found',
+    detail: printed[printed.length - 1] || `${bin} answered`,
+    path: found,
+    problem: '',
+    samples: printed.slice(0, SAMPLE_LIMIT),
+    total: printed.length,
+    samplesLabel: 'reported',
+  }
+}
+
+async function test({ workspace, id, verify, binary } = {}) {
   const key = String(id || '')
   if (key === 'youtrack') {
     const { count } = await verifyYoutrack(workspace)
@@ -595,17 +673,30 @@ async function test({ workspace, id } = {}) {
       host,
       hasCredential,
       detail: `${host || 'youtrack'} · ${count} ${count === 1 ? 'issue searched' : 'issues searched'}`,
+      /* the endpoint and what the search covered — the two facts that make
+         "connected" checkable rather than a green word */
+      samples: [host, count ? `${count} ${count === 1 ? 'issue' : 'issues'} answered` : 'no issues matched'].filter(Boolean),
+      total: count,
+      samplesLabel: 'answered',
     }
   }
   if (key === 'github') return { ok: true, ...(await probeGithub()) }
   if (key === 'orca') return { ok: true, ...(await probeOrca()) }
-  throw new Error(`Unknown integration "${key}".`)
+  /* A connector the app does not ship: its own declared self-report, or nothing.
+     Falling through to "unknown integration" was the bug — every custom `cli` row
+     could not be tested at all. */
+  if (verify) return testDeclared(binary || key, verify)
+  /* The three shipped ids threw above; anything else is a connector with no
+     declared self-report, and saying so is the whole answer. */
+  if (IDS.includes(key)) throw new Error(`Unknown integration "${key}".`)
+  throw new Error(`"${key}" has no verify command, so there is nothing to ask it. Add one on its page.`)
 }
 
 module.exports = {
   CONFIG,
   ROOT,
   IDS,
+  testDeclared,
   enabled,
   list,
   probe,

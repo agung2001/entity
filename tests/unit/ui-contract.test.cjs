@@ -175,11 +175,11 @@ test('the turn deadline is a setting the page actually offers', () => {
   assert.match(backend, /RANGE_MS/, 'nothing bounds the number')
 })
 
-test('account integrations paints its rows before it probes the CLIs', () => {
-  const view = fs.readFileSync(
-    path.join(SRC, 'views', 'account', 'AccountIntegrationsView.vue'),
-    'utf8',
-  )
+test('the connectors page paints its rows before it probes the CLIs', () => {
+  /* Account → Integrations and Account → MCP are one page now, in the workspace
+     that owns their definitions: `ConnectorsView` is the surface, and the rule it
+     was paid for — rows first, status second, cached — still holds. */
+  const view = fs.readFileSync(path.join(SRC, 'views', 'ConnectorsView.vue'), 'utf8')
   const store = fs.readFileSync(path.join(SRC, 'stores', 'integrations.js'), 'utf8')
   const backend = fs.readFileSync(path.join(ROOT, 'electron', 'integrations-store.cjs'), 'utf8')
   const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
@@ -188,21 +188,80 @@ test('account integrations paints its rows before it probes the CLIs', () => {
   assert.match(rpc, /'integrations\.probe'/, 'the status line needs its own call')
   assert.match(backend, /async function probe\(/, 'the probe is a function of its own')
   assert.match(backend, /PROBE_TTL/, 'the probe has to be cached')
-  assert.match(store, /export async function probeIntegrations/, 'the renderer owns the second read')
+  const connectorStore = fs.readFileSync(path.join(SRC, 'stores', 'connectors.js'), 'utf8')
+  assert.match(connectorStore, /export async function probeConnectors/, 'the renderer owns the second read')
   assert.ok(
-    view.indexOf('probeIntegrations({') > view.indexOf('await loadIntegrations({'),
+    connectorStore.indexOf('probeIntegrations({') > connectorStore.indexOf('await loadIntegrations({'),
     'the rows must land before the probe is asked for',
   )
-  assert.match(view, /int-refresh/, 'a cached read needs a way to refresh it')
+  assert.match(rpc, /'connector\.list'/, 'the merged row list needs its own call')
 
   /* a roster is a table, and one searchable */
   assert.match(view, /type="search"/, 'the roster needs a visible filter')
   assert.match(view, /shortcutLabel\('inventory-search'\)/, 'the search carries the catalog key')
-  assert.match(view, /class="skt int-t"/, 'the roster is the table grammar, not a card grid')
+  assert.match(view, /role="table"/, 'the roster is a table, not a card grid')
+  assert.match(view, /class="ct-head"/, 'the roster needs its own head')
   const css = allStyles()
-  const table = css.match(/\n\.int-t \.row \{[^}]*\}/)
-  assert.ok(table, '.int-t .row has no base rule')
-  assert.match(table[0], /minmax\(0,/, 'a column has to be able to shrink')
+  /* One source of truth for the tracks: the head and every row read the same
+     `--ct-tracks`, and the state overrides change that variable rather than
+     swapping in a second template — two templates is how a head drifts off its
+     columns. Every one of them still has to let a column shrink. */
+  const tracks = [...css.matchAll(/--ct-tracks:\s*([^;]+);/g)].map((match) => match[1].trim())
+  assert.ok(tracks.length >= 1, 'the tracks are declared once, as a variable')
+  for (const value of tracks) {
+    assert.match(value, /minmax\(0,/, `a column has to be able to shrink: ${value}`)
+  }
+  const table = css.match(/\n\.ct-head,\n\.ct-row \{[^}]*\}/)
+  assert.ok(table, '.ct-head/.ct-row have no base track rule')
+  assert.match(
+    table[0],
+    /grid-template-columns:\s*var\(--ct-tracks\)/,
+    'the head and the row take their template from the one variable',
+  )
+
+  /* the merge's own rule: every row states a scope, a machine row may only be
+     copied, an unmanaged row may only be adopted */
+  const row = fs.readFileSync(path.join(SRC, 'components', 'ConnectorRow.vue'), 'utf8')
+  assert.match(row, /Copy here/, 'a machine row needs its one verb')
+  assert.match(row, /Adopt/, 'an unmanaged row must be adoptable')
+  assert.match(row, /row\.scope === 'machine'/, 'the scope is a column on every row')
+  assert.match(
+    row,
+    /row\.scope === 'machine'[\s\S]{0,400}Copy here/,
+    'a machine row\'s only verb is `Copy here`',
+  )
+  assert.match(
+    row,
+    /row\.unmanaged[\s\S]{0,400}Adopt/,
+    'an unmanaged row\'s only verb is `Adopt`',
+  )
+
+  /* DESIGN.md → "The name is the link, the row is not": a row holds the verbs, so
+     wrapping it in an anchor would nest interactive elements. The row links out
+     from its *name* instead, and a connector has its own page. */
+  assert.match(row, /<router-link[\s\S]{0,200}class="ct-who"/, 'the name is the link')
+  assert.doesNotMatch(
+    row,
+    /<router-link[^>]*>[\s\S]{0,600}?<button/,
+    'no button inside the row\'s link',
+  )
+  /* The row element itself must not be the link, whatever it is wrapped in. */
+  assert.doesNotMatch(
+    row,
+    /<router-link[^>]*class="ct-row"|<div[^>]*class="ct-row"[^>]*\n?\s*<router-link[^>]*>\s*\n?\s*<span class="ct-mk"/,
+    'the row is not an anchor: only the name is',
+  )
+  assert.match(
+    row,
+    /kind === 'mcp'[\s\S]{0,200}mcp-server|mcp-server[\s\S]{0,200}kind === 'mcp'/,
+    'an mcp row opens the MCP server page that already exists',
+  )
+  assert.match(view, /role="table"/, 'the roster is one table')
+  /* A refused credential still has to say so on both surfaces that can take one:
+     the add sheet in the roster, and the connector's own page. */
+  assert.match(view, /Nothing was saved/, 'a rejected credential must say nothing was written')
+  const page = fs.readFileSync(path.join(SRC, 'views', 'ConnectorPageView.vue'), 'utf8')
+  assert.match(page, /nothing is written|Nothing was saved/i, 'the connector page says the same')
 })
 
 test('the machine capability page brands harnesses and offers search', () => {
@@ -215,6 +274,8 @@ test('the machine capability page brands harnesses and offers search', () => {
 test('the machines page is a roster with a rail, not a card gallery', () => {
   const view = fs.readFileSync(path.join(SRC, 'views', 'MachinesView.vue'), 'utf8')
   const shelf = fs.readFileSync(path.join(SRC, 'views', 'WorkspaceView.vue'), 'utf8')
+  /* The other embedded list that opens a detail pane: it must obey the same rule. */
+  const connectorsView = fs.readFileSync(path.join(SRC, 'views', 'ConnectorsView.vue'), 'utf8')
 
   /* DESIGN.md → "A roster is a table": a gallery of five-button cards was the
      shape this page had, and it could not say why a row was red. */
@@ -306,9 +367,20 @@ test('the machines page is a roster with a rail, not a card gallery', () => {
   assert.match(allStyles(), /\.mbar \.wsl-search \{[^}]*flex: 1 1 100%/, 'the filter must take the band')
 
   /* the shell is the parent's: nesting `.detail-view` inside `.detail-view`
-     insets the page by 56px and puts the roster on a second measure */
-  assert.doesNotMatch(view, /class="view detail-view"/, 'the embedded root must not bring a second shell')
-  assert.match(shelf, /tab === 'machines' \? 'view detail-view'/, 'WorkspaceView owns the detail shell')
+     insets the page by 56px and puts the roster on a second measure. The rule is
+     "WorkspaceView decides, an embedded view brings no shell of its own" — not
+     the shape of the ternary, which also carries Connectors, the other list with
+     a detail pane. */
+  assert.doesNotMatch(view, /class="[^"]*\bview detail-view\b/, 'the embedded root must not bring a second shell')
+  assert.doesNotMatch(
+    connectorsView,
+    /class="[^"]*\bview detail-view\b/,
+    'the embedded root must not bring a second shell',
+  )
+  const shell = shelf.match(/:class="([^"]*detail-view[^"]*)"/)
+  assert.ok(shell, 'WorkspaceView owns the detail shell')
+  assert.match(shell[1], /tab === 'machines'/, 'the machines tab gets the detail shell')
+  assert.match(shell[1], /'view detail-view'/, 'the detail shell is the detail-view measure')
 
   /* `--hero` is what the cabinet mixes its paper, grid and shadow from; without
      it every color-mix(var(--hero) …) is invalid and the hero is a white box */

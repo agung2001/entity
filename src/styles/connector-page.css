@@ -1,0 +1,211 @@
+/* ── the connector page, and the sheet that adds one ──────────────────────
+   Split out of `connectors.css`: these paint the connector's own page
+   (`ConnectorPageView.vue`), the "In the chat" documentation card, and the
+   add sheet opened from the roster. They share the tokens and the `ct-`
+   primitives, not the roster's grid, and the roster sheet was carrying 240
+   lines of another surface's paint. */
+
+/* ── one connector's own page (cli · rest) ─────────────────────────────
+   The entity page's shell: a bar with the way back, a hero, then the few cards
+   this kind actually has. An MCP server never renders here — it has
+   `:workspace/mcp/:name`, which draws its transport, tools and binding. */
+
+.cxn-hero-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-h5);
+}
+.cxn-page > .cxn-card {
+  margin-top: 14px;
+}
+.cxn-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.cxn-card h2 {
+  margin: 0 0 10px;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.cxn-facts {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 2px 14px;
+  margin: 0;
+  font-size: var(--fs-small);
+}
+.cxn-facts dt {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  padding: 5px 0;
+}
+.cxn-facts dd {
+  margin: 0;
+  padding: 5px 0;
+  color: var(--ink-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cxn-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  max-width: 70ch;
+}
+.cxn-danger {
+  border-color: color-mix(in oklab, var(--danger) 24%, var(--border));
+}
+
+/* The raw pool editor: `mcp.json` is one of the two files a definition lives in,
+   and a roster of rows cannot express a bulk edit. */
+.cxn-editor {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* ── the connector's page: the "In the chat" documentation card ───────── */
+.cxn-work-lead {
+  margin: 0 0 10px;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  max-width: 70ch;
+}
+.cxn-work-wrap {
+  white-space: normal;
+}
+.cxn-work-eg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cxn-work-eg li code {
+  display: inline-block;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-size: var(--fs-meta);
+}
+
+/* the same block, in the MCP server page's rail */
+.mcpp-work {
+  display: grid;
+  gap: 6px;
+  padding: 0 0 4px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.mcpp-work p,
+.mcpp-work ul {
+  margin: 0;
+}
+.mcpp-work ul {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  list-style: none;
+}
+.mcpp-work code {
+  font-size: var(--fs-meta);
+}
+.mcpp-work-syntax code {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+}
+.mcpp-work-returns,
+.mcpp-work-needs {
+  color: var(--muted);
+}
+
+/* The probe's own facts: what it saw, not just that it answered. */
+.cxn-facts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cxn-facts-list li code {
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+
+/* The long-form documentation on a connector page. */
+.cxn-how {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  max-width: 74ch;
+}
+.cxn-samples {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cxn-samples li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.cxn-samples code {
+  font-size: var(--fs-meta);
+  color: var(--ink);
+}
+.cxn-sample-then {
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+
+.cxn-paste {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+  resize: vertical;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+

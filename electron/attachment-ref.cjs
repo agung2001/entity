@@ -5,7 +5,15 @@
  * This parser removes the tokens from the text and returns the structured
  * attachment list; the rest of the `@` language stays with `mention-ref`.
  */
-const TOKEN = /(^|[\s(\[])@(file|mcp):(?:"([^"]+)"|([^\s]+))/g
+/**
+ * `@connector:<id>` — a connector as *context*, not as an engine.
+ *
+ * A custom connector has no shipped resolver, so there is no query syntax to
+ * offer. What it can contribute is the facts: what it is, where its definition
+ * lives, whether it answers. The entity then uses its own tools against it —
+ * which is the honest boundary, and the sentence its page states.
+ */
+const TOKEN = /(^|[\s(\[])@(file|mcp|connector):(?:"([^"]+)"|([^\s]+))/g
 
 function cleanText(text) {
   return String(text || '')

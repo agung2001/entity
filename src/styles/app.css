@@ -17,7 +17,6 @@
 @import './chat-thread.css';
 @import './forms.css';
 @import './timeline-detail.css';
-@import './account-mcp.css';
 @import './chat-minimap.css';
 @import './directory.css';
 @import './chrome.css';
@@ -34,7 +33,8 @@
 @import './chat-rail.css';
 @import './backdrops.css';
 @import './thread-metadata.css';
-@import './account-integrations.css';
+@import './connectors.css';
+@import './connector-page.css';
 @import './account-backups.css';
 @import './update.css';
 @import './insights.css';
