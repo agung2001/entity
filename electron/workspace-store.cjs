@@ -575,6 +575,9 @@ function skills(id) {
     harness: 'workspace',
     harnessLabel: 'Workspace',
     detectHarness: true,
+    /* the workspace tab prints a hash per row, and it is what tells a copy here
+       from the same skill in a harness folder */
+    hash: true,
   })
 }
 
@@ -688,8 +691,89 @@ function materialiseSkillLinks(record) {
   return copied
 }
 
+/**
+ * Replace an existing workspace copy with the library's bytes.
+ *
+ * `attachSkillTo` refuses a name that is already there, which is the right answer
+ * for an attach and the wrong one for an update: the skill page needs to move a
+ * workspace copy forward without the person detaching first and losing the copy
+ * if the copy then fails.
+ *
+ * Staged in `<target>.<pid>.<ts>.tmp` and renamed over the target, so a failure
+ * leaves the old copy exactly where it was. The old copy is moved aside to a
+ * second temp name rather than deleted, so a rename that refuses (a non-empty
+ * directory is ENOTEMPTY on every platform) can put the original back.
+ */
+function replaceSkillTo(dir, name, harness, sources = null) {
+  const wanted = String(name || '').trim()
+  if (!wanted) throw new Error('No skill named to replace.')
+  const source = findLibrarySkill(wanted, harness, sources)
+  if (!source) {
+    throw new Error(`No skill called "${wanted}" in the harness libraries on this machine, so there is nothing to install.`)
+  }
+
+  const target = path.join(dir, source.name)
+  let existing = null
+  try {
+    existing = fs.lstatSync(target)
+  } catch {
+    /* free name */
+  }
+  if (!existing) {
+    throw new Error(
+      `There is no "${source.name}" in this workspace to replace. Attach it instead.`,
+    )
+  }
+
+  let real
+  try {
+    real = fs.realpathSync(source.absolutePath)
+  } catch {
+    real = source.absolutePath
+  }
+  assertReadableTree(real)
+
+  fs.mkdirSync(dir, { recursive: true })
+  const stamp = `${process.pid}.${Date.now()}`
+  const tmp = `${target}.${stamp}.tmp`
+  const aside = `${target}.${stamp}.old`
+  let moved = false
+  try {
+    fs.cpSync(real, tmp, { recursive: true, dereference: true })
+    fs.renameSync(target, aside)
+    moved = true
+    fs.renameSync(tmp, target)
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    } catch {
+      /* nothing staged */
+    }
+    /* put the copy back, so a failed replace is a no-op rather than a deletion */
+    if (moved) {
+      try {
+        fs.renameSync(aside, target)
+      } catch {
+        /* both names survive; the message below says what failed */
+      }
+    }
+    throw new Error(`Could not replace ${source.name}: ${error.message}`)
+  }
+  try {
+    fs.rmSync(aside, { recursive: true, force: true })
+  } catch {
+    /* the replaced copy is unreadable; the new one is in place */
+  }
+
+  return { name: source.name, harness: source.harness, replaced: true, path: tilde(target) }
+}
+
 function attachSkill({ id, name, harness, sources = null }) {
   return attachSkillTo(skillsDir(open(id)), name, harness, sources)
+}
+
+function replaceSkill({ id, name, harness = null, sources = null }) {
+  return replaceSkillTo(skillsDir(open(id)), name, harness, sources)
 }
 
 /**
@@ -1473,6 +1557,7 @@ module.exports = {
   skillsDir,
   materialiseSkillLinks,
   attachSkill,
+  replaceSkill,
   skillSourceIndex,
   copySkill,
   detachSkill,

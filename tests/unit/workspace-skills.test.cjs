@@ -288,3 +288,38 @@ test('a dangling link has nothing to copy', { skip: process.platform === 'win32'
   )
   assert.equal(fs.existsSync(path.join(to.path, 'skills', 'broken')), false)
 })
+
+/**
+ * Replacing a copy is an update, not a second attach.
+ *
+ * `attachSkill` refuses a name that is already here, so a skill page could not
+ * move a workspace copy forward. The bytes are staged and renamed over the old
+ * copy, and a missing target is refused before anything is written.
+ */
+test('replaceSkill stages the new bytes over the copy and leaves no .tmp', () => {
+  const source = writeSkill(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'entity-skill-replace-')),
+    '# v2\n\nFrom the library.\n',
+  )
+  localData.skillSources = () => [
+    { name: 'copy-me', harness: 'pi', harnessLabel: 'pi', absolutePath: source, realPath: source },
+  ]
+  const record = workspaces.create({ label: 'skills-replace', skills: [] })
+  const dir = path.join(record.path, 'skills', 'copy-me')
+  writeSkill(dir, '# v1\n\nEdited in the workspace.\n')
+
+  const result = workspaces.replaceSkill({ id: record.id, name: 'copy-me', harness: 'pi' })
+
+  assert.equal(result.replaced, true)
+  assert.match(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), /From the library/)
+  assert.equal(fs.lstatSync(dir).isSymbolicLink(), false)
+  assert.deepEqual(
+    fs.readdirSync(path.join(record.path, 'skills')).filter((entry) => entry.endsWith('.tmp')),
+    [],
+  )
+
+  assert.throws(
+    () => workspaces.replaceSkill({ id: record.id, name: 'ghost', harness: 'pi' }),
+    /No skill called "ghost"/,
+  )
+})

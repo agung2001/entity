@@ -13,6 +13,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { execFile } = require('node:child_process')
 const {
   HOME,
@@ -419,6 +420,41 @@ function walkFiles(root, { cap = 400, maxDepth = 4, withBodies = false } = {}) {
 /* The frontmatter parser lives in frontmatter.cjs so skills and entities read
    the same grammar. Re-exported below for callers that already expect it here. */
 
+/**
+ * One sha256 per skill folder: its sorted relative paths and bytes, in order.
+ *
+ * Cached in-process by the folder's own signature (file count, total bytes, the
+ * newest mtime), so a warm scan pays one walk and no reads. The cache is keyed
+ * by absolute path because two workspaces can hold two copies of one name.
+ *
+ * ponytail: the file list is the scanner's own (capped at 400 files, depth 4),
+ * so a folder past that cap hashes the same prefix every time. The upgrade path
+ * is a full walk in this function if a skill ever ships more than 400 files.
+ */
+const hashCache = new Map()
+
+function folderSha256(dir, files) {
+  const newest = files.reduce((max, file) => Math.max(max, Number(file.updatedAt ? Date.parse(file.updatedAt) : 0)), 0)
+  const bytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
+  const key = `${files.length}:${bytes}:${newest}`
+  const cached = hashCache.get(dir)
+  if (cached && cached.key === key) return cached.sha256
+
+  const digest = crypto.createHash('sha256')
+  for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
+    digest.update(file.name)
+    digest.update('\u0000')
+    try {
+      digest.update(fs.readFileSync(file.abs))
+    } catch {
+      /* an unreadable file hashes as its name alone, never as a silent skip */
+    }
+  }
+  const sha256 = digest.digest('hex')
+  hashCache.set(dir, { key, sha256 })
+  return sha256
+}
+
 function findEntryFile(dir) {
   for (const name of ['SKILL.md', 'skill.md', 'SKILL.markdown']) {
     const candidate = path.join(dir, name)
@@ -477,7 +513,13 @@ function harnessSourceOf(realPath) {
  * target is gone becomes `missing: true` instead of disappearing.
  */
 function scanSkillDir(root, options = {}) {
-  const { harness = 'workspace', harnessLabel = 'Workspace', detectHarness = false, namesOnly = false } = options
+  const {
+    harness = 'workspace',
+    harnessLabel = 'Workspace',
+    detectHarness = false,
+    namesOnly = false,
+    hash = false,
+  } = options
   const items = []
   let entries
   try {
@@ -575,7 +617,9 @@ function scanSkillDir(root, options = {}) {
       })
       continue
     }
-    const files = singleFile ? [{ bytes: stat.size }] : walkFiles(full, { cap: 400, maxDepth: 4 })
+    const files = singleFile
+      ? [{ abs: full, name: path.basename(full), bytes: stat.size }]
+      : walkFiles(full, { cap: 400, maxDepth: 4 })
     const bytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
     const updatedAt = (() => {
       try {
@@ -604,6 +648,7 @@ function scanSkillDir(root, options = {}) {
       files: files.length,
       bytes,
       size: formatBytes(bytes),
+      ...(hash ? { sha256: folderSha256(full, files) } : {}),
       updatedAt,
       link: entry.isSymbolicLink(),
       copied: detectHarness ? !entry.isSymbolicLink() : false,
@@ -744,7 +789,15 @@ function scanProjectSkills({ dir } = {}) {
   return { dir: root, items, count: items.length }
 }
 
-function scanSkillLibrary({ machine = LOCAL_MACHINE } = {}) {
+/**
+ * Every harness skill folder on this machine, optionally with a `sha256`.
+ *
+ * `hash` walks the same folders this scan already walks and adds one digest per
+ * folder, cached by the folder's size + mtime — never a second `readdir`, which
+ * would drop the symlinked folders and add phantom rows. Cold cost is one read
+ * per file; a warm call is one walk.
+ */
+function scanSkillLibrary({ machine = LOCAL_MACHINE, hash = false } = {}) {
   if (machine && machine !== LOCAL_MACHINE) {
     return { ...remoteMachine(machine), harnesses: [], items: [], count: 0 }
   }
@@ -762,7 +815,11 @@ function scanSkillLibrary({ machine = LOCAL_MACHINE } = {}) {
     const found = []
     for (const root of roots) {
       if (!root.exists) continue
-      for (const item of scanSkillDir(root.path, { harness: harness.id, harnessLabel: harness.label })) {
+      for (const item of scanSkillDir(root.path, {
+        harness: harness.id,
+        harnessLabel: harness.label,
+        hash,
+      })) {
         const key = `${harness.id}:${item.name.toLowerCase()}`
         if (seen.has(key)) continue
         seen.add(key)

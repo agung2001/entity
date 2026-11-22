@@ -1235,6 +1235,22 @@
 .sk-shelf .skbar {
   padding: 13px 0;
   border-bottom: 1px solid var(--border);
+  /* the mock-up spaces the three rows of the head: .sktabs 16, .libbar 14,
+     .filters 11 — the bar carries the tab gap above and the table's own 14
+     stays on `.skt` */
+  margin: 14px 0 0;
+}
+/* and the strip keeps the mock-up's 16 above the search bar */
+.sk-shelf .skscopes {
+  margin-top: 16px;
+}
+.sk-shelf .skbar + .skt,
+.sk-shelf .skbar + .sortnote {
+  margin-top: 14px;
+}
+/* the bar's own bottom padding would double the table's top margin */
+.sk-shelf .skbar:has(+ .skt) {
+  padding-bottom: 0;
 }
 .sk-shelf .sksearch input {
   border-color: var(--field-edge);
@@ -1298,6 +1314,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
+
   padding: 2px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1338,31 +1355,299 @@
   white-space: nowrap;
 }
 
+/* ── the scope strip: three tabs, one line, a count after each ───────────
+   `.sk-tabs` is the app's tab look for a page head; this one is a *switcher*
+   between three sources, so it keeps the boxed, pressed-button shape of the
+   `.sk-seg` it replaces instead of a page-level underline. */
+.skscopes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  overflow: visible;
+}
+.skscopes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  /* every tab carries the same inset, the first one included: the page-head
+     `.sk-tabs` flattens its first child, which on this boxed switcher left the
+     label touching the border */
+  padding: 0 13px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.skscopes button:first-child {
+  padding-left: 13px;
+}
+.skscopes button:hover {
+  color: var(--ink-2);
+}
+.skscopes button[aria-selected='true'] {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 500;
+}
+/* the count is the mono `.tn` of the mockup, on the shipped `.n` name so the
+   two tab grammars cannot drift */
+.skscopes .n {
+  margin-left: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.skscopes .where,
+.subtabs .where {
+  margin-left: auto;
+  padding-right: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+/* the sub-boards under Libraries: the same look, one step quieter */
+.subtabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin: 14px 0 0;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.subtabs button {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.subtabs button[aria-selected='true'] {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* the harness filter row: Only Local has one, and it wraps on a wide page and
+   scrolls sideways on a narrow one */
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 11px 0 0;
+}
+/* A chip here is a 26 px control on the mock-up's scale, not the shipped
+   `.hint` pill (surfaces.css) that other surfaces still use. Its label is the
+   body font — the count is the mono part — which is what makes the row fit. */
+.filters .hint {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-xs);
+  font-family: inherit;
+  font-size: var(--fs-label);
+}
+.filters .hint .hint-n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+.filters .hint[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* the one line under every roster: where the rows came from */
+.sortnote {
+  margin: 10px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── three cell shapes the three tabs share ──────────────────────────── */
+/* a comparison cell: the number that ranks the row, and its window */
+.skt .ev {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.skt .ev b {
+  display: block;
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--ink);
+  text-overflow: ellipsis;
+}
+.skt .ev span {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.skt .ev .ids[data-up='1'] {
+  color: var(--ok-ink);
+}
+.skt .ev .ids[data-up='-1'] {
+  color: var(--danger);
+}
+/* the install count with its eight-week shape beside it — the mock-up's `.inst`:
+   56 × 15 of sparkline, then the number and its week-over-week delta */
+.skt .inst {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.skt .spark {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 15px;
+  overflow: visible;
+  color: var(--ok-ink);
+}
+.skt .spark[data-trend='down'] {
+  color: var(--danger);
+}
+.skt .iv {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.skt .iv b {
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.skt .iv .ids {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.skt .iv .ids[data-up='1'] {
+  color: var(--ok-ink);
+}
+.skt .iv .ids[data-up='-1'] {
+  color: var(--danger);
+}
+/* which harness folders carry a name — the whole point of the Local grouping */
+.skt .marks {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+}
+.skt .marks .more {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+/* the rank a board puts a row at: the number that ranks it, not decoration */
+.skt .rank {
+  flex: 0 0 14px;
+  overflow: hidden;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+/* a tag beside a name — `differs elsewhere`, `in this workspace`, `official`.
+   Colour is never the only signal: the word and the border carry it too. */
+.skt .tg,
+.tg {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xs);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tg[data-t='here'] {
+  border-color: color-mix(in oklab, var(--ok) 45%, var(--border));
+  color: var(--ok-ink);
+}
+.tg[data-t='drift'] {
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+  color: var(--accent-ink);
+}
+/* the name cell of a row that carries a second line (a tag, a description) */
+.skt .nm .nn {
+  display: block;
+  min-width: 0;
+}
+
 /* ── the roster: a table, one bounded scroll area ─────────────────────── */
 .skt {
+  /* the mock-up's four tracks: the name eats the spare width, the size cell is
+     the widest fixed one because it carries a sentence, the action is a button */
+  --cols: minmax(0, 1fr) 116px 246px 92px;
+  margin: 14px 0 0;
   border: 1px solid var(--border);
-  border-radius: var(--r);
+  border-radius: var(--r-md);
   overflow: auto;
   background: var(--bg);
   /* an inventory never grows the page without bound */
   max-height: min(60vh, 560px);
 }
+/* a board row ranks a number and compares two, so its middle tracks differ */
+.skt.lib-t {
+  --cols: minmax(0, 1fr) 172px 168px 86px;
+}
 .skt .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px 84px 190px;
-  grid-template-rows: auto auto;
+  grid-template-columns: var(--cols);
   align-items: center;
-  column-gap: 14px;
-  padding: 11px 14px;
+  column-gap: 10px;
+  padding: 9px 11px;
   border-top: 1px solid var(--border);
 }
 .skt .row:first-child {
   border-top: 0;
 }
 .skt .row.head {
-  grid-template-rows: auto;
-  min-height: 32px;
-  padding: 0 14px;
+  min-height: 0;
+  padding: 7px 11px;
   background: var(--surface);
   position: sticky;
   top: 0;
@@ -1372,6 +1657,14 @@
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted);
+}
+/* a head label that wraps grows the desk and, because it is sticky, eats the
+   first row of the scroll box: every column is one word where the mock-up's
+   are, and the size column says the pair with a middle dot */
+.skt .row.head .k {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .skt .row:hover:not(.head) {
   background: var(--surface);
@@ -1397,7 +1690,7 @@
 .skt .nm {
   grid-row: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
   min-width: 0;
 }
@@ -1405,11 +1698,16 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-xs);
   background: var(--surface-2);
+  color: var(--ink-2);
+}
+.sig-tile svg {
+  width: 12px;
+  height: 12px;
 }
 /* the badge, not an asset: 48% toward the ink clears 4.5:1 on the tile for all
    six hues (at the entity page's 62% three of them did not) */
@@ -1436,6 +1734,9 @@
   text-decoration: none;
   white-space: nowrap;
   text-overflow: ellipsis;
+  /* the name is the one part of a row that navigates, so it is the one part
+     that says so under the cursor */
+  cursor: pointer;
 }
 .nm-t:hover {
   text-decoration: underline;
@@ -1475,35 +1776,23 @@
   color: var(--muted);
 }
 .skt .d {
-  grid-row: 2;
-  margin: 3px 0 0;
-  /* two lines, never three: a third line would change every row's height */
-  display: -webkit-box;
+  margin: 1px 0 0;
+  /* one line on a desktop row; two only below 640, where the row is a card */
+  display: block;
   overflow: hidden;
   font-size: var(--fs-secondary);
   line-height: 1.4;
   color: var(--muted);
   overflow-wrap: anywhere;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.skt .files,
-.skt .upd {
-  grid-row: 1;
-  overflow: hidden;
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  letter-spacing: 0.01em;
-  color: var(--muted);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .skt .acts {
-  grid-row: 1 / span 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
 }
 .skt .acts-head {
@@ -1595,8 +1884,7 @@
 .skt .row.miss .d {
   color: var(--danger);
 }
-.skt .row.miss .files,
-.skt .row.miss .upd {
+.skt .row.miss .ev {
   color: var(--ink-2);
 }
 .miss-chip {
@@ -1722,7 +2010,17 @@
 }
 
 /* ── the ladder: the column runs out of room, not the window ─────────── */
-@container skshelf (max-width: 1080px) {
+@container skshelf (max-width: 1000px) {
+  /* The container is the shelf column, not the window: at a 1440 viewport it is
+     ~1004px wide, so a 1180 threshold fired on a desktop and the base tier
+     never showed. This is the mock-up's 900–1179 tier, entered when the column
+     itself is that narrow — nothing is hidden. */
+  .skt {
+    --cols: minmax(0, 1fr) 128px 140px 82px;
+  }
+  .skt.lib-t {
+    --cols: minmax(0, 1fr) 128px 140px 82px;
+  }
 }
 @container skshelf (max-width: 960px) {
   /* the meter is a ratio, so it can afford to sit under the title */
@@ -1732,16 +2030,11 @@
   .sk-meter {
     width: 100%;
   }
-  /* the date is the least actionable column, and the skill's own page has it */
-  .skt .row,
-  .skt .row.head {
-    grid-template-columns: minmax(0, 1fr) 84px 184px;
-  }
-  .skt .k3 {
-    display: none;
-  }
-  .skt .k4 {
-    grid-column: 3;
+  /* the action track narrows before the size track does: the size cell carries
+     `N folders · M real` and a date, and the mock keeps it readable */
+  .skt,
+  .skt.lib-t {
+    --cols: minmax(0, 1fr) 128px 140px 82px;
   }
   .rf {
     display: none;
@@ -1751,9 +2044,9 @@
   }
 }
 @container skshelf (max-width: 820px) {
-  .skt .row,
-  .skt .row.head {
-    grid-template-columns: minmax(0, 1fr) 84px 152px;
+  .skt,
+  .skt.lib-t {
+    --cols: minmax(0, 1fr) 104px 124px 82px;
   }
 }
 @container skshelf (max-width: 700px) {
@@ -1771,18 +2064,55 @@
   .sk-seg button {
     flex: 1;
   }
+  /* three tabs with counts stop fitting on one line here, so each takes a
+     third of the strip and the counts stay */
+  .skscopes {
+    width: 100%;
+  }
+  .skscopes button {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    padding: 0 6px;
+  }
+  .skscopes .where {
+    display: none;
+  }
+  .subtabs {
+    width: 100%;
+  }
+  .subtabs button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  .subtabs .where {
+    display: none;
+  }
+  /* eight chips wrapped to five rows is the page growing, not the row */
+  .filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .filters .hint {
+    flex: none;
+  }
   .skbar-where {
     margin-left: auto;
   }
-  .skt .row,
-  .skt .row.head {
-    grid-template-columns: minmax(0, 1fr) 152px;
+  /* ≤700: the hash/rank track drops, the size and the action stay */
+  .skt,
+  .skt.lib-t {
+    --cols: minmax(0, 1fr) 116px 82px;
   }
   .skt .k2 {
     display: none;
   }
-  .skt .k4 {
+  .skt .k3 {
     grid-column: 2;
+  }
+  .skt .k4 {
+    grid-column: 3;
   }
   .skfoot {
     flex-wrap: wrap;
@@ -1822,44 +2152,49 @@
   .skt .row.head {
     display: none;
   }
+  /* one row is one card, in the mock-up's shape: the name and its action on the
+     first line, then the size line, then the mark column — every cell placed, so
+     no tab leaves an empty track behind */
   .skt .row {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto auto;
     row-gap: 6px;
-    padding: 14px 0;
+    padding: 11px 9px;
     border-top: 1px solid var(--border);
   }
   .skt .row:first-child {
     border-top: 1px solid var(--border);
   }
   .skt .nm {
+    grid-column: 1;
     grid-row: 1;
-    gap: 10px;
+    gap: 8px;
   }
   .nm-t {
     font-size: var(--fs-body);
+    white-space: normal;
   }
-  .skt .d {
-    grid-row: 2;
+  .skt .ev.k3 {
+    display: block;
     grid-column: 1 / -1;
-    font-size: var(--fs-secondary);
+    grid-row: 2;
   }
-  .skt .files {
-    display: block;
+  .skt .marks {
+    grid-column: 1 / -1;
     grid-row: 3;
-    grid-column: 1;
-  }
-  .skt .upd {
-    display: block;
-    grid-row: 3;
-    grid-column: 1;
-    justify-self: end;
   }
   .skt .acts {
-    grid-row: 4;
-    grid-column: 1 / -1;
-    justify-content: stretch;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
     gap: 8px;
+  }
+  /* §7: the description clamps to two lines here, where the row is a card */
+  .skt .d {
+    display: -webkit-box;
+    white-space: normal;
+    line-height: 1.35;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
   .ref {
     flex: 1 1 auto;
@@ -1872,6 +2207,46 @@
   .sk-row-menu {
     width: 44px;
     height: 44px;
+  }
+  /* 44 px, one row per tab: the strip is the page's first control on a phone,
+     and a 30 px target is the thing that breaks first at 360 */
+  .skscopes button,
+  .subtabs button {
+    height: 44px;
+  }
+  .skscopes,
+  .subtabs {
+    width: 100%;
+  }
+  .skscopes button,
+  .subtabs button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .skscopes .where,
+  .subtabs .where,
+  .skscopes .n {
+    display: none;
+  }
+  .filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 11px -16px 0;
+    padding: 0 16px 2px;
+  }
+  .filters .hint {
+    flex: none;
+    height: 44px;
+    padding: 0 11px;
+  }
+  /* the two middle cells keep their own tracks on a phone: the mark column and
+     the folder/size line both stay readable */
+  .skt .ev,
+  .skt .marks {
+    min-width: 0;
+  }
+  .skt .row .k2 {
+    display: none;
   }
   .sksearch input {
     height: 44px;
@@ -1913,8 +2288,7 @@
   }
 }
 
-/* ── copy sheet: the name-clash decision ─────────────────────────────── */
-/* `.modal` lives in app.css, which imports this file first, so a single class
+/* ── copy sheet: the name-clash decision ─────────────────────────────── *//* `.modal` lives in app.css, which imports this file first, so a single class
    here loses the cascade: the sheet states its size at two classes. */
 .modal.skcopy-modal {
   /* the clash decision needs room for two options side by side, and the whole
@@ -1997,4 +2371,276 @@
   margin-top: 2px;
   overflow-wrap: anywhere;
   font-size: var(--fs-label);
+}
+
+/* ── the install sheet: one destination list, one primary ─────────────── */
+/* `.modal` states its own width at one class, so the sheet states its size at
+   two — the destination list needs the room the narrow copy sheet does not. */
+.modal.skinstall-modal {
+  width: min(680px, 94vw);
+  /* the mock-up's .sheet is a 12px card, not the modal's 16 */
+  border-radius: var(--r-md);
+  max-height: min(92vh, 760px);
+}
+/* the sheet's crest is the size the mock-up draws: 34 with a 17 mark, not the
+   roster's 22-with-12 it would otherwise inherit */
+.skinstall-modal .sheet-head .sig-tile {
+  width: 34px;
+  height: 34px;
+}
+.skinstall-modal .sheet-head .sig-tile svg {
+  width: 17px;
+  height: 17px;
+}
+.skinstall-modal .sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.skinstall-modal .sheet-head .hh {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.skinstall-modal .sheet-head h2 {
+  margin: 0 0 2px;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.skinstall-modal .sheet-head .src {
+  display: block;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.skinstall-modal .sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 13px 16px;
+  overflow: auto;
+}
+.skinstall-modal .sheet-body p {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.skinstall-modal .sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.skinstall-modal .sheet-foot .sum {
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.skinstall-modal .sheet-foot .sum b {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+.skinstall-modal .sheet-foot .sp {
+  margin-left: auto;
+}
+.skinstall-modal .sheet-rule {
+  margin: 0;
+  padding: 8px 16px 11px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* 01 / 02: the step number, its heading, and the count of what it covers */
+.skinstall-modal .step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skinstall-modal .step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.skinstall-modal .step-n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.skinstall-modal .step-head b {
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.skinstall-modal .step-head .stt {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.skinstall-modal .notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.skinstall-modal .notice b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.skinstall-modal .notice[data-tone='warn'] {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.skinstall-modal .dest-group {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.skinstall-modal .dest-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.skinstall-modal .dest-group-head b {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.skinstall-modal .dest-group-head .cnt {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+/* a destination row: the checkbox, the icon, the name and path, its state */
+.skinstall-modal .dest {
+  display: flex;
+  /* the copy sheet's base `.dest` is a column of fields; a destination row is one
+     line, so it states its axis rather than inheriting that column */
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.skinstall-modal .dest:last-child {
+  border-bottom: 0;
+}
+.skinstall-modal .dest:hover:not([data-off='1']) {
+  background: var(--surface);
+}
+.skinstall-modal .dest[data-off='1'] {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+.skinstall-modal .dest .rd {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-2xs);
+  display: grid;
+  place-items: center;
+}
+.skinstall-modal .dest[aria-checked='true'] .rd {
+  border-color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.skinstall-modal .dest[aria-checked='true'] .rd::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-2xs);
+  background: var(--accent-ink);
+}
+.skinstall-modal .dest .ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.skinstall-modal .dest .dt {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.skinstall-modal .dest .dt b {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+.skinstall-modal .dest .dt span {
+  display: block;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* the tag inside the name is not the path line: it stays inline and only as wide
+   as its word, or it takes the whole name row and wraps the name in two */
+.skinstall-modal .dest .dt b .tg {
+  display: inline-block;
+  width: auto;
+  overflow: visible;
+  vertical-align: 1px;
+}
+.skinstall-modal .dest .state {
+  flex: 0 0 auto;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skinstall-modal .dest .state[data-s='ok'] {
+  color: var(--ok-ink);
+}
+/* a link is a caution, not a success: writing through it is the hazard */
+.skinstall-modal .dest .state[data-s='drift'] {
+  color: var(--accent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skscopes button,
+  .subtabs button,
+  .skinstall-modal .dest {
+    transition: none;
+  }
 }

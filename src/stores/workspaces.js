@@ -29,6 +29,8 @@ export const workspaces = reactive({
   mcp: { schema: 1, servers: {}, disabled: {}, names: [], disabledNames: [], strict: true, path: '' },
   /** the machine-wide skill libraries, for the "attach" lists */
   library: null,
+  /** the same scan with a `sha256` per folder — the Local tab's comparison */
+  hashedLibrary: null,
   /** machine id → the names-only index for that machine's libraries */
   skillNamesByMachine: {},
   /** remote host → skills read from that host's harness libraries */
@@ -344,6 +346,37 @@ export async function loadLibrary({ force = false } = {}) {
   return libraryPending
 }
 
+/**
+ * The same library scan, hashed.
+ *
+ * `loadLibrary` is the attach list and costs one walk; this one also digests
+ * every folder, which is what lets the row say `differs elsewhere` instead of
+ * offering a blind replace. Kept as a second lazy read (and its own cache) so a
+ * page that only needs names never pays for 79 folder reads.
+ */
+let hashedPending = null
+
+export async function loadHashedLibrary({ force = false } = {}) {
+  if (hashedPending) return hashedPending
+  if (workspaces.hashedLibrary && !force) return workspaces.hashedLibrary
+  hashedPending = (async () => {
+    try {
+      workspaces.hashedLibrary = await call('skills.scan', { hash: true })
+    } catch (error) {
+      workspaces.hashedLibrary = {
+        items: [],
+        harnesses: [],
+        count: 0,
+        error: error?.message || 'The skill folders could not be read.',
+      }
+    } finally {
+      hashedPending = null
+    }
+    return workspaces.hashedLibrary
+  })()
+  return hashedPending
+}
+
 export async function loadSamples() {
   try {
     workspaces.samples = await call('workspace.samples')
@@ -461,16 +494,43 @@ async function reloadSkills() {
   }
 }
 
-export async function attachSkill({ name, harness }) {
+export async function attachSkill({ name, harness, id = '' }) {
+  const target = id || workspaces.active
   workspaces.busy = `skill:${name}`
   try {
     const result = await call('workspace.attachSkill', {
-      id: workspaces.active,
+      id: target,
       name,
       harness,
     })
-    await afterScopeWrite()
+    /* only the workspace on screen has a roster to refresh; another
+       destination is reported by the sheet that asked for it */
+    if (target === workspaces.active) await afterScopeWrite()
     toast(result.copied ? `${name} copied into the workspace` : `${name} attached`)
+    return result
+  } finally {
+    workspaces.busy = ''
+  }
+}
+
+/**
+ * Move a workspace copy forward to the library's bytes.
+ *
+ * `attachSkill` refuses a name that is already here — correct for an attach,
+ * wrong for an update. The main process stages the copy and renames it over the
+ * old one, so a failure leaves the copy that was already here untouched.
+ */
+export async function replaceSkill({ name, harness = null, id = '' }) {
+  const target = id || workspaces.active
+  workspaces.busy = `skill:${name}`
+  try {
+    const result = await call('workspace.replaceSkill', {
+      id: target,
+      name,
+      harness,
+    })
+    if (target === workspaces.active) await afterScopeWrite()
+    toast(`${name} replaced with the library's copy`)
     return result
   } finally {
     workspaces.busy = ''

@@ -46,6 +46,18 @@ const { createTerminal } = require('./terminal-store.cjs')
 const { createRunner } = require('./runner-local.cjs')
 
 /**
+ * The skills.sh boards, as URLs. One entry per board the page offers; a name
+ * that is not here is refused rather than fetched, so the renderer cannot ask
+ * this process to GET an address it chose.
+ */
+const BOARD_URLS = {
+  all: 'https://www.skills.sh/',
+  trending: 'https://www.skills.sh/trending',
+  hot: 'https://www.skills.sh/hot',
+}
+const BOARD_TIMEOUT_MS = 20_000
+
+/**
  * The files a live conversation still points at: `artifact://<id>` in a message, a
  * tool call's input, or a tool result. This lives here, not in the shelf's store,
  * because it reads the chat store's data — the shelf only receives the answer. A
@@ -191,6 +203,7 @@ function createRpc({
     'workspace.forgetMachineFacts': (args) => workspaces.forgetMachineFacts(args),
     'workspace.skills': ({ id }) => workspaces.skills(id),
     'workspace.attachSkill': (args) => workspaces.attachSkill(args),
+    'workspace.replaceSkill': (args) => workspaces.replaceSkill(args),
     'workspace.copySkill': (args) => workspaces.copySkill(args),
     'workspace.detachSkill': (args) => workspaces.detachSkill(args),
     'workspace.skillRead': (args) => workspaces.skillRead(args),
@@ -536,8 +549,27 @@ function createRpc({
     /* the machine as it exists, not as this workspace intends it */
     'ssh.hosts': () => localData.readSshHosts(),
     'ssh.probe': ({ alias }) => localData.probeSshHost(String(alias || '')),
-    'skills.scan': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
+    'skills.scan': ({ machine, hash } = {}) =>
+      localData.scanSkillLibrary({ machine, hash: Boolean(hash) }),
     'skills.remote': ({ machine } = {}) => remoteRunner.listSkills(machine),
+    /* The skills.sh boards, read here because the site sends no CORS headers and
+       the renderer therefore cannot fetch it. The URL is allowlisted, the parse
+       stays in the renderer (`src/lib/skillsh.js`), and nothing is cached here. */
+    'skills.board': async ({ board = 'all' } = {}) => {
+      const url = BOARD_URLS[String(board)]
+      if (!url) {
+        throw new Error(`There is no skills.sh board called "${board}".`)
+      }
+      const response = await fetch(url, {
+        headers: { accept: 'text/html', 'user-agent': 'entity' },
+        signal: AbortSignal.timeout(BOARD_TIMEOUT_MS),
+        redirect: 'follow',
+      })
+      if (!response.ok) {
+        throw new Error(`skills.sh answered ${response.status} for ${board}.`)
+      }
+      return { board, url, html: await response.text() }
+    },
 
     /* remote workspace sync: one connection per workspace, kept in
        <ws>/.remote.json and <ws>/.remote.token (0600) */
