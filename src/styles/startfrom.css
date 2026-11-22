@@ -1,0 +1,445 @@
+/* ── the start-from shelf ───────────────────────────────────────────────
+   One line in an entity file — `prefer:` — drawn once, by
+   `components/StartFromShelf.vue`, on the entity page and on the skill page.
+
+   It is a numbered list, not a chip soup and not a card grid: the number is the
+   `/` menu position, so the row number is the fact, not decoration. The card is
+   the only bordered object; rows are `--border` hairlines and nothing else.
+
+   Container-queried on `.sf`, so the shelf answers its own column (the entity
+   page's 306 px rail narrows it long before the window does). */
+
+.sf {
+  container-type: inline-size;
+}
+.sf-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.sf-head h2 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+/* The count changes the list, so it stays plain text: a live region announcing
+   "1 of 11" on every tick is noise, and the row's own label is the receipt. */
+.sf-head .k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sf-head .sf-add {
+  margin-left: auto;
+}
+
+.sf .pickwrap {
+  flex: none;
+  display: inline-flex;
+}
+
+/* The one control in the section with a visible edge, so it takes
+   `--field-edge` (4.20:1 daylight, 4.34:1 at night) instead of the 1.53:1 a
+   hairlined control would leave. Scoped to the shelf: the app's `.btn` keeps
+   `--border-strong` everywhere else, and `PreferPicker` itself is untouched —
+   this only dresses the trigger it already renders.
+
+   Source-inline, and `width: auto` with it: the trigger sits in a flex head, so
+   anything that lets it become a block — or inherit a stretch — turns `+ Add
+   skill` into a 500 px bar under a normal desktop column. */
+.sf .pickbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  width: auto;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+.sf .pickbtn .nm {
+  font-size: var(--fs-secondary);
+}
+.sf .pickbtn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--muted);
+}
+.sf .pickbtn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.sf .pickbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sf .pickbtn:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The first read of the workspace: two bars in the real grid, no spinner. */
+.sf-skel {
+  display: block;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+}
+.sf-row--skeleton .sf-ix,
+.sf-row--skeleton .sf-ic {
+  background: var(--skel);
+  border-color: transparent;
+}
+.sf-skel--name {
+  width: 38%;
+  height: 9px;
+}
+.sf-skel--meta {
+  width: 22%;
+  height: 7px;
+  margin-top: 6px;
+}
+.sf-row--skeleton:hover {
+  background: var(--bg);
+}
+
+/* Empty lives inside the card, never a paragraph floating in the page. */
+.sf-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+}
+.sf-empty .t {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.sf-empty b {
+  display: block;
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+.sf-empty p {
+  margin: 2px 0 0;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.sf-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  overflow: auto;
+  max-height: 368px;
+}
+.sf-row {
+  display: grid;
+  grid-template-columns: 22px 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  transition: background 0.12s ease;
+}
+.sf-row:last-child {
+  border-bottom: 0;
+}
+.sf-row:hover {
+  background: color-mix(in oklab, var(--surface) 70%, var(--bg));
+}
+/* The row being written: the rest of the list keeps working. */
+.sf-row[data-state='saving'] {
+  opacity: 0.62;
+}
+.sf-ix {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  height: 22px;
+  line-height: 20px;
+}
+/* A grey tile with a size, never an invented logo. */
+.sf-ic {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  overflow: hidden;
+}
+.sf-ic svg {
+  width: 13px;
+  height: 13px;
+}
+.sf-ic .mark {
+  width: 20px;
+  height: 20px;
+}
+.sf-body {
+  min-width: 0;
+  display: block;
+}
+.sf-name {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* an entity is a name, not a callable reference */
+.sf[data-kind='entity'] .sf-name {
+  font-family: var(--font);
+  letter-spacing: 0;
+}
+a.sf-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sf-meta {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+/* A name `prefer:` holds and the workspace does not is a note, not a fault: it
+   keeps its index and its × still writes. The word `gone` is the signal, not
+   the hue. */
+.sf-row[data-gone='1'] .sf-name {
+  color: var(--muted);
+}
+.sf-row[data-gone='1'] .sf-meta {
+  color: var(--accent-ink);
+}
+
+/* Tools carry no persistent border: a hairline appears on hover only, because
+   `--border-strong` is 1.53:1 and that is not a control edge. The glyph itself
+   is `--muted` (5.12:1). */
+.sf-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sf-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.sf-icon svg {
+  width: 11px;
+  height: 11px;
+}
+.sf-icon:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--ink);
+}
+.sf-icon.rm:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+}
+.sf-icon:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.sf-icon:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* The one sentence that carries the semantics, at reading size — the 9 px mono
+   footnote it replaces was legal contrast and unreadable type. */
+.sf-note {
+  margin: 9px 0 0;
+  max-width: 70ch;
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.sf-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--danger) 28%, var(--border));
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--ink-2);
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+}
+.sf-err svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--danger);
+}
+.sf-err code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+
+/* "Everyone else" — the half that makes this a bookmark and not a grant. */
+.sf-rest {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px dashed var(--border-strong);
+}
+.sf-rest-h {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.sf-rest-h code {
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.sf-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sf-mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  max-width: 100%;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.sf-mchip .mark {
+  width: 16px;
+  height: 16px;
+}
+.sf-mchip .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 420 px of column, not 620: the shelf lives in the entity page's `minmax(0,1fr)`
+   column beside a 306 px rail, so it is 588 px wide at a 1440 window and 332 px
+   at 1024 — a 620 px breakpoint fired on an ordinary desk and stacked the head
+   and the rows there. At 420 the two-line row and the 44 px touch target land
+   only on a column that is actually phone-narrow. */
+@container (max-width: 420px) {
+  .sf-head {
+    gap: 6px;
+  }
+  /* the trigger wraps to its own full-width row, under the count it changes */
+  .sf-head .sf-add {
+    flex: 1 1 100%;
+    margin-left: 0;
+    order: 3;
+  }
+  .sf-head .pickbtn {
+    width: 100%;
+    height: 32px;
+  }
+  .sf-row {
+    grid-template-columns: 20px 24px minmax(0, 1fr);
+    grid-template-areas:
+      'ix ic body'
+      '. . tools';
+    row-gap: 4px;
+    min-height: 56px;
+    padding: 9px 10px;
+  }
+  .sf-ix {
+    grid-area: ix;
+    align-self: start;
+    margin-top: 2px;
+  }
+  .sf-ic {
+    grid-area: ic;
+    align-self: start;
+  }
+  .sf-body {
+    grid-area: body;
+  }
+  .sf-tools {
+    grid-area: tools;
+    align-self: center;
+  }
+  /* 44 px is the touch target the 26 px hit box is not */
+  .sf-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .sf-icon.rm {
+    margin-left: auto;
+  }
+  .sf-meta {
+    white-space: normal;
+  }
+  .sf-mchip {
+    height: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf,
+  .sf * {
+    transition: none;
+    animation: none;
+  }
+}

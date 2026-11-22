@@ -1,78 +1,144 @@
 #!/usr/bin/env node
 /**
- * Seed a throwaway profile for recording the README demos.
+ * The invented demo profile — a letterpress studio, a bakery and a travel
+ * notebook — seeded into a throwaway folder.
  *
- * Everything here is invented: a letterpress studio, a bakery and a travel
- * notebook. No real account, workspace, path, host, token or conversation is
- * read from — or written to — the machine's own profile. The app is pointed at
- * this folder with `ENTITY_HOME`, so the recording cannot show a real name even
- * by accident.
+ * `scripts/demo.mjs` (`npm run demo`) is the entry point and imports `seedDemo`
+ * from here. Everything in the profile is invented; no real account, workspace,
+ * path, host, token or conversation is read from — or written to — the machine's
+ * own profile. The app is pointed at this folder with `ENTITY_HOME`, so the
+ * recording cannot show a real name even by accident.
  *
- *   node scripts/demo-profile.mjs [--home /tmp/entity-demo] [--force]
+ *   node scripts/demo-profile.mjs [--home .tmp/demo] [--force]
  *
  * The profile lives under that throwaway home, which the app is also given as
  * `HOME`: there is no `~/.ssh/config` there, so no real host can appear in a
  * screenshot, and every path the interface prints starts with `~`.
  *
- * Then:
- *   HOME=/tmp/entity-demo ENTITY_HOME=/tmp/entity-demo/.entity VITE_DEV_PORT=5299 npm run dev
+ * The fleet is the part a picture has to survive: long aliases beside their
+ * near-twins, hosts that were scanned and hosts that were never tested, and one
+ * host that can only fail.
  *
- * Sign in with the printed demo account. See `docs/assets/README.md`.
+ * Usually `npm run demo` instead: it seeds this profile *and* serves it. See
+ * `docs/assets/README.md`.
  */
+
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const args = process.argv.slice(2)
-const homeAt = args.indexOf('--home')
-/* A throwaway home, not the real one: no ssh config, no account, no data. */
-const DEMO_HOME = path.resolve(homeAt >= 0 ? args[homeAt + 1] : '/tmp/entity-demo')
-const HOME = path.join(DEMO_HOME, '.entity')
+
+const require = createRequire(import.meta.url)
+
+/* Everything lives under `.tmp/`, which is gitignored and rebuilt on every run. */
+const DEMO_HOME = path.join(ROOT, '.tmp', 'demo')
 
 export const DEMO = {
   email: 'studio@northwind.example',
   password: 'demo-northwind-24',
   name: 'Sam Rivers',
+  /* The id `workspaces.create({ label: 'Northwind Studio' })` derives; `seedDemo`
+     assigns it from the record that call returns, so the two cannot drift. */
+  workspace: 'northwind-studio',
+  /* The machine names itself in the hero and the rail, so a picture must not
+     publish the laptop it was taken on. */
+  hostname: 'studio-workstation',
   home: DEMO_HOME,
-  /* A folder a demo thread can be started in; created below. */
-  project: path.join(DEMO_HOME, 'Studio', 'spring-catalogue'),
+  scratch: path.join(DEMO_HOME, 'home'),
+  /* The profile sits *inside* the scratch `HOME` (`~/.entity`, as the app's own
+     docs put it): `tilde()` shortens against `HOME`, so a sibling profile would
+     print the machine's real absolute path — username and all — on every
+     workspace card, into the recording. */
+  profile: path.join(DEMO_HOME, 'home', '.entity'),
+  /* A folder a demo thread can be started in; created below, inside `~`. */
+  project: path.join(DEMO_HOME, 'home', 'Studio', 'spring-catalogue'),
 }
 
-if (existsSync(DEMO_HOME) && !args.includes('--force')) {
-  console.log(`${DEMO_HOME} already exists. Pass --force to replace it.`)
-  process.exit(1)
+/* The fleet, invented: aliases that read like a workshop's machines, never like a
+   person's. `192.0.2.0/24` is TEST-NET-1 (RFC 5737), reserved for documentation
+   and routed nowhere, so a connection to it cannot reach a real machine. */
+const HOSTS = [
+  { alias: 'atlas-build', hostName: '10.20.0.11', user: 'root', scanned: true },
+  { alias: 'borealis-gpu', hostName: '10.20.0.12', user: 'root', scanned: false },
+  { alias: 'cinder-staging', hostName: '10.20.0.13', user: 'root', scanned: false },
+  { alias: 'dune-ci-runner-01', hostName: '10.20.0.14', user: 'root', scanned: true },
+  { alias: 'dune-ci-runner-02', hostName: '10.20.0.15', user: 'root', scanned: false },
+  /* the pair that must never be told apart by ellipsis: they differ at the end */
+  { alias: 'workshop-west', hostName: '10.20.0.21', user: 'root', scanned: false },
+  { alias: 'workshop-east', hostName: '10.20.0.22', user: 'root', scanned: false },
+  { alias: 'ember-analytics', hostName: '10.20.0.31', user: 'root', scanned: false, port: '2222' },
+  /* a host that answers nothing, so the picture shows the failure state too */
+  { alias: 'garnet-archive', hostName: '192.0.2.44', user: 'root', scanned: false },
+  { alias: 'fathom-batch', hostName: '10.20.0.32', user: 'root', scanned: true },
+  /* git remotes: real entries in a config, not agent hosts */
+  { alias: 'mirror-origin', hostName: 'git.example.test', user: 'git', remote: true },
+  { alias: 'mirror-upstream', hostName: 'git.example.test', user: 'git', remote: true },
+  { alias: 'vendor-fork', hostName: 'vendor.example.test', user: 'git', remote: true },
+]
+
+/** One `Host` block, in the grammar the real reader parses. */
+function sshConfig(hosts) {
+  const lines = ['# A scratch fleet for a demo. Every alias here is invented.', '']
+  for (const host of hosts) {
+    lines.push(`Host ${host.alias}`)
+    lines.push(`    HostName ${host.hostName}`)
+    lines.push(`    User ${host.user}`)
+    if (host.port) lines.push(`    Port ${host.port}`)
+    lines.push('    IdentityFile ~/.ssh/id_ed25519')
+    lines.push('')
+  }
+  return lines.join('\n')
 }
-rmSync(DEMO_HOME, { recursive: true, force: true })
-mkdirSync(path.join(DEMO_HOME, '.ssh'), { recursive: true })
+
+/* Invented harness inventories, so the *Inventory* column is not `no inventory
+   yet` on every row. Only some hosts were ever scanned: the rest say so. */
+const INVENTORY = {
+  'atlas-build': [
+    { id: 'claude', label: 'Claude Code', path: '~/.local/bin/claude', models: ['claude-sonnet-4-6', 'claude-opus-4-1'] },
+    { id: 'codex', label: 'Codex', path: '~/.local/bin/codex', models: ['gpt-5-codex'] },
+    { id: 'opencode', label: 'OpenCode', path: '~/.local/bin/opencode', models: ['anthropic/claude-sonnet-4-6'] },
+    { id: 'gemini', label: 'Gemini CLI', path: '~/.local/bin/gemini', models: ['gemini-2.5-pro'] },
+    { id: 'pi', label: 'pi', path: '~/.local/bin/pi', models: ['sonnet', 'opus'] },
+  ],
+  'dune-ci-runner-01': [
+    { id: 'codex', label: 'Codex', path: '/usr/local/bin/codex', models: ['gpt-5-codex'] },
+    { id: 'pi', label: 'pi', path: '/usr/local/bin/pi', models: ['sonnet'] },
+  ],
+  'fathom-batch': [
+    { id: 'claude', label: 'Claude Code', path: '/usr/local/bin/claude', models: ['claude-haiku-4-5'] },
+  ],
+}
+
+export async function seedDemo({ home = DEMO.home, force = false } = {}) {
+DEMO.home = path.resolve(home)
+DEMO.scratch = path.join(DEMO.home, 'home')
+DEMO.profile = path.join(DEMO.scratch, '.entity')
+DEMO.project = path.join(DEMO.scratch, 'Studio', 'spring-catalogue')
+
+if (existsSync(DEMO.home) && !force) {
+  throw new Error(`${DEMO.home} already exists. Pass --force to replace it.`)
+}
+rmSync(DEMO.home, { recursive: true, force: true })
+/* The machines page reads aliases from `~/.ssh/config` and the ssh reader
+   resolves `~` from the real home, so the demo writes a config into its own
+   scratch `HOME`: there is no other config on it, and no real host can appear. */
+mkdirSync(path.join(DEMO.scratch, '.ssh'), { recursive: true })
+writeFileSync(path.join(DEMO.scratch, '.ssh', 'config'), sshConfig(HOSTS), { mode: 0o600 })
 for (const dir of ['Studio/campaigns', 'Studio/catalogue', 'Kitchen', 'Notes']) {
-  mkdirSync(path.join(DEMO_HOME, dir), { recursive: true })
+  mkdirSync(path.join(DEMO.scratch, dir), { recursive: true })
 }
-/* Two invented hosts. The machines page reads aliases from `~/.ssh/config`, so
-   the demo home needs its own file — this is why the recording cannot show a
-   real host: there is no other config on that home. */
-writeFileSync(
-  path.join(DEMO_HOME, '.ssh', 'config'),
-  [
-    '# Demo hosts. Not real machines, no keys, nothing to connect to.',
-    'Host studio-nas',
-    '  HostName studio-nas.local',
-    '  User sam',
-    '',
-    'Host workshop-mini',
-    '  HostName workshop-mini.local',
-    '  User sam',
-    '',
-  ].join('\n'),
-)
-process.env.ENTITY_HOME = HOME
+process.env.ENTITY_HOME = DEMO.profile
+process.env.ENTITY_HOSTNAME = DEMO.hostname
+/* `HOME` is not replaced here: it only decides what the *app* resolves `~`
+   against, so `scripts/demo.mjs` passes the scratch home to the server it
+   starts. Chromium's browser cache lives under the real home, and the poster
+   below is drawn with Chromium. */
 
-const require = createRequire(import.meta.url)
-const workspaces = require('../electron/workspace-store.cjs')
-const auth = require('../electron/auth-store.cjs')
-
+const workspaces = require(path.join(ROOT, 'electron', 'workspace-store.cjs'))
+const auth = require(path.join(ROOT, 'electron', 'auth-store.cjs'))
 const OWNER = { name: DEMO.name, email: DEMO.email }
 const iso = (daysAgo, hour = 10) => {
   const day = new Date(Date.UTC(2026, 10, 16, hour, 0, 0))
@@ -455,7 +521,7 @@ writeFileSync(
     },
     disabled: {
       'local-scanner': {
-        command: '/Users/ada/bin/scan-notes',
+        command: '~/bin/scan-notes',
         __remote: true,
         __unavailable: 'its command is a path inside a home directory on the machine that shared it',
       },
@@ -463,33 +529,53 @@ writeFileSync(
   }, null, 2)}\n`,
 )
 
+/* The scan snapshots: the same file the app reads, in the same shape. Only the
+   hosts marked `scanned` have one, so the roster shows both states — and the
+   host on TEST-NET keeps its failure in the row instead of a snapshot. */
+const scannedAt = iso(0, 9)
+const hosts = {}
+for (const [alias, harnesses] of Object.entries(INVENTORY)) {
+  const host = HOSTS.find((entry) => entry.alias === alias)
+  hosts[alias] = {
+    alias,
+    label: alias,
+    spec: `${host?.user || 'root'}@${host?.hostName || '10.20.0.0'}`,
+    status: 'ok',
+    source: 'ssh',
+    hostname: alias,
+    platform: host?.alias.startsWith('dune') ? 'Linux' : 'macOS',
+    arch: host?.alias.startsWith('dune') ? 'x64' : 'arm64',
+    checkedAt: scannedAt,
+    durationMs: 640,
+    harnesses,
+  }
+}
+hosts.local = {
+  alias: 'local',
+  label: 'this machine',
+  spec: 'localhost',
+  status: 'ok',
+  source: 'local',
+  hostname: DEMO.hostname,
+  platform: 'macOS',
+  arch: 'arm64',
+  checkedAt: scannedAt,
+  durationMs: 210,
+  harnesses: INVENTORY['atlas-build'],
+}
 writeFileSync(
   path.join(workspaces.open(studio.id).path, 'machine-facts.json'),
-  `${JSON.stringify({
-    schema: 1,
-    hosts: {
-      'studio-nas': {
-        alias: 'studio-nas', label: 'studio-nas', spec: 'sam@studio-nas.local', status: 'ok',
-        source: 'ssh', hostname: 'studio-nas',
-        platform: 'Linux', arch: 'x64', checkedAt: iso(2, 9),
-        harnesses: [
-          { id: 'claude', label: 'Claude Code', path: '/usr/local/bin/claude', models: ['sonnet', 'opus'], default: 'sonnet' },
-          { id: 'pi', label: 'pi', path: '/usr/local/bin/pi', models: ['sonnet'], default: 'sonnet' },
-        ],
-      },
-      'workshop-mini': {
-        alias: 'workshop-mini', label: 'workshop-mini', spec: 'sam@workshop-mini.local', status: 'ok',
-        source: 'ssh', hostname: 'workshop-mini',
-        platform: 'macOS', arch: 'arm64', checkedAt: iso(6, 12),
-        harnesses: [
-          { id: 'claude', label: 'Claude Code', path: '/opt/homebrew/bin/claude', models: ['sonnet'], default: 'sonnet' },
-          { id: 'gemini', label: 'Gemini CLI', path: '/opt/homebrew/bin/gemini', models: ['flash'], default: 'flash' },
-        ],
-      },
-    },
-  }, null, 2)}\n`,
+  `${JSON.stringify({ schema: 1, hosts, updatedAt: scannedAt }, null, 2)}\n`,
 )
 
+/* The sweep is this machine, claimed, so the roster answers with a machine name
+   instead of "no machine runs the sweep yet". */
+workspaces.setArtifactRetention({
+  id: studio.id,
+  artifactRetention: {
+    executor: { kind: 'machine', member: DEMO.email, hostname: DEMO.hostname, claimedAt: scannedAt },
+  },
+})
 /* ── 2. Copper Lane — a bakery, for the second room ───────────────── */
 const bakery = workspaces.create({ label: 'Copper Lane', owner: OWNER })
 workspaces.setContext({
@@ -637,8 +723,21 @@ for (let i = 0; i < 46; i += 1) {
   }))
 }
 
-/* ── finish ───────────────────────────────────────────────────────── */
-console.log(`home      ${DEMO_HOME}`)
-console.log(`profile   ${HOME}`)
-console.log(`sign in   ${DEMO.email}  /  ${DEMO.password}`)
-console.log(`workspaces ${workspaces.list().map((record) => record.label).join(' · ')}`)
+return DEMO
+}
+
+/* Seeding on its own is still a seed: no server, no browser. */
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  const args = process.argv.slice(2)
+  const at = args.indexOf('--home')
+  try {
+    await seedDemo({ home: at >= 0 ? args[at + 1] : DEMO.home, force: args.includes('--force') })
+  } catch (error) {
+    console.log(error.message)
+    process.exit(1)
+  }
+  /* ── finish ───────────────────────────────────────────────────────── */
+  console.log(`home      ${DEMO.scratch}`)
+  console.log(`profile   ${DEMO.profile}`)
+  console.log(`sign in   ${DEMO.email}  /  ${DEMO.password}`)
+}

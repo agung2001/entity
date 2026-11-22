@@ -111,6 +111,25 @@ export async function togglePreferredSkill(entityName, skillName) {
   return saveEntity({ ...raw, prefer: next })
 }
 
+/**
+ * Swap two names in an entity's `prefer:` line.
+ *
+ * The order is the `/` menu's, so a move is one write of the whole line — not
+ * a remove and an add, which would pass through a state where the name is in
+ * neither file nor menu. The same `saveEntity` call as the toggle above.
+ */
+export async function movePreferredSkill(entityName, from, to) {
+  const raw = findEntity(entityName)
+  if (!raw) throw new Error(`"${entityName}" is no longer in the workspace.`)
+  const current = Array.isArray(raw.prefer) ? [...raw.prefer] : []
+  const a = current[from]
+  const b = current[to]
+  if (a === undefined || b === undefined || from === to) return raw
+  current[from] = b
+  current[to] = a
+  return saveEntity({ ...raw, prefer: current })
+}
+
 export async function scaffoldEntity({ name, harness, model = '', description = '', mark = null }) {
   const created = await call('entity.scaffold', {
     workspace: hub.workspace,

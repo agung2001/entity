@@ -626,6 +626,8 @@ it.
 | Symptom | Rule | Where it is enforced |
 | --- | --- | --- |
 | A dialog closes with the X and the scrim, but not `Esc` | Register the dialog with `useDialogDismiss` | `npm test` (every `.modal` must import it) |
+| The launcher shows a generic mark instead of Entity | A Linux icon is a hicolor ladder, not one 1024 px PNG, and Electron's `app_id` must match the desktop file: `desktopName` + `linux.syncDesktopName` in `package.json`, `build/icons/*.png`, then refresh the host icon cache | `npm test` (`desktop-shell`) |
+| A browser install falls back to a generic app icon | A manifest needs PNG marks at 192 and 512 beside the scalable SVG; many installers ignore an SVG-only list | `npm test` (`desktop-shell`) |
 | `Esc` works only after clicking inside the dialog | Never use `@keydown.esc`; use the document-level stack | `npm test` (forbids `@keydown.esc`) |
 | `Esc` closes the dialog *and* the picker behind it | Register popovers (`PickMenu`, `ModelInput`, …) too, so the stack closes one layer at a time | `useDialog.js` stack order |
 | `Esc` closes a dialog mid-save and leaves a spinner | Pass `guard: () => busy.value` | Each dialog's `useDialogDismiss` |
