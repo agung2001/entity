@@ -1,6 +1,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
+import PixelBackdrop from '@/components/PixelBackdrop.vue'
+import VoxelMark from '@/components/VoxelMark.vue'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { fleet, loadFleet } from '@/stores/fleet'
 import {
   harnesses,
   loadHarnesses,
@@ -22,6 +26,11 @@ const undo = ref(null)
 const error = ref('')
 const retry = ref(null)
 let undoTimer = null
+/* the filter is a view of the list, never a count: every number in the hero is
+   still the whole machine, only the rows under the bar narrow */
+const query = ref('')
+const searchEl = ref(null)
+const searchKey = shortcutLabel('inventory-search')
 /* The path editor is inline, one row at a time: a CLI installed by a version
    manager or an app bundle is the one case PATH cannot answer. */
 const editing = ref('')
@@ -30,11 +39,57 @@ const pathBusy = ref('')
 const pathError = ref('')
 
 const rows = computed(() => harnesses.items)
+const totalCount = computed(() => rows.value.length)
 const enabledCount = computed(() => rows.value.filter((row) => row.enabled).length)
 /* A machine with none of them installed gets the empty note, not seven rows
    whose switches have nothing to turn on. */
 const installedCount = computed(() => rows.value.filter((row) => row.installed).length)
+const toInstallCount = computed(() => Math.max(0, totalCount.value - installedCount.value))
 const loadError = computed(() => harnesses.error)
+/* `0 / 8` before the file is read is a claim, not a reading: the banner shows an
+   em dash until the probe answers, and every number below waits on this flag. */
+const firstPaint = computed(
+  () => harnesses.loading || (!harnesses.loaded && totalCount.value === 0),
+)
+const trackWidth = computed(() => {
+  if (firstPaint.value || !totalCount.value) return '0%'
+  const share = Math.min(1, Math.max(0, installedCount.value / totalCount.value))
+  return `${Math.round(share * 100)}%`
+})
+/* The eyebrow names this machine the way Machines does, from the same store. */
+const hostname = computed(() => String(fleet.hostname || 'local').replace(/\.local$/i, ''))
+/* the four fields the copy names: a person searches for what the row shows */
+const visibleRows = computed(() => {
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) return rows.value
+  return rows.value.filter((row) =>
+    [row.label, row.id, row.command, row.customPath].some((field) =>
+      String(field || '').toLowerCase().includes(needle),
+    ),
+  )
+})
+const visibleCount = computed(() => visibleRows.value.length)
+
+function focusSearch() {
+  const field = searchEl.value
+  if (!(field instanceof HTMLInputElement)) return
+  field.focus()
+  field.select()
+}
+
+/* clearing the query hands the roster back to the bar, not to the top of the page */
+function clearSearch() {
+  query.value = ''
+  focusSearch()
+}
+
+/* The list-search key focuses this roster's search. It carries a modifier, so it
+   cannot collide with a `/` a person is typing. */
+function onKey(event) {
+  if (!matchesShortcut('inventory-search', event)) return
+  event.preventDefault()
+  focusSearch()
+}
 
 function clearUndo() {
   clearTimeout(undoTimer)
@@ -160,29 +215,86 @@ onMounted(() => {
   /* the rail loads this too; forcing here means a switch always writes over a
      list read after this page opened */
   loadHarnesses(true).catch(() => {})
+  if (!fleet.loaded) loadFleet().catch(() => {})
+  window.addEventListener('keydown', onKey)
 })
-onBeforeUnmount(clearUndo)
+onBeforeUnmount(() => {
+  clearUndo()
+  window.removeEventListener('keydown', onKey)
+})
 </script>
 
 <template>
   <div class="harness-page">
-    <section class="acct-card">
-      <div class="acct-card-head">
-        <div>
-          <h2>Harnesses</h2>
-          <p class="mnote">
-            Machine-wide. A harness that is off keeps its settings and stops appearing in every
-            picker on this machine.
-          </p>
-        </div>
-        <span class="role-badge harness-count" :data-on="enabledCount ? '1' : '0'">
-          <template v-if="harnesses.loading">checking</template>
-          <template v-else
-            >{{ enabledCount }} of {{ rows.length || '—' }}<span class="of">&nbsp;on</span></template
-          >
-        </span>
-      </div>
+    <!-- The cabinet Skills and Machines open with. The page's only title is the
+         h1 here and its only counts are in the meter, so the card below carries
+         neither — the row is what a person came for. -->
+    <section class="sk-hero">
+      <PixelBackdrop variant="hero" :count="18" />
+      <div class="sk-hero-in">
+        <header class="sk-hero-id">
+          <!-- the drone: a 9 × 9 voxel mask from `src/lib/voxel.js`, the one
+               shape no other account page had claimed -->
+          <span class="sk-crest" aria-hidden="true"><VoxelMark shape="drone" /></span>
+          <div class="sk-hero-text">
+            <p class="eyebrow">Machine <span class="sep">·</span> {{ hostname }}</p>
+            <h1 class="sk-h1">Harnesses</h1>
+            <p class="sk-lede">
+              Every agent CLI entity can spawn on this machine — the list behind the new-thread
+              picker, an entity's harness field, the composer and the spawn tree. A harness that is
+              off keeps its settings and stops being offered. The switch writes
+              <code>~/.entity/harnesses.json</code>.
+            </p>
+            <div class="sk-chips">
+              <span class="sk-chip" v-if="firstPaint">reading ~/.entity/harnesses.json</span>
+              <template v-else>
+                <span class="sk-chip">machine-wide</span>
+                <!-- a count over nothing installed is a true sentence that helps
+                     nobody: the words say it instead -->
+                <span class="sk-chip" v-if="!installedCount" data-ok="0">no binary</span>
+                <span class="sk-chip" v-else>probed on open</span>
+              </template>
+            </div>
+          </div>
+        </header>
 
+        <aside class="sk-meter" aria-label="Harnesses installed">
+          <div class="sk-lv">
+            <span>ON</span>
+            <b>{{ firstPaint ? '—' : enabledCount }}</b>
+          </div>
+          <div class="sk-meter-main">
+            <div class="sk-meter-head">
+              <span>Installed</span>
+              <b>{{ firstPaint ? '— / —' : `${installedCount} / ${totalCount}` }}</b>
+            </div>
+            <div
+              class="sk-track"
+              role="progressbar"
+              aria-valuemin="0"
+              :aria-valuemax="firstPaint ? undefined : totalCount"
+              :aria-valuenow="firstPaint ? undefined : installedCount"
+              :aria-valuetext="
+                firstPaint
+                  ? 'the harness list has not been read yet'
+                  : `${installedCount} of ${totalCount} harnesses resolve on PATH`
+              "
+            >
+              <i :style="{ width: trackWidth }"></i>
+            </div>
+            <div class="sk-meter-foot">
+              <template v-if="firstPaint"><span>reading the config…</span></template>
+              <template v-else>
+                <span>{{ installedCount }} on PATH</span>
+                <span :data-warn="toInstallCount ? '1' : null">{{ toInstallCount }} to install</span>
+              </template>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="acct-card">
       <div class="undo-strip" role="status" v-if="undo">
         <span>{{ undo.text }}</span>
         <button class="undo-btn" type="button" @click="undoNow">Undo</button>
@@ -196,8 +308,54 @@ onBeforeUnmount(clearUndo)
         <button class="btn" type="button" style="flex: none" @click="retryWrite">Try again</button>
       </div>
 
-      <ul class="harness-list" v-if="rows.length && installedCount">
-        <template v-for="row in rows" :key="row.id">
+      <!-- the machine's whole list, with the one field a person came to narrow
+           it: the counter says what the filter is showing, never a second total -->
+      <div class="skbar harness-bar">
+        <label class="sksearch harness-search">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <circle cx="7" cy="7" r="4.3" />
+            <path d="M10.3 10.3L14 14" />
+          </svg>
+          <input
+            ref="searchEl"
+            v-model="query"
+            type="search"
+            placeholder="Search name, id, command or path…"
+            aria-label="Search this machine's harnesses"
+            spellcheck="false"
+          />
+          <kbd class="sksearch-key search-kbd" aria-hidden="true">{{ searchKey }}</kbd>
+        </label>
+        <span class="skbar-where harness-count">{{ firstPaint ? '— of —' : `${visibleCount} of ${totalCount}` }}</span>
+      </div>
+
+      <div class="empty-note" v-if="query.trim() && !visibleCount">
+        <b>Nothing matches “{{ query.trim() }}”.</b>
+        <span>Searched name, id, command and path.</span>
+        <div class="empty-actions">
+          <button class="btn btn-sm" type="button" @click="clearSearch">Clear search</button>
+        </div>
+      </div>
+
+      <ul class="harness-list skeleton" v-else-if="harnesses.loading">
+        <li class="skel-row" v-for="n in 4" :key="n">
+          <span class="skel skel-mark"></span>
+          <span class="skel-copy">
+            <span class="skel skel-line s1"></span>
+            <span class="skel skel-line s2"></span>
+          </span>
+          <span class="skel skel-pill"></span>
+        </li>
+      </ul>
+
+      <ul class="harness-list" v-else-if="rows.length && installedCount">
+        <template v-for="row in visibleRows" :key="row.id">
         <li class="harness-row" :data-on="row.enabled ? '1' : '0'">
           <span class="harness-mark"><HarnessIcon :name="row.id" :size="18" /></span>
           <span class="harness-copy">
@@ -322,25 +480,5 @@ onBeforeUnmount(clearUndo)
         <code>Harness path</code> still wins for that entity.
       </p>
     </section>
-
-    <aside class="role-card">
-      <h2>Where the list shows up</h2>
-      <p class="mnote">
-        One switch, every surface. Turning a harness off here is the same as deleting it from each
-        of these lists by hand — except it is reversible.
-      </p>
-      <dl class="ws-meta">
-        <dt>New thread</dt><dd>harness picker</dd>
-        <dt>Entity</dt><dd>harness field</dd>
-        <dt>Composer</dt><dd>harness &amp; model</dd>
-        <dt>Spawn tree</dt><dd>child rows</dd>
-        <dt>Activity</dt><dd>harness filter</dd>
-        <dt>Config</dt><dd>~/.entity/harnesses.json</dd>
-      </dl>
-      <p class="mnote account-card-note">
-        Applies to this machine, every workspace and every entity on it. A harness that is off is
-        not spawned and cannot be selected — it is not merely hidden.
-      </p>
-    </aside>
   </div>
 </template>
