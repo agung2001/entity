@@ -88,7 +88,9 @@ const section = computed(() => {
      subrail into all fifteen machines, which is a second list to read past on the
      way to the page you already opened. Detail pages show the workspace settings
      list instead — the place you navigate from — and keep the way back to their
-     own list in the header. */
+     own list in the header. `connector-page` is both kinds' address now, so an
+     MCP server's page keeps the same rail it had under `mcp-server`: the
+     workspace list, not the inventory it came from. */
   if (name === 'machine' || name === 'skill' || name === 'connector-page') {
     const back = name === 'machine' ? 'machines' : name === 'skill' ? 'skills' : 'connectors'
     return {
@@ -124,14 +126,6 @@ const section = computed(() => {
   /* A server's own page is a detail page like a machine's: it shows the
      workspace list, not the inventory it came from. The inventory lives on the
      Connectors roster now, so listing it here was a third copy of the same rows. */
-  if (name === 'mcp-server') {
-    return {
-      id: 'workspace',
-      title: hub.workspaceLabel || hub.workspace || 'Workspace',
-      count: null,
-      back: 'connectors',
-    }
-  }
   if (name === 'mcp') {
     /* One section, two scopes: the head counts what the rows count. */
     return {
@@ -145,7 +139,8 @@ const section = computed(() => {
 
 /* The workspace pool and the harness configs on this machine are two scopes of
    the same list, sized for this panel. The panel is the list beside one server's
-   page (`:workspace/mcp/:name`); the whole inventory is the Connectors roster. */
+   page (`:workspace/connectors/:id`); the whole inventory is the Connectors
+   roster. */
 const mcpScope = ref('workspace')
 const mcpQuery = ref('')
 const mcpHarness = ref('all')
@@ -176,7 +171,7 @@ const mcpPool = computed(() =>
   }),
 )
 const currentServer = computed(() =>
-  route.name === 'mcp-server' ? String(route.params.name || '') : '',
+  route.name === 'connector-page' ? String(route.params.id || '') : '',
 )
 
 const mcpWorkspaceRows = computed(() =>
@@ -520,7 +515,7 @@ const backLabel = computed(() => {
             v-for="entry in mcpWorkspaceRows"
             :key="entry.name"
             class="rail-t2-row"
-            :to="{ name: 'mcp-server', params: { workspace: hub.workspace, name: entry.name } }"
+            :to="{ name: 'connector-page', params: { workspace: hub.workspace, id: entry.name } }"
             :aria-current="currentServer === entry.name ? 'page' : undefined"
           >
             <span class="rail-t2-ic">
@@ -567,7 +562,7 @@ const backLabel = computed(() => {
             v-for="row in mcpHarnessRows"
             :key="`${row.harness}:${row.name}`"
             class="rail-t2-row"
-            :to="{ name: 'mcp-server', params: { workspace: hub.workspace, name: row.name } }"
+            :to="{ name: 'connector-page', params: { workspace: hub.workspace, id: row.name } }"
             :aria-current="currentServer === row.name ? 'page' : undefined"
           >
             <span class="rail-t2-ic"><HarnessIcon :name="row.harness" :size="14" /></span>

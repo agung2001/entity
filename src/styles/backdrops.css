@@ -330,6 +330,15 @@
     font-size: var(--fs-secondary);
   }
 }
+/* Below 620 the stats panel folds: 300px of stat above a 23-row list pushes the
+   first tool row past the fold on a phone, and the list is the page's one
+   action. The chip note still says how many and the segment still says the
+   split, so only the large presentation is lost. */
+@media (max-width: 620px) {
+  .entp-hero .entp-xp {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .pxbg-px,
   .pxbg-grid,

@@ -1001,9 +1001,11 @@
   color: var(--ink-2);
 }
 /* The command is the identity of a stdio server; give it a line of its own
-   instead of the description slot, which is sized for prose. */
+   instead of the description slot, which is sized for prose. It takes the width
+   of its own text — a full-measure slab under a 37-character URL read as a
+   table with no columns. */
 .mcpp-cmd {
-  display: block;
+  width: fit-content;
   margin-top: 9px;
   max-width: 100%;
   padding: 7px 10px;
@@ -1016,6 +1018,48 @@
   color: var(--ink-2);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+/* The endpoint and its verb are one line until they cannot be, then two. */
+.mcpp-cmd-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 9px;
+  min-width: 0;
+}
+.mcpp-cmd-row .mcpp-cmd {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+/* Copying the endpoint is the one thing a person does on arrival; it is a
+   micro mono button, not a component. */
+.mcpp-cmd-copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  margin-top: 1px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mcpp-cmd-copy:hover {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--ink-2);
+}
+.mcpp-cmd-copy svg {
+  width: 11px;
+  height: 11px;
 }
 /* The definition was a bare <pre>: no border, no padding, browser monospace. */
 .codebox {
@@ -1066,16 +1110,6 @@
 .mcpp-note[data-bad='1'] {
   color: var(--danger);
 }
-.mcpp-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 12px;
-}
-.mcpp-actions .btn[data-danger='1'] {
-  color: var(--danger);
-  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
-}
 /* The hero chip row carries one verb: park/enable is the same action the top
    bar used to hold, and it stays a real button. */
 .mcpp-chip-btn {
@@ -1102,6 +1136,18 @@
    `/` the roster shows: reserve the room it takes, or typed text runs under it. */
 .mcpp-tool-search input {
   padding-right: 84px;
+  /* A search field's border is a control boundary, not a hairline: 3:1.
+     `--border-strong` measures 1.53:1 on paper. */
+  border-color: var(--field-edge);
+}
+/* `.sksearch input` is equal-specificity and earlier in the sheet, so its two
+   interaction cues would be overridden by the rule above; keep them here, on
+   this field only. */
+.mcpp-tool-search input:hover {
+  border-color: var(--muted);
+}
+.mcpp-tool-search input:focus {
+  border-color: var(--ink);
 }
 .mcpp-seg {
   flex: none;
@@ -1444,9 +1490,15 @@
     grid-template-columns: 1fr;
     gap: 22px;
   }
+  /* The tool list is the page's one action: on a phone it comes before the
+     facts, not 540px below them. CSS order only — keyboard order stays DOM
+     order, so never a tabindex here. */
+  .entp-main {
+    order: -1;
+  }
   .entp-rail {
     position: static;
-    order: -1;
+    order: 0;
   }
   .entp-facts {
     display: grid;

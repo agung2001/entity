@@ -197,18 +197,33 @@
   list-style: none;
   max-height: 460px;
   overflow: auto;
-  border-top: 1px solid var(--border);
+}
+/* The tools are a table, so they get a table's frame: one border around the
+   whole thing, the head pinned inside it, and both inset from the edge. The
+   list already scrolls, so the frame belongs on a wrapper — a border on the
+   scroller would scroll away with the rows. This is the roster's `.ct-box`. */
+.mcp-tool-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  overflow: hidden;
+}
+.mcp-tool-box .mcp-tool-list {
+  max-height: min(60vh, 560px);
 }
 .mcp-tool-list li {
   display: grid;
-  grid-template-columns: 22px minmax(0, 200px) minmax(0, 1fr) 64px 44px;
   align-items: baseline;
   gap: 9px;
-  padding: 5px 2px;
+  padding: 7px 14px;
   border-bottom: 1px solid var(--border);
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--ink-2);
+}
+/* The frame owns the last hairline: a border inside a bordered box reads as two. */
+.mcp-tool-list li:last-child {
+  border-bottom: 0;
 }
 .mcp-tool-list .ix {
   font-size: var(--fs-micro);
@@ -238,19 +253,80 @@
   white-space: nowrap;
   color: var(--muted);
 }
+/* `read` and `write` are the same kind of thing — a tag — so they wear the same
+   shape. `write` is the only one that can change data, so it is the only one that
+   gets the accent fill; `read` was bare uppercase mono beside a bordered pill,
+   which read as a broken cell rather than as the quiet half of a pair. */
 .mcp-tool-list .kind {
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
   font-size: var(--fs-micro);
   letter-spacing: 0.05em;
-  text-align: right;
+  text-align: center;
   text-transform: uppercase;
   color: var(--muted);
 }
-/* `write` is the only place on this page that says a turn can change data. */
 .mcp-tool-list .kind[data-w='1'] {
-  padding: 0 3px;
-  border-radius: var(--r-xs);
+  border-color: transparent;
   background: var(--accent-soft);
   color: var(--accent-ink);
+}
+/* Five tracks cannot fit 358px: the description resolves to 0px and every one
+   of them vanishes. Three can, with the description on its own line and the
+   derived group tag folded away. The ≥621 template is untouched.
+
+   The head reads the same template as the rows, so a label can never sit over a
+   column the row has folded away (`.ct-head` in the roster is the same rule). */
+.mcp-tool-head,
+.mcp-tool-list li {
+  grid-template-columns: 22px minmax(0, 200px) minmax(0, 1fr) 64px 44px;
+}
+.mcp-tool-head {
+  display: grid;
+  align-items: baseline;
+  gap: 9px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mcp-tool-head > :last-child {
+  text-align: right;
+}
+@media (max-width: 620px) {
+  .mcp-tool-head,
+  .mcp-tool-list li {
+    grid-template-columns: 20px minmax(0, 1fr) 38px;
+    gap: 6px;
+  }
+  /* Three tracks: the index, the name, the kind. The description no longer has
+     its own column — it takes the row below — so its label goes with it. */
+  .mcp-tool-head > :nth-child(3),
+  .mcp-tool-head > :nth-child(4) {
+    display: none;
+  }
+  .mcp-tool-list li {
+    align-items: baseline;
+    padding: 6px 12px;
+  }
+  .mcp-tool-list .about {
+    grid-column: 2 / -1;
+    -webkit-line-clamp: 1;
+  }
+  /* The tag stays beside the name; it is the description that moves down. */
+  .mcp-tool-list .kind {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .mcp-tool-list .grp {
+    display: none;
+  }
 }
 .btn-danger {
   color: var(--danger);
