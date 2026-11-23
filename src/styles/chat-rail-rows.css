@@ -179,12 +179,6 @@
   }
 }
 
-@media (max-width: 700px) {
-  .cp-stats {
-    display: none;
-  }
-}
-
 /* ── chat rail: a slightly bolder reading scale, with a living mood sticker ─ */
 .rchat-open {
   gap: 9px;

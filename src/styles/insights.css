@@ -632,31 +632,8 @@
 }
 
 /* ── voice mode ───────────────────────────────────────────────── */
-/* The microphone sits with the composer's other context controls, immediately
-   before Composer help, and owns the right edge together with it. */
-.cp-picks .compose-voice {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin-left: 0;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--r-xs);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.cp-picks .compose-voice:hover,
-.cp-picks .compose-voice[data-on='1'] {
-  border-color: var(--border);
-  background: var(--bg);
-  color: var(--ink);
-}
-.cp-picks .compose-voice svg {
-  width: 13px;
-  height: 13px;
-}
+/* The microphone is one of the composer head's `.cp-icon` buttons: its box, its
+   hover wash and its open state live with the band, in `chat.css`. */
 .voice-modal {
   width: min(560px, 94vw);
   max-height: min(92vh, 780px);

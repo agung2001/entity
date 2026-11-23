@@ -595,30 +595,167 @@
   width: 10px;
   height: 10px;
 }
-/* The two totals close the composer's context row, immediately before voice
-   and help. They describe the conversation, so they live with the controls that
-   end it, not in the header or over the transcript. */
-.cp-stats {
+/* ── band 1: the head ────────────────────────────────────────────────────
+   One row, 30 px, one hairline under it: it separates what this turn runs
+   against from what you are saying. It is also the only horizontal rule in
+   the card — the message band and the rail paint no border. */
+.cp-dock .cp-picks {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  min-width: 0;
+  padding: 0 6px 0 5px;
+  border-bottom: 1px solid var(--border);
+}
+.cp-grow {
+  flex: 1;
+  min-width: 0;
+}
+/* The three context picks. `PickMenu` renders a wrapper and puts its button
+   inside it, so the row is scoped once and the box model lands on the button in
+   both shapes: the bare `<button class="pickbtn cp-pick">` and the wrapper's
+   child. The wrapper only keeps itself from collapsing. */
+.cp-dock .cp-picks .cp-pick {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.03em;
-  color: var(--muted);
-  white-space: nowrap;
-  pointer-events: none;
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
 }
-.cp-stats b {
+.cp-dock .cp-picks button.cp-pick,
+.cp-dock .cp-picks .cp-pick > .pickbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-body);
+  font-size: var(--fs-secondary);
   font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out;
+}
+.cp-dock .cp-picks button.cp-pick:hover,
+.cp-dock .cp-picks .cp-pick > .pickbtn:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink);
+}
+/* the repo's pick focus: the ink edge plus the accent halo, kept for the card */
+.cp-dock .cp-picks button.cp-pick:focus-visible,
+.cp-dock .cp-picks .cp-pick > .pickbtn:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* A locked context dims and stops answering hover — the path and the two icon
+   buttons stay live, because reading and asking are always allowed. */
+.cp-dock .cp-picks .cp-pick[data-locked='1'] > .pickbtn,
+.cp-dock .cp-picks .cp-pick > .pickbtn:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+.cp-dock .cp-picks .cp-pick[data-locked='1'] > .pickbtn:hover,
+.cp-dock .cp-picks .cp-pick > .pickbtn:disabled:hover {
+  background: none;
+  border-color: transparent;
   color: var(--ink-2);
 }
-.cp-stats i {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--border-strong);
+.cp-dock .cp-picks button.cp-pick svg,
+.cp-dock .cp-picks .cp-pick > .pickbtn svg {
+  flex: none;
+  opacity: 0.7;
+}
+.cp-dock .cp-picks button.cp-pick .ch,
+.cp-dock .cp-picks .cp-pick > .pickbtn .ch {
+  width: 8px;
+  height: 8px;
+  color: var(--muted);
+  opacity: 1;
+}
+.cp-dock .cp-picks button.cp-pick .ct,
+.cp-dock .cp-picks .cp-pick > .pickbtn .ct {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+/* the machine name is the longest label in the row and the one that truncates */
+.cp-dock .cp-picks .cp-pick:first-child {
+  max-width: 200px;
+}
+.cp-sep {
+  flex: none;
+  width: 1px;
+  height: 11px;
+  margin: 0 3px;
+  background: var(--border);
+}
+/* the directory is a path, not a button: mono, no box, truncates before the
+   icon buttons ever move */
+.cp-dock .cp-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  max-width: 168px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+.cp-dock .cp-dir svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+.cp-dock .cp-dir .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* voice and help: the two glyph buttons that close the row */
+.cp-dock .cp-picks .cp-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s ease-out, color 0.12s ease-out;
+}
+.cp-dock .cp-picks .cp-icon svg {
+  width: 13px;
+  height: 13px;
+}
+.cp-dock .cp-picks .cp-icon:hover,
+.cp-dock .cp-picks .cp-icon[aria-expanded='true'],
+.cp-dock .cp-picks .cp-icon[data-on='1'] {
+  border-color: transparent;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 /* A tag is a label, not a chip row: the bar may not grow because a thread has
    six of them. The list clips at the meta line and the dialog owns editing. */
@@ -793,35 +930,391 @@
   padding: 0 var(--pad);
   pointer-events: none;
 }
+/* One card, three bands, one hairline. The card paints no padding of its own:
+   each band owns its box, so the hairline spans the full width and the head can
+   be 30 px with the rail at 36 px. */
 .cp-dock {
   position: relative;
   pointer-events: auto;
   width: 100%;
-  padding: 10px 10px 8px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-lg);
-  box-shadow: 0 16px 40px rgba(10, 10, 10, 0.1), 0 2px 6px rgba(10, 10, 10, 0.04);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  border-radius: var(--r-md);
+  box-shadow: 0 14px 34px rgba(10, 10, 10, 0.09), 0 1px 3px rgba(10, 10, 10, 0.05);
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 .cp-dock[data-drag='1'] {
   border-color: var(--ink);
-  box-shadow: 0 0 0 3px var(--accent-soft), 0 16px 40px rgba(10, 10, 10, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 14px 34px rgba(10, 10, 10, 0.09);
 }
+/* Focus is carried by a real edge: `--border-strong` on `--bg` is 1.53:1, which
+   is not a visible state. 1px of `--ink` is 19.8:1, and the halo is decoration
+   on top of that edge, never the only signal. */
+.cp-dock:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink), 0 14px 34px rgba(10, 10, 10, 0.11),
+    0 1px 3px rgba(10, 10, 10, 0.05);
+}
+:root[data-theme='dark'] .cp-dock {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+:root[data-theme='dark'] .cp-dock:focus-within {
+  box-shadow: 0 0 0 1px var(--ink), 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+/* The drop target paints the whole card, absolutely: a drag never relayouts the
+   dock, so the transcript under it never jumps. */
 .cp-dropzone {
   position: absolute;
   inset: 0;
   z-index: 20;
   display: grid;
   place-items: center;
-  border: 1px dashed var(--ink);
-  border-radius: var(--r-lg);
-  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  border: 1.5px dashed var(--ink);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--bg) 86%, transparent);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: var(--fs-meta);
-  letter-spacing: 0.04em;
+  font-size: var(--fs-label);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   pointer-events: none;
+}
+.cp-dropzone > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+/* The message band owns its top padding only: the field keeps its own left and
+   right, so the rail below can reach the card's edge — the send button's
+   position is the one thing on this card that may never depend on a wrapper. */
+.cp-dock .cp-compose {
+  position: relative;
+  padding: 7px 0 0;
+  border: 0;
+  background: none;
+}
+/* ── band 2: the message ──────────────────────────────────────────────────
+   The dock keeps no padding of its own: the field's band owns its box (the
+   `.cp-compose` rule above), so the head's hairline reaches both card edges.
+   The form stacks flush: the alert, the field and the rail are one message, and
+   a gap between them is height the card does not have. */
+.cp-dock .slash-form {
+  gap: 0;
+}
+.cp-dock .slash-input {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  /* the component reads this ceiling (`getComputedStyle(el).maxHeight`), so a
+     long draft grows to nearly half the window and only then scrolls */
+  max-height: min(46vh, 400px);
+  padding: 0 10px 4px 11px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  overflow-y: hidden;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--ink);
+}
+.cp-dock .slash-input::placeholder {
+  color: var(--muted);
+}
+.cp-dock .slash-input:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+/* Chips hang under the field, inside the message band, so they grow the card
+   and never the rail. Their box is `.cp-chip`; the row's padding belongs to
+   the composer that draws it. */
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 240px;
+  height: 22px;
+  min-height: 0;
+  padding: 0 3px 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+}
+.cp-chip .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-chip .x {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-2xs);
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-secondary);
+  line-height: 1;
+  cursor: pointer;
+}
+.cp-chip .x:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+/* One line, only after a send failed: the draft is preserved behind it. */
+.cp-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in oklab, var(--danger) 26%, var(--bg));
+  border-radius: var(--r-xs);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--fs-secondary);
+}
+.cp-alert svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.cp-alert .grow {
+  flex: 1;
+  min-width: 0;
+}
+.cp-alert .retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cp-alert .dismiss {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-2xs);
+  background: none;
+  color: var(--danger);
+  font-size: var(--fs-secondary);
+  line-height: 1;
+  cursor: pointer;
+}
+.cp-alert .retry:hover,
+.cp-alert .dismiss:hover {
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+}
+/* ── band 3: the rail ─────────────────────────────────────────────────────
+   attach · legend · grow · send. No divider: the hairline above the message is
+   the card's only rule, and this band is what you act from. */
+.cp-dock .slash-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  height: 36px;
+  padding: 0 5px 4px;
+}
+.cp-dock .slash-actions .attach-picker {
+  flex: none;
+  order: 0;
+}
+.slash-grow {
+  flex: 1;
+  min-width: 0;
+  order: 2;
+}
+/* hints and the enhance button share one slot: hints need an empty draft,
+   enhance needs text. At rest the dock carries no legend at all. */
+.cp-dock .slash-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  order: 1;
+  min-width: 0;
+  opacity: 0;
+  transition: opacity 0.14s ease-out;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cp-dock:focus-within .slash-hint {
+  opacity: 1;
+}
+/* The two states that carry the only explanation of what is happening are
+   never behind a focus: `Working…`/`Stopping…` is a status, and an enhance with
+   text in the box is the one thing that node says about the draft. The key
+   legend is the only part that waits for focus. */
+.cp-dock .slash-hint[data-working='1'],
+.cp-dock .slash-hint[data-enh='1'] {
+  opacity: 1;
+}
+.cp-dock .slash-hint kbd,
+.cp-dock .slash-enh kbd {
+  display: inline-block;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.cp-dock .slash-hint-sep {
+  opacity: 0.55;
+}
+/* an enhance carries text, so it is always visible once there is a draft */
+.cp-dock .slash-enh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  margin: 0 0 0 2px;
+  padding: 0 6px 0 4px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.14s ease-out, color 0.14s ease-out;
+  opacity: 1;
+}
+.cp-dock .slash-enh:hover {
+  border-style: solid;
+  border-color: var(--muted);
+  color: var(--ink);
+}
+/* The send is the card's only filled shape and is pinned to the rail's trailing
+   edge, so its position never depends on draft length. Only the geometry is
+   here: the fill, the hover wash and the disabled shape are `.go`'s own
+   (`context.css`), and `.go.go-stop` keeps its danger pair
+   (`account-live.css`). */
+.cp-dock .slash-actions .go {
+  width: 32px;
+  height: 32px;
+  order: 3;
+  padding: 0;
+}
+.cp-dock .slash-actions .go svg {
+  width: 15px;
+  height: 15px;
+}
+/* A middle column: narrower than the window but not narrow yet. The two longest
+   labels give way first and the icons never move. */
+@container cpdock (min-width: 561px) and (max-width: 900px) {
+  .cp-dock .cp-dir {
+    max-width: 120px;
+  }
+  .cp-dock .cp-picks .cp-pick:first-child {
+    max-width: 156px;
+  }
+}
+/* narrow card, not narrow window: below 560 px the head scrolls sideways so no
+   label is ever crushed to zero width. It mirrors the `cpdock` container the
+   wrap declares. */
+@container cpdock (max-width: 560px) {
+  .cp-dock .cp-picks {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    /* the row is swiped, not stacked: it keeps its one 30 px height */
+    flex-wrap: nowrap;
+  }
+  .cp-dock .cp-picks::-webkit-scrollbar {
+    display: none;
+  }
+  /* every label keeps its own width; the row scrolls instead of crushing. The
+     spacer is the one child that may still shrink, so a short row stays
+     right-aligned. */
+  .cp-dock .cp-picks > *:not(.cp-grow) {
+    flex: none;
+    max-width: none;
+  }
+  .cp-dock .cp-dir {
+    max-width: 120px;
+  }
+  /* so the last button can be reached at the scroll end */
+  .cp-dock .cp-picks {
+    padding-inline-end: 8px;
+  }
+}
+/* coarse pointers get 44×44: the arrow, the paperclip and the two icons are
+   the targets a thumb has to hit, and the picks are targets too. */
+@media (pointer: coarse) {
+  .cp-dock .slash-actions .attach-btn,
+  .cp-dock .slash-actions .go {
+    width: 44px;
+    height: 44px;
+  }
+  .cp-dock .slash-actions {
+    height: 48px;
+  }
+  .cp-dock .cp-picks .cp-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .cp-dock .cp-picks .cp-pick {
+    height: 44px;
+  }
+  .cp-dock .cp-picks button.cp-pick,
+  .cp-dock .cp-picks .cp-pick > .pickbtn {
+    height: 44px;
+    padding: 0 7px;
+  }
+  .cp-dock .cp-picks {
+    height: 44px;
+    padding: 0 2px 0 1px;
+  }
+  .cp-sep {
+    height: 14px;
+  }
+}
+/* Motion is decoration: interaction animates `transform` and `opacity` only,
+   and none of it survives a reduced-motion request. */
+@media (prefers-reduced-motion: reduce) {
+  .cp-dock,
+  .cp-dock .cp-picks .cp-pick,
+  .cp-dock .cp-picks button.cp-pick,
+  .cp-dock .cp-picks .cp-pick > .pickbtn,
+  .cp-dock .cp-picks .cp-icon,
+  .cp-dock .slash-actions .attach-btn,
+  .cp-dock .slash-actions .go,
+  .cp-dock .slash-hint,
+  .cp-dock .slash-enh {
+    transition: none;
+  }
+  .cp-picks .pulse,
+  .cp-dock .slash-actions .go .model-spin {
+    animation: none;
+    opacity: 1;
+  }
 }
 /* The terminal is a sheet, not a dialog: it floats above the dock, takes its
    height from the transcript and gives it back when it closes. `--term-space`
@@ -931,65 +1424,6 @@
   font-size: var(--fs-micro);
   line-height: 1.5;
   color: var(--muted);
-}
-.cp-dock:focus-within {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px var(--accent-soft), 0 16px 40px rgba(10, 10, 10, 0.1),
-    0 2px 6px rgba(10, 10, 10, 0.04);
-}
-.cp-dock .cp-picks {
-  padding: 0 2px 7px;
-}
-.cp-dock .cp-compose {
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.cp-dock .cp-foot {
-  margin: 7px 2px 0;
-  padding-top: 7px;
-  border-top: 1px solid var(--border);
-}
-.cpanel .go {
-  color: var(--bg);
-}
-.cp-picks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1px 4px;
-  flex: none;
-  padding: 0;
-}
-/* the composer hint shares the context row and sits on the right */
-.cp-picks .cp-foot {
-  margin: 0 0 0 auto;
-  padding: 0;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-.cp-picks .compose-help {
-  margin-left: 2px;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--r-xs);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.cp-picks .compose-help:hover,
-.cp-picks .compose-help[aria-expanded='true'] {
-  border-color: var(--border);
-  background: var(--bg);
-  color: var(--ink);
-}
-.compose-help svg {
-  width: 13px;
-  height: 13px;
 }
 .composer-help {
   width: min(620px, 94vw);

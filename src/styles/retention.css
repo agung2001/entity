@@ -1,4 +1,6 @@
-/* ── base directory: new-thread field + composer chip ─────────────────── */
+/* ── base directory: new-thread field ────────────────────────────────────
+   The composer's path label is not a field and lives with the composer
+   (`chat.css`, `.cp-dir`). */
 .opt {
   margin-left: 5px;
   font-family: var(--mono);
@@ -42,31 +44,6 @@
 .dirpick-clear:hover {
   background: var(--surface-2);
   color: var(--ink);
-}
-.cp-dir {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 190px;
-  padding: 0 7px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--bg);
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-}
-.cp-dir svg {
-  width: 11px;
-  height: 11px;
-  flex: none;
-  color: var(--muted);
-}
-.cp-dir .nm {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── new-thread dialog: five fields must fit a short window ─────────────

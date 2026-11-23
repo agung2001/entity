@@ -288,17 +288,33 @@
     bottom: 10px;
     padding: 0 10px;
   }
-  .cp-dock {
-    padding: 8px 8px 7px;
-  }
   .c-thread .msg {
     max-width: 88%;
   }
   .cp-picks {
     gap: 0;
   }
-  .cp-foot {
-    padding: 6px var(--pad) 10px;
+}
+/* A phone in portrait: the card stays one card, but the bands grow so every
+   target is still a thumb's width and the rail keeps room for the arrow. */
+@media (max-width: 400px) {
+  .cp-dock .cp-picks {
+    height: 38px;
+  }
+  .cp-dock .cp-picks .cp-icon {
+    width: 32px;
+    height: 32px;
+  }
+  .cp-dock .slash-actions {
+    height: 44px;
+  }
+  .cp-dock .slash-actions .go,
+  .cp-dock .slash-actions .attach-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .cp-dockwrap {
+    bottom: 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
