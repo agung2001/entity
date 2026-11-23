@@ -743,8 +743,14 @@
   /* no gutter of its own: the bar pays it, so a bar edge is a window edge */
   padding: 0 0 80px;
 }
-.detail-view > :not(.entp-bar) {
-  /* the reading measure, inset by the same gutter the bar pads with */
+.detail-view > :not(.entp-bar):not(.modal):not(.scrim) {
+  /* the reading measure, inset by the same gutter the bar pads with.
+     A fixed surface is not reading content: `:not()` counts as a class, so
+     `:not(.entp-bar)` is (0,2,0) and beats the width, the centring margin and
+     even `position: fixed; inset: 0` of anything inside it. Two things on this
+     page are teleported into the shell as fixed children — a dialog (`.modal`)
+     and its backdrop (`.scrim`) — and one of them measured 1180 with a 130px
+     margin, which left the rail and the outer edges undimmed and unclickable. */
   width: min(100% - (2 * var(--view-pad)), 1180px);
   margin: 20px auto 0;
 }
