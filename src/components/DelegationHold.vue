@@ -173,6 +173,8 @@ onBeforeUnmount(() => {
           <div class="msg-delegation-head">
             <span class="msg-delegation-kicker">Not run</span>
             <span class="msg-delegation-name">@{{ rows[0]?.name || 'entity' }}</span>
+          </div>
+          <div class="msg-delegation-row">
             <span class="msg-delegation-meta">{{ settledTitle }}</span>
           </div>
           <p v-if="settledJob" class="msg-delegation-job">{{ settledJob }}</p>

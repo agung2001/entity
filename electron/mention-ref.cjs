@@ -56,6 +56,8 @@ const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 12
 const ORCA_TIMEOUT_MS = 10_000
 const ORCA_CACHE_MS = 60_000
+/* A child workspace path as Orca writes it in a run's report. */
+const ORCA_WORKSPACE_PATH = /[^\s"'`()<>]*[\\/]orca[\\/]workspaces[\\/][^\s"'`()<>]+/gi
 /* A delegated job is real work — reading a brief, editing files, running the
    test suite — not a search. Two minutes killed the very delegation this
    feature exists for. An hour, because a job that has to be *finished* is not
@@ -503,41 +505,62 @@ async function orcaWorktrees({ force = false } = {}) {
  * clean | dirty | gone | none — the worktree a delegated row works in, as it is
  * *now*. A field stored at run time would freeze at "clean, exists" and lie in
  * exactly the case this exists for: the row was merged and the worktree removed.
- * The renderer sends a ticket key and the run's cwd; every path this reads or
- * stats came out of `orca worktree list`, never out of the message.
+ *
+ * The run's own record comes first: a fan-out shares a cwd and a ticket key, so
+ * the key alone paints one word on N cards. A delegated run that worked in a
+ * child workspace names that path in its report, and a path is per-run. The
+ * renderer sends the record, the ticket key and the run's cwd; every path this
+ * reads or stats came out of `orca worktree list`, never out of the message.
  */
-async function worktreeState({ cwd = '', ticket = '' } = {}) {
+async function worktreeState({ cwd = '', ticket = '', record = '' } = {}) {
   const key = String(ticket || '').trim().toLowerCase()
-  /* No key: nothing was said about a worktree, so nothing is claimed. */
-  if (!key) return { state: 'none' }
+  const named = recordPaths(record)
+  /* Nothing said about a worktree, and no key to guess from. */
+  if (!key && !named.length) return { state: 'none' }
   const dir = cwd ? path.resolve(String(cwd)) : ''
   const inside = (root, at) => {
     if (!at) return false
     const base = path.resolve(String(root || '.'))
     return at === base || at.startsWith(base + path.sep)
   }
-  /* The cwd *narrows* the search when it names a repo, and only when it does:
-     an entity whose `dir` is `~` runs outside every checkout, and returning
-     `none` there would hide the chip for exactly the rows that have a worktree.
-     Narrowing is a nicety (one repo's keys), not the boundary — the boundary is
-     that `hit.path` below is Orca's word, and `git` is run against nothing else. */
   const worktrees = await orcaWorktrees()
-  const repos = await orcaRepos()
-  let scope = repos.find((entry) => inside(entry.path, dir))
-  if (!scope) {
-    /* a run pointed *at* a child worktree names its repo the same way */
-    const at = worktrees.find((worktree) => inside(worktree.path, dir))
-    if (at) scope = repos.find((entry) => entry.id === at.repoId)
+  /* The record's own evidence, kept only where Orca itself lists that path. */
+  const listed = new Map(worktrees.map((worktree) => [path.resolve(String(worktree.path || '.')), worktree]))
+  /* A run on another machine names *that* machine's path, which this machine's
+     list will never contain — a remote report is not evidence of a removal.
+     Keep a named path only where its worktree base (`…/orca/workspaces/<repo>`)
+     is a base this Orca lists, and drop the rest before anything is called gone. */
+  const bases = new Set([...listed.keys()].map((at) => path.dirname(at)))
+  const local = named.filter((at) => bases.has(path.dirname(at)))
+  const mine = local.map((at) => listed.get(at)).filter(Boolean)
+  let hit = mine.find((worktree) => matchesKey(worktree, key)) || mine[0]
+  /* A record that names a workspace this Orca no longer lists is `gone` — that is
+     the difference between "merged and removed" and "never created". */
+  if (!hit && local.length) return { state: 'gone', name: path.basename(local[0]) }
+  if (!hit) {
+    /* The cwd *narrows* the search when it names a repo, and only when it does:
+       an entity whose `dir` is `~` runs outside every checkout, and returning
+       `none` there would hide the chip for exactly the rows that have a worktree.
+       Narrowing is a nicety (one repo's keys), not the boundary — the boundary is
+       that `hit.path` below is Orca's word, and `git` is run against nothing else. */
+    const repos = await orcaRepos()
+    let scope = repos.find((entry) => inside(entry.path, dir))
+    if (!scope) {
+      /* a run pointed *at* a child worktree names its repo the same way */
+      const at = worktrees.find((worktree) => inside(worktree.path, dir))
+      if (at) scope = repos.find((entry) => entry.id === at.repoId)
+    }
+    /* The same match the `orca-worktree` skill uses to reuse a child workspace:
+       the ticket key in its branch or display name. */
+    hit = worktrees
+      .filter((worktree) => !worktree.isMainWorktree && (!scope || worktree.repoId === scope.id))
+      .sort((a, b) => Number(b.lastActivityAt || 0) - Number(a.lastActivityAt || 0))
+      .find((worktree) => matchesKey(worktree, key))
   }
-  const mine = worktrees
-    .filter((worktree) => !worktree.isMainWorktree && (!scope || worktree.repoId === scope.id))
-    .sort((a, b) => Number(b.lastActivityAt || 0) - Number(a.lastActivityAt || 0))
-  /* The same match the `orca-worktree` skill uses to reuse a child workspace:
-     the ticket key in its branch or display name. */
-  const hit = mine.find((worktree) =>
-    `${worktree.branch || ''} ${worktree.displayName || ''}`.toLowerCase().includes(key),
-  )
-  if (!hit || !fs.existsSync(String(hit.path))) return { state: 'gone' }
+  /* A run that names no workspace and matches no key shows no chip: absence is
+     not evidence, and a guess here is the lie the chip exists to prevent. */
+  if (!hit) return { state: 'none' }
+  if (!fs.existsSync(String(hit.path))) return { state: 'gone', name: worktreeName(hit) }
   let files = 0
   try {
     files = String(
@@ -553,9 +576,35 @@ async function worktreeState({ cwd = '', ticket = '' } = {}) {
   return {
     state: files ? 'dirty' : 'clean',
     files,
+    name: worktreeName(hit),
     path: String(hit.path),
     branch: String(hit.branch || '').replace(/^refs\/heads\//, ''),
   }
+}
+
+/** `ENTITY-53` in a worktree's branch or display name, the skill's own match. */
+function matchesKey(worktree, key) {
+  if (!key) return false
+  return `${worktree.branch || ''} ${worktree.displayName || ''}`.toLowerCase().includes(key)
+}
+
+/** The workspace's own name: what the chip paints, so N runs read as N names. */
+function worktreeName(worktree) {
+  if (!worktree) return ''
+  const raw = String(worktree.branch || '').replace(/^refs\/heads\//, '') || String(worktree.displayName || '') || String(worktree.path || '')
+  return raw ? path.basename(raw) : ''
+}
+
+/** Every `…/orca/workspaces/<repo>/<name>` path a run's record names. */
+function recordPaths(record) {
+  const text = typeof record === 'string' ? record : JSON.stringify(record || '')
+  const out = []
+  for (const [raw] of String(text || '').matchAll(ORCA_WORKSPACE_PATH)) {
+    /* a report writes its paths in prose: "…/card, then merged" */
+    const at = path.resolve(raw.replace(/[.,;:!?]+$/, ''))
+    if (!out.includes(at)) out.push(at)
+  }
+  return out
 }
 
 /** Project names for the composer's `@` menu. */

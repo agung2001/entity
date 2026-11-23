@@ -549,11 +549,23 @@ the composer already does: mention another entity.
   `unverified: …`) is the last line it wrote, so the digest is head 240 + tail 160: a
   head-only cut showed seven setups and none of the seven endings.
 - **A card may say where the worktree is, never guess.** One `mention.worktree` call on
-  mount matches the row's ticket key against `orca worktree list` and runs `git status`
-  only on a path Orca itself returned; a cwd outside every checkout narrows nothing
-  rather than hiding the chip. `gone` needs evidence in the row's own record, because
-  Orca forgets a removed worktree and absence alone cannot tell "merged and removed"
-  from "never created".
+  mount reads the run's **own** record first — every `…/orca/workspaces/<repo>/<name>` path
+  it names, kept only where that exact path appears in `orca worktree list` — and matches the
+  row's ticket key only as the fallback, because a fan-out shares one cwd and one key and the
+  key alone paints N cards the same word. `git status` runs on a path Orca itself returned
+  and nothing else; a cwd outside every checkout narrows nothing rather than hiding the chip.
+  `gone` is the record naming a workspace Orca no longer lists, because Orca forgets a removed
+  worktree and absence alone cannot tell "merged and removed" from "never created". The chip
+  paints the workspace's own name (state dot in `data-state`), so three cards are three names.
+- **The card is three bands, and the identity is the first one.** Kicker, name and the
+  workspace chip share a single non-wrapping line whose name and chip shrink with an ellipsis
+  rather than pushing a second row; the meta (`harness · model · duration`) and the one action
+  take their own band, where the meta may wrap and the action keeps the right edge; the job is
+  a full-width block whose row and text are blocks in every card, so the instruction is never
+  clipped, wrapped into, or read as part of the head.
+- **`run N/M` is a per-run label of its own.** It sits in the identity head as a quiet token
+  beside the name — never a fragment of the meta string — because it says which of N this card
+  is, and a reader who cannot find it treats the card as the whole fan-out.
 - **Send is not the confirmation; the runs wait.** A message that plans a run is sent as
   always — its reads resolve, and only the runs hold — so `@coder <job>` goes from keystroke
   to running with one extra keystroke, and a seven-row fan-out is reviewed (count, target,
