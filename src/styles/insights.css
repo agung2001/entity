@@ -162,18 +162,31 @@
 }
 
 /* ── learning review ─────────────────────────────────────────────────── */
+/* A dialog, not a slab. 860px holds a two-column diff at 1280 and at 1440 and
+   still reads as a dialog; `modal-wide` used to sit on the element with no rule
+   anywhere, which is how it grew to 1080. The padding is ONE scale for the three
+   bands, so the head, the scrolling body and the footer line up on the same
+   left and right edge, and the head owes the body a gap instead of butting it. */
 .learn-modal {
-  width: min(1080px, 96vw);
+  --learn-pad: 20px;
+  width: min(860px, 94vw);
   max-height: min(90vh, 900px);
 }
-.learn-body {
-  padding-top: 10px;
+.learn-modal .mo-head {
+  padding: var(--learn-pad) var(--learn-pad) 12px;
+}
+.learn-modal .mo-body {
+  padding: 14px var(--learn-pad);
+}
+.learn-modal .mo-foot {
+  padding: 12px var(--learn-pad);
+  flex-wrap: wrap;
 }
 .learn-state {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 30px 4px;
+  padding: 22px 0 26px;
 }
 .learn-state b {
   display: block;
@@ -186,11 +199,93 @@
   line-height: 1.5;
   color: var(--muted);
 }
+/* the ticking clock wears the result line's grammar, not the paragraph's */
+.learn-state .learn-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .learn-state--error {
   justify-content: space-between;
   align-items: center;
   gap: 18px;
 }
+
+/* The scope, chosen before the review is paid for: two compact rows, not a
+   panel. The primary lives here, in the body — the footer keeps its three. */
+.learn-scope {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 2px;
+}
+.learn-scope-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.learn-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.learn-field > span {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.learn-field input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+}
+.learn-field input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.learn-field--count input {
+  width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+.learn-field--date input {
+  width: 148px;
+}
+.learn-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.learn-presets .btn[data-on='1'] {
+  border-color: var(--ink);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.learn-review {
+  margin-left: auto;
+}
+.learn-scope-note {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
 .learn-summary {
   padding: 11px 14px;
   border: 1px solid var(--border);
@@ -245,6 +340,44 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
+/* Each cell carries its own side, because below the breakpoint the two columns
+   become one and the tint alone cannot say which line is which. */
+/* Below 760px the dialog is barely wider than a phone: two 340px columns of code
+   stop being readable, so a row stacks and every line is labelled. No horizontal
+   scroll — `min-width: 0` and `overflow-wrap: anywhere` on the cell keep it. */
+@media (max-width: 760px) {
+  .learn-diff-head {
+    display: none;
+  }
+  /* one scroller, not two: the body already scrolls, so the diff grows inside it
+     instead of opening a second scrollbar a phone cannot aim at */
+  .learn-diff {
+    max-height: none;
+    overflow: visible;
+  }
+  .learn-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .learn-cell + .learn-cell {
+    border-left: 0;
+    border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  }
+  .learn-cell[data-side]::before {
+    content: attr(data-side);
+    flex: none;
+    padding: 0 6px;
+    font-family: var(--mono);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: 0.75;
+  }
+  .learn-count {
+    flex: 1 1 100%;
+    margin-bottom: 4px;
+  }
+}
 .learn-row + .learn-row {
   border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
 }
@@ -286,6 +419,9 @@
   color: var(--ink);
 }
 .learn-cell[data-kind='blank'] code {
+  color: transparent;
+}
+.learn-cell[data-kind='blank']::before {
   color: transparent;
 }
 .learn-count {
@@ -513,6 +649,21 @@
 }
 .learn-dirty {
   color: var(--accent-ink);
+}
+/* the way back to the scope form: a text button, not a fourth footer verb */
+.learn-again {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.learn-again:hover {
+  color: var(--ink);
 }
 .learn-editor-wrap {
   margin-top: 8px;

@@ -637,6 +637,7 @@ async function copyPath() {
       <EntityLearnDialog
         :open="learnOpen"
         :entity="agent ? agent.name : ''"
+        :threads="threads"
         @close="learnOpen = false"
         @applied="onLearned"
       />
