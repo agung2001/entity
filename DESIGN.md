@@ -582,6 +582,27 @@ the composer already does: mention another entity.
   grammar — `Nothing started`, the rows that never ran, the app's own **Retry** — and the
   question stays in the transcript. A hold is in memory, so a reload reads `Interrupted`
   and nothing was ever started.
+- **A count of one is still a delegation.** The parent prompt swaps the raw sentence for
+  "that run already happened" whenever the message delegated anything — `spawn 1`
+  included. Gating that on `count > 1` read one requested run as an ordinary message, so
+  the child answered and the parent then did the same work a second time as its own job.
+  The sentence that delegated work is never the parent's task, whatever the count.
+- **A job the grammar cannot read is a reason to classify, not to run.** The grammar
+  always *splits* `@entity` from its job, so it never demoted itself — but a split can
+  throw the instruction away: `@designer on @orca:entity <the real ask>` yields the job
+  `"on"`, because a delegated job ends at the next `@` and the person's sentence
+  continues past it. `openingProseHasUnreadableJob` is the third classifier trigger
+  (with "no prefix" and "it enumerates"), so the model hands back
+  `spawn 1 @entity <the whole instruction>` — including the repo named in words — and the
+  ordinary card confirms it. **A plan of one run is a real plan**: `usable()` used to
+  drop `runs: 1` on the ground that "the grammar already delegates that", which was only
+  true when the grammar could read the job. The refusal is the no-classifier fallback
+  (CLI, a spawned session, a `{spawn: false}` answer), never the answer itself.
+- **A stopped turn still filed its sessions.** `chat.send` writes one per entity mention
+  before the harness answers, and Stop does not take them back. The delegation card used
+  to render only on an `agent` row, so a turn that ended as `Stopped by you.` showed no
+  card and read as "nothing was spawned" — while the session sat in the rail under its
+  parent. The card belongs to any row that carries mentions, `sys` included.
 
 ## An erase-all is a dialog, and the scope is the button
 
@@ -742,6 +763,11 @@ it.
 | An HTML artifact can only be read as source, so judging a design means opening another app | The page is the default: Preview / Source in the bar, the document in a same-origin frame (a `data:`/`srcdoc` frame inherits our CSP and would refuse an injected picker; a shadow root parses away `<body>` and the page's own styles stop matching), scripts stripped, a warning when sibling files are referenced. **Annotate** picks an element and posts the notes to the chat as a draft | `ArtifactHtmlPreview`, `annotate.js` |
 | Every artifact card offers Download only, whatever the file is | The row comes from one capability list on the server (reveal always; editor for text; browser for `.html`/`.pdf`), and the RPC re-checks the verb, so a card cannot offer what the backend refuses. Icon buttons with `title` + `aria-label`, labels kept to the detail page | `ChatArtifacts`, `artifact-store.cjs` |
 | A turn renames the thread it answered, so a title someone wrote disappears | The first message names a thread only while the person has not: `titleSource` records who set it (`auto` / `user`, including a deliberate clear), and a turn merges only the metadata the file actually changed since it started — title, pin, tags, base directory, attachment switch | `chat-store.cjs` (`saveTurn`) |
+| A refresh makes a running turn look idle: no bubble, no Stop, and the composer will start a second turn on one file | `isSending` is the union of this window's `sending` memory and the summary's `working` field, and `settled` overrules a stale summary | `npm test` (`ui-contract`, "a turn that is still running survives a refresh") |
+| A delegated run answers, then the parent does the same work again in the same thread | The prompt swaps the raw sentence for "that run already happened" for **any** delegated run — `spawn 1` included, not only `count > 1` | `npm test` (`mention-ref`, "spawn 1 does not hand the parent its own job back") |
+| A child session is titled `on` and asks the person for a brief | A job the grammar cut off at the next `@` is a **third reason to classify**, not a silent run: the model returns `spawn 1 @entity <the whole instruction>` and the ordinary card confirms it. The preposition refusal is only the no-classifier fallback | `npm test` (`mention-ref`, "a cut-off job asks the classifier") |
+| A stopped turn shows no delegation card, so it reads as "nothing was spawned" | The card renders on any row that carries mentions — the sessions a turn filed survive the Stop | `npm test` (`ui-contract`, "a session a stopped turn filed is still reachable") |
+| A thread reads empty, with no working flag and no way to stop it, while its mention is still running | The question is written **before** anything slow starts, not after it. Resolving an `@…` mention runs every delegated harness inside `send`, so an "append the question at the end" order leaves the file empty for the turn's longest phase; `sending` is taken at the same moment so Stop reaches the children. A refusal takes the row back | `npm test` (`chat-spawn`, "the question is on disk while its mention is still resolving") |
 | A conversation lists files another conversation wrote, because they were saved while it ran | Attribution needs a writer, not a clock. A file belongs to a turn when the turn **names it** (`artifact://` in the answer, a write tool's path, a shell write operator — never a bare basename), when it lands in a **folder the turn wrote into** during the window (a render batch), or when it sits at the **shelf root** and the turn ran alone. "Only one turn ran in those minutes" is never sufficient: the shelf is shared with this machine, other apps and the person's own scripts | `chat-store.cjs` (`claimsFor`) |
 | A card shows another design's screenshots because a background render finished during the turn | Time is a filter, not a reason. Require evidence before attaching, and let the folder carry the rest of one deliverable | `npm test` (`chat-artifacts`) + `tests/e2e/full/16-artifact-scope.spec.js` |
 | A screenshot from one conversation still appears under another, and no second turn was even running | Inference is a guess even with one candidate. When a turn ends the store **stamps** the files it produced (`.origin.json`, `<id> → threadId`); a stamp outranks the clock, the folder and the shelf root, and a file stamped to another session is never reachable by inference. A stamp is authorship, not custody: a turn that *names* a file it revised still shows it | `npm test` (`chat-artifacts`), `artifact-store.cjs` (`stampOrigins`) |
@@ -868,6 +894,26 @@ loading state.
 - Keep first-step and first-text timings on the execution record
   (`ttfbMs`, `firstTextMs`) so a slow turn can be separated from a slow model.
 - A live turn owns the loading bubble; do not add a second `Waiting for…` row.
+- **The question is on disk before the turn does any work.** `chat.send` resolves
+  mentions (and, before them, classifies the message) inside the same call that
+  starts the turn, and a fan-out is minutes of that. Writing the question
+  afterwards left the thread empty on disk for the whole of it: a reload, a
+  second window, or the next boot — a delegated child can outlive the app — read
+  a conversation with no question, `working: false` and no Stop to reach the run
+  that was still going. So the row and the `sending` lock are written first, the
+  mention fills the row in when it resolves, and a refusal takes it back off.
+  The file is the transcript; a transcript that is empty while the turn is alive
+  is a lie the next reader has no way to catch.
+- **A refresh is not a cancel.** The window's `sending` map is memory, so after a
+  reload only the summary carries the truth. `isSending(id)` is therefore the
+  **union** of that memory and the summary's `working` field, which the main
+  process writes from its own live map. Reading memory alone made a genuinely
+  running turn — a delegated child can outlive the window that started it — look
+  idle: no live bubble, no Stop, and a composer that would start a second turn
+  racing the first on one file. The other direction needs `settled`: a summary
+  read before the turn finished still says `working`, so the one place that learns
+  it first-hand (the `done` event) records that it settled, and only a new send
+  clears it.
 - **A turn that settles never moves the reader.** Finishing is an event about a
   thread, not about the person: store the new content, update the rail row and
   let the notification policy speak — never assign the active thread from a

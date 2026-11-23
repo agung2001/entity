@@ -1067,3 +1067,124 @@ test('an expired plan says so, and a refused message never reaches the gate', as
   })
   assert.equal(referenceOpened, false, 'a name with no job runs nothing, so it asks nothing')
 })
+
+/* `spawn 1` is a delegated run, not a fan-out of zero.
+   
+   The parent prompt swapped the raw sentence for "the run already happened" only
+   when the count was > 1, so one requested run read as an ordinary message: the
+   child answered, and then the parent was handed the same instruction as its own
+   job and did the work again, in the same session, at full length. A message that
+   delegated one run is exactly as delegated as one that delegated four. */
+test('spawn 1 does not hand the parent its own job back', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, 'spawn 1 @py-agent redesign the MCP page', {
+    deps: deps(),
+  })
+  assert.equal(out.mentions.length, 1)
+  assert.equal(out.mentions[0].job, 'redesign the MCP page')
+  /* the one run already happened, so the sentence that asked for it is not the
+     parent's task any more */
+  assert.doesNotMatch(out.text, /spawn 1/)
+  assert.match(out.text, /has already happened and its answer is/)
+  assert.match(out.text, /Do not repeat it yourself and do not delegate it again/)
+})
+
+test('a plain mention still keeps its own sentence, so the entity answers it', async () => {
+  const record = workspace()
+  /* No `spawn`: `@agent <job>` runs the job in the turn, and the parent entity
+     answers the person's message — its own words are the task. */
+  const out = await mention.rewrite(record, '@py-agent check the site', { deps: deps() })
+  assert.equal(out.mentions.length, 1)
+  assert.match(out.text, /@py-agent check the site$/)
+})
+
+/* A job that is only a preposition is a missing instruction, and it used to run.
+   
+   `spawn 1 @designer on @orca:entity <the real ask>` splits at the second `@`, so
+   the child was handed the single word "on", asked the person for a brief, and a
+   session was filed under the title "on" — while the actual request sat in the
+   segment the run never saw. A note afterwards is too late: the run already
+   happened and a conversation already exists. */
+test('a delegated job that is only a preposition is refused before anything runs', async () => {
+  const record = workspace()
+  let ran = 0
+  const jobs = []
+  const attempt = (text) =>
+    mention.rewrite(record, text, {
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          ran += 1
+          jobs.push(job)
+          return { ok: true, answer: 'asked for a brief', error: '' }
+        },
+      }),
+    })
+
+  for (const text of [
+    'spawn 1 @py-agent on @orca:One the real ask lives after the repo',
+    '@py-agent on @orca:One the real ask lives after the repo',
+    '@py-agent in @orca:One fix the bug',
+  ]) {
+    await assert.rejects(attempt(text), /has no job/, text)
+  }
+  assert.equal(ran, 0, 'a refusal happens before the first harness')
+  assert.deepEqual(jobs, [])
+
+  /* the message that names a MENTION after a real job still runs: "fix it in"
+     is a sentence the run can act on, and the existing note covers the repo */
+  const ok = await mention.rewrite(record, '@py-agent fix it in @orca:One the real ask', {
+    deps: deps({ orcaRepos: async () => [{ displayName: 'One', path: ORCA_ONE }] }),
+  })
+  assert.equal(ok.mentions.filter((row) => row.kind === 'entity')[0].job, 'fix it in')
+})
+
+/* The message that made this layer's blind spot visible.
+   
+   `spawn 1 @designer on @orca:entity <the real ask>` — the grammar splits the job
+   at the second `@`, so the run was handed "on". Because the split *succeeded*,
+   the grammar believed it had read the message exactly and never asked the
+   classifier, which is the whole point of having one. Now an unreadable job is a
+   third reason to classify (after "no prefix" and "it enumerates"), so the model
+   proposes `spawn 1 @designer <the whole instruction>` and the ordinary hold card
+   is what the person confirms.
+*/
+test('a cut-off job asks the classifier instead of running on a preposition', async () => {
+  const record = workspace()
+  let asked = 0
+  const jobs = []
+  const out = await mention.rewrite(
+    record,
+    'spawn 1 @py-agent on @orca:One the real ask lives after the repo',
+    {
+      intent: async () => {
+        asked += 1
+        return { spawn: true, runs: 1, entity: 'py-agent', job: 'the real ask lives after the repo' }
+      },
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+        orcaRepos: async () => [{ displayName: 'One', path: ORCA_ONE }],
+      }),
+    },
+  )
+  assert.equal(asked, 1, 'the grammar claimed a reading it did not have')
+  assert.deepEqual(jobs, ['the real ask lives after the repo'])
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity')[0].status, 'ok')
+})
+
+test('a readable job never costs a classifier call', async () => {
+  const record = workspace()
+  let asked = 0
+  const out = await mention.rewrite(record, 'spawn 1 @py-agent redesign the MCP page', {
+    intent: async () => {
+      asked += 1
+      return { spawn: false }
+    },
+    deps: deps(),
+  })
+  assert.equal(asked, 0, 'the grammar already read this one')
+  assert.equal(out.mentions.length, 1)
+  assert.equal(out.mentions[0].job, 'redesign the MCP page')
+})

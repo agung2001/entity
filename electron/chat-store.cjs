@@ -1955,10 +1955,18 @@ async function send({
   /* The plan the window is holding, kept here so the settled row can still say
      what never ran after the turn is written to disk. */
   let turnPlan = null
-  let appliedText = ''
   const message = String(text || '').trim()
   if (!retryTurn && !message) throw new Error('Write a message first.')
   if (sending.has(thread.id)) throw new Error('This thread is already answering.')
+  /* The resolved mention and the rewritten prompt, read by the Stop path below
+     as well as by the writes at the end of resolution — so they are declared
+     here, not inside the try. */
+  let appliedText = ''
+  let mentioned = null
+  let applied = { text: message }
+  /* The question's own row, written to disk before anything slow starts and
+     filled in once the mention resolves — see the comment where it lands. */
+  let pendingRow = null
 
   const entity = checkEntity(workspace, thread.entity)
   const enabled =
@@ -2001,22 +2009,32 @@ async function send({
 
   /* The question is written by whichever path ends the turn, so a stopped
      fan-out keeps its question instead of leaving only "Stopped by you." */
+  const userRow = (skillApplied, resolved) => ({
+    who: 'me',
+    id: `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    text: message,
+    at: now(),
+    /* A local skill returns `ref`; a remote skill returns `skill` after it
+       has been installed on the host. Both mean the prompt was rewritten. */
+    ...(skillApplied?.ref || skillApplied?.skill || resolved?.mentions?.length
+      ? { sent: resolved?.text || message }
+      : {}),
+    ...(resolved?.mentions?.length ? { mentions: resolved.mentions } : {}),
+    ...(resolvedAttachments.length ? { attachments: resolvedAttachments } : {}),
+    ...(skillApplied?.skill ? { skill: skillApplied.skill } : {}),
+  })
+  /* A row already on disk (the one written before the mention resolved) is
+     filled in, never appended to: one question, one line. A retry has no such
+     row, so it still pushes its own. */
   const writeUserRow = (skillApplied, resolved) => {
-    const rewritten = Boolean(skillApplied.ref || skillApplied.skill)
-    thread.messages.push({
-      who: 'me',
-      id: `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      text: message,
-      at: now(),
-      /* A local skill returns `ref`; a remote skill returns `skill` after it
-         has been installed on the host. Both mean the prompt was rewritten. */
-      ...(rewritten || resolved.mentions.length || resolvedAttachments.length
-        ? { sent: resolved.text }
-        : {}),
-      ...(resolved.mentions.length ? { mentions: resolved.mentions } : {}),
-      ...(resolvedAttachments.length ? { attachments: resolvedAttachments } : {}),
-      ...(skillApplied.skill ? { skill: skillApplied.skill } : {}),
-    })
+    const next = userRow(skillApplied, resolved)
+    const at = pendingRow ? thread.messages.indexOf(pendingRow) : -1
+    if (at >= 0) {
+      thread.messages[at] = next
+      return next
+    }
+    thread.messages.push(next)
+    return next
   }
 
   if (retryTurn) {
@@ -2035,22 +2053,65 @@ async function send({
       thread.title = titleOf({ messages: [{ who: 'me', text: message }] })
       thread.titleSource = 'auto'
     }
-    /* `/workspace:<skill>`, `/<harness>:<skill>` or a bare `/<skill>` becomes
-       `use this skill <path>` — resolved on the machine this thread is pinned to,
-       before anything is written, so a typo leaves no half-turn in the
-       transcript */
-    const applied =
-      thread.machine === 'local'
-        ? skillRef.rewrite(record, turnText, { machine: thread.machine, dir: thread.dir || '' })
-        : await remoteRunner.rewriteSkill(record, turnText, {
-            machine: thread.machine,
-            harness: thread.harness,
-          })
-    /* `@…` mentions resolve after the skill reference, so the block lands above
-       the prompt and the `/skill` rewrite keeps its anchor at the start */
-    appliedText = applied.text
-    let mentioned
+    /* The question lands on disk **before** anything that can take minutes,
+       because the thread file is the transcript and the person may come back
+       before the answer does.
+
+       Resolving an `@…` mention runs every delegated harness to completion
+       inside this call — a fan-out is minutes of work with nothing to show for
+       it. Writing the row afterwards left the thread empty on disk for the whole
+       of that: a reload, a second window, or the next boot (a child can outlive
+       the app) read a conversation with no question in it, `working: false`, and
+       no way to stop the run that was still going. The turn was invisible for
+       the longest phase it has.
+
+       `sending` is set here for the same reason: it is what the rail paints as
+       live and what `chat.cancel` keys on, so a Stop during mention resolution
+       reaches the delegated children instead of answering "not running".
+
+       `mentions`, `sent` and `attachments` are filled in by the write at the end
+       of resolution; the words themselves never move. A retry has no row of its
+       own — its question is already in the transcript — so it skips this. */
+    pendingRow = userRow()
+    thread.messages.push(pendingRow)
+    thread.updatedAt = pendingRow.at
+    saveTurn(record, thread, baseline)
+    sending.set(thread.id, true)
+    /* A refusal and a typo are the two cases the transcript must not keep: the
+       message was never sent, and a question with no answer under it is a lie
+       the next reader has to guess at. Now that the row is written first, both
+       have to take it back — and the derived title with it. */
+    const abandonQuestion = () => {
+      if (!pendingRow) return
+      const at = thread.messages.indexOf(pendingRow)
+      if (at >= 0) thread.messages.splice(at, 1)
+      pendingRow = null
+      if (thread.titleSource === 'auto') {
+        thread.title = baseline.title
+        thread.titleSource = baseline.titleSource
+      }
+      thread.updatedAt = now()
+      saveTurn(record, thread, baseline)
+      sending.delete(thread.id)
+      /* a Stop that arrived while the message was still being read must not
+         outlive the turn it was meant for */
+      canceling.delete(thread.id)
+    }
     try {
+      /* `/workspace:<skill>`, `/<harness>:<skill>` or a bare `/<skill>` becomes
+         `use this skill <path>` — resolved on the machine this thread is pinned to,
+         before anything is written, so a typo leaves no half-turn in the
+         transcript */
+      applied =
+        thread.machine === 'local'
+          ? skillRef.rewrite(record, turnText, { machine: thread.machine, dir: thread.dir || '' })
+          : await remoteRunner.rewriteSkill(record, turnText, {
+              machine: thread.machine,
+              harness: thread.harness,
+            })
+      /* `@…` mentions resolve after the skill reference, so the block lands above
+         the prompt and the `/skill` rewrite keeps its anchor at the start */
+      appliedText = applied.text
       mentioned = await mentionRef.rewrite(record, applied.text, {
         entity,
         machine: thread.machine,
@@ -2112,15 +2173,18 @@ async function send({
       /* A plan nobody ran still ends the turn, in the transcript: the question,
          the settled block, and the app's own Retry — the same grammar a stopped
          turn uses. Every other mention error keeps its behaviour (a refusal is a
-         toast and nothing written). */
-      if (!error?.hold) throw error
+         toast and nothing written), which now means taking back the question row
+         that was written before the mention resolved. */
+      if (!error?.hold) {
+        abandonQuestion()
+        throw error
+      }
       const at = now()
-      thread.messages.push({
-        who: 'me',
-        id: `m_${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        text: message,
-        at,
-        ...(appliedText && appliedText !== message ? { sent: appliedText } : {}),
+      /* The question is already on disk; only its resolution is filled in — the
+         rewritten prompt (`/skill`, attachments) is what was about to be sent. */
+      writeUserRow(appliedText && appliedText !== message ? { ref: appliedText } : {}, {
+        mentions: [],
+        text: appliedText || message,
       })
       const settled = {
         who: 'sys',
@@ -2133,6 +2197,8 @@ async function send({
       thread.messages.push(settled)
       thread.updatedAt = at
       saveTurn(record, thread, baseline)
+      sending.delete(thread.id)
+      canceling.delete(thread.id)
       emitTurn('done', { message: settled })
       return readThread(record, thread.id)
     }
@@ -2154,6 +2220,7 @@ async function send({
       thread.messages.push(stopped)
       thread.updatedAt = at
       saveTurn(record, thread, baseline)
+      sending.delete(thread.id)
       emitTurn('done', { message: stopped })
       return readThread(record, thread.id)
     }
@@ -2233,6 +2300,10 @@ async function send({
     }
   }
 
+  /* Already set for a new turn, before the mention resolved — the row was
+     written then and the rail has been painting the thread as live since. A
+     retry has no early row, so it takes the lock here, right before the prompt
+     that replays the question it already owns. */
   sending.set(thread.id, true)
   let turnMessage = null
   try {
@@ -2358,7 +2429,21 @@ function cancel({ workspace, id } = {}) {
   }
   const child = inFlight.get(thread.id)
   const kids = mentionChildren.get(thread.id)
-  if (!child && !(kids && kids.size)) return { canceled: false, reason: 'not running' }
+  /* A turn that has not reached its harness yet still counts: the row landed on
+     disk the moment it was sent, and `sending` stays set while a mention (or the
+     classifier that reads the message) runs. Pre-arming `canceling` is what makes
+     that Stop honest — the resolver consults it before every run, so nothing
+     starts, and the turn lands its own "Stopped by you." row instead of blaming
+     a clock.
+     
+     `canceling` is consumed by the first read of it in `send` (the mention's
+     `stopped` hook or the post-resolution check), so this flag cannot outlive the
+     turn that set it and cancel the next one. */
+  if (!child && !(kids && kids.size)) {
+    if (!sending.has(thread.id)) return { canceled: false, reason: 'not running' }
+    canceling.add(thread.id)
+    return { canceled: true, pending: true }
+  }
   canceling.add(thread.id)
   if (child) stopProcess(child)
   /* A fan-out has no parent harness yet: the delegated runs are the turn, and

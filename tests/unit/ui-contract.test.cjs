@@ -965,3 +965,48 @@ test('a store calls no function it does not define or import', () => {
   }
   assert.deepEqual(problems, [], `bare calls with no definition in the module: ${problems.join(', ')}`)
 })
+
+/* A refresh is not a cancel. The window's `sending` map is memory, so after a
+   reload only the summary carries the truth — and a turn that is still running
+   must not read as idle, or the bubble, the Stop and the composer lock all
+   disappear while a delegated child is still working. */
+test('a turn that is still running survives a refresh', () => {
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'hub.js'), 'utf8')
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  const backend = fs.readFileSync(path.join(ROOT, 'electron', 'chat-store.cjs'), 'utf8')
+
+  /* the backend answers `working` from its own live map */
+  assert.match(
+    backend,
+    /working:\s*sending\.has\(thread\.id\)/,
+    'the summary does not report a turn that is still running',
+  )
+  /* the renderer reads that answer as well as its own memory */
+  const isSending = store.match(/export const isSending =[^\n]*\n(?:[^\n]*\n)*?[^\n]*settled/)
+  assert.ok(isSending, 'isSending ignores the summary, so a refresh forgets the turn')
+  assert.match(store, /settled:\s*\{\}/, 'the store keeps no memory of what it saw settle')
+  assert.match(store, /export function markSettled/, 'a settled turn cannot overrule a stale summary')
+  assert.match(chat, /markSettled\(id\)/, 'the done event does not record that the turn settled')
+})
+
+/* A stopped turn still delegated.
+   
+   The sessions a turn filed outlive it: `chat.send` writes one per entity
+   mention before the harness answers, and a Stop does not take them back. The
+   card that links to them was rendered only on an `agent` row, so a turn that
+   ended as "Stopped by you." showed no card at all and read as "nothing was
+   spawned" — while the session sat in the rail under its parent. */
+test('a session a stopped turn filed is still reachable from the transcript', () => {
+  const list = fs.readFileSync(path.join(SRC, 'components', 'MessageList.vue'), 'utf8')
+  const sysBranch = list.slice(
+    list.indexOf("v-if=\"m.who === 'sys'\""),
+    list.indexOf('v-else', list.indexOf("v-if=\"m.who === 'sys'\"")),
+  )
+  assert.ok(sysBranch.length > 0, 'the sys branch moved; update this contract')
+  assert.match(
+    sysBranch,
+    /v-if="delegations\(m\)\.length"/,
+    'a sys row never draws its delegation cards, so a stopped turn hides its sessions',
+  )
+  assert.match(sysBranch, /<DelegationCard\b/, 'the card itself is missing from the sys branch')
+})

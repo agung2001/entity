@@ -74,6 +74,12 @@ const INSTRUCTION = [
   '{"spawn": true, "runs": 3, "entity": "reviewer", "job": "review again"}',
   '{"spawn": true, "list": "@youtrack:ENTITY:relates to: ENTITY-25", "entity": "coder", "job": "fix it"}',
   '',
+  'ONE run for one agent, when the message delegates a single job — `spawn 1`, or a',
+  'sentence that names a repo, file or issue AFTER the agent so the job itself is',
+  'cut short. Give the whole instruction as `job`, including what came after that',
+  'reference, and name the repo/path inside it in words:',
+  '{"spawn": true, "runs": 1, "entity": "designer", "job": "redesign the MCP detail page at http://…/mcp/youtrack in <repo path>"}',
+  '',
   'Rows win when the message enumerates work (bullets, several URLs, files, pages) —',
   'even if it also says a number. `runs` is for a count with nothing listed.',
   'A written count beats a tracker query: `Spawn 3 @coder work on the issues',
@@ -279,9 +285,14 @@ function derivePlan(text, { entities = [] } = {}) {
  *
  * Two modes, because a fan-out takes its count from one of two places: `repeat`
  * is the same instruction N times (`spawn 4 @designer …`), `rows` is one run per
- * row a list resolves (`spawn per @youtrack:… @coder …`). A plan of one run is
- * not a fan-out — the grammar already delegates that, and a card for it would be
- * a confirmation step in front of something that already works.
+ * row a list resolves (`spawn per @youtrack:… @coder …`).
+ *
+ * **One run is a real plan.** It used to be dropped here — "the grammar already
+ * delegates that" — which was only true when the grammar could read the job. A
+ * message whose job the grammar cut off (`@designer on @orca:entity <the ask>`
+ * gives the job `"on"`) needs the classifier to propose the run it could not
+ * read, and that plan is for exactly one session. Rejecting it meant the one
+ * case that reached this layer was the one case it refused to answer.
  */
 function usable(plan, entities = []) {
   if (!plan || typeof plan !== 'object') return null
@@ -322,7 +333,7 @@ function usable(plan, entities = []) {
     }
   }
   const runs = Math.trunc(Number(plan.runs ?? plan.count))
-  if (!Number.isFinite(runs) || runs < 2) return null
+  if (!Number.isFinite(runs) || runs < 1) return null
   return {
     mode: 'repeat',
     runs: Math.min(runs, MAX_RUNS),

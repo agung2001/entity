@@ -52,6 +52,7 @@ import {
   isStopping,
   liveTags,
   machineById,
+  markSettled,
   parentOf,
   renameThread,
   retrySession,
@@ -1012,6 +1013,11 @@ function onLiveEvent(event) {
   }
 
   if (event.phase === 'done') {
+    /* This window learned the turn is over first-hand. The summary it holds may
+       have been read while the turn was still running, and `isSending` reads
+       that summary — so the memory that it settled has to be recorded here, not
+       inferred from a list that may not be re-read. */
+    markSettled(id)
     const message = event.data?.message
     const open = hub.chat.threads[id]
     if (message && open && !open.messages.some((entry) => entry.id === message.id)) {

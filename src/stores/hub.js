@@ -340,6 +340,10 @@ export const hub = reactive({
     active: '',
     /* per-thread turn state: a map so A and B can answer at the same time */
     sending: {},
+    /* Threads this window has watched settle: the summary may still say
+       `working` until the list is re-read, and a memory that disagrees with
+       disk is exactly what `isSending` needs to be able to overrule. */
+    settled: {},
     stopping: {},
     /* threadId → the live trace while its turn runs */
     live: {},
@@ -420,6 +424,7 @@ export function applyScope({ agents = [], machines = [], skills = [], runs = [],
   hub.chat.draft = ''
   hub.chat.draftThread = ''
   hub.chat.sending = {}
+  hub.chat.settled = {}
   hub.chat.stopping = {}
   hub.chat.live = {}
   hub.chat.holding = {}
@@ -828,6 +833,8 @@ function patchChatSummary(thread) {
         Number(b.pinned) - Number(a.pinned) ||
         String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
     )
+  /* this window watched it land, so the summary can no longer claim it runs */
+  hub.chat.settled = { ...hub.chat.settled, [thread.id]: true }
   return true
 }
 
@@ -921,9 +928,44 @@ export const threadContext = () => {
 export const threadStarted = (thread = activeThread()) =>
   Boolean(thread?.messages?.some((message) => message.who === 'me'))
 
-/** Turn state is per thread: a second conversation must not be blocked by one. */
-export const isSending = (id = hub.chat.active) => Boolean(hub.chat.sending[id])
+/**
+ * Is this thread's turn still running?
+ *
+ * Two readers answer one question, and they must never disagree:
+ *
+ *   - `hub.chat.sending` is this window's own memory — set when *this* window
+ *     sent, cleared when its event stream says `done`;
+ *   - the summary's `working` field is the main process's answer, written to
+ *     disk with the turn and read back by `chat.list`.
+ *
+ * Only the union is safe. A refresh (or a second window) starts with an empty
+ * `sending` map, so a turn that is genuinely still running — a delegated child
+ * can outlive the app that started it — would read as idle: no live bubble, no
+ * Stop, and a composer that would happily start a second turn racing the first
+ * on one file. The reverse direction matters too: a summary read moments before
+ * the turn settled still says `working`, so memory has to be able to say it is
+ * done. `stamped` is that memory, and it only ever clears.
+ */
+export const isSending = (id = hub.chat.active) => {
+  if (!id) return false
+  if (hub.chat.sending[id]) return true
+  if (hub.chat.settled?.[id]) return false
+  /* The summary is the main process's own answer, read back from the file. */
+  return Boolean((hub.chat.summaries || []).find((row) => row.id === id)?.working)
+}
 export const isStopping = (id = hub.chat.active) => Boolean(hub.chat.stopping[id])
+
+/**
+ * This window saw the thread's turn settle: whatever the last list said, the
+ * turn is over. Called from the one place that learns it first-hand — the
+ * `done` event — so a summary read before that moment cannot keep a thread
+ * looking live forever.
+ */
+export function markSettled(id) {
+  if (!id) return
+  if (hub.chat.settled[id]) return
+  hub.chat.settled = { ...hub.chat.settled, [id]: true }
+}
 /** Runs a plan is holding for `id`; 0 when nothing is waiting. */
 export const heldRuns = (id = hub.chat.active) => Number(hub.chat.holding[id]) || 0
 export function setHeldRuns(id, count) {
@@ -1272,6 +1314,12 @@ export async function chatSend(
   turnTokens.set(thread.id, token)
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: optimistic }
   hub.chat.sending = { ...hub.chat.sending, [thread.id]: true }
+  /* a new turn makes the thread live again, whatever the last list said */
+  if (hub.chat.settled[thread.id]) {
+    const settled = { ...hub.chat.settled }
+    delete settled[thread.id]
+    hub.chat.settled = settled
+  }
   if (hub.chat.stopping[thread.id]) {
     const stopping = { ...hub.chat.stopping }
     delete stopping[thread.id]

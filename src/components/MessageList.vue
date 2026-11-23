@@ -642,6 +642,23 @@ function traceSummary(message) {
             {{ isSending(threadId) ? 'Retrying…' : 'Retry' }}
           </button>
         </div>
+        <!-- A turn that was stopped still delegated: the sessions it filed exist,
+             and the person's only route to them is this card. Rendering it only
+             on an `agent` row hid them behind a `sys` row ("Stopped by you."),
+             which read as "nothing was spawned". -->
+        <div
+          v-if="delegations(m).length"
+          class="msg-delegations"
+          aria-label="Delegated work"
+        >
+          <DelegationCard
+            v-for="(mention, j) in delegations(m)"
+            :key="`${mention.token || mention.name || 'mention'}-${mention.share || j}`"
+            :mention="mention"
+            @open-thread="emit('open-thread', $event)"
+            @retry="emit('retry-session', $event)"
+          />
+        </div>
         <ChatArtifacts
           v-if="m.artifacts?.length"
           class="msg-artifacts--sys"

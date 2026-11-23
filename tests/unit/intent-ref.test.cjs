@@ -171,10 +171,20 @@ test('an explicit "nothing to fan out" is an answer, not a failed reading', () =
   assert.equal(intent.usable(null, NAMES), null)
 })
 
-test('a plan of one run is not a fan-out', () => {
-  /* the grammar already delegates `@coder <job>`; a card in front of the path
-     that already works is a confirmation step nobody asked for */
-  assert.equal(intent.usable({ spawn: true, runs: 1, entity: 'coder', job: 'do it' }, NAMES), null)
+test('a plan of one run is a real plan', () => {
+  /* A single delegated session is the case the classifier exists for when the
+     grammar cut the job off: `spawn 1 @designer on @orca:entity <the ask>` gives
+     the run the word "on", so the model has to hand back the whole instruction.
+     Refusing `runs: 1` here meant the one message that reached this layer was the
+     one it would not answer. */
+  assert.deepEqual(intent.usable({ spawn: true, runs: 1, entity: 'coder', job: 'do it' }, NAMES), {
+    mode: 'repeat',
+    runs: 1,
+    entity: 'coder',
+    job: 'do it',
+    derived: false,
+  })
+  /* no count at all still says nothing about how many runs */
   assert.equal(intent.usable({ spawn: true, entity: 'coder', job: 'do it' }, NAMES), null)
 })
 

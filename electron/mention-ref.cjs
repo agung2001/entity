@@ -64,6 +64,11 @@ const ORCA_CACHE_MS = 60_000
 const MENTION_TIMEOUT_MS = Number(process.env.ENTITY_MENTION_TIMEOUT_MS)
 const ENTITY_TIMEOUT_MS = MENTION_TIMEOUT_MS > 0 ? MENTION_TIMEOUT_MS : 60 * 60_000
 const MAX_ENTITY_RUNS = 2
+/* A job that is only a preposition carries no instruction: `@designer on
+   @orca:entity …` stops the job at "on", so the run is asked to do nothing while
+   the person's real request sits in the segment after it. A delegated job is a
+   sentence; one word that cannot head a sentence is a missing one. */
+const DANGLING_JOB = /^(?:on|in|at|for|with|to|by|from|into|onto|over|under|about|via)$/i
 /* `spawn N @entity …` is an explicit ask for N parallel runs of one instruction,
    so its own cap is what the person wrote — still bounded, because a typo is not
    a reason to start forty harnesses. */
@@ -105,6 +110,36 @@ function openingProse(source) {
     if (open <= close) return text.slice(0, at + 1)
   }
   return text
+}
+
+/**
+ * Does this message address an entity with a job the grammar cannot actually
+ * read?
+ *
+ * A delegated job is the text between its `@` and the next `@`, which is the
+ * right rule and stays. The failure is when that slice is not an instruction:
+ *
+ *   `@designer on @orca:entity I want to redesign this page`
+ *                    ^^ the job, and the ask is after the repo
+ *
+ * A job of one word that cannot head a sentence (a preposition, a bare article)
+ * is a cut-off instruction, not a terse one. The grammar cannot recover the
+ * words, so this is the signal `rewrite` uses to ask the classifier instead of
+ * running a session on `"on"`.
+ */
+function openingProseHasUnreadableJob(source) {
+  const { segments } = parse(source)
+  return segments.some((segment, index) => {
+    if (segment.kind !== 'entity') return false
+    const job = String(segment.job || '').trim()
+    /* no job at all is a reference — that is already read correctly */
+    if (!job) return false
+    /* anything with a content word in it is a job the grammar read */
+    if (!DANGLING_JOB.test(job)) return false
+    /* ...and it only counts if the sentence really does continue past it; a
+       trailing `@designer on` with nothing after it is merely empty */
+    return index + 1 < segments.length
+  })
 }
 
 /* `spawn 3 @secretary …` and `spawn per @youtrack:… @coder …`, in the opening
@@ -177,7 +212,7 @@ function planSentence(plan) {
   }
   if (plan.mode === 'rows' && plan.list) return `spawn per ${plan.list} @${plan.entity} ${job}`
   const runs = Math.trunc(Number(plan.runs))
-  if (!Number.isFinite(runs) || runs < 2) return null
+  if (!Number.isFinite(runs) || runs < 1) return null
   return `spawn ${Math.min(runs, MAX_SPAWN_RUNS)} @${plan.entity} ${job}`
 }
 
@@ -1696,7 +1731,16 @@ async function rewrite(
      requires this module, and a load-time edge would be a cycle. */
   const enumerates =
     barePrefix !== null && require('./intent-ref.cjs').listedItems(source).length >= 2
-  if (intent && (barePrefix === null || enumerates)) {
+  /* `unreadableJob` is the third reason to classify, and the one this layer kept
+     getting wrong: the grammar can always *split* an `@entity` from its job, so
+     it never demoted itself — even when the split threw the instruction away.
+     `spawn 1 @designer on @orca:entity I want to redesign this page` reads as the
+     job "on" because a delegated job ends at the next `@`, and the person's real
+     sentence lives past it. That is not the grammar reading the message exactly;
+     it is the grammar reading it wrong, so the model is asked — and its plan
+     (`spawn 1 @designer <the real ask>`) is the one the card confirms. */
+  const unreadableJob = openingProseHasUnreadableJob(source)
+  if (intent && (barePrefix === null || enumerates || unreadableJob) && !stopped?.()) {
     let plan = null
     try {
       plan = await intent(source)
@@ -1845,6 +1889,32 @@ async function rewrite(
     }
   }
 
+  /* A job that is *nothing but* a preposition still slips through when nothing
+     classified the message — the CLI, a spawned session, a test, or a reader that
+     answered `{spawn: false}`. Then the run would be handed `"on"` and file a
+     session under that title, so it is refused instead.
+     
+     This is the **fallback**, not the answer: `rewrite` asks the classifier
+     whenever the job is unreadable (`openingProseHasUnreadableJob`), and a plan
+     from it replaces the message before this code ever sees the split. Only a
+     turn with no classifier reaches here, and for that turn nothing can recover
+     the instruction. */
+  for (const segment of segments) {
+    if (segment.kind !== 'entity') continue
+    if (segment === listSegment || !DANGLING_JOB.test(String(segment.job || '').trim())) continue
+    const after = segments.find((entry) => entry.start > segment.start)
+    if (!after) continue
+    /* the next segment's *token*, not its whole rest-of-message: the sentence
+       after it is the instruction the run is missing, and quoting it back in a
+       refusal makes the refusal longer than the fix. */
+    const nextToken = String(after.raw || '').trim().split(/\s+/)[0]
+    ctx.errors.push(
+      `${segment.raw} has no job — only "${String(segment.job).trim()}", because the ` +
+        `sentence continues after ${nextToken} and a delegated job stops at the next ` +
+        'mention. Put the instruction in words the run can read, before any other mention.',
+    )
+  }
+
   /* One row, one run: the list is resolved before any run exists, because the
      number of runs is what it returns. Its failure is a hard error — spawning
      nothing while the parent talks as if it had is worse than stopping. */
@@ -1962,12 +2032,24 @@ async function rewrite(
      happened. Handing it the raw `spawn per … @coder …` sentence invites a
      parent that delegates — or works — a second time, which for a routing skill
      means an extra worktree. The transcript keeps the person's words; the prompt
-     states what was done. */
-  const fanned = spawn && (spawn.kind === 'per' || spawn.count > 1) && runs.length > 1
+     states what was done.
+     
+     `spawn 1` is the same deal and used to slip through: `spawn.count > 1` was
+     the only test, so one requested run read as "not a fan-out" and the parent
+     was handed the instruction as its own job — it then did the work a second
+     time, at full length, after the child had already answered. A count of one
+     is still a delegated run, and the sentence that delegated it is not the
+     parent's task. */
+  const fanned =
+    spawn && (spawn.kind === 'per' || spawn.count >= 1) && runs.length >= 1
   const prompt = fanned
-    ? `${runs.length} runs of ${tokenOf(target || runs[0])}, one per row above. They have already ` +
-      'run and their answers are in the list. Write one short paragraph saying what each run did ' +
-      'and which one still needs something; do not run them again and do not do their work yourself.'
+    ? runs.length === 1
+      ? `The run of ${tokenOf(target || runs[0])} above has already happened and its answer is ` +
+        'in the list. That was the work this message asked for; read it and answer from what it ' +
+        'found. Do not repeat it yourself and do not delegate it again.'
+      : `${runs.length} runs of ${tokenOf(target || runs[0])}, one per row above. They have already ` +
+        'run and their answers are in the list. Write one short paragraph saying what each run did ' +
+        'and which one still needs something; do not run them again and do not do their work yourself.'
     : source
   return {
     text: block ? `${block}\n\n${prompt}` : prompt,
