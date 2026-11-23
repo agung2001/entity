@@ -59,13 +59,18 @@
 .msg-delegation-body {
   min-width: 0;
 }
+/* Identity only, and one line: the name and the workspace may shrink (and
+   ellipsise), but they never push the row onto a second line or let a state
+   word read as part of the entity's name. */
 .msg-delegation-head {
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
 }
 .msg-delegation-kicker {
+  flex: none;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   letter-spacing: 0.08em;
@@ -73,16 +78,36 @@
   color: var(--muted);
 }
 .msg-delegation-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--mono);
   font-size: var(--fs-meta);
   font-weight: 600;
   color: var(--accent-ink);
 }
+/* The meta and the action share one band under the identity: the meta may wrap
+   there, and `.msg-delegation-actions` is the only auto margin on the card. */
+.msg-delegation-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
 .msg-delegation-meta {
-  margin-left: auto;
+  min-width: 0;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.msg-delegation-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
 }
 /* The one action on the card sits at its top right, where the eye goes last but
    the hand finds it: it is the way out of a one-shot run. */
@@ -90,7 +115,6 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
   padding: 1px 6px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -101,27 +125,27 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.msg-delegation-meta + .msg-delegation-open {
-  margin-left: 0;
-}
-/* The worktree the row worked in, as it is now: a dot and one word. It sits
-   before the meta so `.msg-delegation-meta + .msg-delegation-open` stays the
-   adjacent pair that shares `margin-left: auto`. */
+/* The workspace the row worked in: a dot and its name, shrinkable so a long
+   worktree cannot widen the identity row. */
 .msg-delegation-worktree {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
-  white-space: nowrap;
 }
 .msg-delegation-worktree::before {
   content: '';
+  display: inline-block;
   width: 5px;
   height: 5px;
+  margin-right: 4px;
   border-radius: 50%;
   background: var(--muted);
+  vertical-align: 1px;
 }
 .msg-delegation-worktree[data-state='clean']::before {
   background: var(--ok);
@@ -391,11 +415,29 @@
   border-left-color: var(--border-strong);
   background: var(--surface);
 }
-/* The row is what a fan-out is about, so a held row names it in the accent. */
+/* A run of one instruction N times: a quiet token of its own, beside the name
+   rather than inside the meta string. */
+.msg-delegation-share {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+/* The row is what a fan-out is about, so a held row names it in the accent.
+   Both spans are blocks in every card: the ticket is its own line, and the
+   break never depends on `white-space: pre-wrap`. */
 .msg-delegation-job .row {
   display: block;
   color: var(--accent-ink);
   font-weight: 600;
+}
+.msg-delegation-job .text {
+  display: block;
 }
 .msg-delegation[data-hold='1'] .msg-delegation-job {
   display: -webkit-box;
@@ -404,7 +446,6 @@
   overflow: hidden;
 }
 .msg-delegation[data-hold='1'] .msg-delegation-job .text {
-  display: block;
   margin-top: 4px;
 }
 .hold-where {

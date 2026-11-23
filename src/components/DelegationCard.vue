@@ -75,13 +75,7 @@ function duration(ms) {
 
 function meta() {
   const execution = props.mention.execution || {}
-  return [
-    execution.harness,
-    execution.model,
-    duration(props.mention.ms || execution.ms),
-    /* a run of one instruction N times: the card has to say which one it is */
-    props.mention.share ? `run ${props.mention.share}` : '',
-  ]
+  return [execution.harness, execution.model, duration(props.mention.ms || execution.ms)]
     .filter(Boolean)
     .join(' · ')
 }
@@ -99,32 +93,35 @@ function ticket() {
 
 /* Orca forgets a worktree once it is removed, so "no row in its list" cannot
 tell `merged and removed` from `never created` — and a chip that guesses would
-be the lie this one exists to prevent. The row's own record can tell: a child
-that worked in a checkout ran in that directory, so its steps or answer name
-the path. Derived from the transcript, and used only to decide whether to paint
-a word — no path from here is ever read. */
-function hadWorktree() {
-  const key = ticket().toLowerCase()
-  if (!key) return false
-  const text = JSON.stringify([props.mention.steps || [], props.mention.answer || '']).toLowerCase()
-  return text.includes('/orca/workspaces/') && text.includes(`/${key}`)
-}
-
+be the lie this one exists to prevent. The row's own record can tell, and does:
+`worktreeState` reads the paths it names before it falls back to the ticket key,
+so `gone` arrives only when the record named a workspace Orca no longer lists. */
 onMounted(async () => {
   /* A held row has no cwd yet — nothing ran — so there is no worktree to look
-     up; the card that lands after Run carries the chip instead. */
-  if (props.hold || !ticket()) return
+     up; the card that lands after Run carries the chip instead. With no key and
+     no path in the record, `worktreeState` answers `none` and the chip stays
+     off, which is the honest answer rather than a guess. */
+  if (props.hold) return
   try {
     const state = await call('mention.worktree', {
       cwd: props.mention.execution?.cwd || '',
       ticket: ticket(),
+      record: { steps: props.mention.steps || [], answer: props.mention.answer || '' },
     })
     if (!state?.state || ['none', 'unknown'].includes(state.state)) return
-    if (state.state === 'gone' && !hadWorktree()) return
     worktree.value = state
   } catch {
     /* an offline Orca must not mark the card */
   }
+})
+
+/* The chip as one word: the workspace's own name, or `gone` when the record
+   named one that is no longer there. A state with no name to show is quiet. */
+const chip = computed(() => {
+  const state = worktree.value
+  if (!state) return ''
+  if (state.name) return String(state.name)
+  return state.state === 'gone' ? 'gone' : ''
 })
 
 /* A live card says where it is instead of claiming an answer it does not have. */
@@ -149,14 +146,13 @@ function statusText() {
   >
     <EntityMark :entity="mention.name" animate class="msg-delegation-mark" />
     <div class="msg-delegation-body">
+      <!-- Identity only, one line: a long workspace name shrinks instead of
+           pushing `run 1/3` or a state word onto the entity's name. -->
       <div class="msg-delegation-head">
         <span class="msg-delegation-kicker">Delegated to</span>
         <span class="msg-delegation-name">{{ label() }}</span>
-        <!-- Between the name and the meta on purpose: `.msg-delegation-meta`
-             and `.msg-delegation-open` share `margin-left: auto`, and
-             `.msg-delegation-meta + .msg-delegation-open` disambiguates them. -->
         <span
-          v-if="worktree"
+          v-if="chip"
           class="msg-delegation-worktree"
           :data-state="worktree.state"
           :title="
@@ -167,7 +163,7 @@ function statusText() {
                 }`
           "
         >
-          {{ worktree.state === 'dirty' ? `${worktree.files} changed` : worktree.state }}
+          {{ chip }}
         </span>
         <span
           v-if="recovered"
@@ -175,38 +171,52 @@ function statusText() {
           title="This session has answered since the failure this card recorded"
           >retried</span
         >
+        <!-- A run of one instruction N times: a per-run label, not a fragment of
+             the meta string, so `run 1/3` is never read as part of the name. -->
+        <span
+          v-if="mention.share"
+          class="msg-delegation-share"
+          title="This is one of several runs of the same instruction"
+          >run {{ mention.share }}</span
+        >
+      </div>
+      <!-- What ran and the way out of it: the meta may wrap on its own band, and
+           the action keeps the right edge by being the only auto margin here. -->
+      <div class="msg-delegation-row">
         <span v-if="meta()" class="msg-delegation-meta">{{ meta() }}</span>
-        <!-- The run is a session, not a dead end: continue it as a real
-             conversation with that entity. -->
-        <button
-          v-if="mention.threadId"
-          class="msg-delegation-open"
-          type="button"
-          :title="`Continue this session with ${mention.name || 'the entity'}`"
-          @click="$emit('open-thread', mention.threadId)"
-        >
-          Continue
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M5.5 3h7.5v7.5M13 3L6.5 9.5" />
-          </svg>
-        </button>
-        <!-- A failed run is retried where it happened: the session re-asks its own
-             question, so the card keeps the history it painted and the answer
-             lands in the session the button beside this one opens. -->
-        <button
-          v-if="retryable"
-          class="msg-delegation-retry"
-          type="button"
-          :disabled="retrying"
-          :title="retrying ? 'This session is answering again' : 'Run this session’s question again'"
-          @click="$emit('retry', mention.threadId)"
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-            <path d="M12.8 6.4A5 5 0 1 0 13 9" />
-            <path d="M12.8 2.6v3.8H9" />
-          </svg>
-          {{ retrying ? 'Retrying…' : 'Retry' }}
-        </button>
+        <span v-if="mention.threadId || retryable" class="msg-delegation-actions">
+          <!-- The run is a session, not a dead end: continue it as a real
+               conversation with that entity. -->
+          <button
+            v-if="mention.threadId"
+            class="msg-delegation-open"
+            type="button"
+            :title="`Continue this session with ${mention.name || 'the entity'}`"
+            @click="$emit('open-thread', mention.threadId)"
+          >
+            Continue
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M5.5 3h7.5v7.5M13 3L6.5 9.5" />
+            </svg>
+          </button>
+          <!-- A failed run is retried where it happened: the session re-asks its
+               own question, so the card keeps the history it painted and the
+               answer lands in the session the button beside this one opens. -->
+          <button
+            v-if="retryable"
+            class="msg-delegation-retry"
+            type="button"
+            :disabled="retrying"
+            :title="retrying ? 'This session is answering again' : 'Run this session’s question again'"
+            @click="$emit('retry', mention.threadId)"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M12.8 6.4A5 5 0 1 0 13 9" />
+              <path d="M12.8 2.6v3.8H9" />
+            </svg>
+            {{ retrying ? 'Retrying…' : 'Retry' }}
+          </button>
+        </span>
       </div>
       <p v-if="mention.job" class="msg-delegation-job">
         <span v-if="jobRow" class="row">{{ jobRow }}</span><span
