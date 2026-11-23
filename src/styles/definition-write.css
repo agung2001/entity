@@ -550,6 +550,11 @@
    diff goes unified. Two squeezed columns clip a code line; one column with
    − and + prefixes does not. */
 @container cpdock (max-width: 560px) {
+  /* the card also carries a head (and, on a narrow column, too many of them),
+     so the sections sit inside the card's own left and right edges */
+  .cp-dock .dw {
+    margin: 0 2px 9px;
+  }
   .dw-diff-head {
     grid-template-columns: 1fr;
   }

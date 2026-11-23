@@ -838,6 +838,7 @@ it.
 | Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
 | Definition write (a rewrite waiting for you) | `src/components/DefinitionWriteCard.vue` | Esc = `Not now` (not while Apply is in flight); Apply is the only other answer |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
+| Composer failure band | `src/components/SlashComposer.vue` | Esc (the same `dismiss` emit as its `×`; an open attach menu closes first, it is its own stack entry); `Try again` re-sends the preserved draft; it also clears when another thread is opened |
 
 ## Every searchable list says ⌘/ (⌥/ in a tab), in the same pill
 
