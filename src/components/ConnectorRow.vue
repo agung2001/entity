@@ -32,13 +32,10 @@ defineProps({
 
 const emit = defineEmits(['adopt', 'copy', 'uninstall'])
 
-/* The name is the link, the row is not (`DESIGN.md`). An MCP server opens the
-   page that already draws its transport, tools and binding; a cli/rest row opens
-   the smaller page for the fields it actually has. */
-const pageFor = (row) =>
-  row?.kind === 'mcp'
-    ? { name: 'mcp-server', params: { workspace: hub.workspace, name: row.id } }
-    : { name: 'connector-page', params: { workspace: hub.workspace, id: row.id } }
+/* The name is the link, the row is not (`DESIGN.md`). One roster, one address:
+   an MCP server and a cli/rest row open the same `connectors/:id` page, and the
+   view switches on the row's own `kind`. */
+const pageFor = (row) => ({ name: 'connector-page', params: { workspace: hub.workspace, id: row.id } })
 
 /* `ok | fail | off | warn`, the four dots the row may wear. */
 const toneOf = (row) => {

@@ -241,7 +241,7 @@ const CONFIG_ROUTES = new Set([
   'skills',
   'skill',
   'mcp',
-  'mcp-server',
+  'connector-page',
   'machines',
   'machine',
   'activity',

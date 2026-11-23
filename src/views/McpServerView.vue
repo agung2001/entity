@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { heroColorFor } from '@/composables/entityMark'
+import IntegrationMark from '@/components/IntegrationMark.vue'
+import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import { call } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { copyText } from '@/lib/clipboard'
@@ -9,6 +12,7 @@ import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import { readPaste } from '@/lib/mcp-paste'
 import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
+import { connectors, loadConnectors } from '@/stores/connectors'
 
 /**
  * One MCP server, as a page — the same shell as the entity detail page
@@ -26,7 +30,27 @@ import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
 const route = useRoute()
 const router = useRouter()
 
-const name = computed(() => String(route.params.name || ''))
+/* One address for both kinds, so the server's name arrives as `:id` — the route
+   this page is drawn under is `connectors/:id`. Reading `params.name` here was
+   the bug: the redirect from `mcp/:name` rewrites the param, so `name` came back
+   empty and the page fell into its "no such server" branch. */
+const name = computed(() => String(route.params.id || ''))
+
+/* The card's one input, and the only thing this page adds to the hero recipe.
+   The derivation lives in `entityMark` so the connector page's hero cannot drift
+   from this one. ponytail: no per-server palette; when `--hero` becomes a field
+   on the server definition, read it there and delete the derivation. */
+const heroColor = computed(() => heroColorFor(name.value))
+
+/* The brand mark this server wears, if the app ships it. YouTrack's binding *is*
+   an MCP server, so its page can wear the real YouTrack mark instead of a
+   generic globe — the roster already knows which ids are built in, so this reads
+   that answer rather than keeping a second list of brands here. */
+const brand = computed(() => {
+  const row = connectors.rows.find((entry) => entry.id === name.value)
+  return String(row?.builtIn || '')
+})
+
 const poolServers = computed(() => workspaces.mcp?.servers || {})
 const poolDisabled = computed(() => workspaces.mcp?.disabled || {})
 
@@ -338,6 +362,11 @@ const counts = computed(() => {
   return { all: toolRows.value.length, write, read: toolRows.value.length - write }
 })
 
+/** The track is a share, so the bar cannot say something the numbers do not. */
+const readShare = computed(() =>
+  counts.value.all ? Math.round((counts.value.read / counts.value.all) * 100) : 0,
+)
+
 /** Name and description: what a person remembers about a tool is one or the other. */
 const searchedTools = computed(() => {
   const needle = query.value.trim().toLowerCase()
@@ -361,13 +390,6 @@ const visibleTools = computed(() =>
     ? searchedTools.value
     : searchedTools.value.filter((row) => (row.write ? 'write' : 'read') === kind.value),
 )
-
-const toolsHead = computed(() => {
-  if (tools.value.loading) return 'asking…'
-  const { all, read, write } = counts.value
-  if (!all) return 'none reported'
-  return `${all} from the server · ${read} read · ${write} write`
-})
 
 /* Why the section has no rows — silence used to be the answer, and it reads
    exactly like a server that exposes nothing. */
@@ -769,12 +791,21 @@ async function copyJson() {
   toast(copied ? 'definition copied' : 'The clipboard is not available.')
 }
 
+async function copyDefinitionText() {
+  if (!command.value) return
+  const copied = await copyText(command.value)
+  toast(copied ? `${definition.value?.url ? 'URL' : 'command'} copied` : 'The clipboard is not available.')
+}
+
 function back() {
   router.push({ name: 'mcp', params: { workspace: route.params.workspace } })
 }
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  /* The roster's own rows are where `builtIn` lives, so the brand mark and the
+     shipped mention contract come from one read instead of two. */
+  if (!connectors.loaded || connectors.workspace !== hub.workspace) await loadConnectors()
   await loadGlobal()
   await loadTools()
   try {
@@ -798,6 +829,7 @@ watch(name, async () => {
   steps.value = []
   reading.value = null
   receipt.value = null
+  if (!connectors.loaded || connectors.workspace !== hub.workspace) await loadConnectors()
   await loadGlobal()
   await loadTools()
 })
@@ -820,54 +852,102 @@ watch(name, async () => {
     </div>
 
     <template v-if="definition">
-      <header class="entp-idhead">
-        <div class="mcpp-mark" :data-t="transport" aria-hidden="true">
-          <svg v-if="transport === 'http'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="3" y="4" width="18" height="6" rx="1.6" />
-            <rect x="3" y="14" width="18" height="6" rx="1.6" />
-            <path d="M7 7h.01M7 17h.01" stroke-linecap="round" />
-          </svg>
+      <section class="entp-hero" :style="{ '--hero': heroColor }">
+        <PixelBackdrop variant="hero" :color="heroColor" :count="18" />
+        <div class="entp-hero-inner">
+          <header class="entp-idhead">
+            <div class="mcpp-mark" :data-t="transport" :data-brand="brand ? '1' : null" aria-hidden="true">
+              <IntegrationMark v-if="brand" :name="brand" :size="34" />
+              <svg v-else-if="transport === 'http'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="4" width="18" height="6" rx="1.6" />
+                <rect x="3" y="14" width="18" height="6" rx="1.6" />
+                <path d="M7 7h.01M7 17h.01" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="entp-title">
+              <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
+              <h1>{{ name }}</h1>
+              <div class="mcpp-cmd-row">
+                <code class="mcpp-cmd" :title="command">{{ command }}</code>
+                <button
+                  class="mcpp-cmd-copy"
+                  type="button"
+                  :title="`Copy the ${definition.url ? 'URL' : 'command'}`"
+                  @click="copyDefinitionText"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                    <rect x="3.4" y="3.4" width="9.2" height="10.2" rx="1.6" />
+                    <path d="M6 3.4V2.6h4v.8M5.8 7.2h4.4M5.8 9.8h3.2" />
+                  </svg>
+                  <span>{{ definition.url ? 'URL' : 'command' }}</span>
+                </button>
+              </div>
+              <div class="entp-chips">
+                <span class="mcpp-chip" :data-tone="state.tone" :title="state.why">
+                  <i aria-hidden="true"></i>{{ state.label }}
+                  <span v-if="state.note" class="mcpp-chip-note">{{ state.note }}</span>
+                </span>
+                <button
+                  v-if="inPool"
+                  class="mcpp-chip mcpp-chip-btn"
+                  type="button"
+                  :title="
+                    enabled
+                      ? 'Park keeps the definition and takes it out of every turn'
+                      : 'Enable puts it back into every turn'
+                  "
+                  @click="toggleEnabled"
+                >{{ enabled ? 'park' : 'enable' }}</button>
+                <span class="entp-chip">{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</span>
+                <span class="entp-chip">every entity</span>
+              </div>
+              <p v-if="state.why" class="mcpp-note" :data-bad="state.tone === 'bad' ? '1' : null">
+                {{ state.why }}
+              </p>
+            </div>
+          </header>
+
+          <!-- The entity page's panel, measuring tools instead of experience:
+               the same markup and the same shared `.entp-xp*` rules. It is
+               skimmable text, not a progress bar. While the probe is in flight
+               it says `—`, not `0`: a count that flips 0 → 23 is the same lie
+               as a count printed twice. -->
+          <aside
+            class="entp-xp"
+            :title="`${counts.all} tools: ${counts.read} read, ${counts.write} write.`"
+            :aria-label="`${counts.all} tools, ${counts.read} read, ${counts.write} write, ${probedLabel}`"
+          >
+            <div class="entp-lv">
+              <span>TOOLS</span>
+              <b>{{ tools.loading ? '—' : counts.all }}</b>
+            </div>
+            <div class="entp-xp-main">
+              <div class="entp-xp-head">
+                <span>read</span>
+                <b>{{ tools.loading ? '—' : counts.read }}</b>
+              </div>
+              <div class="entp-xp-track">
+                <i :style="{ width: tools.loading ? '0%' : `${readShare}%` }"></i>
+              </div>
+              <div class="entp-xp-foot">
+                <span>write</span>
+                <span>{{ tools.loading ? '—' : counts.write }}</span>
+              </div>
+            </div>
+          </aside>
         </div>
-        <div class="entp-title">
-          <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
-          <h1>{{ name }}</h1>
-          <code class="mcpp-cmd" :title="command">{{ command }}</code>
-          <div class="entp-chips">
-            <span class="mcpp-chip" :data-tone="state.tone" :title="state.why">
-              <i aria-hidden="true"></i>{{ state.label }}
-              <span v-if="state.note" class="mcpp-chip-note">{{ state.note }}</span>
-            </span>
-            <button
-              v-if="inPool"
-              class="mcpp-chip mcpp-chip-btn"
-              type="button"
-              :title="
-                enabled
-                  ? 'Park keeps the definition and takes it out of every turn'
-                  : 'Enable puts it back into every turn'
-              "
-              @click="toggleEnabled"
-            >{{ enabled ? 'park' : 'enable' }}</button>
-            <span class="entp-chip">{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</span>
-            <span class="entp-chip">every entity</span>
-          </div>
-          <p v-if="state.why" class="mcpp-note" :data-bad="state.tone === 'bad' ? '1' : null">
-            {{ state.why }}
-          </p>
-        </div>
-      </header>
+      </section>
 
       <div class="entp-grid">
         <div class="entp-main">
           <section class="entp-sec">
             <div class="entp-sec-head">
               <h2>Tools</h2>
-              <span class="n">{{ toolsHead }}</span>
-              <span class="mcpp-probed">{{ probedLabel }}</span>
+              <span class="probed-slot">{{ probedLabel }}</span>
               <button class="r" type="button" :disabled="tools.loading" @click="loadTools(true)">
                 Refresh
               </button>
@@ -923,18 +1003,93 @@ watch(name, async () => {
                 </div>
               </div>
 
-              <ul v-if="visibleTools.length" class="mcp-tool-list">
-                <li v-for="tool in visibleTools" :key="tool.name">
-                  <span class="ix">{{ tool.index }}</span>
-                  <b :title="tool.name">{{ tool.name }}</b>
-                  <span class="about">{{ tool.about || 'no description from the server' }}</span>
-                  <span class="grp" :title="tool.group">{{ tool.group }}</span>
-                  <span class="kind" :data-w="tool.write ? '1' : '0'">{{ tool.write ? 'write' : 'read' }}</span>
-                </li>
-              </ul>
-              <p v-else-if="toolRows.length && !tools.loading" class="mcpp-note">{{ noMatchNote }}</p>
+              <!-- The head is a real row of the same grid, so a label can never
+                   sit over a column that moved: five tracks, five headers. It is
+                   the roster's own pattern (`.ct-head`), not a `<th>` inside a
+                   `<ul>` — the list is still a list. The head and the list share
+                   one frame, so the frame is a wrapper and not the scroller. -->
+              <div
+                v-if="!tools.error && (visibleTools.length || tools.loading)"
+                class="mcp-tool-box"
+              >
+                <div class="mcp-tool-head" aria-hidden="true">
+                  <span>#</span>
+                  <span>Tool</span>
+                  <span>What it does</span>
+                  <span>Group</span>
+                  <span>Kind</span>
+                </div>
+
+                <ul v-if="visibleTools.length" class="mcp-tool-list">
+                  <li v-for="tool in visibleTools" :key="tool.name">
+                    <span class="ix">{{ tool.index }}</span>
+                    <b :title="tool.name">{{ tool.name }}</b>
+                    <span class="about">{{ tool.about || 'no description from the server' }}</span>
+                    <span class="grp" :title="tool.group">{{ tool.group }}</span>
+                    <span class="kind" :data-w="tool.write ? '1' : '0'">{{ tool.write ? 'write' : 'read' }}</span>
+                  </li>
+                </ul>
+                <!-- A probe in flight is rows at the real row height, in a list
+                     that is not announced as a list — never a spinner over
+                     nothing. -->
+                <ul v-else class="mcp-tool-list" aria-hidden="true">
+                  <li v-for="n in 4" :key="n" class="mcpp-skel-row">
+                    <span class="skel" style="height: 8px; width: 14px"></span>
+                    <span>
+                      <span class="skel mcpp-skel-b" style="display: block; width: 62%"></span>
+                      <span class="skel mcpp-skel-l" style="display: block; width: 88%"></span>
+                    </span>
+                  </li>
+                </ul>
+              </div>
+              <p v-if="!tools.loading && !visibleTools.length && toolRows.length" class="mcpp-note">
+                {{ noMatchNote }}
+              </p>
               <p v-else-if="toolsNote" class="mcpp-note">{{ toolsNote }}</p>
             </template>
+          </section>
+
+          <!-- The mention contract is a row of its own under the tools, not a
+               block in the rail: it is the same card `ConnectorPageView` draws,
+               in the column that has the width for the syntax and its
+               examples. A server nothing resolves gets the card's empty note, so
+               the row cannot silently disappear. -->
+          <section class="cxn-card cxn-work mcpp-chat">
+            <h2>In the chat</h2>
+            <template v-if="work">
+              <p class="cxn-work-lead">
+                Type <code class="mono">{{ work.mention }}</code> and Entity resolves
+                <strong>{{ work.resolves }}</strong> before the turn starts.
+              </p>
+              <dl class="cxn-facts">
+                <dt>syntax</dt>
+                <dd><code class="mono">{{ work.syntax }}</code></dd>
+                <dt>returns</dt>
+                <dd class="cxn-work-wrap">{{ work.returns }}</dd>
+                <template v-if="work.needs">
+                  <dt>needs</dt>
+                  <dd>{{ work.needs }}</dd>
+                </template>
+                <template v-if="work.page">
+                  <dt>binding</dt>
+                  <dd><code class="mono">{{ work.page }}</code> — this server's definition and token</dd>
+                </template>
+              </dl>
+              <ul v-if="work.examples?.length" class="cxn-work-eg">
+                <li v-for="example in work.examples" :key="example">
+                  <code class="mono">{{ example }}</code>
+                </li>
+              </ul>
+              <p class="cxn-note">
+                Resolved by Entity's <code class="mono">{{ work.resolver }}</code> resolver — the
+                same one the composer offers, so this row cannot promise a mention that fails.
+              </p>
+            </template>
+            <p v-else class="cxn-note">
+              No resolver is shipped for this server, so there is no
+              <code class="mono">@{{ name }}:</code> form. A mention attaches its
+              definition and status as context, and the entity uses its own tools.
+            </p>
           </section>
 
         </div>
@@ -962,7 +1117,14 @@ watch(name, async () => {
               @keydown.space.prevent="startEdit"
             >
               <dt>Status</dt>
-              <dd :data-tone="state.tone">{{ state.label }}<template v-if="state.note"> · {{ state.note }}</template></dd>
+              <!-- The chip above already answers *how many*; repeating the count
+                   here is what made `23` appear five times. A qualifier that is
+                   not a count (`by you`, `template`, `no tools`) still rides
+                   along, because it is the state's own name. -->
+              <dd :data-tone="state.tone">
+                {{ state.label
+                }}<template v-if="state.note && state.id !== 'ready'"> · {{ state.note }}</template>
+              </dd>
             </div>
             <div>
               <dt>Transport</dt>
@@ -1004,47 +1166,26 @@ watch(name, async () => {
               @keydown.space.prevent="loadTools(true)"
             >
               <dt>Tools</dt>
-              <dd>{{ tools.list.length }}<template v-if="tools.list.length"> · {{ probedLabel }}</template></dd>
+              <dd>{{ probedLabel }}</dd>
             </div>
           </dl>
 
-          <p class="mcpp-note">
-            Defined in {{ here.length }} {{ here.length === 1 ? 'place' : 'places' }}:
-            <template v-for="(place, index) in here" :key="place.id">
-              <template v-if="index">, </template><b>{{ place.label }}</b>
-            </template>.
-          </p>
-
-          <p v-if="work" class="entp-rail-h">In the chat</p>
-          <div v-if="work" class="mcpp-work">
-            <p>
-              <code class="mono">{{ work.mention }}</code>
-              resolves <strong>{{ work.resolves }}</strong>.
-            </p>
-            <p class="mcpp-work-syntax"><code class="mono">{{ work.syntax }}</code></p>
-            <ul>
-              <li v-for="example in work.examples" :key="example">
-                <code class="mono">{{ example }}</code>
-              </li>
-            </ul>
-            <p class="mcpp-work-returns">{{ work.returns }}.</p>
-            <p class="mcpp-work-needs">
-              <template v-if="work.needs">Needs {{ work.needs }}.</template>
-              Resolved by Entity's <code class="mono">{{ work.resolver }}</code> resolver.
-            </p>
+          <!-- Where this definition lives, as the files themselves. The old line
+               read `Defined in 2 places: this workspace, pi.` — a run-on that
+               named the *holders* and hid the one thing a person needs when they
+               go looking: the path. One row per file, the label beside it, the
+               same shape as the rail's other fact lists. -->
+          <p class="entp-rail-h">Defined in {{ here.length }} {{ here.length === 1 ? 'place' : 'places' }}</p>
+          <div class="mcpp-places">
+            <div v-for="place in here" :key="place.id">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="pn">{{ place.label }}</span>
+              <code class="pp" :title="place.path">{{ place.path || 'no file' }}</code>
+            </div>
           </div>
 
           <p class="entp-rail-h">Manage</p>
           <div class="entp-rail-actions">
-            <button type="button" :disabled="!definition" @click="copyJson">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                <rect x="3.4" y="3.4" width="9.2" height="10.2" rx="1.6" />
-                <path d="M6 3.4V2.6h4v.8M5.8 7.2h4.4M5.8 9.8h3.2" />
-              </svg>
-              <span class="nm">Copy definition</span>
-              <span class="hint">JSON</span>
-            </button>
-
             <button
               v-if="!inPool"
               class="tall"
@@ -1364,6 +1505,11 @@ watch(name, async () => {
    server that answered, an amber one is a copy whose secret did not arrive, a
    red one is a server that refused, and a muted one is not being asked at all.
    The note rides in the same chip, lowercase, so the row reads as a sentence. */
+
+/* Where this definition lives, in the rail's own list vocabulary: `.mcpp-places`
+   already draws a bordered stack with a label and an ellipsised path per row.
+   Its row selector is `> div`, so this list renders `<div>` rows rather than
+   re-deriving the same frame here. */
 .mcpp-chip[data-tone='ok'] i {
   background: var(--ok);
 }
@@ -1437,12 +1583,29 @@ watch(name, async () => {
   color: var(--danger);
 }
 
-/* Whose clock the tool list is on. The read is cached in the main process, so a
-   chip that says `ready` from an hour-old answer has to say so. */
-.mcpp-probed {
+/* Whose clock the tool list is on — the one thing the segment below cannot
+   say. The counts are the segment's job; saying them twice made a reader check
+   which of the two was the real one. */
+.probed-slot {
+  margin-left: 2px;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
+}
+
+/* The probing state, in the list's own grid so nothing moves when the rows land.
+   `--skel` and the shimmer are `account-harness.css`'s. */
+.mcp-tool-list li.mcpp-skel-row {
+  grid-template-columns: 22px minmax(0, 1fr) 64px;
+  gap: 9px;
+  padding: 11px 14px;
+}
+.mcpp-skel-b {
+  height: 9px;
+}
+.mcpp-skel-l {
+  height: 8px;
+  margin-top: 4px;
 }
 
 /* A failure carries the one thing a person can do about it, not a paragraph. */
@@ -1922,4 +2085,162 @@ watch(name, async () => {
   color: var(--ink);
 }
 
+/* The mention contract, as the second column row under the tools. It is
+   `ConnectorPageView`'s own card (`cxn-card`, `cxn-facts`, `cxn-work-eg`), so
+   the two detail pages document a mention the same way; only the gap above it is
+   this page's. */
+.mcpp-chat {
+  margin-top: 30px;
+}
+
+/* ── the hero, in this page's own slot ───────────────────────────
+   The card, the grid, the field and the panel are `backdrops.css` verbatim;
+   only what this page puts *inside* it is here. The one size that changes is
+   the mark: it takes the picker's 66px box, not the 46px idhead size, so the
+   hero's two children line up on the same baseline. */
+.entp-hero .mcpp-mark {
+  width: 66px;
+  height: 66px;
+}
+.entp-hero .mcpp-mark svg {
+  width: 26px;
+  height: 26px;
+}
+/* A built-in connector wears its real brand mark, so the box carries no tint of
+   its own: `IntegrationMark`'s YouTrack is a fixed palette and muting it in
+   `--muted` would repaint somebody else's logo. The generic transport glyph keeps
+   the card's tint because it *is* the page's own drawing. */
+.entp-hero .mcpp-mark[data-brand='1'] {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.09);
+}
+.entp-hero .mcpp-mark[data-brand='1'] .int-mark-img {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  object-fit: contain;
+}
+.entp-hero .mcpp-mark[data-brand='1'] .int-mark-svg {
+  display: block;
+  flex: none;
+}
+/* The endpoint, carried into the card without its full-width slab. */
+.entp-hero .mcpp-cmd {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.34);
+  color: #cfe4d4;
+}
+.entp-hero .mcpp-cmd-copy {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #c9d2b7;
+}
+.entp-hero .mcpp-cmd-copy:hover {
+  border-color: color-mix(in oklab, var(--hero) 55%, rgba(255, 255, 255, 0.25));
+  background: rgba(255, 255, 255, 0.1);
+  color: #f2f7e6;
+}
+/* The chip's dot is the card's accent, not the state's hue: the state is always
+   carried by the word beside it. */
+.entp-hero .mcpp-chip {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c9d2b7;
+}
+.entp-hero .mcpp-chip-note {
+  color: #9eaa8c;
+}
+.entp-hero .mcpp-chip-btn:hover {
+  border-color: color-mix(in oklab, var(--hero) 55%, rgba(255, 255, 255, 0.25));
+  background: rgba(255, 255, 255, 0.1);
+  color: #f2f7e6;
+}
+.entp-hero .mcpp-chip[data-tone='ok'] i {
+  background: var(--hero);
+}
+.entp-hero .mcpp-chip[data-tone='warn'] i {
+  background: var(--accent);
+}
+/* `--muted` is 3.8:1 on the card's dark paper; the note takes the colour the
+   recipe already gives prose here. */
+.entp-hero .mcpp-note {
+  color: #b9c1a8;
+}
+.entp-hero .mcpp-note[data-bad='1'] {
+  color: #ff8f75;
+}
+
+/* Light mode: the same three, off the same paper the card paints. Scoped to
+   `.entp-hero` so the rail's chips keep the page's own ink. */
+:root:not([data-theme='dark']) .entp-hero .mcpp-mark {
+  border-color: color-mix(in oklab, var(--hero) 26%, var(--border));
+  background: color-mix(in oklab, #fff 72%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-mark[data-t='http'] {
+  color: var(--ink);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-mark[data-brand='1'] {
+  border-color: color-mix(in oklab, var(--hero) 26%, var(--border));
+  background: color-mix(in oklab, #fff 80%, transparent);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd {
+  border-color: color-mix(in oklab, var(--hero) 22%, var(--border));
+  background: color-mix(in oklab, #fff 70%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd-copy {
+  border-color: color-mix(in oklab, var(--hero) 22%, var(--border));
+  background: color-mix(in oklab, #fff 72%, transparent);
+  color: var(--muted);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-chip[data-tone='ok'] i {
+  background: var(--hero);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-chip-note {
+  color: var(--muted);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-note {
+  color: var(--ink-2);
+}
+
+/* One column of facts below 620 so the URL is never ellipsised — two columns
+   clipped a 32-character endpoint at 430, 390 and 360. The compound selector
+   beats `.entp-facts`'s two-column rule whatever order the sheets land in. */
+@media (max-width: 620px) {
+  .entp-facts.mcpp-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .entp-facts.mcpp-facts > div {
+    border-top: 1px solid var(--border);
+  }
+  .entp-facts.mcpp-facts > div:first-child {
+    border-top: 0;
+  }
+  /* Δ6 — the segment stops sharing a row with the search and becomes a real
+     44px touch target instead of a 24px one. */
+  .skbar {
+    gap: 8px;
+  }
+  .skbar .mcpp-seg {
+    flex: 1 1 100%;
+  }
+  .skbar .mcpp-seg button {
+    flex: 1;
+    height: 44px;
+    justify-content: center;
+    font-size: var(--fs-meta);
+    gap: 5px;
+  }
+  /* Δ1 — at ≤620 the code takes one line and the verb the next, instead of
+     clipping /mcp off the end. */
+  .mcpp-cmd-row {
+    flex-wrap: wrap;
+  }
+  /* the head wraps instead of squeezing the probe time into a sliver */
+  .entp-sec-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+}
 </style>

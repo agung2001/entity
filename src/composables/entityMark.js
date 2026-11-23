@@ -470,6 +470,20 @@ export const COLORS = [
   { id: 'orchid', name: 'Orchid', v: 'oklch(78% 0.15 310)', h: 310, hex: '#d59aeb' },
 ]
 
+/**
+ * The one colour a hero card is tinted with, derived from a name.
+ *
+ * The same hash `EntityCreateDialog.markForName` uses (`hash * 33 ^ char`, then
+ * `>>> 7`) against the ladder above, so a name keeps its colour across visits
+ * and two pages that open the same connector or server look related instead of
+ * arbitrary. Two kinds of page derive it here rather than each keeping a copy.
+ */
+export function heroColorFor(name) {
+  let hash = 5381
+  for (const char of String(name || '')) hash = ((hash * 33) ^ char.charCodeAt(0)) >>> 0
+  return COLORS[(hash >>> 7) % COLORS.length].hex
+}
+
 const clamp = (n, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, n))
 const hex2 = (n) => Math.round(clamp(n) * 255).toString(16).padStart(2, '0')
 

@@ -14,7 +14,6 @@ const ChatView = () => import('@/views/ChatView.vue')
 const EntityDetailView = () => import('@/views/EntityDetailView.vue')
 const SkillsView = () => import('@/views/SkillsView.vue')
 const SkillDetailView = () => import('@/views/SkillDetailView.vue')
-const McpServerView = () => import('@/views/McpServerView.vue')
 const ConnectorPageView = () => import('@/views/ConnectorPageView.vue')
 const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
 const MachinesView = () => import('@/views/MachinesView.vue')
@@ -210,19 +209,29 @@ const router = createRouter({
           meta: { crumb: 'connectors', title: 'Connectors · entity' },
         },
         {
-          /* A cli/rest connector's own page. An MCP server is not drawn here: it
-             already has `:workspace/mcp/:name`, which knows its transport, tools
-             and binding, and the row links to whichever fits its kind. */
+          /* One connector's own page, whatever its kind. An MCP server and a cli
+             row are two rows of one roster, so they are two kinds of one address
+             — `connectors/:id` was already the detail route and `mcp/:name` was
+             the odd one out. The view is chosen by `kind`, not by route order:
+             a name both kinds could hold must not depend on which object the
+             router matched first. `:workspace/mcp/:name` survives as a redirect
+             below so old links keep landing. */
           path: ':workspace/connectors/:id',
           name: 'connector-page',
           component: ConnectorPageView,
           meta: { crumb: 'connectors', title: 'Connector · entity' },
         },
         {
+          /* The MCP server page's old address. A server is a connector row like
+             any other now; this is a permanent redirect, not a second route. */
           path: ':workspace/mcp/:name',
           name: 'mcp-server',
-          component: McpServerView,
-          meta: { crumb: 'mcp', title: 'MCP server · entity' },
+          redirect: (to) => ({
+            name: 'connector-page',
+            params: { workspace: to.params.workspace, id: to.params.name },
+            query: to.query,
+          }),
+          meta: { crumb: 'connectors', title: 'Connector · entity' },
         },
         {
           path: ':workspace/artifacts/:id(.*)',

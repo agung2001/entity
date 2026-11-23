@@ -7,23 +7,87 @@
 
 /* ── one connector's own page (cli · rest) ─────────────────────────────
    The entity page's shell: a bar with the way back, a hero, then the few cards
-   this kind actually has. An MCP server never renders here — it has
-   `:workspace/mcp/:name`, which draws its transport, tools and binding. */
+   this kind actually has. Both kinds share `:workspace/connectors/:id`; an MCP
+   server's page is `McpServerView`, drawn by `ConnectorPageView` when the row's
+   `kind` is `mcp`. */
 
 .cxn-hero-mark {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 66px;
+  height: 66px;
   flex: none;
   border-radius: var(--r-md);
   background: var(--surface-2);
   color: var(--ink-2);
   font-family: var(--mono);
-  font-size: var(--fs-h5);
+  font-size: var(--fs-h4);
 }
-.cxn-page > .cxn-card {
+/* Inside the banner the mark is the picker's own 66px box, the same one the MCP
+   page forces on `.mcpp-mark`: without this the two heroes sit at different
+   heights on the same page family. */
+.entp-hero .cxn-hero-mark {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e9f3da;
+}
+.entp-hero .cxn-hero-mark .int-mark-img {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  object-fit: contain;
+}
+.entp-hero .cxn-hero-mark .int-mark-svg {
+  display: block;
+  flex: none;
+}
+:root:not([data-theme='dark']) .entp-hero .cxn-hero-mark {
+  border-color: color-mix(in oklab, var(--hero) 26%, var(--border));
+  background: color-mix(in oklab, #fff 72%, transparent);
+  color: var(--ink-2);
+}
+.cxn-page > .cxn-card,
+.cxn-main > .cxn-card {
   margin-top: 14px;
+}
+/* Both columns start level with the banner: the first card in each is the one the
+   grid's own top edge is for. */
+.cxn-main > .cxn-card:first-child,
+.cxn-split > .cxn-card {
+  margin-top: 0;
+}
+/* Two columns on a wide measure, one on a narrow one — the MCP page's own add:
+   `.entp-grid` is that page's shell and this page has no rail, so it declares
+   its own. The right column is the rail's width, because the card in it is the
+   one a person reads and does not type into. */
+.cxn-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 306px;
+  gap: 30px;
+  align-items: start;
+}
+.cxn-split > .cxn-card {
+  margin-top: 0;
+}
+.cxn-main {
+  min-width: 0;
+}
+.cxn-rail {
+  background: var(--surface);
+}
+@media (max-width: 980px) {
+  .cxn-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  /* The definition is what the page is *about*; on a narrow measure it leads. */
+  .cxn-rail {
+    order: -1;
+    margin-top: 0;
+  }
+  .cxn-main {
+    order: 0;
+  }
 }
 .cxn-card {
   padding: 16px;
@@ -110,39 +174,6 @@
   border-radius: var(--r-xs);
   background: var(--surface);
   font-size: var(--fs-meta);
-}
-
-/* the same block, in the MCP server page's rail */
-.mcpp-work {
-  display: grid;
-  gap: 6px;
-  padding: 0 0 4px;
-  font-size: var(--fs-secondary);
-  color: var(--ink-2);
-}
-.mcpp-work p,
-.mcpp-work ul {
-  margin: 0;
-}
-.mcpp-work ul {
-  display: grid;
-  gap: 3px;
-  padding: 0;
-  list-style: none;
-}
-.mcpp-work code {
-  font-size: var(--fs-meta);
-}
-.mcpp-work-syntax code {
-  display: inline-block;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--surface);
-}
-.mcpp-work-returns,
-.mcpp-work-needs {
-  color: var(--muted);
 }
 
 /* The probe's own facts: what it saw, not just that it answered. */

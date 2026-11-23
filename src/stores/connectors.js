@@ -109,6 +109,12 @@ export async function probeConnectors({ workspace = hub.workspace, force = false
         statusDetail: hit.detail || row.statusDetail,
         enabled: hit.enabled,
         available: hit.available,
+        /* What the probe actually saw. The row keeps it so a detail page can
+           answer "is this the account I meant" without spending a second probe
+           — `@login` plus what the token may touch, or the projects it listed. */
+        samples: Array.isArray(hit.samples) ? hit.samples : [],
+        total: Number.isFinite(hit.total) ? hit.total : null,
+        samplesLabel: hit.samplesLabel || '',
       }
     })
     /* a probe that answers changes nothing about the counts: they count

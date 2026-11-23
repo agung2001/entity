@@ -251,10 +251,40 @@ test('the connectors page paints its rows before it probes the CLIs', () => {
     /<router-link[^>]*class="ct-row"|<div[^>]*class="ct-row"[^>]*\n?\s*<router-link[^>]*>\s*\n?\s*<span class="ct-mk"/,
     'the row is not an anchor: only the name is',
   )
+  /* One roster, one address: an MCP server and a cli/rest row are both
+     `connectors/:id`, and the page switches on the row's own kind. The route is
+     not duplicated per kind, and a name both kinds could hold must not depend on
+     which route object the router matched first. */
+  assert.doesNotMatch(
+    row,
+    /name: 'mcp-server'/,
+    'the row links to one address, not one per kind',
+  )
   assert.match(
     row,
-    /kind === 'mcp'[\s\S]{0,200}mcp-server|mcp-server[\s\S]{0,200}kind === 'mcp'/,
-    'an mcp row opens the MCP server page that already exists',
+    /name: 'connector-page'[\s\S]{0,120}id: row\.id/,
+    'a row links to its connector page',
+  )
+  const connectorPage = fs.readFileSync(path.join(SRC, 'views', 'ConnectorPageView.vue'), 'utf8')
+  /* An unknown id stays on the MCP page, because the MCP page already draws the
+     states an unknown id can be in and this one would call them "no connector".
+     So the cli shell is gated on a *known* non-mcp row, not on `kind === 'mcp'`. */
+  assert.match(
+    connectorPage,
+    /isCliPage = computed\(\(\) => Boolean\(row\.value\) && row\.value\.kind !== 'mcp'\)/,
+    'the connector page decides on the row\'s own kind, defaulting to the MCP page',
+  )
+  assert.match(
+    connectorPage,
+    /<McpServerView v-else-if="!isCliPage" \/>/,
+    'the connector page draws the MCP page for an mcp row',
+  )
+  /* A failed roster read must not leave the page blank: `loaded` never turns
+     true on an error, so the gate falls through instead of waiting forever. */
+  assert.match(
+    connectorPage,
+    /const pending = computed\(\(\) => !connectors\.loaded && !connectors\.error\)/,
+    'the kind gate falls through when the roster read fails',
   )
   assert.match(view, /role="table"/, 'the roster is one table')
   /* A refused credential still has to say so on both surfaces that can take one:

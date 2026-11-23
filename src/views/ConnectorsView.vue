@@ -418,8 +418,8 @@ async function saveAdd() {
     const id = String(form.id || label).trim()
     if (addKind.value === 'mcp' && created) {
       router.push({
-        name: 'mcp-server',
-        params: { workspace: hub.workspace, name: id },
+        name: 'connector-page',
+        params: { workspace: hub.workspace, id },
         query: { edit: '1' },
       })
     }
