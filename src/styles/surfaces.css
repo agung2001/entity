@@ -113,6 +113,447 @@
   border-radius: var(--r-sm);
 }
 
+/* ── the account shelf: a cabinet whose crest is the person's portrait ──
+   Paper, grid, shadow, crest geometry, chips and eyebrow are copied from the
+   skills cabinet (`.sk-hero`, `skill.css`) and `.mach-mark` — the only
+   substitution is the crest's contents. No backdrop, no voxel, no motion: the
+   row asked for the avatar *instead of* an animation. */
+.acct-shelf {
+  container-type: inline-size;
+  container-name: acctshelf;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 860px;
+}
+.acct-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 22px 24px;
+  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--border));
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(72% 95% at 10% 0%, color-mix(in oklab, var(--accent) 24%, #fff), transparent 62%),
+    radial-gradient(48% 80% at 96% 100%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%),
+    linear-gradient(120deg, #fffdf8, #fff8ec 54%, #fffdf9);
+  color: var(--ink);
+  box-shadow:
+    0 18px 50px color-mix(in oklab, var(--accent) 10%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 70%, transparent);
+}
+/* the 30px grid, at the cabinet's own opacity */
+.acct-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--accent) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--accent) 28%, transparent) 1px, transparent 1px);
+  background-size: 30px 30px;
+  opacity: 0.16;
+}
+.acct-hero-in {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+/* ── the profile's level: the app's one level block, on light paper ────
+   `.sk-lv` + `.sk-track` (`skill.css`) are that block already; only the frame
+   is the hero's, so `LV` reads the same here as it does on Skills. */
+.acct-lv {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  width: 210px;
+  margin-top: 2px;
+  padding: 10px;
+  border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, #fff 58%, transparent);
+}
+.acct-lv-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  min-height: 54px;
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--accent) 10%, #fff);
+  font-family: var(--mono);
+}
+.acct-lv-box span {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.acct-lv-box b {
+  margin-top: 2px;
+  font-size: var(--fs-h4);
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in oklab, var(--accent) 42%, var(--ink));
+  font-variant-numeric: tabular-nums;
+}
+.acct-lv-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.acct-lv-head,
+.acct-lv-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.acct-lv-head b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.acct-lv-foot {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.acct-lv-foot span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.acct-lv-track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--surface-2) 68%, #fff);
+}
+.acct-lv-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 60%, #fff), var(--accent));
+}
+.acct-lv-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 7px,
+    color-mix(in oklab, #fff 58%, transparent) 7px 9px
+  );
+}
+/* the crest: the portrait is the mark — a tinted tile, no `<img>` box of its own */
+.acct-crest {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 62px;
+  height: 62px;
+  margin-top: 2px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--mk) 30%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--mk) 8%, #fff);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.acct-crest img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* the mockup's 22px / 17px are not steps on this repo's type ladder, so the
+   nearest step carries each frame: --fs-h3 (23px) here, --fs-h5 (18px) below */
+.acct-crest .acct-initials {
+  font-family: var(--mono);
+  font-size: var(--fs-h3);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.acct-title {
+  flex: 1;
+  min-width: 0;
+}
+/* the cabinet's eyebrow sits closer to its h1 than the page primitive does */
+.acct-title .eyebrow {
+  margin: 0 0 6px;
+}
+/* one h1 on the page: the person, not the word "Profile" */
+.acct-title h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.038em;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+.acct-lede {
+  margin: 9px 0 0;
+  max-width: 62ch;
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.acct-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 14px;
+}
+.acct-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in oklab, var(--accent) 20%, var(--border));
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, #fff 62%, transparent);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+/* the dot carries the signal, so the state survives greyscale */
+.acct-chip[data-ok='1']::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.acct-chip[data-ok='0'] {
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.acct-chip[data-ok='0']::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* night: the same cabinet, one layer down — authored, never inverted */
+:root[data-theme='dark'] .acct-hero {
+  border-color: color-mix(in oklab, var(--accent) 34%, #263022);
+  background:
+    radial-gradient(85% 120% at 16% 0%, color-mix(in oklab, var(--accent) 14%, #0a0e09), transparent 66%),
+    linear-gradient(120deg, #0a0d09, #0d120b 58%, #090b08);
+  color: #f6f2dd;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+}
+:root[data-theme='dark'] .acct-hero::before {
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--accent) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--accent) 22%, transparent) 1px, transparent 1px);
+  opacity: 0.12;
+}
+:root[data-theme='dark'] .acct-title h1 {
+  color: #f7f3df;
+}
+:root[data-theme='dark'] .acct-lede {
+  color: #b9c1a8;
+}
+:root[data-theme='dark'] .acct-crest {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: color-mix(in oklab, var(--mk) 6%, var(--surface-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+:root[data-theme='dark'] .acct-lv {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.24);
+}
+:root[data-theme='dark'] .acct-lv-box {
+  border-color: color-mix(in oklab, var(--accent) 32%, rgba(255, 255, 255, 0.14));
+  background: rgba(0, 0, 0, 0.28);
+}
+:root[data-theme='dark'] .acct-lv-box span,
+:root[data-theme='dark'] .acct-lv-head,
+:root[data-theme='dark'] .acct-lv-foot {
+  color: #9eaa8c;
+}
+:root[data-theme='dark'] .acct-lv-box b {
+  color: color-mix(in oklab, var(--accent) 58%, #fff);
+}
+:root[data-theme='dark'] .acct-lv-head b {
+  color: #dbe1ca;
+}
+:root[data-theme='dark'] .acct-lv-track {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.36);
+}
+:root[data-theme='dark'] .acct-chip {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #b9c1a8;
+}
+:root[data-theme='dark'] .acct-chip[data-ok='0'] {
+  border-color: color-mix(in oklab, var(--danger) 45%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* the e-mail is a secret on screen — the app already holds one this way
+   (`.rmt-secret` / `.rmt-eye`, remote-sync.css): same flex row, same 36px
+   control, same `aria-pressed` toggle. The glyph differs, nothing else. */
+.acct-email {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.acct-email .acct-input {
+  flex: 1;
+  min-width: 0;
+}
+/* masked ≠ disabled: the field stays editable and keeps `autocomplete` */
+.acct-email .acct-input[type='password'] {
+  letter-spacing: 0.14em;
+}
+.acct-email .acct-eye {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+.acct-email .acct-eye svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+.acct-email .acct-eye .eye-off {
+  display: none;
+}
+.acct-email[data-revealed='1'] .acct-eye .eye-on {
+  display: none;
+}
+.acct-email[data-revealed='1'] .acct-eye .eye-off {
+  display: block;
+}
+/* "this control is on" is the same signal focus uses */
+.acct-email[data-revealed='1'] .acct-eye {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+/* the aside prints no address either — a fixed run of dots, not the real length */
+.acct-mail-hidden .dots {
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+/* a sentence for the screen reader where a drawing is all there is to see */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* the page's column, not the window: the rail takes part of the band */
+@container acctshelf (max-width: 700px) {
+  /* the title needs the room the level block is holding, so the block drops to
+     its own row — full width, the way the crew's card does at 900
+     (`backdrops.css:317`). The crest keeps the title's line: only the level
+     takes a whole row (`flex-basis: 100%`), never the title. */
+  .acct-hero-in {
+    flex-wrap: wrap;
+  }
+  .acct-lv {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-top: 0;
+  }
+}
+@container acctshelf (max-width: 620px) {
+  .acct-hero {
+    padding: 18px 16px;
+  }
+  .acct-crest {
+    width: 48px;
+    height: 48px;
+  }
+  .acct-crest .acct-initials {
+    font-size: var(--fs-h5);
+  }
+  .acct-title h1 {
+    font-size: var(--fs-h2);
+    letter-spacing: -0.03em;
+  }
+}
+@container acctshelf (max-width: 400px) {
+  .acct-hero-in {
+    gap: 12px;
+  }
+  .acct-crest {
+    width: 44px;
+    height: 44px;
+  }
+  /* the brief names `--fs-h3` here; the mockup's 19px is its own local ladder,
+     where `--fs-h3` *is* 19px. This repo's step is 23px, and a literal 19px is
+     not on the ladder `npm test` guards — so the token wins over the number. */
+  .acct-title h1 {
+    font-size: var(--fs-h3);
+  }
+  .acct-chips {
+    gap: 4px;
+    margin-top: 11px;
+  }
+  /* a 210px block cannot hold `Experience` and `NN / 100 XP` on one 44px-wide
+     line: the head wraps, and the foot keeps only the workspace count */
+  .acct-lv {
+    width: 100%;
+    padding: 8px;
+  }
+  .acct-lv-head {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .acct-lv-foot span:first-child {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acct-email .acct-eye {
+    transition: none;
+  }
+}
+
 /* account page — the same form as the old modal, given a page instead */
 .acct-page {
   display: grid;
@@ -133,24 +574,6 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
-}
-.acct-profile-head {
-  align-items: flex-start;
-}
-.acct-id {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-}
-.acct-avatar {
-  width: 46px;
-  height: 46px;
-  flex: none;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-2);
-  object-fit: cover;
 }
 .acct-card-head h2,
 .role-card h2 {
