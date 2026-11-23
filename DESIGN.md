@@ -522,10 +522,12 @@ the composer already does: mention another entity.
   it, and refusing it only taught them to retype a message the app could already read. A
   classified fan-out moves the composer's prologue onto each job (one skill per run, one
   worktree per run); a job with its own `/workspace:` keeps that one instead of two.
-- **Silence is not a guess.** An explicit `{"spawn": false}` is respected. Only a reader that
-  says nothing — no JSON, a non-zero exit, a timeout — falls through to `derivePlan`, which
-  still reads a pasted issue URL (`…/issue/ENTITY-25/…` → `relates to: ENTITY-25`) by itself,
-  so a lost model costs a blunter job, never the fan-out.
+- **Silence is not a guess.** An explicit `{"spawn": false}` is respected. A pasted issue URL
+  is authoritative for the **list** even when the model answered: `…/issue/ENTITY-25/…` →
+  `relates to: ENTITY-25`, while the model's `entity` and `job` stay. A reader that says
+  nothing — no JSON, a non-zero exit, a timeout — or returns a plan the app cannot resolve
+  (not an explicit no) falls through to `derivePlan`, so a lost or prose answer costs a blunter
+  job, never the fan-out.
 - **A long turn shows its work, in the shape the answer will have.** A fan-out paints one
   delegation card per run inside the live bubble — queued, `Working…`, then that run's answer —
   and the foot carries `N of M done · elapsed`. No second panel, no spinner-only wait: the
@@ -786,6 +788,7 @@ it.
 | `spawn @coder …`, `let's spawn 4 @designer …`, or `Spawn 3` on its own line after a read — each showed ONE card | Every one of those was a regex being asked to read intent, and each shape was patched in turn while the next kept failing. The message is classified once instead: `{spawn: true, runs|list, entity, job}` or `{spawn: false}`, rendered as the sentence the grammar already reads. Never add a fourth prefix — a plan goes through `planSentence` | `npm test` (`intent-ref`, `mention-ref`), `electron/intent-ref.cjs` |
 | The classifier runs on every message, so "thanks" waits on a model | Three answers are provable without one: no entity named, an exact prefix, or a bare opening `spawn` — and an exact prefix over a bullet list is classified anyway, because the count is not the whole ask | `npm test` (`intent-ref`), `intent-ref.cjs` (`namesEntity`, `listedItems`) |
 | Four cards, one prompt — four agents redesign the same page | `runs` is one instruction N times; `rows`/`typed` is N different items. A message that enumerates is the second kind even with a number written, and a bullet list is repaired to one run per row rather than trusted to the model | `npm test` (`intent-ref`), `intent-ref.cjs` (`repairWithList`) |
+| A pasted issue URL shows no confirmation card, because the model wrote `@youtrack:MAKA-359:relates to: unresolved` and the list resolved zero rows | The URL is authoritative for the list: `derivePlan` replaces a model's tracker query while keeping its entity and job, so the card lists the real rows. A model answer the app cannot turn into a plan (prose instead of an `@youtrack:` token) is not `{"spawn": false}` — it also falls through to the URL reading | `npm test` (`intent-ref`), `intent-ref.cjs` (`repairWithIssue`, `choosePlan`) |
 | A page title containing a comma becomes two runs | A row owns a line: typed plans render one row per line, and `SPAWN_ROWS` splits on newlines when there are any | `npm test` (`intent-ref`), `mention-ref.cjs` (`planSentence`, `spawnPrefix`) |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |

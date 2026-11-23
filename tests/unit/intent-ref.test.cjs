@@ -106,6 +106,75 @@ test('an entity this workspace does not have is not planned', () => {
   assert.equal(intent.derivePlan(text, { entities: NAMES }), null)
 })
 
+test('a pasted issue URL replaces a model list that would resolve nothing', () => {
+  /* The model kept the issue id where the project key belongs and dropped the
+     relation: `project: ENTITY-25 relates to: unresolved` is a real query that
+     returns zero rows, so the turn started no session and showed no card. The
+     URL is exact, so the list comes from it — the job stays the model's. */
+  const source =
+    "for each related #unresolved issues of https://youtrack.example.test/issue/ENTITY-25/Entity-v0.0.7 " +
+    "let's spawn @coder each, and let it work on the issue"
+  const model = intent.usable(
+    {
+      spawn: true,
+      list: '@youtrack:ENTITY-25:relates to: unresolved',
+      entity: 'coder',
+      job: 'work on the issue',
+    },
+    NAMES,
+  )
+  assert.equal(model.list, '@youtrack:ENTITY-25:relates to: unresolved')
+  const plan = intent.repairWithIssue(source, model)
+  assert.equal(plan.list, '@youtrack:ENTITY:relates to: ENTITY-25 #Unresolved')
+  assert.equal(plan.entity, 'coder')
+  assert.equal(plan.job, 'work on the issue', 'the model still read the instruction')
+  assert.equal(plan.derived, true)
+})
+
+test('an unreadable model list still reaches the pasted issue URL', () => {
+  /* The model can write the list as prose — `related #unresolved issues of
+     https://…` — which `usable` cannot turn into a mention. That is not
+     `{"spawn": false}`: the URL is still the list, so it must not fall through
+     to the grammar and become one ordinary @coder run. */
+  const source =
+    "for each related #unresolved issues of https://youtrack.example.test/issue/ENTITY-25/Entity-v0.0.7 " +
+    "let's spawn @coder each, and let it work on the issue"
+  const verdict = {
+    spawn: true,
+    list: 'related #unresolved issues of https://youtrack.example.test/issue/ENTITY-25/Entity-v0.0.7',
+    entity: 'coder',
+    job: 'work on the issue',
+  }
+  assert.equal(intent.usable(verdict, NAMES), null, 'the prose list is not usable')
+  const plan = intent.choosePlan(source, verdict, NAMES)
+  assert.equal(plan.mode, 'rows')
+  assert.equal(plan.list, '@youtrack:ENTITY:relates to: ENTITY-25 #Unresolved')
+  assert.equal(plan.entity, 'coder')
+  assert.equal(plan.job, 'each, and let it work on the issue')
+
+  /* an explicit "nothing to fan out" is still a verdict, not a fallback */
+  assert.equal(
+    intent.choosePlan(source, { spawn: false }, NAMES),
+    null,
+    'a model that said no is respected',
+  )
+})
+
+test('a list the URL does not spell is left to the model', () => {
+  const source = 'spawn per @maka:planning @coder review these'
+  const plan = intent.usable(
+    { spawn: true, list: '@maka:planning', entity: 'coder', job: 'review these' },
+    NAMES,
+  )
+  assert.equal(intent.repairWithIssue(source, plan), plan)
+  /* no issue URL means no derived plan to prefer */
+  const search = intent.usable(
+    { spawn: true, list: '@youtrack:ENTITY:relates to: ENTITY-25', entity: 'coder', job: 'fix it' },
+    NAMES,
+  )
+  assert.equal(intent.repairWithIssue('spawn per @youtrack:ENTITY:relates to: ENTITY-25 @coder fix it', search), search)
+})
+
 /* ── the two answers ─────────────────────────────────────────────── */
 
 test('a plan is a repeat or a row list, and nothing else', () => {

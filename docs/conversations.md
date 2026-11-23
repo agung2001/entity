@@ -256,10 +256,14 @@ Four things the classifier will not do:
   count or the list removed, because each run is told its own row separately.
 - **It cannot invent.** The entity must be one this workspace has, and a plan naming one
   that is not here is dropped — the message then runs exactly as it does today.
-- **A pasted issue URL is read without a model.** `…/issue/ENTITY-25/…` means
-  `relates to: ENTITY-25`, so the fan-out survives a harness that will not answer — with a
-  blunter job, never with no runs at all. An explicit `{"spawn": false}` is respected, though:
-  only silence falls back.
+- **A pasted issue URL is read without trusting the model's query.** `…/issue/ENTITY-25/…`
+  means `relates to: ENTITY-25`, so the fan-out survives a harness that will not answer — with a
+  blunter job, never with no runs at all. The same reading also **repairs** a model plan that
+  wrote its own tracker query: `@youtrack:ENTITY-25:relates to: unresolved` treats the issue id
+  as a project and resolves no row, so the URL's list wins while the model's job and entity stay.
+  A model answer the app cannot turn into a plan (the list written as prose) is not a
+  `{"spawn": false}` verdict, so it falls back to the same URL reading. An explicit
+  `{"spawn": false}` is respected, though.
 
 Routing is a first-message affair: the worktree exists after that turn, and the delegatee's
 own rule sends every follow-up to the same terminal.

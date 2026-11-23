@@ -30,8 +30,9 @@
  *     a plan that fails to produce a usable one is dropped — the message then
  *     runs exactly as it does today.
  *   - **Silence is not a guess.** An explicit `{"spawn": false}` is respected.
- *     Only a reader that says nothing (no JSON, an exit code, a timeout) falls
- *     through to `derivePlan`, which still reads a pasted issue URL by itself.
+ *     When the message pastes an issue URL, `derivePlan` is authoritative for
+ *     the *list*: the URL already names the exact tracker query, and a model
+ *     that writes its own (`relates to: unresolved`) can resolve to nothing.
  */
 const { runOneShot, lastJson } = require('./oneshot.cjs')
 
@@ -281,6 +282,28 @@ function derivePlan(text, { entities = [] } = {}) {
 }
 
 /**
+ * A pasted issue URL beats the model's tracker query.
+ *
+ * The URL already spells the list (`…/issue/ENTITY-25/…` plus `#Unresolved`),
+ * and `derivePlan` reads it exactly. A model given the same sentence can still
+ * answer a query that is shaped like a link search but loses the issue key —
+ * `@youtrack:ENTITY-25:relates to: unresolved` treats the issue id as a project
+ * and asks for issues relating to the word "unresolved". That resolves zero
+ * rows, so the turn runs nothing and no confirmation card ever appears. Keep
+ * the model's `entity` and `job` (it read the instruction in context), but take
+ * the list from the URL.
+ *
+ * An explicit `spawn: false` never reaches here as a plan, so it stays respected.
+ */
+function repairWithIssue(source, plan) {
+  if (!plan || plan.mode !== 'rows' || !plan.list) return plan
+  if (!/^@?youtrack:/i.test(plan.list)) return plan
+  const derived = derivePlan(source, { entities: [plan.entity] })
+  if (!derived || derived.list === plan.list) return plan
+  return { ...plan, list: derived.list, derived: true }
+}
+
+/**
  * The one plan shape the rest of the app reads, or null for "answer directly".
  *
  * Two modes, because a fan-out takes its count from one of two places: `repeat`
@@ -350,6 +373,25 @@ function parseAnswer(text) {
 }
 
 /**
+ * The plan a reader's answer produces, or the deterministic one when the answer
+ * could not be read as a plan.
+ *
+ * Silence and a malformed answer are not the same thing, but neither is a
+ * verdict. Only an explicit `spawn: false` / `fanout: false` says "answer this
+ * directly"; a model that names a list the app cannot resolve (a bare sentence,
+ * a URL, a 40-run count) has not said no. Falling back to `derivePlan` here is
+ * what keeps a pasted issue URL working when the model writes the list in prose
+ * instead of an `@youtrack:` token: without it the grammar below reads the
+ * message as one ordinary `@coder` run and no confirmation card appears.
+ */
+function choosePlan(source, verdict, entities = []) {
+  const fromVerdict = usable(verdict, entities)
+  if (fromVerdict) return fromVerdict
+  if (verdict && (verdict.spawn === false || verdict.fanout === false)) return null
+  return usable(derivePlan(source, { entities }), entities)
+}
+
+/**
  * A reader bound to one harness: the same voice that is about to answer the turn
  * decides what the turn is. `null` when there is no harness to ask, so callers
  * can pass it unconditionally and get only the deterministic fallback.
@@ -385,10 +427,11 @@ function reader({ harness = '', model = '', entities = [], timeoutMs = DEFAULT_T
       /* a harness that will not answer is a harness with nothing to say */
       verdict = null
     }
-    /* An explicit "no" is respected. Only silence falls through to the
-       deterministic reading below, which still knows a pasted issue URL. */
-    const plan = verdict ? usable(verdict, names) : usable(derivePlan(source, { entities: names }), names)
-    return repairWithList(source, plan, names)
+    /* An explicit "no" is respected. A verdict that did name a list is still
+       checked against a pasted issue URL, and a silent or unreadable answer
+       falls through to the deterministic reading, which knows that URL too. */
+    const plan = choosePlan(source, verdict, names)
+    return repairWithList(source, repairWithIssue(source, plan), names)
   }
 }
 
@@ -444,9 +487,11 @@ module.exports = {
   INSTRUCTION,
   MAX_RUNS,
   bodyOf,
+  choosePlan,
   derivePlan,
   listedItems,
   namesEntity,
+  repairWithIssue,
   repairWithList,
   usable,
   writtenCount,
