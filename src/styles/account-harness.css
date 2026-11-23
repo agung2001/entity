@@ -1,15 +1,43 @@
 /* ── account: harnesses ───────────────────────────────────────────────────
-   A row per CLI, one switch each. The row is the whole grammar: mark, name + id,
-   install state, a 44 px hit box wrapping the 38 × 22 pill. Only what is new
-   here — `.acct-page`, `.acct-card`, `.acct-card-head`, `.role-badge`,
-   `.role-card`, `.mnote`, `.btn`, `.sfx-switch`, `.acct-error` and
-   `.empty-note` are declared once in their own sheets. */
+   A banner, then a row per CLI with one switch each. The row is the whole
+   grammar: mark, name + id, install state, a 44 px hit box wrapping the 38 × 22
+   pill. Only what is new here — `.acct-page`, `.acct-card`, `.mnote`, `.btn`,
+   `.sfx-switch`, `.acct-error`, `.empty-note`, `.sk-hero`, `.sk-meter`,
+   `.sk-chip` and `.sk-crest` are declared once in their own sheets. */
 .harness-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 292px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-  max-width: 900px;
+  max-width: none;
+  /* the ladder below keys on the page column, not the window: embedded in a
+     workspace tab this page is a 700 px pane on a 1440 px screen */
+  container-type: inline-size;
+  container-name: harness;
+}
+/* the only thing this page changes in the cabinet: its meter column is 262 px,
+   not Skills' 300, so the lede keeps four lines at 924 px */
+.harness-page .sk-hero-in {
+  grid-template-columns: minmax(0, 1fr) 262px;
+}
+/* the app-wide `.eyebrow` is 9 px, a table key; the cabinet's eyebrow is a line
+   of reading type, so this page puts it back at the body size and rhythm */
+.harness-page .sk-hero .eyebrow {
+  font-size: var(--fs-body);
+  margin: 14.5px 0;
+}
+/* the one figure that asks for an action; the ratio above it is neutral */
+.harness-page .sk-meter-foot span[data-warn] {
+  color: var(--danger);
+  font-weight: 600;
+}
+/* the card opens on its search field — the whole of this page's chrome; `.skbar`
+   keeps its margin, this drops the bar's own so the card's 20 px is the only gap */
+.harness-page .skbar {
+  padding: 0 0 12px;
+}
+.harness-search {
+  flex: 1 1 240px;
 }
 .harness-list {
   list-style: none;
@@ -273,7 +301,7 @@
   grid-template-columns: 22px minmax(0, 1fr) 44px;
   gap: 12px;
   align-items: center;
-  padding: 11px 12px;
+  padding: 9px 10px 9px 12px;
   border-bottom: 1px solid var(--border);
 }
 .skel-row:last-child {
@@ -301,6 +329,9 @@
 .skel-pill {
   width: 38px;
   height: 22px;
+  /* the 11 px margin stands the pill in the switch's 44 px box, so a skeleton
+     row is 63 px (59 px under 360 px) — exactly the row it replaces */
+  margin: 11px 0;
   border-radius: var(--r-pill);
   justify-self: center;
 }
@@ -352,15 +383,43 @@
     width: 18px;
     height: 18px;
   }
-  .role-badge.harness-count {
-    padding: 0 5px;
-  }
-  .harness-count .of {
-    display: none;
-  }
   .skel-row {
     grid-template-columns: 18px minmax(0, 1fr) 44px;
     gap: 9px;
-    padding: 9px 6px 9px 9px;
+    padding: 7px 6px 7px 9px;
+  }
+}
+
+/* the cabinet's own ladder — `skill.css` keys its breakpoints on the shelf, this
+   page keys them on the page column */
+@container harness (max-width: 780px) {
+  /* the meter is a ratio, so it can afford to sit under the title */
+  .harness-page .sk-hero-in {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sk-meter {
+    width: 100%;
+    min-height: 88px;
+  }
+}
+@container harness (max-width: 620px) {
+  .sk-hero {
+    padding: 18px 16px;
+  }
+  .sk-h1 {
+    font-size: var(--fs-h2);
+  }
+  .sk-lede {
+    font-size: var(--fs-secondary);
+  }
+  /* the crest is an ornament, so it is the first thing to shrink and the last
+     thing to disappear */
+  .sk-crest {
+    width: 44px;
+    height: 44px;
+  }
+  .sk-crest .vx {
+    width: 30px;
+    height: 30px;
   }
 }
