@@ -188,7 +188,7 @@ const visible = ref(PAGE)
    of the colon run belonging to the last one. `@gmail:all:from:stripe` is two:
    the scope (`all`) and the query (`from:stripe`). Absent = every field separate,
    which is right for `@file:` and `@thread:`. */
-const FIELD_GROUPS = { gmail: 2, drive: 2, youtube: 2, x: 2 }
+const FIELD_GROUPS = { gmail: 2, drive: 2, youtube: 2, 'youtube-studio': 2, x: 2 }
 let searchTimer = null
 let searchSeq = 0
 let searchKind = ''
@@ -393,11 +393,23 @@ function removeAttachment(index) {
 /* The account-bearing connectors: a picked message/file/post is an attachment
    whose `value` is the provider's own id, so the resolver does a direct read and
    the chip can show — and link to — the real thing. */
-const ACCOUNT_KINDS = { gmail: 'Gmail', drive: 'Drive', youtube: 'YouTube', x: 'X' }
+const ACCOUNT_KINDS = {
+  gmail: 'Gmail',
+  drive: 'Drive',
+  youtube: 'YouTube',
+  'youtube-studio': 'YouTube Studio',
+  x: 'X',
+}
 /* The chip's `kind` is the mention head (`drive`), but the brand mark's slug is the
    connector id (`google-drive`). One map, so a Drive chip wears the Drive mark
    instead of falling through to the generic terminal glyph. */
-const ACCOUNT_MARKS = { gmail: 'gmail', drive: 'google-drive', youtube: 'youtube', x: 'x' }
+const ACCOUNT_MARKS = {
+  gmail: 'gmail',
+  drive: 'google-drive',
+  youtube: 'youtube',
+  'youtube-studio': 'youtube-studio',
+  x: 'x',
+}
 const markOf = (entry) => ACCOUNT_MARKS[String(entry?.kind || '')] || String(entry?.kind || '')
 
 function attachmentLabel(entry) {
@@ -649,7 +661,9 @@ function submit() {
 }
 
 function pick(cmd) {
-  if (!cmd) return
+  /* An informational row ("no channel matches …") carries no insert: accepting it
+     would write a broken mention or an empty chip. */
+  if (!cmd || !cmd.name) return
   /* An account-bearing result is a *thing*, not a search: it becomes a chip whose
      value is the provider id. That keeps the prompt clean, makes the mention one
      direct read instead of a search, and gives the chip a real link to open. */
@@ -1221,7 +1235,21 @@ defineExpose({ focus, addFiles, addDrop, restore })
 }
 /* The chip's geometry, its `.nm` label and its `.x` remove button are the dock's
    (`chat.css`). What is added here is only the *account-bearing* part: a picked
-   message, file, video or post is an object you can inspect. */
+   message, file, video or post is an object you can inspect.
+   Where the row hangs still belongs to the composer: aligned to the field's own
+   text edge, and clear of the card's border at the bottom. */
+.attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.attach-chips--dock {
+  /* The field's own text edge (`10px 11px`), so a chip starts where the typed
+     line starts. The bottom is a step more than the rail's 4px because this is
+     the card's last row: with a chip flush to the border the scroll bar and the
+     corner radius both read as clipped. */
+  padding: 2px 10px 9px 11px;
+}
 .cp-chip-open {
   display: inline-flex;
   align-items: center;
@@ -1258,8 +1286,11 @@ defineExpose({ focus, addFiles, addDrop, restore })
   white-space: nowrap;
 }
 /* A picked object wears the body ink rather than the muted file-chip grey: it is
-   something you can open, not a path you attached. */
+   something you can open, not a path you attached. It also gets more of the row
+   than the dock's 240px file cap, because its name is a real title — a YouTube
+   video title truncated to 240px is a stub you cannot tell apart from another. */
 .cp-chip[data-account='1'] {
   color: var(--ink-2);
+  max-width: min(100%, 420px);
 }
 </style>

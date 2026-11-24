@@ -40,6 +40,11 @@ const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 const catalog = require('./connector-catalog.cjs')
 const oauthAccounts = require('./oauth-accounts.cjs')
+/* The five account-bearing connectors live in `electron/connectors/`, one file
+   each, plus the plumbing they share. This file keeps the mention grammar and the
+   dispatch; it does not know what a message, a file or a video is. */
+const connectorRegistry = require('./connectors/index.cjs')
+const { accountScope, connectorOfKind, idScope, queryInsert } = require('./connectors/_shared.cjs')
 
 /* The heads the parser accepts, derived from the catalog rather than written a
    second time here. A connector that ships a resolver contributes its mention; one
@@ -60,13 +65,13 @@ const ACCOUNT_KIND = {
   gmail: 'gmail',
   drive: 'drive',
   youtube: 'youtube',
+  'youtube-studio': 'youtube-studio',
   x: 'x',
 }
 
-/* The *connector id* a resolver kind reads accounts from. `drive` is written
-   `@drive:` but installed as `google-drive`, so the two names meet here once. */
-const CONNECTOR_OF = { drive: 'google-drive' }
-const connectorOfKind = (kind) => CONNECTOR_OF[kind] || kind
+/* `connectorOfKind` now lives in `connectors/_shared.cjs`, with the rest of the
+   account plumbing — one definition, so the parser and the resolvers cannot
+   disagree about what `@drive:` reads. */
 const ACCOUNT_HEADS = new Set(Object.keys(ACCOUNT_KIND))
 /* A first word that is a search operator, not an account. Gmail's documented
    keys, plus the shared X/Drive ones — a mention that reads `@gmail:from:x` means
@@ -908,468 +913,8 @@ async function resolveGithub(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
    does the reading with its own tools, which is what keeps a mention cheap and a
    scope argument honest. */
 
-/** `id:<a>[,<b>…]` at the head of a query — the picked form.
- *
- * Kept out of `parseMention` on purpose: the parser is synchronous and has no
- * accounts, and this only means "ids" when the scope is real and the value looks
- * like an id. A resolver calls it with the query it was given.
- */
-function idScope(query) {
-  const match = /^id:\s*(.+)$/i.exec(String(query || '').trim())
-  if (!match) return null
-  /* Shape only: ids are opaque, and a provider is free to issue a short one. A
-     strict length guard here silently demoted a real id to a search, which is the
-     bug this comment prevents. */
-  const ids = match[1]
-    .split(',')
-    .map((value) => value.trim().split(/\s+/)[0])
-    .filter((value) => /^[A-Za-z0-9_-]{1,}$/.test(value))
-  return ids.length ? ids : null
-}
-
-/** The accounts a mention may read: the named one, or every usable one. */
-function accountScope(connector, localpart, head = '') {
-  const accounts = oauthAccounts.connectedAccounts(connector)
-  /* `all` is the explicit "every usable account" scope. It is a reserved word, so
-     an account can never shadow it. */
-  if (localpart === 'all') {
-    const usable = accounts.filter((entry) => entry.status === 'connected' && entry.hasToken)
-    if (!usable.length) {
-      throw new Error(`@${head || connector}:all: has no usable account yet. Connect one on the connector's page.`)
-    }
-    return usable
-  }
-  if (localpart) {
-    const hit = accounts.filter((entry) => entry.localpart === localpart || entry.email === localpart)
-    if (!hit.length) {
-      /* Name the accounts that *do* exist. `@gmail:aver` against an account
-         called `avery` used to say "not an account here", which is true but
-         useless — the person is one character from the answer. */
-      const known = accounts.map((entry) => entry.localpart).filter(Boolean)
-      throw new Error(
-        known.length
-          ? `@${connector}:${localpart}: is not an account here. This machine has: ${known.join(', ')}.`
-          : `@${connector}:${localpart}: is not an account here. Connect it on the ${connector} page first.`,
-      )
-    }
-    return hit
-  }
-  const usable = accounts.filter((entry) => entry.status === 'connected' && entry.hasToken)
-  if (!usable.length) {
-    throw new Error(`No usable account for @${connector}: yet. Connect one on the connector's page.`)
-  }
-  return usable
-}
-
-/** The `insert` for a picked row: a *query*, not the row's label.
- *
- * Two things this has to get right, and the first version got both wrong:
- *
- *   1. **A multi-word query is quoted.** `@gmail:all:Perpanjangan Anda sudah
- *      dikonfirmasi` reads as four loose words to Gmail (a loose match) and, on
- *      Drive, as four separate `contains` clauses — neither is the message the
- *      person picked. `"…"` makes it one phrase, which is what they meant.
- *   2. It is trimmed to something a person can refine, not pasted whole: a
- *      subject line can be 200 characters and is a query, not a document.
- *
- * Quotes already in the text are dropped first, so a subject containing one
- * cannot produce unbalanced quoting.
- */
-function queryInsert(text, max = 60) {
-  const clean = String(text || '')
-    .replace(/["']/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!clean) return ''
-  /* Cut on a word boundary, never mid-character: slicing `60` through an emoji or
-     an accented letter left half a code point and a broken quote. */
-  const cut =
-    clean.length <= max
-      ? clean
-      : `${clean.slice(0, max).replace(/\s+\S*$/, '').trim() || clean.slice(0, max)}`
-  const value = cut.trim()
-  if (!value) return ''
-  /* A single word needs no quotes; more than one does, which is the whole point. */
-  return /\s/.test(value) ? `"${value}"` : value
-}
-
-/** How many rows each account gets when one mention spans several.
- *
- * `all` must actually *read* every account: taking `limit` rows from the first one
- * left the rest unqueried, which makes `all` a lie the moment there are two
- * mailboxes. So the budget is divided, with at least one row each, and the caller
- * keeps the overall cap. */
-function quotaFor(accounts, limit) {
-  const each = Math.max(1, Math.ceil(Number(limit) / Math.max(1, accounts.length)))
-  return accounts.map(() => each)
-}
-
-/** One authenticated GET, with the failure the person can act on.
- *
- * Two failures look alike and are not: a rejected token (401 / `invalid_grant`) is
- * a consent problem the card already knows how to fix, and a 403 whose message says
- * the API "has not been used in project … or it is disabled" is a *project* problem
- * — the API is off in Google Cloud, and no amount of re-consenting helps. That one
- * carries the console link Google supplied, because that is the only thing that
- * fixes it.
- */
-async function oauthGet(url, accessToken, connector) {
-  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } })
-  const body = await response.json().catch(() => ({}))
-  if (response.ok) return body
-  const said = String(body?.error?.message || body?.error || `HTTP ${response.status}`)
-  if (body?.error?.status === 'PERMISSION_DENIED' || /has not been used in project|is disabled/i.test(said)) {
-    throw new Error(
-      `@${connector}: the API is not enabled in this Google Cloud project. Enable it, wait a minute, and try again — ${said.slice(0, 220)}`,
-    )
-  }
-  if (response.status === 401 || /invalid_grant|Invalid Credentials/i.test(said)) {
-    throw new Error(`@${connector}: needs a sign-in — Google rejected the token. Sign in on the connector's page.`)
-  }
-  throw new Error(`@${connector}: Google answered ${said.slice(0, 180)}.`)
-}
 
 /** Gmail: `@gmail:[<account>:]<query>` — Gmail's own search syntax. */
-/** The Gmail web address for a thread. `u/0` is the first signed-in account,
- *  which is what this machine's token is; the thread anchor keeps working as the
- *  conversation grows, where a message anchor pins one reply. */
-const gmailThreadUrl = (threadId) => `https://mail.google.com/mail/u/0/#all/${threadId}`
-
-const headerOf = (meta, name) =>
-  (meta?.payload?.headers || []).find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
-
-/** One message's display fields, from a metadata read. */
-function gmailRow(meta, threadId, account) {
-  return {
-    /* The **thread** id, not the message id: a thread is stable across replies, so
-       a saved mention does not rot the moment someone answers. */
-    id: threadId || meta.threadId || meta.id,
-    messageId: meta.id,
-    account: account.email,
-    label: `${headerOf(meta, 'Subject') || '(no subject)'} — ${headerOf(meta, 'From') || 'unknown sender'}`,
-    detail: [account.email, headerOf(meta, 'Date')].filter(Boolean).join(' · '),
-    url: gmailThreadUrl(threadId || meta.threadId || meta.id),
-  }
-}
-
-const GMAIL_META =
-  'format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date'
-
-async function resolveGmail(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
-  const query = String(segment.query || '').trim()
-  const accounts = accountScope('gmail', segment.account, 'gmail')
-  /* `id:` is the picked form: one direct read per id, no search at all. */
-  const ids = idScope(query)
-  if (!ids && !query) throw new Error('@gmail:all: needs a search, e.g. @gmail:all:from:stripe')
-  const quota = quotaFor(accounts, limit)
-  const rows = []
-  const skipped = []
-  for (const [index, account] of accounts.entries()) {
-    let token
-    try {
-      token = await oauthAccounts.accessTokenFor('gmail', account.localpart)
-    } catch {
-      skipped.push(account.localpart)
-      continue
-    }
-
-    if (ids) {
-      for (const threadId of ids) {
-        /* A thread read returns every message in it; the first message carries the
-           subject/from the row shows, which is what a person recognises. */
-        const thread = await oauthGet(
-          `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?${GMAIL_META}`,
-          token.accessToken,
-          'gmail',
-        ).catch(() => null)
-        const messages = Array.isArray(thread?.messages) ? thread.messages : []
-        const first = messages[0]
-        if (!first) continue
-        const count = messages.length
-        rows.push({
-          ...gmailRow(first, threadId, account),
-          detail: [
-            [account.email, headerOf(first, 'Date')].filter(Boolean).join(' · '),
-            `${count} message${count === 1 ? '' : 's'}`,
-          ]
-            .filter(Boolean)
-            .join(' · '),
-        })
-        if (rows.length >= limit) break
-      }
-      if (rows.length >= limit) break
-      continue
-    }
-
-    const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
-    url.searchParams.set('q', query)
-    url.searchParams.set('maxResults', String(quota[index]))
-    const body = await oauthGet(url, token.accessToken, 'gmail')
-    for (const message of body.messages || []) {
-      const meta = await oauthGet(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?${GMAIL_META}`,
-        token.accessToken,
-        'gmail',
-      ).catch(() => null)
-      if (!meta) continue
-      rows.push(gmailRow(meta, message.threadId, account))
-      if (rows.length >= limit) break
-    }
-  }
-  segment.skipped = skipped
-  return rows.slice(0, limit)
-}
-
-/* The fields Drive's query language actually knows. A query that starts with one
-   of these is grammar, and is passed through; anything else is a person's words. */
-const DRIVE_FIELDS = new Set([
-  'name', 'fulltext', 'mimetype', 'modifiedtime', 'createdtime', 'trashed', 'starred',
-  'sharedwithme', 'parents', 'owners', 'writers', 'readers', 'properties',
-  'appproperties', 'visibility', 'viewedbymetime', 'recency',
-])
-
-/** Does this query already speak Drive's grammar?
- *
- * Deliberately strict, because the loose version was wrong in a way that fails
- * silently: `report in march` and `Q3 and Q4` matched an `and`/`in` keyword and
- * were sent to Drive verbatim, which Drive rejects as invalid syntax. Ordinary
- * English uses those words constantly, so they cannot be the signal. Only a real
- * Drive field, or a `field op value` comparison, counts. */
-function isDriveGrammar(raw) {
-  const text = String(raw || '')
-  const first = text.trim().split(/[\s(]/, 1)[0].toLowerCase()
-  if (DRIVE_FIELDS.has(first)) return true
-  /* `mimeType = 'x'`, `modifiedTime > 2025-01-01`, `name contains 'y'` */
-  return /^\s*[A-Za-z]+\s*(=|!=|<=|>=|<|>|contains)\s*/i.test(text)
-}
-
-/** Drive's `q`, from a person's words.
- *
- * Drive takes a *query language*, not a search string, so words have to be turned
- * into comparisons. Two inputs are supported:
- *
- *   - a query in Drive's own grammar (`mimeType = 'application/pdf'`,
- *     `modifiedTime > 2025-01-01`) is passed through untouched;
- *   - anything else is words, and **each word** becomes a `name contains` clause
- *     OR'd with a `fullText contains` clause. Words are ANDed, which is what a
- *     person means by typing two of them — Drive's `contains` is a substring test,
- *     so `contains 'Q3 report agungsundoro'` would only match that exact run and
- *     find nothing.
- *
- * A **quoted phrase** stays a phrase: `"Q3 report"` searches that sequence, not
- * the three words separately. The quotes are stripped before they reach Drive,
- * because Drive has no quoting of its own — it would search for the quote
- * character. That was the bug in the first version: `"Q3 report"` was sent with
- * its quotes intact and matched nothing.
- */
-function driveQuery(text) {
-  const raw = String(text || '').trim()
-  if (isDriveGrammar(raw)) return raw
-
-  const escape = (value) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-  /* Split into quoted phrases and bare words, keeping the quotes off the value. */
-  const parts = raw.match(/"[^"]*"|'[^']*'|\S+/g) || []
-  const clauses = []
-  for (const part of parts) {
-    const quoted = /^"[^"]*"$|^'[^']*'$/.test(part)
-    const value = quoted ? part.slice(1, -1) : part
-    if (!value.trim()) continue
-    const safe = escape(value)
-    /* A phrase is content, not a file name, so it is searched as text. */
-    clauses.push(
-      quoted
-        ? `fullText contains '${safe}'`
-        : `(name contains '${safe}' or fullText contains '${safe}')`,
-    )
-  }
-  if (!clauses.length) return ''
-  /* Every word must appear; the OR inside a clause is name-vs-content. */
-  return clauses.join(' and ')
-}
-
-/** Drive: `@drive:<account|all>:<query>` — a file search. */
-async function resolveDrive(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
-  const query = String(segment.query || '').trim()
-  if (!query) throw new Error('@drive:all: needs a search, e.g. @drive:all:Q3 report')
-  const accounts = accountScope(connectorOfKind('drive'), segment.account, 'drive')
-  const ids = idScope(query)
-  const quota = quotaFor(accounts, limit)
-  const rows = []
-  const skipped = []
-  for (const [index, account] of accounts.entries()) {
-    let token
-    try {
-      token = await oauthAccounts.accessTokenFor(connectorOfKind('drive'), account.localpart)
-    } catch {
-      skipped.push(account.localpart)
-      continue
-    }
-    /* The picked form: one direct read per id, no search. */
-    if (ids) {
-      for (const fileId of ids) {
-        const file = await oauthGet(
-          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,modifiedTime,webViewLink`,
-          token.accessToken,
-          'google-drive',
-        ).catch(() => null)
-        if (!file) continue
-        rows.push({
-          id: file.id,
-          account: account.email,
-          label: file.name || file.id,
-          detail: [account.email, file.mimeType?.split('.').pop(), file.modifiedTime?.slice(0, 10)]
-            .filter(Boolean)
-            .join(' · '),
-          url: file.webViewLink || '',
-        })
-        if (rows.length >= limit) break
-      }
-      if (rows.length >= limit) break
-      continue
-    }
-
-    const url = new URL('https://www.googleapis.com/drive/v3/files')
-    url.searchParams.set('q', driveQuery(query))
-    url.searchParams.set('pageSize', String(quota[index]))
-    url.searchParams.set('fields', 'files(id,name,mimeType,modifiedTime,webViewLink)')
-    const body = await oauthGet(url, token.accessToken, 'google-drive')
-    for (const file of body.files || []) {
-      rows.push({
-        id: file.id,
-        account: account.email,
-        label: file.name || file.id,
-        detail: [account.email, file.mimeType?.split('.').pop(), file.modifiedTime?.slice(0, 10)]
-          .filter(Boolean)
-          .join(' · '),
-        url: file.webViewLink || '',
-      })
-      if (rows.length >= limit) break
-    }
-  }
-  segment.skipped = skipped
-  return rows.slice(0, limit)
-}
-
-/** YouTube: `@youtube:[<account>:]<query>` — a channel or video search. */
-async function resolveYoutube(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
-  const query = String(segment.query || '').trim()
-  if (!query) throw new Error('@youtube:all: needs a search, e.g. @youtube:all:deploy guide')
-  const accounts = accountScope('youtube', segment.account, 'youtube')
-  const ids = idScope(query)
-  const quota = quotaFor(accounts, limit)
-  const rows = []
-  const skipped = []
-  for (const [index, account] of accounts.entries()) {
-    let token
-    try {
-      token = await oauthAccounts.accessTokenFor('youtube', account.localpart)
-    } catch {
-      skipped.push(account.localpart)
-      continue
-    }
-    /* The picked form: one direct read per id, no search. */
-    if (ids) {
-      const picked = new URL('https://www.googleapis.com/youtube/v3/videos')
-      picked.searchParams.set('part', 'snippet')
-      picked.searchParams.set('id', ids.join(','))
-      picked.searchParams.set('maxResults', String(quota[index]))
-      const found = await oauthGet(picked, token.accessToken, 'youtube')
-      for (const item of found.items || []) {
-        const snippet = item.snippet || {}
-        rows.push({
-          id: item.id || '',
-          account: account.email,
-          label: snippet.title || '(untitled)',
-          detail: [snippet.channelTitle, snippet.publishedAt?.slice(0, 10)].filter(Boolean).join(' · '),
-          url: item.id ? `https://www.youtube.com/watch?v=${item.id}` : '',
-        })
-        if (rows.length >= limit) break
-      }
-      if (rows.length >= limit) break
-      continue
-    }
-
-    const url = new URL('https://www.googleapis.com/youtube/v3/search')
-    url.searchParams.set('part', 'snippet')
-    url.searchParams.set('type', 'video')
-    url.searchParams.set('maxResults', String(quota[index]))
-    url.searchParams.set('q', query)
-    const body = await oauthGet(url, token.accessToken, 'youtube')
-    for (const item of body.items || []) {
-      const snippet = item.snippet || {}
-      rows.push({
-        id: item.id?.videoId || '',
-        account: account.email,
-        label: snippet.title || '(untitled)',
-        detail: [snippet.channelTitle, snippet.publishedAt?.slice(0, 10)].filter(Boolean).join(' · '),
-        url: item.id?.videoId ? `https://www.youtube.com/watch?v=${item.id.videoId}` : '',
-      })
-      if (rows.length >= limit) break
-    }
-  }
-  segment.skipped = skipped
-  return rows.slice(0, limit)
-}
-
-/** X: `@x:[<account>:]<query>` — recent posts matching a search. */
-async function resolveX(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
-  const query = String(segment.query || '').trim()
-  if (!query) throw new Error('@x:all: needs a search, e.g. @x:all:from:stripe')
-  const accounts = accountScope('x', segment.account, 'x')
-  const ids = idScope(query)
-  const quota = quotaFor(accounts, limit)
-  const rows = []
-  const skipped = []
-  for (const [index, account] of accounts.entries()) {
-    let token
-    try {
-      token = await oauthAccounts.accessTokenFor('x', account.localpart)
-    } catch {
-      skipped.push(account.localpart)
-      continue
-    }
-    /* The picked form: one direct read per id, no search. */
-    if (ids) {
-      const picked = new URL('https://api.x.com/2/tweets')
-      picked.searchParams.set('ids', ids.slice(0, 100).join(','))
-      picked.searchParams.set('tweet.fields', 'created_at,author_id')
-      const found = await oauthGet(picked, token.accessToken, 'x')
-      for (const tweet of found.data || []) {
-        rows.push({
-          id: tweet.id,
-          account: account.email,
-          label: String(tweet.text || '').replace(/\s+/g, ' ').slice(0, 120),
-          detail: [account.email, tweet.created_at?.slice(0, 10)].filter(Boolean).join(' · '),
-          url: `https://x.com/i/web/status/${tweet.id}`,
-        })
-        if (rows.length >= limit) break
-      }
-      if (rows.length >= limit) break
-      continue
-    }
-
-    const url = new URL('https://api.x.com/2/tweets/search/recent')
-    url.searchParams.set('query', `${query} -is:retweet`)
-    /* X rejects fewer than 10 per call, so the per-account quota is floored there
-       and the rows are trimmed to the mention's own limit below. */
-    url.searchParams.set('max_results', String(Math.min(100, Math.max(10, quota[index]))))
-    url.searchParams.set('tweet.fields', 'created_at,author_id')
-    const body = await oauthGet(url, token.accessToken, 'x')
-    for (const tweet of body.data || []) {
-      rows.push({
-        id: tweet.id,
-        account: account.email,
-        label: String(tweet.text || '').replace(/\s+/g, ' ').slice(0, 120),
-        detail: [account.email, tweet.created_at?.slice(0, 10)].filter(Boolean).join(' · '),
-        url: `https://x.com/i/web/status/${tweet.id}`,
-      })
-      if (rows.length >= limit) break
-    }
-  }
-  segment.skipped = skipped
-  return rows.slice(0, limit)
-}
-
 /* ── entity: a mini run, not a path ───────────────────────────────── */
 
 function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
@@ -1875,6 +1420,99 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
        was the bug that made `@gmail:muh` look broken while a shorter prefix
        "worked" — neither completed the account, because the whole branch was
        treated as a half-typed query. */
+    /* ── YouTube Studio's second segment is **two things at once** ──────────
+       `@youtube-studio:<acct>:<channel>:<what>` — and the composer hands this
+       branch at most two words, because its field grouping joins everything after
+       the account with a colon: typing `…:acct:agung:s` arrives as
+       `['acct', 'agung:s']`. So the second field is split on its **first** colon
+       here: before it is the channel being typed, after it is the `what`.
+
+       The old code read `words[2]`, which never exists — that is why a channel
+       looked unselectable and then a `what` looked like a failed channel. */
+    if (kind === 'youtube-studio' && words.length) {
+      const scope = String(words[0] || '')
+      if (scope) {
+        const joined = String(words[1] ?? '')
+        const cut = joined.indexOf(':')
+        /* `channel` is what is typed before the colon (possibly nothing), `what`
+           is everything after it (possibly nothing). */
+        const channel = cut >= 0 ? joined.slice(0, cut) : joined
+        const what = cut >= 0 ? joined.slice(cut + 1) : ''
+        const hasWhatSegment = cut >= 0
+
+        const channels = await connectorRegistry.channelsFor(kind)(scope)
+        const chanNeedle = channel.toLowerCase()
+        const chanMatches = channels.filter(
+          (entry) =>
+            !chanNeedle ||
+            entry.slug.startsWith(chanNeedle) ||
+            entry.title.toLowerCase().startsWith(chanNeedle) ||
+            entry.id.toLowerCase().startsWith(chanNeedle),
+        )
+
+        /* A settled channel means the next word is a `what`: offer the vocabulary,
+           and never re-ask which channel. */
+        if (hasWhatSegment && (chanMatches.length || !chanNeedle)) {
+          const whatNeedle = what.toLowerCase()
+          const vocab = connectorRegistry.wordsFor(kind).filter((word) => word.startsWith(whatNeedle))
+          if (vocab.length) {
+            return {
+              items: vocab.slice(0, 8).map((word) => ({
+                insert: `@${head}:${scope}:${channel}:${word}`,
+                label: word,
+                detail: 'what to read',
+              })),
+              more: false,
+            }
+          }
+          /* A `what` that is not a keyword prefix, and a settled channel: the
+             resolver answers this better than a menu can. */
+          return { items: [], more: false }
+        }
+
+        /* No colon yet: could be a `what` being typed on an account whose channel
+           is unambiguous, or a channel name. A keyword prefix wins, because that is
+           the only thing the account offers by itself. */
+        const keywordHits = connectorRegistry.wordsFor(kind).filter((word) => word.startsWith(chanNeedle))
+        if (keywordHits.length && !chanNeedle.includes(':')) {
+          return {
+            items: keywordHits.slice(0, 8).map((word) => ({
+              insert: `@${head}:${scope}:${word}`,
+              label: word,
+              detail: 'what to read',
+            })),
+            more: false,
+          }
+        }
+
+        if (chanMatches.length) {
+          return {
+            items: chanMatches.map((entry) => ({
+              insert: `@${head}:${scope}:${entry.slug}:`,
+              label: entry.title,
+              detail: entry.id,
+            })),
+            more: false,
+          }
+        }
+
+        /* Neither a keyword nor a channel: say what exists, and offer nothing that
+           can be inserted. */
+        return {
+          items: [
+            {
+              insert: '',
+              label: `No channel or reader matches “${joined}”`,
+              detail: channels.length
+                ? `Channels: ${channels.map((entry) => entry.slug).join(', ')} · readers: ${connectorRegistry.wordsFor(kind).join(', ')}`
+                : `Readers: ${connectorRegistry.wordsFor(kind).join(', ')}`,
+            },
+          ],
+          more: false,
+        }
+      }
+    }
+
     if (words.length < 2) {
       const needle = String(words[0] || '').toLowerCase()
       const items = []
@@ -1919,12 +1557,7 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     if (!known) return { items: [], more: false }
     if (!query.trim()) return { items: [], more: false }
     const segment = { account: scope, query }
-    const resolver = {
-      gmail: resolveGmail,
-      drive: resolveDrive,
-      youtube: resolveYoutube,
-      x: resolveX,
-    }[kind]
+    const resolver = connectorRegistry.resolverFor(kind)
     /* A preview never throws the picker away: no account connected, or an API
        that is off, simply offers nothing rather than an error under the cursor. */
     let rows = []
@@ -1938,9 +1571,13 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
         /* A result carries its id, so picking it names the *thing*, not a search
            for its words: one direct read at turn time instead of a second query.
            The readable label and link ride along for the chip and its dialog. */
-        insert: row.id
-          ? `@${head}:${scope}:id:${row.id}`
-          : `@${head}:${scope}:${queryInsert(row.label.split(' — ')[0])}`,
+        /* Only a row whose id is a *target* becomes an `id:` mention. A comment
+           thread id is not — `@…:id:<comment>` would have nothing to read. */
+        insert: row.pick
+          ? `@${head}:${scope}:id:${row.pick}`
+          : row.id && !row.notPicked
+            ? `@${head}:${scope}:id:${row.id}`
+            : `@${head}:${scope}:${queryInsert(row.label.split(' — ')[0])}`,
         label: row.label,
         detail: row.detail,
         /* what the chip shows and the dialog links to */
@@ -2236,13 +1873,13 @@ async function resolveOne(ctx, segment) {
       if (segment.accountUnknown) {
         accountScope(connectorOfKind(segment.kind), segment.account, head)
       }
-      const resolve = {
-        gmail: resolveGmail,
-        drive: resolveDrive,
-        youtube: resolveYoutube,
-        x: resolveX,
-      }[segment.kind]
-      const items = await resolve(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
+      const resolve = connectorRegistry.resolverFor(segment.kind)
+      /* A report-shaped source sets its own ceiling: `summary` is four KPI tiles
+         plus a video list, and truncating it to three rows hides the numbers the
+         report exists for. Every other source keeps the shared cap. */
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling(segment.kind, MAX_PER_SOURCE),
+      })
       segment.mention = {
         kind: segment.kind,
         raw: segment.raw,

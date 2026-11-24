@@ -112,6 +112,41 @@ const SCOPE_CATALOG = {
       },
     ],
   },
+  /* YouTube **Studio** data is a different grant from the public YouTube search
+     above: reading a channel's own analytics needs `yt-analytics.readonly`, and
+     the two are separate scopes on purpose. A person who only wants to search
+     public videos should never be asked for their channel's revenue numbers. */
+  'youtube-studio': {
+    tiers: [
+      {
+        id: 'read',
+        label: 'Read your channel',
+        detail: 'Your own videos, playlists and comments. No analytics.',
+        scopes: [{ wire: GOOGLE_AUTH('youtube.readonly'), display: 'youtube.readonly' }],
+      },
+      {
+        id: 'write',
+        label: 'Manage your channel',
+        detail: 'Read, plus edit titles, descriptions, tags and playlists.',
+        scopes: [
+          { wire: GOOGLE_AUTH('youtube.readonly'), display: 'youtube.readonly' },
+          { wire: GOOGLE_AUTH('youtube.force-ssl'), display: 'youtube.force-ssl' },
+        ],
+      },
+      {
+        id: 'full',
+        label: 'Analytics and comments',
+        detail:
+          'What Studio shows: views, watch time, subscriber movement, traffic sources, revenue, and the comment threads needing a reply.',
+        scopes: [
+          { wire: GOOGLE_AUTH('youtube.readonly'), display: 'youtube.readonly' },
+          { wire: GOOGLE_AUTH('yt-analytics.readonly'), display: 'yt-analytics.readonly' },
+          { wire: GOOGLE_AUTH('youtube.force-ssl'), display: 'youtube.force-ssl' },
+        ],
+      },
+    ],
+  },
+
   x: {
     tiers: [
       {

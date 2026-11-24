@@ -1863,7 +1863,7 @@ function resolveAttachments(record, list, baseDir = '') {
        Its `value` is the provider's own id, so what travels to the turn is the
        identity, not a search phrase. Nothing is fetched here: the turn's mention
        resolver does the one direct read, which is where the credential lives. */
-    if (['gmail', 'drive', 'youtube', 'x'].includes(entry.kind)) {
+    if (['gmail', 'drive', 'youtube', 'youtube-studio', 'x'].includes(entry.kind)) {
       const id = String(entry.value || '').trim()
       if (!id) continue
       const key = `${entry.kind}:${id}`
@@ -1937,7 +1937,7 @@ function attachmentsBlock(attachments) {
      can then cite or open it, and a person reading the transcript can check the
      same link. */
   const picked = (attachments || []).filter((entry) =>
-    ['gmail', 'drive', 'youtube', 'x'].includes(entry.kind),
+    ['gmail', 'drive', 'youtube', 'youtube-studio', 'x'].includes(entry.kind),
   )
   if (picked.length) {
     lines.push(

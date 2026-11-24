@@ -217,7 +217,7 @@ const CATALOG = {
         'The scope comes first and is required: `@drive:work:` is that account\'s Drive, `@drive:all:` is every connected one.',
         'The query is the rest of the line, so it may hold spaces; the instruction goes on the next line.',
         'Quotes make a phrase: `"Q3 report"` searches that sequence rather than the words separately.',
-        'Plain words are ANDed across file names and contents — `Q3 report agungsundoro` needs all three.',
+        'Plain words are ANDed across file names and contents — `Q3 report bergstrom` needs all three.',
         'A quoted phrase stays a phrase: `"Q3 report"` searches that sequence, not the two words separately.',
         'Drive\'s own query language also works: `mimeType = \'application/pdf\'`, `modifiedTime > 2025-01-01`, `trashed = false`.',
         'Folder names are matched as part of a file\'s path, not searched on their own.',
@@ -257,6 +257,55 @@ const CATALOG = {
       ],
     },
   },
+  /* ── YouTube **Studio**: the channel's own data, not a public search ──────
+     A separate connector from `youtube` on purpose. `@youtube:` searches what
+     anyone can see; this reads the things only the owner can — views, watch time,
+     subscriber movement, traffic sources, revenue and the comments waiting for a
+     reply. They are different grants, so they are different cards.
+
+     Every answer is computed from the YouTube Data API and the Analytics API, and
+     the *shapes* follow what YouTube Studio puts on screen so the numbers are the
+     ones a person already trusts. */
+  'youtube-studio': {
+    label: 'YouTube Studio',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'Views, watch time, subscribers, revenue and comments from your own channel.',
+    work: {
+      mention: '@youtube-studio:',
+      resolves: "the channel's own analytics, catalogue or comment threads",
+      syntax: '@youtube-studio:<account>[:<channel>]:<what> [<days>]',
+      examples: [
+        '@youtube-studio:avery:summary 30',
+        '@youtube-studio:avery:main-channel:traffic 90',
+        '@youtube-studio:avery:unreplied',
+      ],
+      returns:
+        'the numbers Studio shows — views, watch time, subscribers, revenue — or the videos, comments and traffic sources behind them',
+      resolver: 'youtube-studio',
+      needs: 'a signed-in channel owner account with the analytics scope',
+      page: '',
+      how: [
+        'The account segment comes first, as every account-bearing connector does — it is the Google login.',
+        '**The channel comes next and is optional**, because one Google login can manage several channels (a brand account, a network, a client\'s). Leave it out when the account has only one.',
+        'The channel is recognised by not being a keyword, so `summary` is a thing to read and `main-channel` is a channel. A title, a slug of it, or the raw `UC…` id all work.',
+        'Then *what*: `summary`, `videos`, `video`, `traffic`, `subscribers`, `comments`, `unreplied`, `playlists`, `revenue` or `search`.',
+        'An optional trailing number is the window in days, defaulting to 28 — Studio\'s own default.',
+        '`summary` is the Studio overview: the four KPI tiles, their change against the previous equally long window, and the top videos.',
+        '`traffic` is the traffic-source breakdown; `subscribers` is net growth by day.',
+        '`unreplied` is the newest comments with no reply — the one thing Studio buries two clicks deep.',
+        'Revenue needs the monetary analytics scope; without it the row says so instead of printing zero.',
+        'Every window is computed against the report\'s own end date, never the clock, so an old answer cannot look fresh.',
+      ],
+      samples: [
+        { code: '@youtube-studio:avery:summary 28', then: 'the four Studio KPIs, their change, and the top videos' },
+        { code: '@youtube-studio:avery:main-channel:traffic 90', then: 'where those 90 days of views came from' },
+        { code: '@youtube-studio:avery:unreplied', then: 'the comments with no reply yet' },
+      ],
+    },
+  },
+
   x: {
     label: 'X',
     kind: 'rest',
@@ -328,7 +377,11 @@ const CATALOG = {
 }
 
 /** The resolver keys `mention-ref` actually answers. A catalog entry may not name anything else. */
-const RESOLVERS = new Set(['orca', 'github', 'youtrack', 'maka', 'gmail', 'drive', 'youtube', 'x', 'artifact', 'thread'])
+const RESOLVERS = new Set([
+  'orca', 'github', 'youtrack', 'maka',
+  'gmail', 'drive', 'youtube', 'youtube-studio', 'x',
+  'artifact', 'thread',
+])
 
 /** The shipped definitions a person can install. Internal ones are not connectors. */
 const INSTALLABLE = Object.entries(CATALOG)

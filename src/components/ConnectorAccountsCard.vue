@@ -287,6 +287,8 @@ const EMPTY_HINT = {
   gmail: 'One Google sign-in adds one mailbox. Repeat for a shared inbox.',
   'google-drive': 'One Google sign-in adds one Drive. Repeat for a shared drive.',
   youtube: 'One Google sign-in adds one channel. Repeat for a shared channel.',
+  'youtube-studio':
+    'Sign in with the Google account that manages the channel. A personal account that owns no channel is refused, not saved.',
   x: 'One sign-in adds one X account. Repeat for a second handle.',
 }
 const emptyHint = computed(
