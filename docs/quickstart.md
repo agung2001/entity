@@ -18,7 +18,9 @@ npm run dev:desktop      # Vite + Electron, HMR included
 On a fresh profile the app lands on the **/welcome** wizard: name the room, pick an
 agent CLI, say hello. It registers the machine-local owner on the way in — `owner` with
 the default password `123456`, changeable later — so there is no sign-in form to fill
-here; [Onboarding](onboarding.md) walks through the three steps.
+here; [Onboarding](onboarding.md) walks through the three steps. The CLIs themselves are
+listed at **Account → Harnesses**, where a path can be pinned; anything this workspace
+reaches besides a CLI is a [connector](connectors.md).
 
 ## Commands
 

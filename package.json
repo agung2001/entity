@@ -45,6 +45,7 @@
     "media:encode": "node scripts/readme-media.mjs encode",
     "media:check": "node scripts/readme-media.mjs check",
     "media:record": "node scripts/record-demos.mjs",
+    "media:onboarding": "node scripts/record-onboarding.mjs",
     "media:logo": "node scripts/logo-animation.mjs",
     "demo": "node scripts/demo.mjs"
   },
