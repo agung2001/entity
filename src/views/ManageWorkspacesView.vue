@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { onRunEvent } from '@/composables/localBridge'
+import { useDialogDismiss } from '@/composables/useDialog'
 import BrandMark from '@/components/BrandMark.vue'
 import RemoteConnectDialog from '@/components/RemoteConnectDialog.vue'
 import RemoteSyncPanel from '@/components/RemoteSyncPanel.vue'
@@ -60,6 +61,8 @@ onMounted(() => {
   ensureRemoteStream()
   loadRemote().catch(() => {})
   loadWorkspaceList().catch(() => {})
+  document.addEventListener('click', onMenuDocumentClick)
+  window.addEventListener('resize', onMenuReflow)
   unsubscribe = onRunEvent((event) => {
     if (event?.kind !== 'workspace-changed') return
     clearTimeout(reloadTimer)
@@ -71,6 +74,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   clearTimeout(reloadTimer)
+  document.removeEventListener('click', onMenuDocumentClick)
+  window.removeEventListener('resize', onMenuReflow)
   unsubscribe?.()
 })
 
@@ -145,15 +150,83 @@ const totals = computed(() =>
   ),
 )
 
-function run(menu, fn) {
-  menu.open = false
-  fn()
+/* ── the card menu ────────────────────────────────────────────────────────────
+   It was a native `<details>` dropdown: absolutely positioned inside the card,
+   so the second card's box painted over its lower items (a card is its own
+   paint layer — the hover lift is a `transform`), which made the last two
+   actions unclickable, and there was no measure, no flip and no dismissal but
+   a second click on the trigger. It is now the same layer the rail's row menu
+   and the skills roster use: one teleported, measured `position: fixed` menu,
+   flipped above the trigger when the room below is short, closed by Escape and
+   by a click anywhere else. */
+const menuRecord = ref(null)
+const menuPos = ref({})
+const menuEl = ref(null)
+let menuOpener = null
+
+async function openRowMenu(event, record) {
+  event.stopPropagation()
+  if (menuRecord.value?.id === record.id) {
+    closeRowMenu()
+    return
+  }
+  confirming.value = ''
+  const opener = event.currentTarget
+  menuOpener = opener
+  const rect = opener.getBoundingClientRect()
+  const width = 210
+  const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))
+  menuPos.value = { left: `${Math.round(left)}px`, top: `${Math.round(rect.bottom + 5)}px` }
+  menuRecord.value = record
+  await nextTick()
+  /* DESIGN.md: the menu measures itself instead of assuming a height — the
+     Connect item only exists when there is no remote server yet */
+  const height = menuEl.value?.offsetHeight || 0
+  const below = window.innerHeight - rect.bottom - 5 - 8
+  if (height > below && rect.top - 13 > below) {
+    menuPos.value = { left: menuPos.value.left, top: `${Math.round(rect.top - 5 - height)}px` }
+  }
+  menuEl.value?.querySelector('button')?.focus()
 }
 
-function deleteFromMenu(menu, record) {
-  /* The first click arms the delete; keep the menu open so the second click is
-     actually possible. */
-  if (confirming.value === record.id) menu.open = false
+function closeRowMenu(refocus = true) {
+  if (!menuRecord.value) return
+  menuRecord.value = null
+  confirming.value = ''
+  menuPos.value = {}
+  const opener = menuOpener
+  menuOpener = null
+  if (refocus && opener instanceof HTMLElement) opener.focus()
+}
+
+/* Esc is the one stack; a click anywhere else, a scroll of the page or a
+   resize closes the popover the same way it closes the rail's. */
+useDialogDismiss({ active: () => Boolean(menuRecord.value), close: () => closeRowMenu() })
+
+function onMenuDocumentClick(event) {
+  if (!menuRecord.value) return
+  const target = event.target
+  if (target instanceof Element && (target.closest('.wsl-menu-pop') || target.closest('.wsl-menu'))) return
+  closeRowMenu(false)
+}
+
+/* An item acts on the workspace that opened the menu, so a change of roster
+   takes the menu with it instead of leaving a stale one over a new card. */
+function onMenuReflow() {
+  closeRowMenu(false)
+}
+
+function run(fn) {
+  /* the item acts on the workspace the menu was opened for, so the record is
+     read before the menu closes: closing is what clears `menuRecord` */
+  const record = menuRecord.value
+  closeRowMenu()
+  if (record) fn(record)
+}
+
+function deleteFromMenu(record) {
+  /* The first click arms the delete; the menu stays open so the second click is
+     actually possible. `deleteOne` consumes the arm itself. */
   deleteOne(record)
 }
 
@@ -259,7 +332,10 @@ async function deleteOne(record) {
     }, 2800)
     return
   }
+  /* the arm is consumed before anything closes: `closeRowMenu` clears it, so a
+     re-arm and a close have to be two different moments */
   confirming.value = ''
+  closeRowMenu()
   busy.value = `delete:${record.id}`
   try {
     await removeWorkspace(record.id)
@@ -376,19 +452,17 @@ async function deleteOne(record) {
               </h3>
               <p>{{ record.displayPath }}</p>
             </div>
-            <details class="wsl-menu" data-sfx="tap" @click.stop>
-              <summary :aria-label="`Actions for ${record.label}`" aria-haspopup="menu">
-                <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
-              </summary>
-              <div class="wsl-menu-pop" role="menu">
-                <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
-                <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
-                <button v-if="remoteFor(record.id)" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
-                <button v-else-if="!remote.server" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
-                <button type="button" role="menuitem" data-sfx="download" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">{{ busy === `export:${record.id}` ? 'Exporting…' : 'Export as one file' }}</button>
-                <button class="danger" type="button" role="menuitem" data-sfx="remove" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
-              </div>
-            </details>
+            <button
+              class="wsl-menu"
+              type="button"
+              data-sfx="tap"
+              :aria-label="`Actions for ${record.label}`"
+              aria-haspopup="menu"
+              :aria-expanded="menuRecord?.id === record.id ? 'true' : 'false'"
+              @click.stop="openRowMenu($event, record)"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
+            </button>
           </div>
           <div class="wsl-counts">
             <span><b>{{ record.counts.entities }}</b><span>entities</span></span>
@@ -422,19 +496,17 @@ async function deleteOne(record) {
           <span class="num">{{ record.counts.mcp || 0 }}</span>
           <span><span class="wsl-kt">{{ record.kind }}</span></span>
           <span class="wsl-date">{{ createdLabel(record) }}</span>
-          <details class="wsl-menu" data-sfx="tap" @click.stop>
-            <summary :aria-label="`Actions for ${record.label}`" aria-haspopup="menu">
-              <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
-            </summary>
-            <div class="wsl-menu-pop" role="menu">
-              <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => openOne(record))">{{ record.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
-              <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => settingsOne(record))">Workspace settings</button>
-              <button v-if="remoteFor(record.id)" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openRemotePanel(record.id))">Remote sync…</button>
-              <button v-else-if="!remote.server" type="button" role="menuitem" data-sfx="tap" @click="run($event.currentTarget.closest('details'), () => openConnect())">Connect to remote…</button>
-              <button type="button" role="menuitem" data-sfx="download" :disabled="Boolean(busy)" @click="run($event.currentTarget.closest('details'), () => exportOne(record))">Export as one file</button>
-              <button class="danger" type="button" role="menuitem" data-sfx="remove" :disabled="Boolean(busy)" @click="deleteFromMenu($event.currentTarget.closest('details'), record)">{{ confirming === record.id ? 'Click again to delete' : 'Delete workspace' }}</button>
-            </div>
-          </details>
+          <button
+            class="wsl-menu"
+            type="button"
+            data-sfx="tap"
+            :aria-label="`Actions for ${record.label}`"
+            aria-haspopup="menu"
+            :aria-expanded="menuRecord?.id === record.id ? 'true' : 'false'"
+            @click.stop="openRowMenu($event, record)"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" /></svg>
+          </button>
         </div>
       </div>
     </template>
@@ -452,5 +524,27 @@ async function deleteOne(record) {
 
     <RemoteConnectDialog :open="remoteOpen" @close="remoteOpen = false" @connected="onConnected" />
     <RemoteSyncPanel :workspace="remote.panel" />
+
+    <!-- One menu for the whole page, in the body, so no card and no hover lift
+         can paint over it (DESIGN.md: a popover is a teleported, measured
+         layer; the row that holds it never clips it). -->
+    <Teleport to="body">
+      <div
+        v-if="menuRecord"
+        ref="menuEl"
+        class="wsl-menu-pop"
+        role="menu"
+        :aria-label="`Actions for ${menuRecord.label}`"
+        :style="menuPos"
+        @click.stop
+      >
+        <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run((record) => openOne(record))">{{ menuRecord.id === workspaces.active ? 'Open overview' : 'Open & make active' }}</button>
+        <button type="button" role="menuitem" data-sfx="workspace" :disabled="Boolean(busy)" @click="run((record) => settingsOne(record))">Workspace settings</button>
+        <button v-if="remoteFor(menuRecord.id)" type="button" role="menuitem" data-sfx="tap" @click="run((record) => openRemotePanel(record.id))">Remote sync…</button>
+        <button v-else-if="!remote.server" type="button" role="menuitem" data-sfx="tap" @click="run(() => openConnect())">Connect to remote…</button>
+        <button type="button" role="menuitem" data-sfx="download" :disabled="Boolean(busy)" @click="run((record) => exportOne(record))">{{ busy === `export:${menuRecord.id}` ? 'Exporting…' : 'Export as one file' }}</button>
+        <button class="danger" type="button" role="menuitem" data-sfx="remove" :disabled="Boolean(busy)" @click="deleteFromMenu(menuRecord)">{{ confirming === menuRecord.id ? 'Click again to delete' : 'Delete workspace' }}</button>
+      </div>
+    </Teleport>
   </div>
 </template>
