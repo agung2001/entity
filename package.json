@@ -91,11 +91,13 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Entity uses the microphone only while voice mode is open, so you can talk to an entity instead of typing. The recording stays on this machine."
       },
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "linux": {
       "target": "AppImage",
