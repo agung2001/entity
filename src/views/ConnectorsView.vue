@@ -214,13 +214,17 @@ const STATE_COUNTS = computed(() => {
   return out
 })
 
+/** One line about a catalog row: what its mention resolves, or — for an entry
+ *  that ships no resolver — the catalog's summary of what it is for. */
+const describe = (row) => row?.work?.resolves || row?.statusDetail || ''
+
 const visible = computed(() => {
   const needle = query.value.trim().toLowerCase()
   if (pane.value === 'builtin') {
     return catalogRows.value.filter((row) =>
       !needle
         ? true
-        : [row.label, row.id, row.kind, row.work?.resolves]
+        : [row.label, row.id, row.kind, row.work?.resolves, row.statusDetail]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(needle)),
     )
@@ -278,6 +282,10 @@ async function install(row) {
     await installConnector(row.id)
     toast(`${row.label} installed into this workspace.`)
     pane.value = 'installed'
+    /* An account-bearing connector is finished on its own page — the account is
+       connected there — so installing it lands you where the verb is, the same
+       place the sheet's own card does. */
+    if (row.oauth) router.push({ name: 'connector-page', params: { workspace: hub.workspace, id: row.id } })
   } catch (error) {
     toast(String(error?.message || error))
   } finally {
@@ -289,7 +297,10 @@ async function uninstall(row) {
   if (!row || busy.value) return
   busy.value = row.id
   try {
-    await uninstallConnector(row.id)
+    /* An added oauth row is not `builtIn`, so `connector.uninstall` would refuse
+       it. Its removal is the same verb the connector's own page offers. */
+    if (row.builtIn) await uninstallConnector(row.id)
+    else await removeConnector(row.id)
     toast(`${row.label} uninstalled. Its sign-in stays on this machine.`)
   } catch (error) {
     toast(String(error?.message || error))
@@ -312,6 +323,13 @@ async function copyHere(row) {
 }
 
 /* ── the add sheet ─────────────────────────────────────────────────── */
+
+/* `Connect account` on a row with nothing connected: the same page, sheet not
+   opened. The account verbs live where the account list does (design §2). */
+function connectAccount(row) {
+  if (!row || busy.value) return
+  router.push({ name: 'connector-page', params: { workspace: hub.workspace, id: row.id } })
+}
 
 function startAdd() {
   addKind.value = ''
@@ -340,8 +358,42 @@ function closeAdd() {
 useDialogDismiss({ active: () => addOpen.value, close: closeAdd, guard: () => busy.value === 'add' })
 
 function pickKind(kind) {
+  /* `More connectors` is a door into the roster's Built-in pane, not a fifth kind:
+     nothing is added, and the sheet closes behind it. */
+  if (kind === 'builtin') {
+    addOpen.value = false
+    setPane('builtin')
+    return
+  }
+  /* An account-bearing connector has no second step: picking the card writes one
+     row and lands on that connector's page, where the accounts are connected. The
+     sheet answers "what does this workspace get", one card per connector — a
+     token field or an account chooser here would make it a directory of mailboxes
+     (spec §2). */
+  if (OAUTH_KINDS.value.has(kind)) {
+    addOauth(kind)
+    return
+  }
   addKind.value = kind
   nextTick(() => document.querySelector('.cxn-fields input')?.focus())
+}
+
+async function addOauth(kind) {
+  if (busy.value) return
+  busy.value = 'add'
+  addError.value = ''
+  try {
+    await addConnector({ id: kind, label: oauthLabel(kind), kind: 'rest', oauth: true })
+    addOpen.value = false
+    toast(`${oauthLabel(kind)} added · connect an account on its page.`)
+    router.push({ name: 'connector-page', params: { workspace: hub.workspace, id: kind } })
+  } catch (error) {
+    /* Stay on the sheet: a failure is the one sentence the person needs, and the
+       sheet is where the card they pressed still is. */
+    addError.value = String(error?.message || error)
+  } finally {
+    busy.value = ''
+  }
 }
 
 async function testAdd() {
@@ -433,6 +485,22 @@ async function saveAdd() {
 const kindLabel = computed(
   () => ({ mcp: 'MCP server', cli: 'CLI on this machine', rest: 'REST token' })[addKind.value] || '',
 )
+
+/* The connectors that carry an account rather than a token, read from the shipped
+   catalog so a fifth provider is one entry there and no edit here. Picking one
+   writes the row and lands on its page; it never reaches `saveAdd()`'s field step
+   or its pre-save verify, because there is no credential to check until a consent
+   screen has answered (spec §3, §10 question 2). */
+const OAUTH_KINDS = computed(
+  () => new Set((connectors.catalog || []).filter((entry) => entry.oauth).map((entry) => entry.id)),
+)
+const oauthLabel = (kind) =>
+  (connectors.catalog || []).find((entry) => entry.id === kind)?.label || kind
+
+/* The sheet only grows for the kind picker: `credential → refresh token, this
+   machine` clips in a 520px two-up card grid, and the field step is still one
+   column of inputs. */
+const wideSheet = computed(() => !addKind.value)
 
 </script>
 
@@ -563,7 +631,10 @@ const kindLabel = computed(
               </span>
               <span class="ct-copy">
                 <span class="ct-name" :title="row.label">{{ row.label }}</span>
-                <span class="ct-line" :title="row.work?.resolves">{{ row.work?.resolves }}</span>
+                <!-- A shipped resolver is the best sentence about what a row
+                     gives you; a context-only entry (the account-bearing four)
+                     ships none, so the catalog's own summary speaks instead. -->
+                <span class="ct-line" :title="describe(row)">{{ describe(row) }}</span>
               </span>
             </span>
             <span class="ct-kind" role="cell">{{ row.kind }}</span>
@@ -589,6 +660,7 @@ const kindLabel = computed(
             @adopt="adopt"
             @copy="copyHere"
             @uninstall="uninstall"
+            @connect="connectAccount"
           />
         </template>
       </div>
@@ -624,13 +696,18 @@ const kindLabel = computed(
     </div>
 
     <div v-if="addOpen" class="cxn-scrim" @click.self="closeAdd">
-      <div class="cxn-dialog" role="dialog" aria-labelledby="cxn-add-h">
+      <div class="cxn-dialog" :class="{ 'cxn-dialog--wide': wideSheet }" role="dialog" aria-labelledby="cxn-add-h">
         <h2 id="cxn-add-h">
           {{ addKind ? `Add a ${kindLabel.toLowerCase()}` : 'Add a connector' }}
         </h2>
-        <p class="sub">One dialog, three kinds. The row looks the same; only the fields differ.</p>
+        <p class="sub">
+          Pick what this workspace gets. Accounts are connected on the connector's page afterwards,
+          so this list grows by one card per connector and never by one card per mailbox.
+        </p>
 
         <ConnectorKindPicker v-if="!addKind" :busy="busy === 'add'" @pick="pickKind" />
+        <!-- A card that failed to write says so on the step it was pressed on. -->
+        <div v-if="!addKind && addError" class="cxn-error" role="alert">{{ addError }}</div>
         <div v-if="!addKind" class="cxn-acts">
           <span class="spacer"></span>
           <button class="btn btn-sm" type="button" @click="closeAdd">Cancel</button>

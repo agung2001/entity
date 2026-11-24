@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { heroColorFor } from '@/composables/entityMark'
 import IntegrationMark from '@/components/IntegrationMark.vue'
@@ -8,10 +8,12 @@ import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
+import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import {
   connectors,
   loadConnectors,
   probeConnectors,
+  providerOf,
   removeConnector,
   testConnector,
 } from '@/stores/connectors'
@@ -57,6 +59,31 @@ const row = computed(() => connectors.rows.find((entry) => entry.id === id.value
    called that". Defaulting to the superset is what keeps those states reachable. */
 const isCliPage = computed(() => Boolean(row.value) && row.value.kind !== 'mcp')
 const isCli = computed(() => row.value?.kind === 'cli')
+/* An account-bearing connector: a `rest` row whose credential is one refresh
+   token per account, on this machine. It is the only kind with an Accounts card. */
+const isOAuth = computed(() => row.value?.kind === 'rest' && row.value?.oauth === true)
+
+/* ── the accounts card ─────────────────────────────────────────────────
+   The card is its own component (`ConnectorAccountsCard`); the page keeps only what
+   the page needs from it — the aggregate fact for the Definition rail. */
+const accountsCard = ref(null)
+const accountsFact = ref('no account connected')
+const onAccountsChanged = () => {
+  accountsFact.value = accountsCard.value?.accountsFact() || 'no account connected'
+}
+
+/* The provider a connector authenticates against, from the provider table in main
+   — never re-derived from the id here, where it would drift the moment a second
+   provider is added. */
+const provider = ref('google')
+watch(id, async () => {
+  try {
+    provider.value = await providerOf(id.value)
+  } catch {
+    provider.value = 'google'
+  }
+}, { immediate: true })
+
 /* Reading the roster is the only way to know the kind, so this is the one thing
    worth waiting for — but only while the answer is still coming. A read that
    failed must fall through: `loaded` never turns true on an error, and gating on
@@ -93,10 +120,15 @@ const fields = computed(() => {
     { k: 'kind', v: entry.kind },
     { k: 'scope', v: entry.scope === 'machine' ? 'machine — this computer only' : 'workspace — travels with the workspace' },
     { k: 'binding', v: entry.binding || '—' },
+  ]
+  /* An account-bearing connector binds through a consent, not a file, and its
+     account count is a fact of the connector, not of a folder (frame C). */
+  if (isOAuth.value) rows.push({ k: 'accounts', v: accountsFact.value })
+  rows.push(
     { k: 'mention', v: entry.mention || 'not offered in the composer' },
     { k: 'origin', v: builtIn.value ? 'built in — the app ships this definition' : 'added in this workspace' },
     { k: 'status', v: entry.statusDetail ? `${entry.status} · ${entry.statusDetail}` : entry.status },
-  ]
+  )
   return rows
 })
 
@@ -268,9 +300,28 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
            verb, so it is the only one that belongs on the right. -->
       <div class="cxn-page cxn-split">
         <div class="cxn-main">
+          <!-- The accounts card: one row per connected account, on the connector's
+               own page. A component of its own because every account-bearing
+               connector needs it and nothing about it is Gmail-specific. -->
+          <ConnectorAccountsCard
+            v-if="isOAuth"
+            ref="accountsCard"
+            :connector="id"
+            :provider="provider"
+            @changed="onAccountsChanged"
+          />
+
           <section v-if="work" class="cxn-card cxn-work">
             <h2>In the chat</h2>
-            <p class="cxn-work-lead">
+            <!-- The account-bearing four put the account first, and their `mention`
+                 is only the head (`@gmail:`), so the lead names the shape rather
+                 than leaving a person to guess it from the syntax row. -->
+            <p v-if="isOAuth" class="cxn-work-lead">
+              Type <code class="mono">{{ work.syntax }}</code> — the account comes first, as the
+              card lists it — and Entity resolves <strong>{{ work.resolves }}</strong> before the
+              turn starts.
+            </p>
+            <p v-else class="cxn-work-lead">
               Type <code class="mono">{{ work.mention }}</code> and Entity resolves
               <strong>{{ work.resolves }}</strong> before the turn starts.
             </p>
@@ -321,7 +372,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </p>
           </section>
 
-          <section class="cxn-card">
+          <section v-if="!isOAuth" class="cxn-card">
             <h2>{{ isCli ? 'Sign-in' : 'Endpoint and token' }}</h2>
             <template v-if="isCli">
               <p class="cxn-note">

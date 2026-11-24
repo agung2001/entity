@@ -19,18 +19,18 @@ import HarnessIcon from '@/components/HarnessIcon.vue'
 import IntegrationMark from '@/components/IntegrationMark.vue'
 import { hub } from '@/stores/hub'
 
-/* A built-in connector wears its own brand mark; anything else wears its initial.
-   The three marks were already in `IntegrationMark` — they went unrendered when
-   the page that used it was replaced, so this undoes a regression. `builtIn` comes
-   from the store, which is the only thing that knows what the app ships with. */
-const brandOf = (row) => String(row?.builtIn || '')
+/* A built-in connector wears its own brand mark, and so does an account-bearing
+   one whose id *is* its mark (`gmail`, `google-drive`, `youtube`, `x`); anything
+   else wears its initial. `builtIn` comes from the store, which is the only thing
+   that knows what the app ships with. */
+const brandOf = (row) => String(row?.builtIn || (row?.oauth ? row.id : ''))
 
 defineProps({
   row: { type: Object, required: true },
   busy: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['adopt', 'copy', 'uninstall'])
+const emit = defineEmits(['adopt', 'copy', 'uninstall', 'connect'])
 
 /* The name is the link, the row is not (`DESIGN.md`). One roster, one address:
    an MCP server and a cli/rest row open the same `connectors/:id` page, and the
@@ -53,8 +53,12 @@ const sourceOf = (row) => row?.binding || row?.statusDetail || ''
    string, so the two states cannot disagree about what the row says. */
 const metaOf = (row) => {
   const parts = [row?.kind, row?.scope]
-  if (!machineRow(row)) parts.push(sourceOf(row))
-  parts.push(row?.mention)
+  /* An account-bearing row says `oauth` where a token row names its binding: the
+     binding is the consent, not a file. The count is the last thing on the line,
+     because the roster still draws one row per connector (spec §3). */
+  if (row?.oauth) parts.push('oauth')
+  else if (!machineRow(row)) parts.push(sourceOf(row))
+  parts.push(row?.mention, row?.accountsLabel)
   return parts.filter(Boolean).join(' · ')
 }
 
@@ -134,7 +138,18 @@ const scopeTitle = (row) => {
         Adopt
       </button>
       <button
-        v-else-if="row.builtIn"
+        v-else-if="row.oauth && row.accountCount === 0"
+        class="btn btn-sm"
+        type="button"
+        :disabled="busy"
+        :aria-label="`Connect account, ${row.label}`"
+        title="Opens this connector's page, where the account is connected."
+        @click="emit('connect', row)"
+      >
+        Connect account
+      </button>
+      <button
+        v-else-if="row.builtIn || row.oauth"
         class="btn btn-sm btn-ghost"
         type="button"
         :disabled="busy"

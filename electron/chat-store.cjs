@@ -1859,6 +1859,26 @@ function resolveAttachments(record, list, baseDir = '') {
       })
       continue
     }
+    /* A picked connector object — a Gmail thread, a Drive file, a video, a post.
+       Its `value` is the provider's own id, so what travels to the turn is the
+       identity, not a search phrase. Nothing is fetched here: the turn's mention
+       resolver does the one direct read, which is where the credential lives. */
+    if (['gmail', 'drive', 'youtube', 'x'].includes(entry.kind)) {
+      const id = String(entry.value || '').trim()
+      if (!id) continue
+      const key = `${entry.kind}:${id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({
+        kind: entry.kind,
+        id,
+        name: String(entry.name || id).slice(0, 200),
+        detail: String(entry.detail || '').slice(0, 400),
+        url: String(entry.url || '').slice(0, 500),
+        account: String(entry.account || '').slice(0, 200),
+      })
+      continue
+    }
     if (entry.kind !== 'file') continue
     let file = ''
     if (entry.data) {
@@ -1909,6 +1929,24 @@ function attachmentsBlock(attachments) {
       ...connectors.map((entry) => {
         const bits = [entry.connectorKind, entry.binding].filter(Boolean).join(' · ')
         return `- ${entry.label}${bits ? ` (${bits})` : ''}${entry.work?.resolves ? ` — ${entry.work.resolves}` : ''}`
+      }),
+    )
+  }
+  /* The account-bearing four. The mention is what resolves them, so this block
+     only has to say *which* object each chip names and where it lives — the turn
+     can then cite or open it, and a person reading the transcript can check the
+     same link. */
+  const picked = (attachments || []).filter((entry) =>
+    ['gmail', 'drive', 'youtube', 'x'].includes(entry.kind),
+  )
+  if (picked.length) {
+    lines.push(
+      '',
+      'Attached connector objects (named by id — one direct read, not a search):',
+      ...picked.map((entry) => {
+        const mention = `@${entry.kind}:${entry.account ? `${String(entry.account).split('@')[0]}:` : 'all:'}id:${entry.id}`
+        const bits = [entry.detail].filter(Boolean).join(' · ')
+        return `- ${entry.name}${bits ? ` (${bits})` : ''} — ${mention}${entry.url ? ` · ${entry.url}` : ''}`
       }),
     )
   }

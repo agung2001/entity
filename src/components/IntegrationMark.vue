@@ -91,6 +91,76 @@ const showOrcaIcon = computed(() => !failed.value)
     />
   </svg>
 
+  <!-- the four account-bearing connectors: same source, same inlining as the two
+       above. `x` is the mono mark, so a row can mute it like GitHub's. -->
+  <svg
+    v-else-if="name === 'gmail'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 49.4 512 399.42"
+    aria-hidden="true"
+  >
+    <title>Gmail</title>
+    <g fill="none" fill-rule="evenodd">
+      <g fill-rule="nonzero">
+        <path fill="#4285f4" d="M34.91 448.818h81.454V251L0 163.727V413.91c0 19.287 15.622 34.91 34.91 34.91z" />
+        <path fill="#34a853" d="M395.636 448.818h81.455c19.287 0 34.909-15.622 34.909-34.909V163.727L395.636 251z" />
+        <path fill="#fbbc04" d="M395.636 99.727V251L512 163.727v-46.545c0-43.142-49.25-67.782-83.782-41.891z" />
+      </g>
+      <path fill="#ea4335" d="M116.364 251V99.727L256 204.455 395.636 99.727V251L256 355.727z" />
+      <path fill="#c5221f" fill-rule="nonzero" d="M0 117.182v46.545L116.364 251V99.727L83.782 75.291C49.25 49.4 0 74.04 0 117.18z" />
+    </g>
+  </svg>
+
+  <svg
+    v-else-if="name === 'google-drive'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 0 87.3 78"
+    aria-hidden="true"
+  >
+    <title>Google Drive</title>
+    <path fill="#0066da" d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z" />
+    <path fill="#00ac47" d="M43.65 25 29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44A9.06 9.06 0 0 0 0 53h27.5z" />
+    <path fill="#ea4335" d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L86.1 57.5c.8-1.4 1.2-2.95 1.2-4.5H59.798l5.852 11.5z" />
+    <path fill="#00832d" d="M43.65 25 57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" />
+    <path fill="#2684fc" d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" />
+    <path fill="#ffba00" d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" />
+  </svg>
+
+  <svg
+    v-else-if="name === 'youtube'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 0 256 180"
+    aria-hidden="true"
+  >
+    <title>YouTube</title>
+    <path
+      fill="red"
+      d="M250.346 28.075A32.18 32.18 0 0 0 227.69 5.418C207.824 0 127.87 0 127.87 0S47.912.164 28.046 5.582A32.18 32.18 0 0 0 5.39 28.24c-6.009 35.298-8.34 89.084.165 122.97a32.18 32.18 0 0 0 22.656 22.657c19.866 5.418 99.822 5.418 99.822 5.418s79.955 0 99.82-5.418a32.18 32.18 0 0 0 22.657-22.657c6.338-35.348 8.291-89.1-.164-123.134Z"
+    />
+    <path fill="#FFF" d="m102.421 128.06 66.328-38.418-66.328-38.418z" />
+  </svg>
+
+  <svg
+    v-else-if="name === 'x'"
+    class="int-mark-svg int-mark-mono"
+    :width="size"
+    :height="size"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <title>X</title>
+    <path
+      d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"
+    />
+  </svg>
+
   <!-- the offline fallback for Orca: a terminal glyph, so the row never shows a
        broken image and the label beside it stays the thing you read -->
   <svg

@@ -26,6 +26,8 @@ const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
+const accountStore = require('./oauth-accounts.cjs')
+const oauthSecrets = require('./oauth-secrets.cjs')
 const turnTimeout = require('./turn-timeout-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
@@ -319,6 +321,10 @@ function createRpc({
     /* One connector's shipped mention contract, for its own page. Read-only and
        cheap: the catalog is a literal in this process. */
     'connector.work': ({ id } = {}) => require('./connector-catalog.cjs').workOf(id),
+    /* The installable catalog, as both doors list it: the roster's Built-in pane
+       and the add sheet's card groups. One table, so a shipped connector cannot
+       be missing from one of the two. */
+    'connector.catalog': () => require('./connector-catalog.cjs').entries(),
     'connector.add': (args) => connectorStore.add(args),
     'connector.adopt': (args) => connectorStore.adopt(args),
     /* Install / uninstall a catalog entry. A definition only: a `cli` row is done
@@ -326,7 +332,64 @@ function createRpc({
     'connector.install': (args) => connectorStore.install(args),
     'connector.uninstall': (args) => connectorStore.uninstall(args),
     'connector.copy': (args) => connectorStore.copyFromMachine(args),
-    'connector.remove': (args) => connectorStore.remove(args),
+    'connector.remove': async (args) => {
+      const answer = connectorStore.remove(args)
+      /* An uninstalled connector takes its accounts with it. The removal above
+         already threw if the row was not this workspace's, so reaching here means
+         the row is gone. */
+      const id = args?.id
+      if (id) {
+        try {
+          accountStore.forget(id)
+          oauthSecrets.forgetConnector(id)
+        } catch {
+          /* the row is already gone; a stale account file must not undo that */
+        }
+      }
+      return answer
+    },
+
+    /* OAuth accounts: one row per connected mailbox, on this machine only.
+       `connect` is the real loopback consent round-trip, and it needs the one
+       capability only a local build has — opening the system browser. The shared
+       server passes no `openExternal`, so there the flow refuses honestly instead
+       of starting a listener nobody can reach. */
+    'connector.accounts': () => accountStore.list(),
+    'connector.account.remove': (args) => {
+      const answer = accountStore.remove(args)
+      /* The row and its token leave together; a token with no row is an orphan. */
+      try {
+        oauthSecrets.forgetToken({ connector: args?.connector, localpart: args?.account })
+      } catch {
+        /* the row is already gone */
+      }
+      return answer
+    },
+    'connector.account.test': (args) => accountStore.test(args),
+    'connector.account.connect': (args) => accountStore.connect({ ...args, openExternal }),
+    /* The access tiers a connector offers, and the one this workspace chose. A
+       page reads this to draw the selector; changing it writes the connector's
+       index row, so the choice travels with the workspace. */
+    'connector.account.tiers': (args) => accountStore.tierChoices(args?.connector, args?.workspace),
+    'connector.account.setTier': (args) => connectorStore.setTier(args),
+
+    /* The OAuth client itself. `status` is the only read the renderer gets, and it
+       reports a hint — never the id or the secret. */
+    'connector.oauth.status': (args) => oauthSecrets.status(args),
+    /* The provider's own name: the card's button and copy must not say "Google"
+       on an X page. */
+    'connector.oauth.label': (args) => oauthSecrets.labelOf(args?.provider),
+    /* Which provider a connector authenticates against. The table lives in
+       `oauth-providers.cjs`; the renderer must not re-derive it from an id. */
+    'connector.oauth.provider': (args) =>
+      require('./oauth-providers.cjs').providerOf(args?.connector),
+    'connector.oauth.setClient': (args) => {
+      const answer = oauthSecrets.setClient(args)
+      /* A refresh token issued to the previous client id is dead anyway. */
+      oauthSecrets.forgetProvider(args?.provider || 'google')
+      return answer
+    },
+    'connector.oauth.clearClient': (args) => oauthSecrets.clearClient(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
