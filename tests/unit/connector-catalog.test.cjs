@@ -122,3 +122,51 @@ test('every documented example uses the syntax it is documented under', () => {
     }
   }
 })
+
+/**
+ * The composer splits a typed mention into fields before it asks for suggestions,
+ * and its `FIELD_GROUPS` decides **where**. When that map and the resolver disagree,
+ * the menu shows nothing for a valid mention — twice now: `@gmail:muh` and
+ * `@youtube-studio:<acct>:<channel>:s`.
+ *
+ * Rejoining the fields would hide the bug (a rejoin always reconstructs the same
+ * string), so this asserts the thing that actually matters: **the resolver receives
+ * at most two fields**, and the second carries the rest intact. That is the
+ * contract every account-bearing preview branch is written against.
+ */
+test('every account-bearing kind is grouped so its preview sees two fields at most', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'components', 'SlashComposer.vue'), 'utf8')
+  const map = /const FIELD_GROUPS = \{([^}]*)\}/.exec(source)
+  assert.ok(map, 'FIELD_GROUPS is missing from the composer')
+
+  for (const [kind, entry] of Object.entries(catalog.CATALOG)) {
+    const resolver = entry.work?.resolver
+    if (!resolver) continue
+    /* Only the `<account>:<query>` shapes go through the grouping. */
+    const syntax = String(entry.work.syntax || '')
+    if (!syntax.includes('<account')) continue
+
+    /* The map is keyed by the **mention head**, not the connector id: `@drive:`
+       carries `google-drive`'s accounts, and the catalog keys it `google-drive`. */
+    const head = String(entry.work.mention || '').replace(/^@/, '').replace(/:$/, '')
+    const groups = Number(new RegExp(`'?${head}'?:\\s*(\\d+)`).exec(map[1])?.[1] ?? 0)
+    assert.equal(
+      groups,
+      2,
+      `@${head}: is a two-segment mention but FIELD_GROUPS gives it ${groups || 'no'} grouping, so the preview would see the query split across several fields`,
+    )
+
+    /* The second field must carry the whole tail — colons included — because the
+       preview branches split it themselves. A three-segment kind proves it. */
+    const typed =
+      kind === 'youtube-studio' ? 'account:channel:summary 7' : 'account:from:stripe'
+    const parts = typed.split(':')
+    const fields = [...parts.slice(0, groups - 1), parts.slice(groups - 1).join(':')]
+    assert.equal(fields.length, 2, `${kind}: expected two fields, got ${JSON.stringify(fields)}`)
+    assert.equal(
+      fields[1],
+      typed.slice(typed.indexOf(':') + 1),
+      `${kind}: the second field lost part of the query (${JSON.stringify(fields)})`,
+    )
+  }
+})

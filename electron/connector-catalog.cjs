@@ -151,6 +151,191 @@ const CATALOG = {
     },
   },
 
+  /* ── account-bearing connectors ────────────────────────────────────────
+     A `rest` row whose credential is one refresh token *per account*, on this
+     machine — not one token for the connector. So the catalog entry says
+     `oauth: true` and the sheet writes one row; the accounts themselves are
+     connected on the connector's page, which is the only surface that can carry
+     per-account verbs.
+
+     **No `work` block, deliberately.** Spec §10 open question 1 — does Gmail ship
+     a resolver, or is it context-only — is unanswered, so these four are
+     context-only: a `@gmail:` form with nothing behind it would be a promise the
+     parser cannot keep, and `workOf` returning nothing is what keeps the page on
+     its resolver-less "In the chat" card. When question 1 is answered, a
+     `work` block plus a `RESOLVERS` entry is the whole change.
+
+     `summary` is the one line the roster's Built-in pane and the add sheet's card
+     both print, so the catalog stays the only list of what the app ships. */
+  gmail: {
+    label: 'Gmail',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'Mail an agent may read.',
+    work: {
+      mention: '@gmail:',
+      resolves: 'messages in the mailbox you name, or in every connected mailbox with `all`',
+      syntax: '@gmail:<account|all>:<query>',
+      examples: ['@gmail:all:from:stripe', '@gmail:work:invoice march'],
+      returns: 'the matching messages — subject, sender, date, and which mailbox they came from',
+      resolver: 'gmail',
+      needs: 'one signed-in Gmail account on this machine',
+      page: '',
+      how: [
+        'The scope comes first, and it is required: `@gmail:work:` is one mailbox, `@gmail:all:` is every usable one.',
+        'The account is the localpart of the address, as the card shows it — `@gmail:avery:` for `avery@example.test`.',
+        'There is no implicit “no scope means all”: that is what made the first word ambiguous. Write `all` and mean it.',
+        'The query is the rest of that line, so it may hold spaces and Gmail\'s own operators (`from:`, `has:attachment`).',
+        'Wrap words in quotes to search them as one phrase — `"invoice march"` instead of two loose words. Picking a result inserts the phrase for you.',
+        'Put the instruction on the next line — the query stops at the newline, so it is not sent to Google as search text.',
+        'A word that is not one of your accounts is an error, not a search — so a typo cannot quietly read the wrong mailbox.',
+        'An account whose sign-in expired is skipped, not failed — the note names it.',
+      ],
+      samples: [
+        { code: '@gmail:avery:from:stripe', then: 'Stripe mail in that one mailbox' },
+        { code: '@gmail:all:invoice march', then: 'every connected mailbox, and the note says how many answered' },
+      ],
+    },
+  },
+  'google-drive': {
+    label: 'Google Drive',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'Files an agent may open.',
+    work: {
+      mention: '@drive:',
+      resolves: 'files in the Drive you name, or in every connected Drive with `all`',
+      syntax: '@drive:<account|all>:<query>',
+      examples: ['@drive:all:Q3 report', '@drive:work:budget'],
+      returns: 'the matching files — name, type, modified date, and a link',
+      resolver: 'drive',
+      needs: 'one signed-in Drive account on this machine',
+      page: '',
+      how: [
+        'The scope comes first and is required: `@drive:work:` is that account\'s Drive, `@drive:all:` is every connected one.',
+        'The query is the rest of the line, so it may hold spaces; the instruction goes on the next line.',
+        'Quotes make a phrase: `"Q3 report"` searches that sequence rather than the words separately.',
+        'Plain words are ANDed across file names and contents — `Q3 report bergstrom` needs all three.',
+        'A quoted phrase stays a phrase: `"Q3 report"` searches that sequence, not the two words separately.',
+        'Drive\'s own query language also works: `mimeType = \'application/pdf\'`, `modifiedTime > 2025-01-01`, `trashed = false`.',
+        'Folder names are matched as part of a file\'s path, not searched on their own.',
+        'A word that is not one of your accounts is an error, not a search.',
+        'A read scope only reaches files this app created; full access reaches the whole Drive.',
+      ],
+      samples: [
+        { code: '@drive:work:Q3 report', then: 'files needing all three words, in that one Drive' },
+        { code: '@drive:all:"Q3 report"', then: 'every connected Drive, matching that exact phrase' },
+      ],
+    },
+  },
+  youtube: {
+    label: 'YouTube',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'Channels and captions.',
+    work: {
+      mention: '@youtube:',
+      resolves: 'videos in the account you name, or a search as every connected account with `all`',
+      syntax: '@youtube:<account|all>:<query>',
+      examples: ['@youtube:studio:captions', '@youtube:all:deploy pipeline'],
+      returns: 'the matching videos — title, channel, published date, and a link',
+      resolver: 'youtube',
+      needs: 'one signed-in YouTube account on this machine',
+      page: '',
+      how: [
+        'The scope comes first and is required, and decides whose grant the call runs as.',
+        'That matters most for uploads and private videos, where the channel is part of the answer.',
+        '`@youtube:all:` searches as every connected account in turn.',
+        'A read tier lists videos; the write and full tiers are what allow uploading.',
+      ],
+      samples: [
+        { code: '@youtube:studio:captions', then: 'that account\'s own channel data' },
+        { code: '@youtube:studio:deploy pipeline', then: 'videos matching that phrase, as that account' },
+      ],
+    },
+  },
+  /* ── YouTube **Studio**: the channel's own data, not a public search ──────
+     A separate connector from `youtube` on purpose. `@youtube:` searches what
+     anyone can see; this reads the things only the owner can — views, watch time,
+     subscriber movement, traffic sources, revenue and the comments waiting for a
+     reply. They are different grants, so they are different cards.
+
+     Every answer is computed from the YouTube Data API and the Analytics API, and
+     the *shapes* follow what YouTube Studio puts on screen so the numbers are the
+     ones a person already trusts. */
+  'youtube-studio': {
+    label: 'YouTube Studio',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'Views, watch time, subscribers, revenue and comments from your own channel.',
+    work: {
+      mention: '@youtube-studio:',
+      resolves: "the channel's own analytics, catalogue or comment threads",
+      syntax: '@youtube-studio:<account>[:<channel>]:<what> [<days>]',
+      examples: [
+        '@youtube-studio:avery:summary 30',
+        '@youtube-studio:avery:main-channel:traffic 90',
+        '@youtube-studio:avery:unreplied',
+      ],
+      returns:
+        'the numbers Studio shows — views, watch time, subscribers, revenue — or the videos, comments and traffic sources behind them',
+      resolver: 'youtube-studio',
+      needs: 'a signed-in channel owner account with the analytics scope',
+      page: '',
+      how: [
+        'The account segment comes first, as every account-bearing connector does — it is the Google login.',
+        '**The channel comes next and is optional**, because one Google login can manage several channels (a brand account, a network, a client\'s). Leave it out when the account has only one.',
+        'The channel is recognised by not being a keyword, so `summary` is a thing to read and `main-channel` is a channel. A title, a slug of it, or the raw `UC…` id all work.',
+        'Then *what*: `summary`, `videos`, `video`, `traffic`, `subscribers`, `comments`, `unreplied`, `playlists`, `revenue` or `search`.',
+        'An optional trailing number is the window in days, defaulting to 28 — Studio\'s own default.',
+        '`summary` is the Studio overview: the four KPI tiles, their change against the previous equally long window, and the top videos.',
+        '`traffic` is the traffic-source breakdown; `subscribers` is net growth by day.',
+        '`unreplied` is the newest comments with no reply — the one thing Studio buries two clicks deep.',
+        'Revenue needs the monetary analytics scope; without it the row says so instead of printing zero.',
+        'Every window is computed against the report\'s own end date, never the clock, so an old answer cannot look fresh.',
+      ],
+      samples: [
+        { code: '@youtube-studio:avery:summary 28', then: 'the four Studio KPIs, their change, and the top videos' },
+        { code: '@youtube-studio:avery:main-channel:traffic 90', then: 'where those 90 days of views came from' },
+        { code: '@youtube-studio:avery:unreplied', then: 'the comments with no reply yet' },
+      ],
+    },
+  },
+
+  x: {
+    label: 'X',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'Posts and threads an agent may read.',
+    work: {
+      mention: '@x:',
+      resolves: 'recent posts matching a search, retweets excluded',
+      syntax: '@x:<account|all>:<query>',
+      examples: ['@x:main:from:stripe', '@x:all:release notes'],
+      returns: 'the matching posts — text, date, and a link',
+      resolver: 'x',
+      needs: 'an X developer app (OAuth 2.0, PKCE) and one signed-in account on this machine',
+      page: '',
+      how: [
+        'The scope comes first and is required, and decides whose grant the call runs as.',
+        'X signs in through its own OAuth 2.0 app with PKCE — a public client, so there is a client id and no secret.',
+        'X requires the callback URL to be registered exactly, and the port is picked per connection; if the sign-in is refused for a callback mismatch, that is why.',
+        'The search covers recent posts only — about the last seven days, not the full archive.',
+        'Retweets are excluded so the rows are original posts.',
+        '`@x:all:` runs the search as every connected account in turn.',
+      ],
+      samples: [
+        { code: '@x:main:from:stripe', then: 'recent posts, as that account' },
+        { code: '@x:main:release notes', then: 'recent posts matching both words' },
+      ],
+    },
+  },
+
   /* ── shipped parsers, not connectors ────────────────────────────────────
      `@artifact:` and `@thread:` name a workspace object, not a service: there is
      nothing to connect, no credential, no scope. They keep their resolvers and
@@ -192,14 +377,47 @@ const CATALOG = {
 }
 
 /** The resolver keys `mention-ref` actually answers. A catalog entry may not name anything else. */
-const RESOLVERS = new Set(['orca', 'github', 'youtrack', 'maka', 'artifact', 'thread'])
+const RESOLVERS = new Set([
+  'orca', 'github', 'youtrack', 'maka',
+  'gmail', 'drive', 'youtube', 'youtube-studio', 'x',
+  'artifact', 'thread',
+])
 
 /** The shipped definitions a person can install. Internal ones are not connectors. */
 const INSTALLABLE = Object.entries(CATALOG)
   .filter(([, entry]) => entry.kind !== 'internal')
   .map(([id]) => id)
 
+/** The ones that carry accounts rather than a single token. Derived from the table
+ *  above, never listed a second time: adding a fifth provider is one entry. */
+const ACCOUNT_BEARING = Object.entries(CATALOG)
+  .filter(([, entry]) => entry.oauth === true)
+  .map(([id]) => id)
+
 const entryOf = (id) => CATALOG[String(id || '').toLowerCase()] || null
+
+/**
+ * The installable catalog as the surfaces list it.
+ *
+ * One table, two doors: the roster's Built-in pane and the add sheet's card
+ * groups both read this, so a new provider is **one entry above** and appears in
+ * both places. The earlier shape had the sheet's cards written into a component,
+ * which is how a shipped connector goes missing from its own add sheet.
+ */
+function entries() {
+  return INSTALLABLE.map((id) => {
+    const entry = CATALOG[id]
+    return {
+      id,
+      label: entry.label,
+      kind: entry.kind,
+      oauth: entry.oauth === true,
+      summary: entry.summary || '',
+      /* what the catalog promises a mention does, or '' for a context-only entry */
+      resolves: entry.work?.resolves || '',
+    }
+  })
+}
 
 /** The `@` prefix a connector offers, or '' when it has no resolver (context only). */
 function mentionOf(id) {
@@ -226,10 +444,12 @@ function mentionKinds() {
     }))
 }
 
-/** The documentation block, rendered as it is on the connector's page. */
+/** The documentation block, rendered as it is on the connector's page. An entry
+ *  with no `work` block is context-only: it ships no mention, and `null` is how
+ *  the page knows to draw its resolver-less card instead of a syntax. */
 function workOf(id) {
   const entry = entryOf(id)
-  if (!entry) return null
+  if (!entry?.work) return null
   return {
     ...entry.work,
     how: entry.work.how || [],
@@ -247,7 +467,9 @@ module.exports = {
   RESOLVERS,
   IDS,
   INSTALLABLE,
+  ACCOUNT_BEARING,
   entryOf,
+  entries,
   mentionOf,
   mentionKinds,
   workOf,

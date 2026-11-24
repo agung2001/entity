@@ -39,6 +39,12 @@ const mcpRuntime = require('./mcp-runtime.cjs')
 const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 const catalog = require('./connector-catalog.cjs')
+const oauthAccounts = require('./oauth-accounts.cjs')
+/* The five account-bearing connectors live in `electron/connectors/`, one file
+   each, plus the plumbing they share. This file keeps the mention grammar and the
+   dispatch; it does not know what a message, a file or a video is. */
+const connectorRegistry = require('./connectors/index.cjs')
+const { accountScope, connectorOfKind, idScope, queryInsert } = require('./connectors/_shared.cjs')
 
 /* The heads the parser accepts, derived from the catalog rather than written a
    second time here. A connector that ships a resolver contributes its mention; one
@@ -51,6 +57,36 @@ const KINDS = new Set(
     .map((entry) => String(entry.name || '').replace(/^@/, '').replace(/:$/, ''))
     .filter(Boolean),
 )
+
+/* The mention head → resolver kind for the account-bearing connectors. Derived
+   from the catalog so a fifth provider is one entry there: `google-drive` is
+   written `@drive:` because that is what a person types. */
+const ACCOUNT_KIND = {
+  gmail: 'gmail',
+  drive: 'drive',
+  youtube: 'youtube',
+  'youtube-studio': 'youtube-studio',
+  x: 'x',
+}
+
+/* `connectorOfKind` now lives in `connectors/_shared.cjs`, with the rest of the
+   account plumbing — one definition, so the parser and the resolvers cannot
+   disagree about what `@drive:` reads. */
+const ACCOUNT_HEADS = new Set(Object.keys(ACCOUNT_KIND))
+/* A first word that is a search operator, not an account. Gmail's documented
+   keys, plus the shared X/Drive ones — a mention that reads `@gmail:from:x` means
+   the operator, because nobody names a mailbox "from". */
+const SEARCH_OPERATORS = new Set([
+  'from', 'to', 'cc', 'bcc', 'subject', 'has', 'is', 'in', 'after', 'before',
+  'older_than', 'newer_than', 'label', 'category', 'filename', 'size', 'larger',
+  'smaller', 'list', 'deliveredto', 'rfc822msgid', 'is', 'name', 'mimeType',
+  'modifiedTime', 'trashed', 'starred', 'sharedWithMe', 'owners',
+])
+/* the mention head for a resolver kind (`google-drive` → `drive`) */
+const headOfKind = (kind) => Object.keys(ACCOUNT_KIND).find((head) => ACCOUNT_KIND[head] === kind) || ''
+
+/* A resolver kind is one of the account-bearing four. */
+const isAccountKind = (kind) => Object.values(ACCOUNT_KIND).includes(kind)
 
 const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 12
@@ -383,6 +419,87 @@ function parseMention(raw) {
      `:` does not scope it. */
   if (head === 'github') return { kind: 'github', query: whole, local }
 
+  /* ── the account-bearing four: scope is explicit ─────────────────────────
+     These connectors are multi-account, so a mention must say **whose** mail:
+     `@gmail:work:from:stripe`, or `@gmail:all:from:stripe` for every usable
+     account. There is no implicit "no account means all" — that default was what
+     made the first word ambiguous (`from:` is a Gmail operator, `work` is an
+     account) and it silently read mailboxes nobody asked for.
+
+     **The query is the line.** A Gmail search legitimately holds spaces
+     (`invoice march`), and the mention segment otherwise runs to the end of the
+     message — so `@gmail:all:invoice march — summarise this` used to send the
+     instruction to Google as search text. Stopping at the newline gives both:
+     the query may hold spaces, and the sentence after it stays an instruction.
+     The same rule `@orca:<project>:<file>` already uses for a path.
+
+         @gmail:all:invoice march
+         summarise what is due
+         → query "invoice march", instruction "summarise what is due"
+
+     `all` is a reserved scope word, so an account can never be called `all`. */
+  if (ACCOUNT_HEADS.has(head)) {
+    const kind = ACCOUNT_KIND[head]
+    const scope = String(word || '')
+    /* No second colon: the scope is missing. A search with no scope is exactly the
+       ambiguity this shape exists to remove, so it is an error the resolver states
+       in the connector's own words rather than a guess. */
+    if (!structured) return { kind, account: '', query: whole, local, missingScope: true }
+    return {
+      kind,
+      account: scope,
+      /* the query ends at the newline, so a following sentence is an instruction */
+      query: tail.split('\n')[0].trim(),
+      local,
+      /* everything after the first line is the person's own words */
+      instruction: tail.split('\n').slice(1).join('\n').trim(),
+    }
+  }
+
+  if (head === 'maka') {
+    /* `@maka:plan` is a query; `@maka:one:plan` is a vault and a query */
+    return structured
+      ? { kind: 'maka', vault: word, query: tail, local }
+      : { kind: 'maka', vault: '', query: whole, local }
+  }
+
+  /* github: everything after the colon is the query — `owner/repo` names one
+     repository, anything else is a search. The slash is inside the word, so a
+     `:` does not scope it. */
+  if (head === 'github') return { kind: 'github', query: whole, local }
+
+  /* ── the account-bearing four: the account segment LEADS ─────────────────
+     These connectors are multi-account by design, so the account is part of the
+     address: `@gmail:work:from:stripe` is "the work mailbox, Gmail's from:
+     search". A mention with no account segment reads **every** usable account and
+     the turn says how many it read.
+
+     The rule that decides the first word, in order:
+
+     1. it names a localpart or address this machine actually has → the account;
+     2. it is a search operator (`from`, `has`, `subject`, `is`, …) → not an
+        account, so the whole rest is the query;
+     3. anything else **after a colon** is an account that does not exist — an
+        error, not a silent search. A mistyped account used to become a search for
+        the word itself and quietly return unrelated mail; that is the wrong default
+        for a multi-account connector, where the first word reads like the account.
+
+     Rule 3 is why the earlier shape was wrong: with one mailbox it looked right
+     and was wrong, and with six it would merge mail from accounts nobody meant. */
+  if (ACCOUNT_HEADS.has(head)) {
+    const kind = ACCOUNT_KIND[head]
+    const first = String(word || '')
+    const accounts = oauthAccounts.connectedAccounts(connectorOfKind(kind))
+    const isAccount = accounts.some((entry) => entry.localpart === first || entry.email === first)
+    if (isAccount) return { kind, account: first, query: tail, local }
+    if (SEARCH_OPERATORS.has(first.toLowerCase())) return { kind, account: '', query: whole, local }
+    /* A colon after an unknown word is a mistyped (or not-yet-connected) account.
+       With no accounts at all there is nothing to mistype against, so the mention
+       is left as a plain search and the resolver explains what to connect. */
+    if (structured && accounts.length) return { kind, account: first, query: tail, local, accountUnknown: true }
+    return { kind, account: '', query: whole, local }
+  }
+
   /* youtrack: a project key is short and upper-case; the rest is the query */
   if (structured) return { kind: 'youtrack', project: word, query: tail, local }
   if (/^[A-Z][A-Z0-9]{1,9}$/.test(word)) {
@@ -411,6 +528,12 @@ function tokenOf(segment) {
       : `${at}youtrack:${segment.query}`
   }
   if (segment.kind === 'github') return `${at}github:${segment.query}`
+  if (ACCOUNT_KIND[headOfKind(segment.kind)]) {
+    const head = headOfKind(segment.kind)
+    return segment.account
+      ? `${at}${head}:${segment.account}${segment.query ? `:${segment.query}` : ''}`
+      : `${at}${head}:${segment.query}`
+  }
   return segment.raw
 }
 
@@ -778,6 +901,20 @@ async function resolveGithub(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
   }))
 }
 
+/* ── the account-bearing connectors ───────────────────────────────────
+   Gmail, Drive, YouTube and X each answer from the account a mention *names*:
+   `@gmail:work:invoice` reads the `work` mailbox only, and `@gmail:invoice` reads
+   every usable account and says how many it read. An account whose token Google
+   rejected is skipped, not fatal — the same rule the card draws (a skipped account
+   is not a failed turn), so a mention never blocks a message over one dead consent.
+
+   The API shape is deliberately narrow: a search that returns rows the block can
+   print, and nothing that writes. A resolver attaches *context*; the entity still
+   does the reading with its own tools, which is what keeps a mention cheap and a
+   scope argument honest. */
+
+
+/** Gmail: `@gmail:[<account>:]<query>` — Gmail's own search syntax. */
 /* ── entity: a mini run, not a path ───────────────────────────────── */
 
 function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
@@ -1256,6 +1393,202 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     }
   }
 
+  /* The account-bearing four: the composer's live preview under `@gmail:…`.
+     `fields` is what the person has typed so far, colon-joined (`work:from:str`
+     arrives as ['work','from:str']), so the first field is a candidate account and
+     the rest is the query — the same rule `parseMention` applies, decided by
+     whether that word names a real account. */
+  if (isAccountKind(kind)) {
+    const head = headOfKind(kind)
+    const words = fields.filter(Boolean)
+    const accounts = oauthAccounts.connectedAccounts(connectorOfKind(kind))
+    /* Nothing typed past the head yet: offer `all` and every account, so the
+       scope is something you pick rather than something you have to know. */
+    if (!words.length || (words.length === 1 && !words[0])) {
+      const items = [
+        { insert: `@${head}:all:`, label: 'All connected accounts', detail: `${accounts.length} account${accounts.length === 1 ? '' : 's'}` },
+        ...accounts.map((entry) => ({
+          insert: `@${head}:${entry.localpart}:`,
+          label: entry.email,
+          detail: entry.status === 'connected' ? 'connected' : entry.status,
+        })),
+      ]
+      return { items, more: false }
+    }
+    /* One field, no second colon: the person is **typing the scope**. Offer the
+       accounts that match what they have so far, plus `all`. Returning nothing here
+       was the bug that made `@gmail:muh` look broken while a shorter prefix
+       "worked" — neither completed the account, because the whole branch was
+       treated as a half-typed query. */
+    /* ── YouTube Studio's second segment is **two things at once** ──────────
+       `@youtube-studio:<acct>:<channel>:<what>` — and the composer hands this
+       branch at most two words, because its field grouping joins everything after
+       the account with a colon: typing `…:acct:agung:s` arrives as
+       `['acct', 'agung:s']`. So the second field is split on its **first** colon
+       here: before it is the channel being typed, after it is the `what`.
+
+       The old code read `words[2]`, which never exists — that is why a channel
+       looked unselectable and then a `what` looked like a failed channel. */
+    if (kind === 'youtube-studio' && words.length) {
+      const scope = String(words[0] || '')
+      if (scope) {
+        const joined = String(words[1] ?? '')
+        const cut = joined.indexOf(':')
+        /* `channel` is what is typed before the colon (possibly nothing), `what`
+           is everything after it (possibly nothing). */
+        const channel = cut >= 0 ? joined.slice(0, cut) : joined
+        const what = cut >= 0 ? joined.slice(cut + 1) : ''
+        const hasWhatSegment = cut >= 0
+
+        const channels = await connectorRegistry.channelsFor(kind)(scope)
+        const chanNeedle = channel.toLowerCase()
+        const chanMatches = channels.filter(
+          (entry) =>
+            !chanNeedle ||
+            entry.slug.startsWith(chanNeedle) ||
+            entry.title.toLowerCase().startsWith(chanNeedle) ||
+            entry.id.toLowerCase().startsWith(chanNeedle),
+        )
+
+        /* A settled channel means the next word is a `what`: offer the vocabulary,
+           and never re-ask which channel. */
+        if (hasWhatSegment && (chanMatches.length || !chanNeedle)) {
+          const whatNeedle = what.toLowerCase()
+          const vocab = connectorRegistry.wordsFor(kind).filter((word) => word.startsWith(whatNeedle))
+          if (vocab.length) {
+            return {
+              items: vocab.slice(0, 8).map((word) => ({
+                insert: `@${head}:${scope}:${channel}:${word}`,
+                label: word,
+                detail: 'what to read',
+              })),
+              more: false,
+            }
+          }
+          /* A `what` that is not a keyword prefix, and a settled channel: the
+             resolver answers this better than a menu can. */
+          return { items: [], more: false }
+        }
+
+        /* No colon yet: could be a `what` being typed on an account whose channel
+           is unambiguous, or a channel name. A keyword prefix wins, because that is
+           the only thing the account offers by itself. */
+        const keywordHits = connectorRegistry.wordsFor(kind).filter((word) => word.startsWith(chanNeedle))
+        if (keywordHits.length && !chanNeedle.includes(':')) {
+          return {
+            items: keywordHits.slice(0, 8).map((word) => ({
+              insert: `@${head}:${scope}:${word}`,
+              label: word,
+              detail: 'what to read',
+            })),
+            more: false,
+          }
+        }
+
+        if (chanMatches.length) {
+          return {
+            items: chanMatches.map((entry) => ({
+              insert: `@${head}:${scope}:${entry.slug}:`,
+              label: entry.title,
+              detail: entry.id,
+            })),
+            more: false,
+          }
+        }
+
+        /* Neither a keyword nor a channel: say what exists, and offer nothing that
+           can be inserted. */
+        return {
+          items: [
+            {
+              insert: '',
+              label: `No channel or reader matches “${joined}”`,
+              detail: channels.length
+                ? `Channels: ${channels.map((entry) => entry.slug).join(', ')} · readers: ${connectorRegistry.wordsFor(kind).join(', ')}`
+                : `Readers: ${connectorRegistry.wordsFor(kind).join(', ')}`,
+            },
+          ],
+          more: false,
+        }
+      }
+    }
+
+    if (words.length < 2) {
+      const needle = String(words[0] || '').toLowerCase()
+      const items = []
+      if ('all'.startsWith(needle)) {
+        items.push({
+          insert: `@${head}:all:`,
+          label: 'All connected accounts',
+          detail: `${accounts.length} account${accounts.length === 1 ? '' : 's'}`,
+        })
+      }
+      for (const entry of accounts) {
+        if (entry.localpart.toLowerCase().startsWith(needle) || entry.email.toLowerCase().startsWith(needle)) {
+          items.push({
+            insert: `@${head}:${entry.localpart}:`,
+            label: entry.email,
+            detail: entry.status === 'connected' ? 'connected' : entry.status,
+          })
+        }
+      }
+      if (items.length) return { items, more: false }
+      /* Nothing matches and no account is even close: say what the shape is rather
+         than showing an empty menu with no explanation. */
+      return {
+        items: [
+          {
+            insert: `@${head}:`,
+            label: `No account matches “${words[0] || ''}”`,
+            detail: accounts.length
+              ? `This machine has: ${accounts.map((entry) => entry.localpart).join(', ')}`
+              : 'No account is connected yet — add one on the connector page',
+          },
+        ],
+        more: false,
+      }
+    }
+    const scope = words[0]
+    const query = words.slice(1).join(':')
+    const known =
+      scope === 'all' || accounts.some((entry) => entry.localpart === scope || entry.email === scope)
+    /* An unknown scope offers nothing: the turn would reject it, so the composer
+       must not preview a search it cannot run. */
+    if (!known) return { items: [], more: false }
+    if (!query.trim()) return { items: [], more: false }
+    const segment = { account: scope, query }
+    const resolver = connectorRegistry.resolverFor(kind)
+    /* A preview never throws the picker away: no account connected, or an API
+       that is off, simply offers nothing rather than an error under the cursor. */
+    let rows = []
+    try {
+      rows = await resolver(ctx, segment, { limit: offset + limit })
+    } catch {
+      return { items: [], more: false }
+    }
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        /* A result carries its id, so picking it names the *thing*, not a search
+           for its words: one direct read at turn time instead of a second query.
+           The readable label and link ride along for the chip and its dialog. */
+        /* Only a row whose id is a *target* becomes an `id:` mention. A comment
+           thread id is not — `@…:id:<comment>` would have nothing to read. */
+        insert: row.pick
+          ? `@${head}:${scope}:id:${row.pick}`
+          : row.id && !row.notPicked
+            ? `@${head}:${scope}:id:${row.id}`
+            : `@${head}:${scope}:${queryInsert(row.label.split(' — ')[0])}`,
+        label: row.label,
+        detail: row.detail,
+        /* what the chip shows and the dialog links to */
+        id: row.id || '',
+        url: row.url || '',
+        account: row.account || '',
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
   return { items: [], more: false }
 }
 
@@ -1524,6 +1857,44 @@ async function resolveOne(ctx, segment) {
       const items = await resolveGithub(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
       segment.mention = { kind: 'github', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`@github:${segment.query} matched no repository`)
+      return
+    }
+
+    if (isAccountKind(segment.kind)) {
+      const head = headOfKind(segment.kind)
+      /* A missing or mistyped scope is an error before the turn runs, not a search
+         that quietly answers something else. */
+      if (segment.missingScope) {
+        ctx.errors.push(
+          `@${head}: needs a scope. Write @${head}:all:<query> for every connected account, or @${head}:<account>:<query> for one.`,
+        )
+        return
+      }
+      if (segment.accountUnknown) {
+        accountScope(connectorOfKind(segment.kind), segment.account, head)
+      }
+      const resolve = connectorRegistry.resolverFor(segment.kind)
+      /* A report-shaped source sets its own ceiling: `summary` is four KPI tiles
+         plus a video list, and truncating it to three rows hides the numbers the
+         report exists for. Every other source keeps the shared cap. */
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling(segment.kind, MAX_PER_SOURCE),
+      })
+      segment.mention = {
+        kind: segment.kind,
+        raw: segment.raw,
+        token: tokenOf(segment),
+        items,
+        note: '',
+      }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found nothing`)
+      /* A dead account is skipped, not fatal — but the turn should say so rather
+         than silently reading fewer mailboxes than the person meant. */
+      if (segment.skipped?.length) {
+        ctx.notes.push(
+          `${tokenOf(segment)} skipped ${segment.skipped.join(', ')} — needs a sign-in`,
+        )
+      }
     }
   } catch (error) {
     const message = String(error?.message || error)

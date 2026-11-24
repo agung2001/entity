@@ -35,6 +35,18 @@ const { tilde } = require('./frontmatter.cjs')
 const FILE = 'connectors.json'
 const SCHEMA = 1
 
+/**
+ * Where a connector's credential lives, in the one sentence every surface prints.
+ *
+ * One rule, used by `add()` and `install()`: an `mcp` row's binding is the pool
+ * file, an account-bearing row's is a consent round-trip, and everything else is
+ * the binary on this machine. Written down once so the index and the page cannot
+ * disagree — the earlier version wrote the CLI sentence onto every non-mcp row and
+ * made the renderer compensate.
+ */
+const bindingFor = ({ kind, oauth }) =>
+  kind === 'mcp' ? 'mcp.json' : oauth === true ? 'oauth · loopback redirect' : 'the CLI on this machine'
+
 /* The initial a row wears, from its own label — one glyph, never a product logo. */
 const initialOf = (label) => {
   const first = String(label || '').replace(/[^A-Za-z0-9]/g, '')[0]
@@ -269,17 +281,33 @@ function list({ workspace } = {}) {
       id,
       label: entry.label || id,
       initial: initialOf(entry.label || id),
-      builtIn: '',
+      /* Provenance: a row this index says came from the catalog *is* a built-in,
+         and the page says so. Anything else stays a row a person added. */
+      builtIn: entry.installedFrom === 'catalog' && catalog.entryOf(id) ? id : '',
       kind: entry.kind,
       scope: 'workspace',
-      binding: entry.binding || (entry.kind === 'cli' ? 'the CLI on this machine' : 'this workspace'),
-      mention: '',
+      binding: entry.binding || bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
+      /* The shipped syntax, from the catalog — an installed row offers its mention
+         exactly when a resolver exists for it. */
+      mention: catalog.mentionOf(id) || entry.mention || '',
       work: catalog.workOf(id),
       /* A declared self-report is what makes it answerable at all. */
       binary: entry.binary || '',
       verify: entry.verify || null,
+      /* An index row that says `oauth` is the flag the roster reads; anything
+         else is a token row and stays absent, never `false`-shaped. */
+      oauth: entry.oauth === true,
+      tier: entry.tier || '',
       status: 'not probed',
-      statusDetail: entry.verify ? `${entry.binary || id} ${entry.verify.argv.join(' ')}` : 'no verify command',
+      /* An account-bearing row has no self-report to declare; its status line is
+         the account count, which the renderer fills from the account store. A
+         token row says which check it runs, or that it has none. */
+      statusDetail:
+        entry.oauth === true
+          ? 'no account connected'
+          : entry.verify
+            ? `${entry.binary || id} ${entry.verify.argv.join(' ')}`
+            : 'no verify command',
       managed: true,
       unmanaged: false,
       editable: true,
@@ -298,11 +326,14 @@ function list({ workspace } = {}) {
         builtIn: id,
         kind: entry.kind,
         scope: 'workspace',
-        binding: entry.kind === 'mcp' ? 'mcp.json' : 'the CLI on this machine',
-        mention: '',
+        /* a catalog entry that carries accounts says so, so the Built-in row can
+           brand it and land on the page the same way the sheet's card does */
+        oauth: entry.oauth === true,
+        binding: bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
+        mention: catalog.mentionOf(id) || '',
         work: catalog.workOf(id),
         status: 'not installed',
-        statusDetail: entry.work?.needs || '',
+        statusDetail: entry.work?.needs || entry.summary || '',
         managed: false,
         unmanaged: false,
         installed: false,
@@ -358,7 +389,7 @@ function definitionOf(server) {
  * `{ argv: ['auth', 'status'], okExit: 0 }` — an argv and the exit code that means
  * "usable", nothing more. A row without one is `not verified`, never `found`.
  */
-function add({ workspace, id, label, kind, scope, command, url, args, env, verify, binary } = {}) {
+function add({ workspace, id, label, kind, scope, command, url, args, env, verify, binary, oauth, tier } = {}) {
   const record = workspaces.open(workspace)
   const name = text(id || label, 60).replace(/[^A-Za-z0-9._-]+/g, '-')
   if (!name) throw new Error('A connector needs a name.')
@@ -405,10 +436,18 @@ function add({ workspace, id, label, kind, scope, command, url, args, env, verif
       createdAt: new Date().toISOString(),
       /* A row a page creates is a definition; a secret is never part of it. */
       adoptedFrom: scope === 'machine' ? 'machine' : '',
-      binding: kind === 'mcp' ? 'mcp.json' : 'the CLI on this machine',
+      binding: bindingFor({ kind, oauth }),
       /* Only a `cli` row has a self-report to declare. */
       binary: kind === 'cli' ? text(binary, 120) : '',
       verify: kind === 'cli' ? normaliseVerify(verify) : null,
+      /* An account-bearing connector is a `rest` row whose credential is a
+         refresh token, one per account, on this machine. The flag is what the
+         roster and the page switch on; it is not a secret and nothing else
+         about the row changes. */
+      oauth: oauth === true,
+      /* How much the accounts of this connector may do. Per workspace on purpose:
+         one workspace may want to send mail and another may not. */
+      tier: text(tier, 20) || '',
     },
   }
   writeIndex(record, index)
@@ -437,6 +476,11 @@ function install({ workspace, id } = {}) {
       label: entry.label,
       kind: entry.kind,
       scope: 'workspace',
+      /* installing an account-bearing connector installs the connector, not an
+         account: the row lands with 0 accounts and the page's empty state */
+      oauth: entry.oauth === true,
+      tier: '',
+      binding: bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
       mention: entry.work?.mention || '',
       createdAt: new Date().toISOString(),
       installedFrom: 'catalog',
@@ -540,6 +584,28 @@ function copyFromMachine({ workspace, id } = {}) {
   return adopt({ workspace, id: name })
 }
 
+/**
+ * Choose how much one connector's accounts may do.
+ *
+ * The tier belongs to the connector *in this workspace*, so it is written on the
+ * index row: two workspaces can ask the same mailbox for different access, and a
+ * person who lowers it to `read` sees that in the card before the next consent.
+ * Changing it does not touch a token — the next `Connect`/`Re-consent` asks for
+ * the new scope set, and an existing account keeps what it already has until it
+ * is re-consented.
+ */
+function setTier({ workspace, id, tier } = {}) {
+  const record = workspaces.open(workspace)
+  const name = text(id, 60)
+  const next = text(tier, 20)
+  if (!name) throw new Error('Which connector should change its access?')
+  const index = readIndex(record)
+  if (!index.rows[name]) throw new Error('That connector is not installed in this workspace.')
+  index.rows = { ...index.rows, [name]: { ...index.rows[name], tier: next } }
+  writeIndex(record, index)
+  return list({ workspace })
+}
+
 /** `Remove`: the index row and, for a workspace connector, its binding. */
 function remove({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
@@ -634,4 +700,5 @@ module.exports = {
   uninstall,
   copyFromMachine,
   remove,
+  setTier,
 }

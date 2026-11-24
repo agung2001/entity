@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { call } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
+import IntegrationMark from '@/components/IntegrationMark.vue'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, slashMenu } from '@/stores/hub'
 import { loadRemoteSkills, loadSkillNames, workspaces } from '@/stores/workspaces'
@@ -183,6 +184,11 @@ const searchState = ref({ key: '', more: false, error: '' })
 /* how many rows the menu paints; "Show more" either appends a fetched page or
    raises this, depending on whether the source has more to give */
 const visible = ref(PAGE)
+/* How many colon-separated fields a kind reads as separate values, with the rest
+   of the colon run belonging to the last one. `@gmail:all:from:stripe` is two:
+   the scope (`all`) and the query (`from:stripe`). Absent = every field separate,
+   which is right for `@file:` and `@thread:`. */
+const FIELD_GROUPS = { gmail: 2, drive: 2, youtube: 2, 'youtube-studio': 2, x: 2 }
 let searchTimer = null
 let searchSeq = 0
 let searchKind = ''
@@ -199,15 +205,38 @@ function typedMention() {
   if (!match) return null
   const kind = match[2].toLowerCase()
   if (!KIND_NAMES.value.has(kind)) return null
-  return { kind, fields: match[3] === '' ? [''] : match[3].split(':') }
+  /* The fields are colon-separated, but a mention kind may treat a *run* of them
+     as one value: `@gmail:work:from:stripe` is a scope and a Gmail query that
+     itself holds a colon. `fieldGroups` says how many leading fields are single
+     (`2` = scope, then the rest is one query), so the menu searches
+     `from:stripe` instead of `from` and `stripe` separately. */
+  const parts = match[3] === '' ? [''] : match[3].split(':')
+  const groups = FIELD_GROUPS[kind]
+  const fields =
+    !groups || parts.length <= groups ? parts : [...parts.slice(0, groups - 1), parts.slice(groups - 1).join(':')]
+  return { kind, fields }
 }
 
-function toMenuItems(items) {
+function toMenuItems(items, kind = '') {
   return (items || []).map((item) => ({
     name: item.insert,
     desc: item.label,
     title: item.detail || '',
     kind: 'result',
+    /* Only a **result row** becomes a chip, and only when it names a real object.
+       The scope-completion rows (`@drive:avery:`) carry no id: they are a
+       step on the way to one, so they insert text like every other prefix. Without
+       this check, Tab on a completion row created an empty chip. */
+    accountKind: ACCOUNT_KINDS[kind] && item.id ? kind : '',
+    id: item.id || '',
+    url: item.url || '',
+    account: item.account || '',
+    detail: item.detail || '',
+    /* The row's readable label — a filename, a subject, a video title. `name` is
+       the *insert token*, so a chip built from it showed `@drive:…:id:…` instead of
+       the file. The label is already in hand from the very query that produced this
+       row, so it is cached with the chip and no extra request is made. */
+    label: item.label || '',
   }))
 }
 
@@ -267,7 +296,7 @@ function scheduleSearch(kind, fields) {
       })
       if (seq !== searchSeq) return
       searchState.value = { key, more: Boolean(data?.more), error: '' }
-      menu.value = toMenuItems(data?.items)
+      menu.value = toMenuItems(data?.items, kind)
     } catch (error) {
       if (seq !== searchSeq) return
       searchState.value = { key, more: false, error: String(error?.message || error) }
@@ -294,7 +323,7 @@ async function loadMore() {
         dir: props.baseDir || '',
       })
       if (seq !== searchSeq) return
-      menu.value = [...menu.value, ...toMenuItems(data?.items)]
+      menu.value = [...menu.value, ...toMenuItems(data?.items, searchKind)]
       searchState.value = { ...searchState.value, more: Boolean(data?.more) }
       visible.value = menu.value.length
     } catch (error) {
@@ -361,12 +390,75 @@ function removeAttachment(index) {
   emit('update:attachments', props.attachments.filter((_, at) => at !== index))
 }
 
+/* The account-bearing connectors: a picked message/file/post is an attachment
+   whose `value` is the provider's own id, so the resolver does a direct read and
+   the chip can show — and link to — the real thing. */
+const ACCOUNT_KINDS = {
+  gmail: 'Gmail',
+  drive: 'Drive',
+  youtube: 'YouTube',
+  'youtube-studio': 'YouTube Studio',
+  x: 'X',
+}
+/* The chip's `kind` is the mention head (`drive`), but the brand mark's slug is the
+   connector id (`google-drive`). One map, so a Drive chip wears the Drive mark
+   instead of falling through to the generic terminal glyph. */
+const ACCOUNT_MARKS = {
+  gmail: 'gmail',
+  drive: 'google-drive',
+  youtube: 'youtube',
+  'youtube-studio': 'youtube-studio',
+  x: 'x',
+}
+const markOf = (entry) => ACCOUNT_MARKS[String(entry?.kind || '')] || String(entry?.kind || '')
+
 function attachmentLabel(entry) {
+  if (AccountKinds(entry)) return `${ACCOUNT_KINDS[entry.kind]} · ${accountName(entry)}`
   if (entry.kind === 'mcp') return `MCP · ${entry.name || entry.value}`
   if (entry.kind === 'connector') return `Connector · ${entry.name || entry.value}`
   const value = String(entry.value || entry.path || entry.name || '')
   return `File · ${value.split(/[\\/]/).pop() || 'file'}`
 }
+
+/** Is this chip a picked connector object (message, file, video, post)? */
+const AccountKinds = (entry) => Boolean(ACCOUNT_KINDS[String(entry?.kind || '')])
+
+/** What a person calls this object — a filename, a subject, a title. The id is the
+ *  identity, never the name; it is shown in the dialog where it belongs. */
+const accountName = (entry) =>
+  String(entry?.label || entry?.name || entry?.value || '').split(' — ')[0].trim() || String(entry?.value || '')
+
+/* What the dialog shows about a picked object. Everything here was already in hand
+   when the row was picked — the label, the account, the detail line and the link
+   all came back from the same query — so opening the dialog costs no request. */
+const attachmentFacts = computed(() => {
+  const entry = attachmentOpen.value
+  if (!entry) return []
+  const facts = []
+  /* The detail line is `<account> · <type> · <date>` from the resolver; the account
+     is already in the subtitle, so it is dropped here rather than repeated. */
+  const parts = String(entry.detail || '')
+    .split(' · ')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== entry.account)
+  if (parts.length === 1) facts.push({ k: 'detail', v: parts[0] })
+  else if (parts.length > 1) {
+    facts.push({ k: 'type', v: parts[0] })
+    facts.push({ k: 'modified', v: parts.slice(1).join(' · ') })
+  }
+  return facts
+})
+
+/* The detail dialog for a picked object. `Esc` is registered with the app's one
+   handler, never a local keydown (`DESIGN.md`). */
+const attachmentOpen = ref(null)
+const openAttachment = (entry) => {
+  attachmentOpen.value = entry
+}
+const closeAttachment = () => {
+  attachmentOpen.value = null
+}
+useDialogDismiss({ active: () => Boolean(attachmentOpen.value), close: closeAttachment })
 
 /** Move complete `@file:` / `@mcp:` / `@connector:` tokens below the prompt. */
 function harvestAttachments(final = false) {
@@ -569,7 +661,39 @@ function submit() {
 }
 
 function pick(cmd) {
-  if (!cmd) return
+  /* An informational row ("no channel matches …") carries no insert: accepting it
+     would write a broken mention or an empty chip. */
+  if (!cmd || !cmd.name) return
+  /* An account-bearing result is a *thing*, not a search: it becomes a chip whose
+     value is the provider id. That keeps the prompt clean, makes the mention one
+     direct read instead of a search, and gives the chip a real link to open. */
+  if (cmd.accountKind && cmd.id) {
+    addAttachment({
+      kind: cmd.accountKind,
+      /* `value` is the identity the turn reads; `label` is what a person sees. */
+      value: cmd.id,
+      label: cmd.label || cmd.id,
+      detail: cmd.detail || '',
+      url: cmd.url || '',
+      account: cmd.account || '',
+    })
+    /* The partial token the person typed is no longer needed: the chip carries it. */
+    const el2 = input.value
+    const textNow = draft.value
+    const caretNow = typeof el2?.selectionStart === 'number' ? el2.selectionStart : textNow.length
+    const beforeNow = textNow.slice(0, caretNow)
+    const partialNow = beforeNow.match(/(^|\s)[/@][^\s]*$/)
+    if (partialNow) {
+      const startNow = beforeNow.length - partialNow[0].trimStart().length
+      draft.value = `${textNow.slice(0, startNow)}${textNow.slice(caretNow)}`.trim()
+    }
+    settle()
+    nextTick(() => {
+      el2?.focus()
+      grow()
+    })
+    return
+  }
   const el = input.value
   const text = draft.value
   const caret = typeof el?.selectionStart === 'number' ? el.selectionStart : text.length
@@ -578,6 +702,9 @@ function pick(cmd) {
   const before = text.slice(0, caret)
   const partial = before.match(/(^|\s)[/@][^\s]*$/) || before.match(/(^|\s)@$/)
   const start = partial ? before.length - partial[0].trimStart().length : caret
+  /* A row that ends in `:` is a *prefix* being completed (`@gmail:avery:`),
+     so the caret goes right after the colon with no space — otherwise the space
+     closes the menu and the person has to retype the token they just picked. */
   const insert = cmd.name.endsWith(':') ? cmd.name : `${cmd.name} `
   const next = `${text.slice(0, start)}${insert}${text.slice(caret)}`
   draft.value = next
@@ -934,11 +1061,83 @@ defineExpose({ focus, addFiles, addDrop, restore })
         v-for="(entry, index) in attachments"
         :key="`${entry.kind}:${entry.value || entry.name}`"
         class="attach-chip cp-chip"
+        :data-account="AccountKinds(entry) ? '1' : '0'"
       >
-        <span class="nm">{{ attachmentLabel(entry) }}</span>
+        <!-- A picked message/file/post is a link to a detail dialog: the value is
+             the provider's id, so the dialog is the only way to see what it is.
+             Everything else keeps main's plain chip. -->
+        <button
+          v-if="AccountKinds(entry)"
+          class="nm cp-chip-open"
+          type="button"
+          :title="`${attachmentLabel(entry)} — view details`"
+          :aria-label="`What is ${attachmentLabel(entry)}`"
+          @click="openAttachment(entry)"
+        >
+          <span class="attach-chip-mark" aria-hidden="true">
+            <IntegrationMark :name="markOf(entry)" :size="14" />
+          </span>
+          <span class="attach-chip-name">{{ accountName(entry) }}</span>
+        </button>
+        <span v-else class="nm">{{ attachmentLabel(entry) }}</span>
         <button class="x" type="button" :aria-label="`Remove ${attachmentLabel(entry)}`" @click="removeAttachment(index)">×</button>
       </span>
     </div>
+
+    <Teleport to="body">
+      <div v-if="attachmentOpen" class="cxn-scrim" @click.self="closeAttachment">
+        <div class="cxn-dialog" role="dialog" aria-labelledby="attach-dialog-h">
+          <!-- The object first, in the shape a person knows: its mark, its name, and
+               what kind of thing it is. The id is the last row, not the headline. -->
+          <div class="attach-detail-head">
+            <span class="attach-detail-mark" aria-hidden="true">
+              <IntegrationMark :name="markOf(attachmentOpen)" :size="22" />
+            </span>
+            <div class="attach-detail-id">
+              <h2 id="attach-dialog-h">{{ accountName(attachmentOpen) }}</h2>
+              <p class="sub">
+                {{ ACCOUNT_KINDS[attachmentOpen.kind] }}
+                <template v-if="attachmentOpen.account">
+                  · {{ attachmentOpen.account }}
+                </template>
+              </p>
+            </div>
+          </div>
+
+          <dl v-if="attachmentFacts.length" class="cxn-facts">
+            <template v-for="fact in attachmentFacts" :key="fact.k">
+              <dt>{{ fact.k }}</dt>
+              <dd :title="fact.v">{{ fact.v }}</dd>
+            </template>
+          </dl>
+
+          <details class="attach-detail-technical">
+            <summary>Identifier</summary>
+            <p>
+              <code class="mono">{{ attachmentOpen.value }}</code>
+            </p>
+            <p class="acct-note">
+              The mention names this one exact object, so the turn reads it directly
+              instead of searching for words.
+            </p>
+          </details>
+
+          <div class="cxn-acts">
+            <a
+              v-if="attachmentOpen.url"
+              class="btn btn-sm btn-primary"
+              :href="attachmentOpen.url"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Open in {{ ACCOUNT_KINDS[attachmentOpen.kind] }}
+            </a>
+            <span class="spacer"></span>
+            <button class="btn btn-sm" type="button" @click="closeAttachment">Close</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <input
       ref="fileInput"
@@ -1034,15 +1233,64 @@ defineExpose({ focus, addFiles, addDrop, restore })
   width: 14px;
   height: 14px;
 }
-/* The chip's geometry is the dock's (`.cp-chip`, `chat.css`); only where the
-   row hangs belongs to the composer. */
-.attach-chips--dock {
-  /* aligned with the field's own text edge, not with the card's */
-  padding: 1px 10px 6px 11px;
-}
+/* The chip's geometry, its `.nm` label and its `.x` remove button are the dock's
+   (`chat.css`). What is added here is only the *account-bearing* part: a picked
+   message, file, video or post is an object you can inspect.
+   Where the row hangs still belongs to the composer: aligned to the field's own
+   text edge, and clear of the card's border at the bottom. */
 .attach-chips {
   display: flex;
   flex-wrap: wrap;
+  gap: 4px;
+}
+.attach-chips--dock {
+  /* The field's own text edge (`10px 11px`), so a chip starts where the typed
+     line starts. The bottom is a step more than the rail's 4px because this is
+     the card's last row: with a chip flush to the border the scroll bar and the
+     corner radius both read as clipped. */
+  padding: 2px 10px 9px 11px;
+}
+.cp-chip-open {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.cp-chip-open:hover .attach-chip-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* The mark is the provider, so two chips are told apart at a glance. */
+.attach-chip-mark {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.attach-chip-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.attach-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A picked object wears the body ink rather than the muted file-chip grey: it is
+   something you can open, not a path you attached. It also gets more of the row
+   than the dock's 240px file cap, because its name is a real title — a YouTube
+   video title truncated to 240px is a stub you cannot tell apart from another. */
+.cp-chip[data-account='1'] {
+  color: var(--ink-2);
+  max-width: min(100%, 420px);
 }
 </style>

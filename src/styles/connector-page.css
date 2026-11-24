@@ -102,6 +102,24 @@
   font-weight: 600;
   letter-spacing: -0.015em;
 }
+/* A card head is a row: title, count, spacer, the card's one verb. */
+.cxn-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.cxn-card-head h2 {
+  margin: 0;
+}
+.cxn-card-head .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.cxn-card-head .spacer {
+  flex: 1;
+}
 .cxn-facts {
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr);
@@ -240,3 +258,324 @@
 }
 
 
+
+/* ── the accounts card: the roster's grammar, four tracks ────────────────
+   Account · Scopes · Status · Action. It lives on the connector's page, not in
+   the add sheet, because an account belongs to exactly one connector and the
+   sheet must stay one card per connector however many connectors ship. The row
+   anatomy is the roster's (`ct-who`, `ct-status`, `ct-act`), so the dots, the
+   words and the 58px rhythm are the ones the app already draws. */
+
+.acct {
+  /* Status is a two-line sentence (`needs sign-in` + a detail), so it takes 108
+     where the roster's status takes 46. */
+  --acct-tracks: minmax(0, 1.35fr) minmax(0, 1.15fr) 108px 96px;
+  --acct-gap: 12px;
+}
+/* One template for the head and every row, the roster's own rule. */
+.acct-cols,
+.acct-row {
+  display: grid;
+  grid-template-columns: var(--acct-tracks);
+  gap: var(--acct-gap);
+  align-items: center;
+}
+.acct-cols {
+  padding: 7px 14px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.acct-cols > :last-child {
+  text-align: right;
+}
+.acct-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--bg);
+}
+.acct-row {
+  padding: 0 14px;
+  min-height: 58px;
+  border-top: 1px solid var(--border);
+}
+.acct-row:first-child {
+  border-top: 0;
+}
+.acct-row:hover {
+  background: var(--surface);
+}
+/* The dead row is the only tinted one, and the only one whose verb is primary:
+   colour is never the only signal, but it is a second one (§8). */
+.acct-row[data-s='fail'] {
+  background: color-mix(in oklab, var(--danger) 5%, var(--bg));
+}
+.acct-row[data-s='fail']:hover {
+  background: color-mix(in oklab, var(--danger) 9%, var(--bg));
+}
+.acct-row.is-skel {
+  pointer-events: none;
+}
+/* The scopes cell: verbatim Google ids in mono, never translated. A scope the
+   account never consented reads `<id> not granted` in `--danger`, because that
+   is the string the re-consent button names. */
+.acct-scopes {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.acct-scopes span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-scopes .miss {
+  color: var(--danger);
+}
+.acct-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.acct-foot .spacer {
+  flex: 1;
+}
+.acct-empty {
+  padding: 18px 14px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.acct-empty p {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  max-width: 66ch;
+}
+.acct-empty p.acct-empty-hint {
+  color: var(--muted);
+}
+/* The loading skeleton repeats the real tracks on the app's own `--skel`, so the
+   card does not jump when the rows arrive. */
+.acct-skel {
+  display: block;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+}
+.acct-row .ct-mk.acct-skel {
+  width: 26px;
+  height: 26px;
+}
+.acct-skel-line {
+  height: 9px;
+}
+
+/* ── the accounts table's own collapse points ─────────────────────────────
+   The page is already the `cxn` container (`.cxn-page`), so these reuse it
+   rather than declaring a second query box. */
+
+@container cxn (max-width: 559.99px) {
+  /* Scopes go, and the head drops the same label in the same rule — otherwise
+     the remaining labels sit over the wrong columns. */
+  .acct {
+    --acct-tracks: minmax(0, 1.4fr) 104px 96px;
+  }
+  .acct-scopes,
+  .acct-cols > [data-col='scopes'] {
+    display: none;
+  }
+}
+
+@container cxn (max-width: 470px) {
+  /* Two lines: identity + action, then status spanning both. The row had 58px
+     for free in one line, so the verb becomes a literal 44px target. */
+  .acct-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    row-gap: 2px;
+    min-height: 0;
+    padding: 10px 12px;
+  }
+  .acct-row .ct-who {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .acct-row .ct-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .acct-row .ct-act {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .acct-row .ct-act .btn {
+    height: 44px;
+    padding: 0 12px;
+  }
+  /* the head keeps `Account` and `Action`; the status cells moved to a second
+     line, so their label goes too — and the head takes the row's two tracks, or
+     its labels sit over the wrong columns. */
+  .acct-cols {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 7px 12px;
+  }
+  .acct-cols > [role='columnheader']:nth-child(3) {
+    display: none;
+  }
+  .acct-foot {
+    flex-wrap: wrap;
+  }
+}
+
+/* the skeleton's own widths, so the template carries no layout */
+.acct-skel-wide {
+  width: 132px;
+}
+.acct-skel-narrow {
+  width: 86px;
+}
+.acct-skel-scope {
+  width: 78px;
+}
+.acct-retry {
+  margin-top: 9px;
+}
+
+/* ── the OAuth client, asked for once per machine ──────────────────────────
+   It is not a design surface: a sentence, two fields and one action. The only
+   reason it is a card section rather than a dialog is that it is the step before
+   the card's own primary, and a person should see what the account will run under
+   while they connect it. */
+.acct-client {
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.acct-client-lead {
+  margin: 0 0 9px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  max-width: 70ch;
+}
+.acct-client-lead a {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.acct-client .cxn-fields {
+  margin-bottom: 9px;
+}
+.acct-client-acts {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.acct-client-acts .spacer {
+  flex: 1;
+}
+.acct-client-note {
+  margin: 0 0 10px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+
+/* ── the access tiers ──────────────────────────────────────────────────────
+   Three cards, cumulative, the chosen one marked. This is the answer to "I do not
+   want to hand an app everything", so the detail line is what each tier can and
+   cannot do — the scope ids underneath are evidence, not the headline. */
+.acct-tiers {
+  margin-bottom: 10px;
+}
+.acct-tiers-lead {
+  margin: 0 0 7px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.acct-tiers-now {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.acct-tiers-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.acct-tier {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 130ms ease, background 130ms ease;
+}
+.acct-tier:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.acct-tier[aria-checked='true'] {
+  border-color: var(--field-edge);
+  background: var(--surface);
+}
+.acct-tier[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.acct-tier-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.acct-tier-nm {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-tier-on {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.acct-tier-detail {
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.acct-tier-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+@container cxn (max-width: 470px) {
+  .acct-tiers-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -405,21 +405,43 @@ a.ct-who:hover .ct-name {
 
 /* ── the kind picker ──────────────────────────────────────────────────── */
 
+/* Two groups, because "sign in to an account" and "bring your own" are different
+   questions and only the first one grows with every connector the app ships. */
+.kind-groups {
+  display: grid;
+  gap: 14px;
+  margin-top: 10px;
+}
+.kind-group-label {
+  display: block;
+  margin: 0 0 7px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kind-group-label .n {
+  color: var(--muted);
+}
 .kinds {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 .kind {
   text-align: left;
-  padding: 14px;
+  /* 11px, not 14: the old card spent a row of the dialog on padding */
+  padding: 11px 12px;
+  min-height: 44px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg);
   display: grid;
-  gap: 4px;
+  gap: 2px;
+  align-content: start;
   cursor: pointer;
+  transition: border-color 130ms ease, background 130ms ease;
 }
 .kind:hover {
   border-color: var(--border-strong);
@@ -429,30 +451,51 @@ a.ct-who:hover .ct-name {
   border-color: var(--field-edge);
   background: var(--surface);
 }
+/* A door into another pane, not a fifth kind: it reads as the edge of the list. */
+.kind-more {
+  border-style: dashed;
+  color: var(--muted);
+}
 .kind .kn {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-family: var(--font);
   font-size: var(--fs-small);
   font-weight: 600;
 }
+.kind .kn > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kind .ki {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  flex: none;
   border-radius: var(--r-xs);
   background: var(--surface-2);
   color: var(--ink-2);
 }
 .kind .ki svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
 }
-.kind p,
+/* the brand mark keeps the size it was handed; only the drawn glyphs shrink */
+.kind .ki .int-mark-svg {
+  width: 22px;
+  height: 22px;
+}
+.kind p {
+  margin: 2px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
 .kind .where {
-  margin-top: 4px;
+  margin: 3px 0 0;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
@@ -490,6 +533,11 @@ a.ct-who:hover .ct-name {
   font-size: var(--fs-h6);
   font-weight: 600;
   margin: 0;
+}
+/* The kind picker only: a two-up card grid clips `credential → refresh token,
+   this machine` at 520px. The field step stays at the narrow width. */
+.cxn-dialog--wide {
+  width: min(560px, 100%);
 }
 .cxn-dialog .sub {
   margin: 0;
@@ -589,6 +637,17 @@ a.ct-who:hover .ct-name {
     flex-wrap: wrap;
   }
   .kinds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The sheet is teleported to `<body>`, so the `cxn` container above never reaches
+   it: its own collapse is measured against the window (`vw`), which is what the
+   dialog itself is sized from. `<560` is the container's own step, so the card
+   grid folds at the same measure wherever it is mounted. One column keeps the
+   OAuth group first — that is the DOM order. */
+@media (max-width: 560px) {
+  .cxn-scrim .kinds {
     grid-template-columns: minmax(0, 1fr);
   }
 }
