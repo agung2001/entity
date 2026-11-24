@@ -492,9 +492,10 @@ test('voice mode is a dismissible full dialog wired into the composer', () => {
 
   assert.match(chat, /<VoiceChatDialog\b/, 'the chat page owns the voice dialog')
   assert.match(chat, /import VoiceChatDialog from/, 'the dialog is mounted by ChatView')
-  /* the button sits at the right edge of the composer context row, before help */
-  const voiceAt = chat.indexOf('class="compose-voice"')
-  const helpAt = chat.indexOf('class="compose-help"')
+  /* the button closes the composer context row, immediately before help. The
+     read is a prefix so an extra class (`cp-icon`) does not break it. */
+  const voiceAt = chat.indexOf('class="compose-voice')
+  const helpAt = chat.indexOf('class="compose-help')
   assert.ok(voiceAt > 0 && helpAt > voiceAt, 'the voice button must precede Composer help')
 
   assert.match(dialog, /useDialogDismiss\s*\(/, 'Esc must close the voice dialog')
@@ -676,15 +677,12 @@ test('the chat header floats over the thread with three zones of glass', () => {
   assert.match(header[0], /type="search"/, 'the thread needs a visible search field')
   assert.doesNotMatch(header[0], /cp-stats|cp-floatstats/, 'the totals do not belong in the bar')
 
-  /* the totals close the composer's context row, before voice and help */
-  const statsAt = view.indexOf('class="cp-stats"')
-  const voiceAt = view.indexOf('class="compose-voice"')
-  const helpAt = view.indexOf('class="compose-help"')
-  assert.ok(statsAt > 0, 'the queries/responses totals are missing')
-  assert.ok(voiceAt > statsAt && helpAt > voiceAt, 'the totals must precede voice and help')
-  const stats = css.match(/\n\.cp-stats \{[^}]*\}/)
-  assert.ok(stats, '.cp-stats has no base rule')
-  assert.match(stats[0], /margin-left:\s*auto/, 'the totals do not close the row')
+  /* the composer's head carries the controls for what this turn runs against
+     and nothing that counts: the queries/responses totals left with the dock
+     rebuild, and they are not coming back to the header either */
+  assert.doesNotMatch(view, /cp-stats/, 'the queries/responses totals do not belong in the dock')
+  const dock = css.match(/\n\.cp-stats \{[^}]*\}/)
+  assert.equal(dock, null, '.cp-stats still has a rule')
   assert.doesNotMatch(css, /\.cp-floatstats/, 'the floating pill came back')
 })
 

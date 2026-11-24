@@ -1188,3 +1188,45 @@ test('a readable job never costs a classifier call', async () => {
   assert.equal(out.mentions.length, 1)
   assert.equal(out.mentions[0].job, 'redesign the MCP page')
 })
+
+test('the run’s own record names its worktree, not the ticket key', async () => {
+  /* One fan-out shares a cwd and a ticket key, so the key alone paints the same
+     word on every card. The record names the path this run actually worked in;
+     Orca's list says which of those still exists. */
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-wt-'))
+  const bin = path.join(root, 'bin')
+  const mine = path.join(root, 'orca', 'workspaces', 'entity', 'entity-53-card')
+  const other = path.join(root, 'orca', 'workspaces', 'entity', 'entity-53-newer')
+  fs.mkdirSync(mine, { recursive: true })
+  fs.mkdirSync(other, { recursive: true })
+  fs.mkdirSync(bin, { recursive: true })
+  const worktrees = [
+    { path: mine, branch: 'refs/heads/entity-53-card', lastActivityAt: 1, repoId: 'r1' },
+    { path: other, branch: 'refs/heads/entity-53-newer', lastActivityAt: 999, repoId: 'r1' },
+  ]
+  fs.writeFileSync(
+    path.join(bin, 'orca'),
+    `#!/bin/sh\ncase "$1 $2" in\n  "worktree list") echo '${JSON.stringify({ result: { worktrees } })}' ;;\n  *) echo '{"result":{"repos":[]}}' ;;\nesac\n`,
+    { mode: 0o755 },
+  )
+  /* git status is only ever run against a path Orca returned, and a clean
+     workspace says nothing at all. */
+  fs.writeFileSync(path.join(bin, 'git'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  const previous = { orca: process.env.ENTITY_ORCA_BIN, path: process.env.PATH }
+  process.env.ENTITY_ORCA_BIN = path.join(bin, 'orca')
+  process.env.PATH = `${bin}${path.delimiter}${previous.path || ''}`
+  try {
+    const state = await mention.worktreeState({
+      cwd: os.tmpdir(),
+      ticket: 'ENTITY-53',
+      record: { steps: [], answer: `worked in ${mine} and merged it` },
+    })
+    assert.equal(state.path, mine, 'the ticket key picked a different worktree')
+    assert.equal(state.name, 'entity-53-card')
+    assert.equal(state.state, 'clean')
+  } finally {
+    if (previous.orca === undefined) delete process.env.ENTITY_ORCA_BIN
+    else process.env.ENTITY_ORCA_BIN = previous.orca
+    process.env.PATH = previous.path
+  }
+})

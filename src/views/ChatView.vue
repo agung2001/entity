@@ -165,6 +165,10 @@ const titleEditing = ref(false)
 const titleDraft = ref('')
 const titleInput = ref(null)
 const attachments = ref([])
+/* The last failed send, as the store worded it. The composer draws the band and
+   owns its dismissal; the view only knows whether a send just failed, because
+   that is the moment the draft comes back. */
+const sendError = ref('')
 /* The composer's text is the thread's, not the view's: switching threads swaps
    it, and the one you left keeps what you had typed. */
 const draft = computed({
@@ -271,14 +275,6 @@ const activeHit = computed(() => {
   const list = hitIndices.value
   if (!list.length) return -1
   return list[Math.min(hitAt.value, list.length - 1)]
-})
-
-const stats = computed(() => {
-  const list = thread.value?.messages || []
-  return {
-    queries: list.filter((message) => message.who === 'me').length,
-    responses: list.filter((message) => message.who === 'agent').length,
-  }
 })
 
 function jumpToHit() {
@@ -769,6 +765,7 @@ async function send(text) {
   if (interceptDeletion(text)) return
   playSfx('send')
   playReaction(hub.workspace, thread.value?.entity)
+  sendError.value = ''
   try {
     const updated = await chatSend(text, {
       attachments: attachments.value,
@@ -777,6 +774,16 @@ async function send(text) {
     /* A failed turn keeps the question in the transcript with Retry, so the box
        is not restored: a second copy of the same words would read as a draft. */
     if (updated) attachments.value = []
+    /* The store swallows its own rejection, so a failed send is a falsy result
+       plus `hub.chat.error` — never a throw. The band says what it said. */
+    else if (hub.chat.error) {
+      sendError.value = hub.chat.error
+      /* ponytail: the composer cleared itself when it emitted `send`, so this
+         restores the words only when nothing else has been typed since. A draft
+         already in progress wins; the upgrade path is a per-send snapshot the
+         composer hands back instead of a shared read. */
+      if (!draft.value) composer.value?.restore(text)
+    }
   } catch (error) {
     playSfx('error')
     playReaction(hub.workspace, thread.value?.entity)
@@ -1224,6 +1231,9 @@ watch(
     threadQuery.value = ''
     titleEditing.value = false
     titleDraft.value = ''
+    /* A failure belongs to the turn it happened in: the band must not follow
+       the reader into another conversation. */
+    sendError.value = ''
   },
 )
 
@@ -1456,6 +1466,7 @@ watch(
               </div>
               <div class="cp-picks" role="group" aria-label="Thread context">
                 <PickMenu
+                  class="cp-pick"
                   head="Machine"
                   icons="machine"
                   :options="contextOptions.machine()"
@@ -1463,8 +1474,9 @@ watch(
                   :disabled="contextLocked"
                   @update:model-value="setThreadContext('machine', $event)"
                 />
+                <span class="cp-sep" aria-hidden="true"></span>
                 <button
-                  class="pickbtn cp-ctx-btn"
+                  class="pickbtn cp-ctx-btn cp-pick"
                   type="button"
                   aria-haspopup="dialog"
                   :aria-expanded="harnessOpen ? 'true' : 'false'"
@@ -1478,7 +1490,7 @@ watch(
                   </svg>
                 </button>
                 <button
-                  class="pickbtn cp-ctx-btn"
+                  class="pickbtn cp-ctx-btn cp-pick"
                   type="button"
                   aria-haspopup="dialog"
                   :aria-expanded="mcpOpen ? 'true' : 'false'"
@@ -1491,6 +1503,7 @@ watch(
                     <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
                   </svg>
                 </button>
+                <span class="cp-grow"></span>
                 <span v-if="ctx.dir" class="cp-dir" :title="ctx.dir">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                     <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
@@ -1498,13 +1511,8 @@ watch(
                   </svg>
                   <span class="nm">{{ baseDirName }}</span>
                 </span>
-                <span class="cp-stats" aria-label="Thread totals">
-                  <span><b>{{ stats.queries }}</b> queries</span>
-                  <i aria-hidden="true"></i>
-                  <span><b>{{ stats.responses }}</b> responses</span>
-                </span>
                 <button
-                  class="compose-voice"
+                  class="compose-voice cp-icon"
                   type="button"
                   :data-on="voiceOpen ? '1' : '0'"
                   :title="`Voice mode (${voiceShortcut})`"
@@ -1519,7 +1527,7 @@ watch(
                   </svg>
                 </button>
                 <button
-                  class="compose-help"
+                  class="compose-help cp-icon"
                   type="button"
                   title="Composer help"
                   aria-label="Composer help"
@@ -1546,11 +1554,13 @@ watch(
                   :disabled="sending"
                   :sending="sending"
                   :stopping="stopping"
+                  :send-error="sendError"
                   v-model:attachments="attachments"
                   v-model:draft="draft"
                   @send="send"
                   @stop="stopTurn"
                   @enhance="enhanceOpen = true"
+                  @dismiss="sendError = ''"
                 />
               </div>
             </div>

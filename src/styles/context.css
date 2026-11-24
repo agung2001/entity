@@ -555,16 +555,22 @@
 .go:active {
   transform: translateY(1px);
 }
-.go[disabled] {
-  opacity: 0.35;
+/* A disabled send answers with a shape, not an opacity: `--muted` on
+   `--surface-2` is 4.53:1, so the arrow stays readable while it says stop. The
+   stop button keeps the danger fill and only fades — it is waiting, not
+   unavailable. */
+.go[disabled]:not(.go-stop) {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
   cursor: not-allowed;
   transform: none;
 }
-.cpanel .slash-form .go {
-  color: var(--bg);
+.go[disabled].go-stop {
+  cursor: not-allowed;
+  transform: none;
 }
-.ask-foot,
-.cp-foot {
+.ask-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

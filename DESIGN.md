@@ -549,11 +549,23 @@ the composer already does: mention another entity.
   `unverified: …`) is the last line it wrote, so the digest is head 240 + tail 160: a
   head-only cut showed seven setups and none of the seven endings.
 - **A card may say where the worktree is, never guess.** One `mention.worktree` call on
-  mount matches the row's ticket key against `orca worktree list` and runs `git status`
-  only on a path Orca itself returned; a cwd outside every checkout narrows nothing
-  rather than hiding the chip. `gone` needs evidence in the row's own record, because
-  Orca forgets a removed worktree and absence alone cannot tell "merged and removed"
-  from "never created".
+  mount reads the run's **own** record first — every `…/orca/workspaces/<repo>/<name>` path
+  it names, kept only where that exact path appears in `orca worktree list` — and matches the
+  row's ticket key only as the fallback, because a fan-out shares one cwd and one key and the
+  key alone paints N cards the same word. `git status` runs on a path Orca itself returned
+  and nothing else; a cwd outside every checkout narrows nothing rather than hiding the chip.
+  `gone` is the record naming a workspace Orca no longer lists, because Orca forgets a removed
+  worktree and absence alone cannot tell "merged and removed" from "never created". The chip
+  paints the workspace's own name (state dot in `data-state`), so three cards are three names.
+- **The card is three bands, and the identity is the first one.** Kicker, name and the
+  workspace chip share a single non-wrapping line whose name and chip shrink with an ellipsis
+  rather than pushing a second row; the meta (`harness · model · duration`) and the one action
+  take their own band, where the meta may wrap and the action keeps the right edge; the job is
+  a full-width block whose row and text are blocks in every card, so the instruction is never
+  clipped, wrapped into, or read as part of the head.
+- **`run N/M` is a per-run label of its own.** It sits in the identity head as a quiet token
+  beside the name — never a fragment of the meta string — because it says which of N this card
+  is, and a reader who cannot find it treats the card as the whole fan-out.
 - **Send is not the confirmation; the runs wait.** A message that plans a run is sent as
   always — its reads resolve, and only the runs hold — so `@coder <job>` goes from keystroke
   to running with one extra keystroke, and a seven-row fan-out is reviewed (count, target,
@@ -643,6 +655,53 @@ it.
   bytes, extra }` computed from the retention `meta` the page already draws, so
   the number in the confirmation and the number on the badge beside it cannot
   disagree. The workspace itself, its entities and its rule are stated as staying.
+
+## A dialog reads as a dialog, and its scrim is not a drawer's
+
+`.modal` is 520 px and a drawer is 430 px; both sat behind the same 24% scrim, so
+"a place you must answer" and "a second view of this row" looked the same. And one
+surface took a width class nobody had written a rule for, which is how a dialog
+became a 1080 px slab.
+
+- **A dialog is `min(px, vw)`, and the ceiling is a reading decision.** 520 px is
+  the default; a surface that shows a two-column diff may ask for ~860 px, and
+  beyond that the extra width buys nothing but a slab. Never a bare width, and
+  never a class with no rule behind it (`modal-wide` had none for two releases).
+- **One padding scale per dialog.** Declare it on the surface's own selector
+  (`.learn-modal { --learn-pad: 20px }`) and spend it on `.mo-head`, `.mo-body`
+  and `.mo-foot`, so all three bands line up on one left edge. `.mo-head` owes
+  the body a bottom gap; a head with `padding-bottom: 0` butts a scrolling body.
+- **The two-column diff is a wide-window luxury.** Below **760px** it stacks into
+  one labelled column and gives the body its only scroller; `min-width: 0` and
+  `overflow-wrap: anywhere` stay on every cell. A second scrollbar at 390 px is
+  the failure, not a clipped line.
+- **`scrim-dialog` is the one dialog variant**, next to `.scrim` in
+  `surfaces.css`: deeper (42%) and blurred. Drawers keep the base scrim. Do not
+  fork one variant per dialog — `EntityLearnDialog` is the surface that paid for
+  the rule, and a second dialog that needs a third darkness is a third mistake.
+
+### A review is bought once, with its scope on screen
+
+Learning used to open, spend a harness turn, and only then say how much it had
+read. The scope is the thing a person is paying for, so it is chosen first.
+
+- **Opening a dialog is not running it.** `EntityLearnDialog` shows its scope
+  form with one primary in the *body*; the footer keeps its three verbs. The
+  clock starts when that primary is pressed, not on open.
+- **The count, the dates and the ceiling are named.** A number field capped at
+  the entity's own conversation count, presets (`5 / 10 / 25 / All`), a `since` /
+  `until` pair where empty means no bound, and a busy line that says `Reading 12
+  of 34 conversations, since 2026-11-01` beside a ticking `mm:ss`.
+- **The renderer proposes, the main process validates.** `limit`, `since`,
+  `until` and `ids` are re-read at the trust boundary (`electron/learn.cjs`
+  `scopeOf`): a non-integer, a `0`, an unparseable day or an empty id list throws
+  with a sentence — never a silent fall back to the ten most recent.
+- **A scope is filtered before it is counted.** Dates and ids narrow the set,
+  then the limit cuts it, so "3 of 5 asked" means five matching threads existed
+  and three were read — not three inside a scan of three.
+- **A ceiling nobody can move is stated.** The wait names its limit
+  (`gives up after 5 minutes`) from a constant that mirrors `TIMEOUT_MS`; there
+  is no streaming for `entity.learn`, so a clock is what the wait has.
 
 ## Common mistakes
 
@@ -815,6 +874,13 @@ it.
 | A snapshot carries `.remote.token` or harness logs | Exclude secrets and `runs/`; document it on the page | `backup-store.cjs` |
 | The backup timer only runs when the settings page is open | Start one unref'd timer with the call table | `electron/rpc.cjs` |
 | One MCP server page states the same definition three times (hero chips, a key/value table, its JSON) and then dumps 23 tool names as an unsearchable list | A fact is stated once, in the block that owns it — the rail holds the definition, the paths and the verbs; the column holds what it can do. A tool inventory is rows the server reported (name, description, a derived group, `read`/`write`) behind a search and a filter, with the reason drawn when there are none | `McpServerView` |
+| A dialog is drawn at 1080px and reads as a slab | `min(860px, 94vw)` for a two-column diff, `min(520px, 94vw)` for the rest; one padding scale on `.mo-head` / `.mo-body` / `.mo-foot` | `EntityLearnDialog` (`.learn-modal`) |
+| A dialog inside `.detail-view` silently takes the 1180px reading measure, and so does its scrim | `:not(.entp-bar)` counts as a class, so `(0,2,0)` beats the width, the centring margin and even `position: fixed; inset: 0`: the dialog measured 1180 and the backdrop 1180 with a 130px margin, leaving the rail and every outer edge undimmed and unclickable. The measure excludes fixed surfaces: `.detail-view > :not(.entp-bar):not(.modal):not(.scrim)` | `src/styles/directory.css` (`.detail-view`) |
+| A dialog and a drawer share one backdrop | `scrim-dialog` is the dialog variant next to `.scrim`; the drawers keep the base | `surfaces.css` |
+| A long wait is a static "this can take a minute" | Tick a clock beside the spinner and name the ceiling (`gives up after 5 minutes`); one measured span feeds both the wait and the result line | `EntityLearnDialog`, `PromptEnhanceDialog` |
+| A two-minute ceiling on a review whose answer is a whole instructions file | The cost is generating the replacement, not reading the transcripts: a 27 KB `coder.md` took 148s at the smallest scope, so `TIMEOUT_MS` is 5 minutes and the busy copy names it | `electron/learn.cjs` (`TIMEOUT_MS`), `EntityLearnDialog` (`LIMIT_MINUTES`) |
+| A review runs on open, so the scope arrives after it was paid for | Choose the count and the dates first; the primary that starts the run lives in the body | `EntityLearnDialog` |
+| "3 conversations" after the run while five were asked for | Read the count from `result.sources` and say `3 of 5 asked`; the scope is filtered before it is counted | `electron/learn.cjs` (`recentFor`) |
 
 ## Surfaces and where they live
 
@@ -830,7 +896,7 @@ it.
 | Remote connect / status | `RemoteConnectDialog.vue`, `RemoteSyncPanel.vue` | Esc, scrim, X (connect guarded while busy) |
 | Workspace wizard | `src/layouts/HubLayout.vue` + `WorkspaceWizard.vue` | Esc, scrim |
 | Entity / MCP detail toolbar (`.detail-view` + `.entp-bar`) | `EntityDetailView.vue`, `McpServerView.vue` | Sticky glass in the thread header's material — not a card: spans the content area, flush under the top bar, page scrolls beneath it |
-| Entity learning review | `src/components/EntityLearnDialog.vue` | Esc, scrim, Cancel (guarded while applying); `entity.learn` writes nothing |
+| Entity learning review | `src/components/EntityLearnDialog.vue` | Esc, scrim, Cancel (guarded while applying); the scope is chosen in the body, the footer keeps Cancel / Copy / Apply; `entity.learn` writes nothing |
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
 | Thread tags | `src/components/ThreadTagsDialog.vue` | Esc, scrim, Cancel (guarded while saving) |
 | Artifact document editor | `src/views/ArtifactDetailView.vue` | page surface; Save button and the catalog `save` shortcut |
@@ -838,6 +904,7 @@ it.
 | Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
 | Definition write (a rewrite waiting for you) | `src/components/DefinitionWriteCard.vue` | Esc = `Not now` (not while Apply is in flight); Apply is the only other answer |
 | Voice mode | `src/components/VoiceChatDialog.vue` | Esc, scrim, close button; composer microphone + shortcut |
+| Composer failure band | `src/components/SlashComposer.vue` | Esc (the same `dismiss` emit as its `×`; an open attach menu closes first, it is its own stack entry); `Try again` re-sends the preserved draft; it also clears when another thread is opened |
 
 ## Every searchable list says ⌘/ (⌥/ in a tab), in the same pill
 

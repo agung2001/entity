@@ -22,6 +22,15 @@
   pointer-events: auto;
   transform: translate(-50%, -50%) scale(1);
 }
+/* A dialog sits over the page and dims it harder than a drawer does: a drawer
+   is a second view of the row you clicked, a dialog is a place you must answer
+   before the page behind it matters again. One variant, used where a `.modal`
+   is focused; the drawers keep the base `.scrim`. */
+.scrim-dialog {
+  background: rgba(10, 10, 10, 0.42);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
 .mo-head {
   padding: 18px 18px 0;
   position: relative;

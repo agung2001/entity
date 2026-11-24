@@ -35,8 +35,12 @@ const props = defineProps({
      draft belongs to a thread and this component only exists for the one on
      screen — switching threads would otherwise take the words with it. */
   draft: { type: String, default: '' },
+  /* Why the last send failed, as the store worded it. The band sits above the
+     draft, never in the rail, so it can never be mistaken for something you
+     type over. Dismissal belongs to this component (see `onKey`). */
+  sendError: { type: String, default: '' },
 })
-const emit = defineEmits(['send', 'stop', 'enhance', 'update:attachments', 'update:draft'])
+const emit = defineEmits(['send', 'stop', 'enhance', 'dismiss', 'update:attachments', 'update:draft'])
 
 /* Local while you type (the caret, the menu and the growth all need it now);
    the store is told on every change and answers on every thread switch. */
@@ -719,6 +723,15 @@ function onKey(e) {
     settle()
     return
   }
+  /* A failed send is the innermost thing on screen and the one Escape clears
+     first, through the same function as its ×, so the band and the button can
+     never disagree. THE ATTACH MENU'S OWN Escape is registered with
+     `useDialogDismiss` and lands first, because that listener is capture-phase. */
+  if (e.key === 'Escape' && props.sendError) {
+    e.preventDefault()
+    emit('dismiss')
+    return
+  }
   if (!open.value) return
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault()
@@ -919,6 +932,19 @@ defineExpose({ focus, addFiles, addDrop, restore })
     </div>
 
     <form class="slash-form" @submit.prevent="submit">
+      <!-- The failure band is the first line of the message band, above the
+           textarea: it can never sit under the caret. The draft is preserved
+           behind it, and neither action here clears it. -->
+      <div v-if="sendError" class="cp-alert" role="alert">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M8 2.6l5.6 10.2H2.4z" stroke-linejoin="round" />
+          <path d="M8 6.4v3" />
+          <circle cx="8" cy="11.4" r="0.7" fill="currentColor" stroke="none" />
+        </svg>
+        <span class="grow">{{ sendError }}</span>
+        <button class="retry" type="button" @click="submit">Try again</button>
+        <button class="dismiss" type="button" aria-label="Dismiss error" @click="emit('dismiss')">×</button>
+      </div>
       <textarea
         ref="input"
         v-model="draft"
@@ -935,27 +961,7 @@ defineExpose({ focus, addFiles, addDrop, restore })
         @blur="onBlur"
       ></textarea>
       <div class="slash-actions">
-        <span class="slash-hint">
-          <template v-if="sending">Working…</template>
-          <template v-else><kbd>{{ sendShortcut }}</kbd> to send</template>
-          <template v-if="terminalShortcut && !sending">
-            <span class="slash-hint-sep" aria-hidden="true">·</span>
-            <span class="slash-hint-term"><kbd>{{ terminalShortcut }}</kbd> terminal</span>
-          </template>
-          <button
-            v-if="canEnhance"
-            class="slash-enh"
-            type="button"
-            :title="`Enhance this prompt (${enhanceShortcut})`"
-            aria-label="Enhance this prompt"
-            aria-haspopup="dialog"
-            @click="emit('enhance')"
-          >
-            <kbd>{{ enhanceShortcut }}</kbd> enhance
-          </button>
-        </span>
-        <span class="slash-send">
-          <span class="attach-picker">
+        <span class="attach-picker">
           <button
             class="attach-btn"
             type="button"
@@ -975,6 +981,33 @@ defineExpose({ focus, addFiles, addDrop, restore })
             <button type="button" role="menuitem" @click="openFolder">Attach folder…</button>
           </span>
         </span>
+        <!-- The legend is focus-only and hands its slot to the enhance button:
+             a hint needs an empty draft, enhance needs text. Both are visible
+             whenever they are the only thing in the rail (and so is the
+             `Working…` status, which nobody should have to focus to read). -->
+        <span class="slash-hint" :data-working="sending ? '1' : '0'" :data-enh="canEnhance ? '1' : '0'">
+          <template v-if="stopping">Stopping…</template>
+          <template v-else-if="sending">Working…</template>
+          <template v-else-if="!canEnhance">
+            <kbd>{{ sendShortcut }}</kbd> to send
+            <template v-if="terminalShortcut">
+              <span class="slash-hint-sep" aria-hidden="true">·</span>
+              <span class="slash-hint-term"><kbd>{{ terminalShortcut }}</kbd> terminal</span>
+            </template>
+          </template>
+          <button
+            v-if="canEnhance"
+            class="slash-enh"
+            type="button"
+            :title="`Enhance this prompt (${enhanceShortcut})`"
+            aria-label="Enhance this prompt"
+            aria-haspopup="dialog"
+            @click="emit('enhance')"
+          >
+            <kbd>{{ enhanceShortcut }}</kbd> enhance
+          </button>
+        </span>
+        <span class="slash-grow"></span>
         <button
           v-if="sending"
           class="go go-stop"
@@ -1003,35 +1036,37 @@ defineExpose({ focus, addFiles, addDrop, restore })
             <path d="M8 13V3M4 7l4-4 4 4" />
           </svg>
         </button>
-        </span>
       </div>
     </form>
 
+    <!-- The chips hang under the rail, inside the message band, so a long
+         attachment list grows the card and never the field. Their box is
+         `.cp-chip` in `chat.css`. -->
     <div v-if="attachments.length" class="attach-chips attach-chips--dock">
       <span
         v-for="(entry, index) in attachments"
         :key="`${entry.kind}:${entry.value || entry.name}`"
-        class="attach-chip"
+        class="attach-chip cp-chip"
         :data-account="AccountKinds(entry) ? '1' : '0'"
       >
         <!-- A picked message/file/post is a link to a detail dialog: the value is
-             the provider's id, so the dialog is the only way to see what it is. -->
+             the provider's id, so the dialog is the only way to see what it is.
+             Everything else keeps main's plain chip. -->
         <button
           v-if="AccountKinds(entry)"
-          class="attach-chip-open"
+          class="nm cp-chip-open"
           type="button"
           :title="`${attachmentLabel(entry)} — view details`"
           :aria-label="`What is ${attachmentLabel(entry)}`"
           @click="openAttachment(entry)"
         >
           <span class="attach-chip-mark" aria-hidden="true">
-            <IntegrationMark :name="markOf(entry)" :size="15" />
+            <IntegrationMark :name="markOf(entry)" :size="14" />
           </span>
-          <span class="attach-chip-name" :title="accountName(entry)">{{ accountName(entry) }}</span>
-          <span v-if="entry.account" class="attach-chip-acct">{{ String(entry.account).split('@')[0] }}</span>
+          <span class="attach-chip-name">{{ accountName(entry) }}</span>
         </button>
-        <template v-else>{{ attachmentLabel(entry) }}</template>
-        <button class="attach-chip-x" type="button" :aria-label="`Remove ${attachmentLabel(entry)}`" @click="removeAttachment(index)">×</button>
+        <span v-else class="nm">{{ attachmentLabel(entry) }}</span>
+        <button class="x" type="button" :aria-label="`Remove ${attachmentLabel(entry)}`" @click="removeAttachment(index)">×</button>
       </span>
     </div>
 
@@ -1110,43 +1145,9 @@ defineExpose({ focus, addFiles, addDrop, restore })
 </template>
 
 <style scoped>
-.slash-send {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-/* the enhancement capsule: dashed, so it reads as "extra" rather than
-   another send. A hint row is micro type on both ends, except the button. */
-.slash-enh {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: 2px;
-  padding: 2px 6px 2px 3px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-xs);
-  background: none;
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: border-color 0.14s ease, color 0.14s ease;
-}
-.slash-enh:hover {
-  border-style: solid;
-  border-color: var(--muted);
-  color: var(--ink);
-}
-.slash-enh kbd {
-  background: var(--bg);
-}
-@media (max-width: 360px) {
-  .slash-hint {
-    flex-wrap: wrap;
-  }
-}
+/* Everything else on this card lives with the dock: `.cp-dock` in `chat.css`
+   styles the bands as one card, the field, the rail, the chips and the alert.
+   What stays here is the part that belongs to the component alone. */
 @media (prefers-reduced-motion: reduce) {
   .slash-enh {
     transition: none;
@@ -1162,7 +1163,7 @@ defineExpose({ focus, addFiles, addDrop, restore })
 }
 .attach-menu {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: calc(100% + 6px);
   z-index: 40;
   min-width: 154px;
@@ -1181,7 +1182,7 @@ defineExpose({ focus, addFiles, addDrop, restore })
   background: transparent;
   color: var(--ink-2);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--fs-secondary);
   text-align: left;
   cursor: pointer;
 }
@@ -1189,115 +1190,39 @@ defineExpose({ focus, addFiles, addDrop, restore })
   background: var(--surface);
   color: var(--fg);
 }
+/* The paperclip is a 26 px ghost, not a 30 px outlined circle: two equal
+   circles 8 px apart read as a toggle pair, which made the old rail look like a
+   machine with two buttons of equal importance. */
 .attach-btn {
-  display: inline-grid;
+  display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
+  flex: none;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--ink-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
   cursor: pointer;
+  transition: background 0.12s ease-out, color 0.12s ease-out;
 }
 .attach-btn:hover:not(:disabled) {
-  color: var(--fg);
-  background: var(--surface);
-  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
 }
 .attach-btn:disabled {
   opacity: 0.45;
-  cursor: default;
+  cursor: not-allowed;
 }
 .attach-btn svg {
   width: 14px;
   height: 14px;
 }
-/* ── the picked-object dialog ────────────────────────────────────────────
-   The object leads: its mark, its name, then what can be said about it. The id is
-   folded away, because it is the thing a person only sometimes wants. */
-.attach-detail-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.attach-detail-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-}
-.attach-detail-mark svg {
-  display: block;
-}
-.attach-detail-id {
-  min-width: 0;
-}
-.attach-detail-id h2 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.attach-detail-technical {
-  font-size: var(--fs-secondary);
-  color: var(--muted);
-}
-.attach-detail-technical summary {
-  cursor: pointer;
-  color: var(--ink-2);
-}
-.attach-detail-technical p {
-  margin: 6px 0 0;
-  overflow-wrap: anywhere;
-}
-
-/* The shelf sits *inside* the composer card, under the textarea, so it reads as
-   part of what you are writing rather than a separate strip. */
-.attach-chips--dock {
-  padding: 0 2px 4px;
-  margin-top: -2px;
-}
-.attach-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-/* A chip is the composer's own furniture: the app's body type at the label size,
-   the dock's corner step, and a surface that reads as filled rather than tinted.
-   The earlier 9.5px mono in accent-soft was a code-token look pasted onto a
-   writing surface — it belonged to the transcript, not to this box. */
-.attach-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  max-width: 100%;
-  min-height: 22px;
-  padding: 0 2px 0 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  font-family: var(--font-body);
-  font-size: var(--fs-label);
-  line-height: 1;
-  color: var(--muted);
-}
-/* A picked connector object is a thing you can inspect, so it wears the ink of
-   body copy and an icon slot, not a link underline inside a chip. */
-.attach-chip[data-account='1'] {
-  color: var(--ink-2);
-  background: var(--surface);
-  border-color: var(--border);
-}
-.attach-chip[data-account='1']:hover {
-  border-color: var(--border-strong);
-  background: var(--bg);
-}
-.attach-chip-open {
+/* The chip's geometry, its `.nm` label and its `.x` remove button are the dock's
+   (`chat.css`). What is added here is only the *account-bearing* part: a picked
+   message, file, video or post is an object you can inspect. */
+.cp-chip-open {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1309,49 +1234,32 @@ defineExpose({ focus, addFiles, addDrop, restore })
   color: inherit;
   cursor: pointer;
 }
-.attach-chip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 34ch;
+.cp-chip-open:hover .attach-chip-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
-/* The account is the thing that tells two same-named files apart, so it is the
-   one part allowed to shrink before the name does. */
+/* The mark is the provider, so two chips are told apart at a glance. */
 .attach-chip-mark {
   display: grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   flex: none;
 }
 .attach-chip-mark svg {
   display: block;
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
-.attach-chip-acct {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--muted);
+.attach-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.attach-chip button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: var(--fs-small);
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 2px;
-}
-/* The remove glyph is the chip's only destructive verb, so it stays quiet until
-   the chip is hovered — and it never becomes the thing you click by accident. */
-.attach-chip .attach-chip-x {
-  color: var(--muted);
-  opacity: 0.55;
-}
-.attach-chip:hover .attach-chip-x,
-.attach-chip .attach-chip-x:focus-visible {
-  opacity: 1;
+/* A picked object wears the body ink rather than the muted file-chip grey: it is
+   something you can open, not a path you attached. */
+.cp-chip[data-account='1'] {
+  color: var(--ink-2);
 }
 </style>
