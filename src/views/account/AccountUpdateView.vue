@@ -42,6 +42,14 @@ const failedDownload = computed(() => status.value === 'error' && updates.error?
 const checking = computed(() => status.value === 'checking' || updates.busy === 'check')
 const percent = computed(() => Math.round(Number(updates.percent) || 0))
 
+/* A dropped socket and a 404 both arrive as `kind: 'download'`, so the wording
+   follows the updater's own code instead of assuming the network. */
+const failedDownloadNote = computed(() =>
+  /ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EPIPE/.test(String(updates.error?.code || ''))
+    ? 'The connection dropped while the installer was downloading.'
+    : 'The installer could not be fetched from the release page — use "Download from GitHub" below.',
+)
+
 /* A body over ~12 bullets is cut, and the cut is stated rather than silent. */
 const notes = computed(() => updates.notes.slice(0, NOTES_CUT))
 const notesCut = computed(() => Math.max(0, updates.notes.length - NOTES_CUT))
@@ -264,7 +272,7 @@ onMounted(async () => {
         <b v-else>The updater could not finish.</b>
         {{
           failedDownload
-            ? 'The connection dropped while the installer was downloading.'
+            ? failedDownloadNote
             : updates.actionError || 'Check again when the network is back.'
         }}
         <div class="acct-error-actions">
