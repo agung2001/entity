@@ -1,14 +1,19 @@
 <script setup>
 import { computed, ref } from 'vue'
+import makaMark from '@/assets/connectors/maka.png'
 
 /**
- * The three integration marks, at the row's 22 px.
+ * The shipped marks, at the row's 22 px.
  *
  * Orca has no mark in the icon library, and its own app icon is the only thing a
  * person recognises — so it is the real bundle icon from the project's own
  * repository, served through jsDelivr and pinned to a release tag rather than a
  * branch. A machine with no network shows the fallback glyph instead of a broken
  * image: the row still reads, because the name next to it is the label.
+ *
+ * Maka's own app icon is bundled (`src/assets/connectors/maka.png`, from the
+ * app's `images/icon.png`) rather than fetched: it is a built-in connector, so
+ * the mark has to be there with no network at all.
  *
  * YouTrack and `gh` are drawn from `thesvg.org` (its `youtrack` mark and the
  * GitHub mono mark), inlined so the page keeps zero external assets beyond the
@@ -41,6 +46,17 @@ const showOrcaIcon = computed(() => !failed.value)
     decoding="async"
     referrerpolicy="no-referrer"
     @error="failed = true"
+  />
+
+  <img
+    v-else-if="name === 'maka'"
+    class="int-mark-img"
+    :src="makaMark"
+    :width="size"
+    :height="size"
+    alt=""
+    aria-hidden="true"
+    decoding="async"
   />
 
   <svg

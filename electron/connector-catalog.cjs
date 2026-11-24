@@ -131,6 +131,10 @@ const CATALOG = {
     label: 'Maka',
     kind: 'mcp',
     verify: null,
+    /* the app's own site — shown on the connector page as the place to read about
+       the service a person is about to attach */
+    website: 'https://maka.agungsundoro.com',
+    summary: 'Notes, pdfs and feeds from a local vault.',
     work: {
       mention: '@maka:',
       resolves: 'notes, in one vault or across every vault',
@@ -413,10 +417,17 @@ function entries() {
       kind: entry.kind,
       oauth: entry.oauth === true,
       summary: entry.summary || '',
+      /* the service's own site, when it ships one — the connector page links here */
+      website: entry.website || '',
       /* what the catalog promises a mention does, or '' for a context-only entry */
       resolves: entry.work?.resolves || '',
     }
   })
+}
+
+/** The service's own site, or '' when the catalog does not name one. */
+function websiteOf(id) {
+  return entryOf(id)?.website || ''
 }
 
 /** The `@` prefix a connector offers, or '' when it has no resolver (context only). */
@@ -458,6 +469,7 @@ function workOf(id) {
     kind: entry.kind,
     verified: Boolean(entry.verify),
     documented: entry.kind === 'mcp' ? entry.work.page || 'mcp.json' : '',
+    website: entry.website || '',
   }
 }
 
@@ -470,6 +482,7 @@ module.exports = {
   ACCOUNT_BEARING,
   entryOf,
   entries,
+  websiteOf,
   mentionOf,
   mentionKinds,
   workOf,

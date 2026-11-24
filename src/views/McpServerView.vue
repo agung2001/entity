@@ -51,6 +51,26 @@ const brand = computed(() => {
   return String(row?.builtIn || '')
 })
 
+/* The service's own site, when the catalog names one. A shipped connector with no
+   site stays quiet; a bare host is what a person needs to recognise the service. */
+const website = computed(() => {
+  const row = connectors.rows.find((entry) => entry.id === name.value)
+  return String(row?.website || '')
+})
+/* A built-in carries a display label (`Maka`); the route id is the slug. The page
+   reads the shipped name, not the URL segment, so the heading matches the roster. */
+const title = computed(() => {
+  const row = connectors.rows.find((entry) => entry.id === name.value)
+  return String(row?.label || name.value)
+})
+const websiteLabel = computed(() => {
+  try {
+    return new URL(website.value).host.replace(/^www\./, '')
+  } catch {
+    return website.value
+  }
+})
+
 const poolServers = computed(() => workspaces.mcp?.servers || {})
 const poolDisabled = computed(() => workspaces.mcp?.disabled || {})
 
@@ -67,6 +87,14 @@ const poolEntry = computed(() => poolServers.value[name.value] || poolDisabled.v
 const parkedReason = computed(() =>
   enabled.value ? '' : String(poolDisabled.value[name.value]?.__unavailable || ''),
 )
+/* A definition that only answers on this computer — a loopback URL or a command
+   inside a home directory. The roster already knows this (`connector.list`);
+   reading that answer here keeps one derivation, and keeps the page from saying
+   `ready` with no hint that a remote thread will never see it. */
+const machineLocalNote = computed(() => {
+  const row = connectors.rows.find((entry) => entry.id === name.value)
+  return row?.machineLocal ? String(row.machineNote || 'it answers on this computer only') : ''
+})
 
 /* Every harness config on this machine, read once per visit. The rail lists
    what this returns and nothing else — a path or a label is never guessed. */
@@ -870,7 +898,7 @@ watch(name, async () => {
             </div>
             <div class="entp-title">
               <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
-              <h1>{{ name }}</h1>
+              <h1>{{ title }}</h1>
               <div class="mcpp-cmd-row">
                 <code class="mcpp-cmd" :title="command">{{ command }}</code>
                 <button
@@ -902,8 +930,18 @@ watch(name, async () => {
                   "
                   @click="toggleEnabled"
                 >{{ enabled ? 'park' : 'enable' }}</button>
+                <span v-if="brand" class="entp-chip">built in</span>
                 <span class="entp-chip">{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</span>
                 <span class="entp-chip">every entity</span>
+                <a
+                  v-if="website"
+                  class="mcpp-chip mcpp-site"
+                  :href="website"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :title="website"
+                  >{{ websiteLabel }}</a
+                >
               </div>
               <p v-if="state.why" class="mcpp-note" :data-bad="state.tone === 'bad' ? '1' : null">
                 {{ state.why }}
@@ -1130,6 +1168,13 @@ watch(name, async () => {
               <dt>Transport</dt>
               <dd>{{ transport === 'http' ? 'remote · http' : 'local · stdio' }}</dd>
             </div>
+            <!-- Not a way in: this is a fact about the definition, not a setting.
+                 It answers the question the `workspace` scope leaves open — a
+                 definition can belong to the workspace and still only run here. -->
+            <div v-if="machineLocalNote" title="This server answers on this computer only">
+              <dt>Reach</dt>
+              <dd data-tone="warn">{{ machineLocalNote }}</dd>
+            </div>
             <div
               class="mcpp-fact"
               role="button"
@@ -1141,6 +1186,14 @@ watch(name, async () => {
             >
               <dt>{{ definition.url ? 'URL' : 'Command' }}</dt>
               <dd class="mono">{{ definition.url || definition.command }}</dd>
+            </div>
+            <div v-if="website">
+              <dt>Website</dt>
+              <dd>
+                <a class="mcpp-fact-link" :href="website" target="_blank" rel="noopener noreferrer" :title="website">{{
+                  websiteLabel
+                }}</a>
+              </dd>
             </div>
             <div
               class="mcpp-fact"
@@ -1518,6 +1571,27 @@ watch(name, async () => {
 }
 .mcpp-chip[data-tone='bad'] i {
   background: var(--danger);
+}
+.mcpp-fact-link {
+  color: var(--accent);
+}
+.mcpp-fact-link:hover,
+.mcpp-fact-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mcpp-site {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.mcpp-site:hover,
+.mcpp-site:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
 }
 .mcpp-chip-note {
   margin-left: 1px;
@@ -2149,6 +2223,27 @@ watch(name, async () => {
 }
 .entp-hero .mcpp-chip-note {
   color: #9eaa8c;
+}
+/* The site is the one chip that is a link, so it reads brighter than the facts
+   beside it and underlines on hover — otherwise a muted chip looks disabled. */
+.entp-hero .mcpp-fact-link {
+  color: var(--accent);
+}
+.mcpp-fact-link:hover,
+.mcpp-fact-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* The site is the one chip that is a link, so it reads brighter than the facts
+   beside it and underlines on hover — otherwise a muted chip looks disabled. */
+.entp-hero .mcpp-chip.mcpp-site {
+  color: #eef4e2;
+  text-decoration-color: rgba(238, 244, 226, 0.45);
+}
+.entp-hero .mcpp-chip.mcpp-site:hover,
+.entp-hero .mcpp-chip.mcpp-site:focus-visible {
+  color: #fff;
+  border-color: color-mix(in oklab, var(--hero) 55%, rgba(255, 255, 255, 0.25));
 }
 .entp-hero .mcpp-chip-btn:hover {
   border-color: color-mix(in oklab, var(--hero) 55%, rgba(255, 255, 255, 0.25));

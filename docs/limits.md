@@ -15,6 +15,12 @@ plan around it; if it were hidden, you would find out mid-task.
   back. The remote directory is deleted after the turn; entity *runs* still execute
   on the machine whose window started them. The server image has no harness
   binaries, so remote chat is a desktop feature.
+- **A stdio MCP server does not travel to a remote turn.** An HTTP server is handed
+  over (loopback ones through an ssh reverse tunnel on the same port), but a
+  `command` is a program on this machine: the far side does not have it, so the turn
+  is told it stayed behind instead of being handed a tool that cannot start. A
+  loopback port the host already listens on is the same case — the tunnel cannot
+  take it over, so that server is named and left out.
 
 ## Sync
 

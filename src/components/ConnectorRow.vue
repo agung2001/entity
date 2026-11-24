@@ -58,6 +58,10 @@ const metaOf = (row) => {
      because the roster still draws one row per connector (spec §3). */
   if (row?.oauth) parts.push('oauth')
   else if (!machineRow(row)) parts.push(sourceOf(row))
+  /* A loopback URL or a home-directory command answers on this computer and
+     nowhere else. Said here, in the same line as kind and scope, so the row's
+     `workspace` scope is never read as "every thread, including remote ones". */
+  if (row?.machineLocal) parts.push('this computer only')
   parts.push(row?.mention, row?.accountsLabel)
   return parts.filter(Boolean).join(' · ')
 }

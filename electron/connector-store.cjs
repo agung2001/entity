@@ -30,6 +30,7 @@ const workspaces = require('./workspace-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
 const catalog = require('./connector-catalog.cjs')
 const integrations = require('./integrations-store.cjs')
+const manifest = require('./remote-manifest.cjs')
 const { tilde } = require('./frontmatter.cjs')
 
 const FILE = 'connectors.json'
@@ -117,6 +118,7 @@ function integrationRows(workspace) {
       /* The shipped contract: what this mention produces, and which resolver
          answers it. `null` for a connector nobody ships a resolver for. */
       work: catalog.workOf(id),
+      website: catalog.websiteOf(id),
       status: 'not probed',
       statusDetail: '',
       managed: true,
@@ -138,25 +140,41 @@ function poolRows(record, index) {
   const rows = []
   for (const [name, definition] of [...Object.entries(enabled), ...Object.entries(parked)]) {
     const adopted = index.rows[name]
+    const shipped = catalog.entryOf(name)
     const isParked = Boolean(parked[name])
+    /* A loopback URL or a home-directory command answers on this computer only.
+       The definition still belongs to the workspace (and travels), so scope stays
+       `workspace`; this is the separate fact a person needs before they expect it
+       in a remote thread. A server parked *by a sync* already carries the note. */
+    const machine = manifest.machineBoundReason(definition)
     rows.push({
       id: name,
-      label: adopted?.label || name,
-      initial: initialOf(adopted?.label || name),
-      builtIn: '',
+      label: adopted?.label || shipped?.label || name,
+      initial: initialOf(adopted?.label || shipped?.label || name),
+      /* A pool server whose name the catalog ships *is* a built-in: the definition
+         in `mcp.json` is its binding, not a row somebody still has to adopt. That
+         is what lets it wear its mark and state its origin like Gmail or Drive. */
+      builtIn: shipped ? name : '',
       kind: 'mcp',
       scope: 'workspace',
       binding: 'mcp.json',
-      mention: adopted?.mention || '',
-      work: adopted ? catalog.workOf(name) : (catalog.workOf(name) || null),
+      mention: adopted?.mention || shipped?.work?.mention || '',
+      work: catalog.workOf(name) || null,
+      website: catalog.websiteOf(name),
       status: isParked ? 'parked' : 'in the pool',
       statusDetail: String(definition?.url || definition?.command || ''),
-      /* No connector row means no definition this page wrote: it arrived by a
-         teammate's sync, an older add path or a harness attach. Shown, adoptable,
-         never silently dropped. */
-      managed: Boolean(adopted),
-      unmanaged: !adopted,
-      editable: Boolean(adopted),
+      machineLocal: machine,
+      machineNote: isParked
+        ? String(definition?.__unavailable || '')
+        : machine === 'loopback'
+          ? 'it only answers on this computer'
+          : 'its command lives on this computer',
+      /* No connector row *and* no catalog entry means no definition this page
+         wrote: it arrived by a teammate's sync, an older add path or a harness
+         attach. Shown, adoptable, never silently dropped. */
+      managed: Boolean(adopted) || Boolean(shipped),
+      unmanaged: !adopted && !shipped,
+      editable: true,
     })
   }
   return rows
@@ -266,7 +284,15 @@ function list({ workspace } = {}) {
   const merged = rows.map((row) => {
     const twin = poolOnly.find((entry) => entry.id === row.id)
     return twin
-      ? { ...row, binding: twin.binding, statusDetail: twin.statusDetail, status: twin.status }
+      ? {
+          ...row,
+          binding: twin.binding,
+          statusDetail: twin.statusDetail,
+          status: twin.status,
+          machineLocal: twin.machineLocal,
+          machineNote: twin.machineNote,
+          website: twin.website || row.website,
+        }
       : row
   })
   const extras = poolOnly.filter((entry) => !merged.some((row) => row.id === entry.id))
@@ -291,6 +317,7 @@ function list({ workspace } = {}) {
          exactly when a resolver exists for it. */
       mention: catalog.mentionOf(id) || entry.mention || '',
       work: catalog.workOf(id),
+      website: catalog.websiteOf(id),
       /* A declared self-report is what makes it answerable at all. */
       binary: entry.binary || '',
       verify: entry.verify || null,
@@ -332,6 +359,7 @@ function list({ workspace } = {}) {
         binding: bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
         mention: catalog.mentionOf(id) || '',
         work: catalog.workOf(id),
+        website: catalog.websiteOf(id),
         status: 'not installed',
         statusDetail: entry.work?.needs || entry.summary || '',
         managed: false,
@@ -503,13 +531,23 @@ function uninstall({ workspace, id } = {}) {
   const name = text(id, 60)
   if (!name) throw new Error('Which connector should be uninstalled?')
   const index = readIndex(record)
-  if (!index.rows[name]) throw new Error('That connector is not installed in this workspace.')
-  const next = { ...index.rows }
-  delete next[name]
-  index.rows = next
-  writeIndex(record, index)
+  const row = index.rows[name] || null
   const pool = workspaces.mcp(record.id)
-  if (pool.servers?.[name] || pool.disabled?.[name]) {
+  const binding = Boolean(pool.servers?.[name] || pool.disabled?.[name])
+  /* A shipped connector whose binding arrived through `mcp.json` has no index row
+     to delete — the pool entry *is* the installation. Without this, the built-in
+     row offered `Uninstall` and then refused because `connectors.json` had never
+     heard of it. */
+  if (!row && !(catalog.entryOf(name) && binding)) {
+    throw new Error('That connector is not installed in this workspace.')
+  }
+  if (row) {
+    const next = { ...index.rows }
+    delete next[name]
+    index.rows = next
+    writeIndex(record, index)
+  }
+  if (binding) {
     const servers = { ...(pool.servers || {}) }
     const disabled = { ...(pool.disabled || {}) }
     delete servers[name]

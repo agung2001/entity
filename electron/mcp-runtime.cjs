@@ -517,4 +517,15 @@ function materialise({ record, harness, only = null, home = os.homedir(), piVers
   return result
 }
 
-module.exports = { materialise, resolveServers, wantedNames, buildEntry, expandText }
+module.exports = {
+  materialise,
+  resolveServers,
+  wantedNames,
+  buildEntry,
+  expandText,
+  /* shared with the remote transport, so the per-harness shapes have one
+     definition instead of two that drift */
+  opencodeServers,
+  codexSpec,
+  piExtension,
+}

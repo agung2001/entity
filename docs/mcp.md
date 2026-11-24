@@ -21,7 +21,24 @@ left in an older entity file is ignored by the reader and dropped by the next wr
 
 A definition that can only work on the machine that wrote it — a loopback URL, or a
 command inside a home directory — is still shared with a teammate but lands parked,
-with the reason. See [Remote workspaces](remote-sync.md).
+with the reason. See [Remote workspaces](remote-sync.md). The connector row says
+`this computer only`, and the server page states it under **Reach**.
+
+A server the catalog ships is a built-in even when its binding arrived through
+`mcp.json` rather than the Add sheet: it wears the app's own mark, says `built in`,
+and its page links the service's site when the catalog names one — Maka is the first,
+at `https://maka.agungsundoro.com`. The mark is bundled (`src/assets/connectors/`),
+not fetched, so a shipped connector renders offline.
+
+**A remote chat turn gets the workspace MCP set too.** It stages entities, skills
+and artifacts, then hands the harness the same definitions a local turn would use:
+an HTTP server directly, and a loopback server through an ssh reverse tunnel opened
+for that turn on the same port — the server answers only to its own
+`Host: 127.0.0.1:4780`, so a different port would be a `403`. The template and token
+never leave this machine; the tunnel dies with the ssh process that runs the turn.
+A stdio server is a program on this machine and cannot travel, so it is left out and
+named. Either way the turn is told what it has, so it cannot report a working
+connector as `not connected`.
 
 ## The server page
 

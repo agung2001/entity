@@ -19,6 +19,8 @@ const workspaces = require('./workspace-store.cjs')
 const localData = require('./local-data.cjs')
 const skillRef = require('./skill-ref.cjs')
 const platform = require('./platform-brief.cjs')
+const remoteConnectors = require('./remote-connectors.cjs')
+const remoteMcp = require('./remote-mcp.cjs')
 const { chatInvocation } = require('./runner-local.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 
@@ -97,8 +99,8 @@ const SKILL_CACHE_MS = 30_000
 const clean = (value) => String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
 const quote = platform.shellQuote
 
-function sshArgs(alias, command) {
-  return [...SSH_OPTIONS, alias, command]
+function sshArgs(alias, command, extra = []) {
+  return [...SSH_OPTIONS, ...extra, alias, command]
 }
 
 function runFile(bin, args, { timeout = 20_000, maxBuffer = 4 * 1024 * 1024, label = '' } = {}) {
@@ -135,6 +137,44 @@ async function remoteHome(alias) {
   if (!home || /\s/.test(home)) throw new Error(`${alias} did not return a usable home directory.`)
   homeCache.set(alias, home)
   return home
+}
+
+/**
+ * Local ports in `ss -ltn` / `netstat -ltn` output. One regex per address shape;
+ * every other token (`*:*`, state names, counts) is ignored. Exported so the
+ * parser is tested without a host.
+ */
+function portsFrom(text) {
+  const ports = new Set()
+  for (const line of String(text || '').split(/\r?\n/)) {
+    for (const token of line.trim().split(/\s+/)) {
+      const match =
+        token.match(/^(?:\[[^\]]*\][^:]*|[^:\s]+):(\d{1,5})$/) ||
+        /* netstat (macOS) writes `127.0.0.1.4780` */
+        token.match(/\.(\d{1,5})$/)
+      if (match) ports.add(Number(match[1]))
+    }
+  }
+  return ports
+}
+
+/**
+ * A loopback MCP tunnel must reuse the original port: the server answers only to
+ * its own `Host: 127.0.0.1:4780`, so a free port on the far side would be a 403.
+ * Reading that host's listeners first keeps the tunnel from shadowing a service
+ * that is already there (`hyperframes` was listening on 4800).
+ */
+async function listeningPorts(alias) {
+  try {
+    const text = await sshText(
+      alias,
+      '(ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | sed -n "1,400p"',
+      { timeout: 15_000 },
+    )
+    return portsFrom(text)
+  } catch {
+    return new Set()
+  }
 }
 
 function remotePath(home, ...parts) {
@@ -324,8 +364,8 @@ function filesBlock(files, remoteDir) {
   ].join('\n')
 }
 
-function buildScript({ harness, model, instructions, prompt }) {
-  const spec = chatInvocation(harness, instructions, prompt, model)
+function buildScript({ harness, model, instructions, prompt, mcp = null }) {
+  const spec = chatInvocation(harness, instructions, prompt, model, mcp)
   const stdin = Boolean(spec.stdin)
   const promptText = stdin
     ? spec.stdin
@@ -336,11 +376,11 @@ function buildScript({ harness, model, instructions, prompt }) {
         : prompt
   let args = spec.argv
   if (harness === 'opencode') {
-    args = ['run']
+    args = ['run', ...(mcp?.argv || [])]
     if (model) args.push('-m', model)
     args.push('$PROMPT')
   } else if (harness === 'gemini') {
-    args = ['-p', '$PROMPT']
+    args = ['-p', '$PROMPT', ...(mcp?.argv || [])]
     if (model) args.push('-m', model)
   } else if (harness === 'ollama') {
     /* the model is positional and required; the prompt follows it */
@@ -351,12 +391,18 @@ function buildScript({ harness, model, instructions, prompt }) {
   const rendered = args
     .map((arg) => (arg === '$PROMPT' ? '"$PROMPT"' : quote(arg)))
     .join(' ')
+  /* An MCP token rides here, in the run directory (0700), for the length of the
+     turn. It is never an argv value, where `ps` would show it. */
+  const env = Object.entries(mcp?.env || {})
+    .filter(([name]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+    .map(([name, value]) => `export ${name}=${quote(value)}`)
   const lines = [
     '#!/bin/sh',
     'set -eu',
     'DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
     'cd "$DIR/workspace"',
     'trap \'kill 0 2>/dev/null || true\' HUP INT TERM',
+    ...env,
     ...(stdin ? [] : ['PROMPT=$(cat "$DIR/prompt.txt")']),
     stdin ? `${harness} ${rendered} < "$DIR/prompt.txt"` : `${harness} ${rendered}`,
   ]
@@ -502,15 +548,42 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
     const fileBlock = filesBlock(files.files, remotePath(remoteRun, 'attachments'))
     const shelfNote = artifactsNote(staged.artifacts)
     const finalPrompt = [prompt.trim(), fileBlock, shelfNote].filter(Boolean).join('\n\n')
-    const remoteInstructions = platform.compose({ record, entity, remote: true })
+    /* The workspace MCP set is handed to the remote harness here: http servers
+       directly, loopback ones through an ssh reverse tunnel opened for this turn.
+       A server that cannot travel is named, so the agent does not report a working
+       connector as "not connected" just because the far side cannot see it. */
+    let mcp = remoteMcp.plan({ record, harness, stage, remoteDir: remoteRun, alias })
+    if (mcp.forwards.length) {
+      const busy = await listeningPorts(alias)
+      if (mcp.forwards.some((forward) => busy.has(forward.localPort))) {
+        mcp = remoteMcp.plan({ record, harness, stage, remoteDir: remoteRun, alias, busyPorts: busy })
+      }
+    }
+    let pool = { servers: {}, disabled: {} }
+    try {
+      pool = workspaces.mcp(record.id)
+    } catch {
+      pool = { servers: {}, disabled: {} }
+    }
+    const connectorNote = remoteConnectors.brief({ alias, pool, delivered: mcp.servers })
+    const mcpNote = mcp.notes.length ? `MCP: ${mcp.notes.join(' · ')}` : ''
+    const remoteInstructions = platform.compose({
+      record,
+      entity,
+      remote: true,
+      extra: [connectorNote, mcpNote].filter(Boolean).join('\n\n'),
+    })
     const { script, promptText } = buildScript({
       harness,
       model,
       instructions: remoteInstructions,
       prompt: finalPrompt,
+      mcp,
     })
     fs.writeFileSync(path.join(stage, 'prompt.txt'), promptText, { encoding: 'utf8', mode: 0o600 })
-    fs.writeFileSync(path.join(stage, 'run.sh'), script, { encoding: 'utf8', mode: 0o755 })
+    /* 0700: the script can export an MCP token for the length of the turn, and the
+       run directory already holds `prompt.txt` 0600. */
+    fs.writeFileSync(path.join(stage, 'run.sh'), script, { encoding: 'utf8', mode: 0o700 })
 
     await sshText(alias, `mkdir -p ${quote(remoteRoot)} && chmod 700 ${quote(remoteRoot)}`)
     /* The transfer's deadline follows what is actually being sent: a fixed minute
@@ -540,7 +613,11 @@ async function run({ record, entity, thread, prompt, instructions, attachments =
     const result = await new Promise((resolve) => {
       const child = spawnTracked(
         'ssh',
-        sshArgs(alias, `cd ${quote(remoteRun)} && sh run.sh`),
+        sshArgs(
+          alias,
+          `cd ${quote(remoteRun)} && sh run.sh`,
+          mcp.forwards.flatMap((forward) => ['-R', forward.spec]),
+        ),
         {
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
@@ -688,6 +765,8 @@ module.exports = {
   listSkills,
   clearSkillCache,
   buildScript,
+  portsFrom,
+  listeningPorts,
   stageFiles,
   stageArtifacts,
   listArtifactFiles,

@@ -27,6 +27,18 @@ test('opencode and gemini place the prompt from the file', () => {
   assert.match(gemini.script, /gemini '-p' "\$PROMPT" '-m' 'm'/)
 })
 
+test('an MCP token is exported in the run script, never argv', () => {
+  const out = buildScript({
+    harness: 'pi',
+    model: 'm',
+    instructions: 's',
+    prompt: 'p',
+    mcp: { argv: ['--extension', '/r/mcp/pi.mjs'], env: { OPENCODE_CONFIG: '/r/mcp/x.json' } },
+  })
+  assert.match(out.script, /export OPENCODE_CONFIG='\/r\/mcp\/x\.json'/)
+  assert.match(out.script, /'--extension' '\/r\/mcp\/pi\.mjs'/)
+})
+
 test('model and prompt values are single-quoted, not interpolated', () => {
   const out = buildScript({
     harness: 'pi',
@@ -90,4 +102,23 @@ test('the transfer deadline follows the payload', () => {
   assert.ok(transferTimeout(24 * 1024 * 1024) > 120_000)
   /* a minute was the old constant; a staged workspace is far past what it holds */
   assert.ok(transferTimeout(75 * 1024 * 1024) >= 180_000)
+})
+
+test('a remote listener table yields ports for both ss and netstat', () => {
+  const { portsFrom } = require('../../electron/remote-runner.cjs')
+  const ss = [
+    'State Recv-Q Send-Q Local Address:Port Peer Address:Port',
+    'LISTEN 0 511 127.0.0.1:4800 0.0.0.0:*',
+    'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*',
+    'LISTEN 0 4096 [::]:8200 [::]:*',
+  ].join('\n')
+  assert.deepEqual([...portsFrom(ss)].sort((a, b) => a - b), [22, 4800, 8200])
+
+  const netstat = [
+    'Proto Recv-Q Send-Q  Local Address          Foreign Address        (state)',
+    'tcp4       0      0  127.0.0.1.4780         *.*                    LISTEN',
+    'tcp6       0      0  ::1.4790               *.*                    LISTEN',
+  ].join('\n')
+  assert.deepEqual([...portsFrom(netstat)].sort((a, b) => a - b), [4780, 4790])
+  assert.deepEqual([...portsFrom('')], [])
 })
