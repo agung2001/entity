@@ -3,7 +3,6 @@
 </h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-growing-f8b956" alt="Status: growing" />
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-181713?style=flat-square" alt="Supported platforms: macOS, Windows and Linux" />
   <img src="https://img.shields.io/badge/node-%5E20.19%20%7C%7C%20%3E%3D22.12-3c873a?style=flat-square" alt="Node version" />
   <img src="https://img.shields.io/badge/local--first-your%20files%2C%20your%20machine-f8b956?style=flat-square" alt="Local first" />
@@ -251,15 +250,15 @@ from a browser consent round-trip, one refresh token per account, kept beside
 `integrations.json` in `~/.entity/` at `0600` and never returned by any read.
 
 <p>
-  <img src="docs/assets/connectors/gmail.svg" alt="" width="20" valign="middle" /> Gmail &nbsp;
-  <img src="docs/assets/connectors/google-drive.svg" alt="" width="20" valign="middle" /> Google Drive &nbsp;
-  <img src="docs/assets/connectors/youtube.svg" alt="" width="20" valign="middle" /> YouTube &nbsp;
-  <img src="docs/assets/connectors/youtube-studio.svg" alt="" width="20" valign="middle" /> YouTube Studio &nbsp;
-  <img src="docs/assets/connectors/x.svg" alt="" width="20" valign="middle" /> X &nbsp;
-  <img src="docs/assets/connectors/youtrack.svg" alt="" width="20" valign="middle" /> YouTrack &nbsp;
-  <img src="docs/assets/connectors/github.svg" alt="" width="20" valign="middle" /> GitHub CLI &nbsp;
-  <img src="docs/assets/connectors/orca.svg" alt="" width="20" valign="middle" /> Orca &nbsp;
-  <img src="docs/assets/connectors/maka.svg" alt="" width="20" valign="middle" /> Maka
+  <a href="https://mail.google.com"><kbd><img src="docs/assets/connectors/gmail.svg" alt="" width="16" valign="middle" /> Gmail · <code>@gmail:</code></kbd></a> &nbsp;
+  <a href="https://drive.google.com"><kbd><img src="docs/assets/connectors/google-drive.svg" alt="" width="16" valign="middle" /> Google Drive · <code>@drive:</code></kbd></a> &nbsp;
+  <a href="https://www.youtube.com"><kbd><img src="docs/assets/connectors/youtube.svg" alt="" width="16" valign="middle" /> YouTube · <code>@youtube:</code></kbd></a> &nbsp;
+  <a href="https://studio.youtube.com"><kbd><img src="docs/assets/connectors/youtube-studio.svg" alt="" width="16" valign="middle" /> YouTube Studio · <code>@youtube-studio:</code></kbd></a> &nbsp;
+  <a href="https://x.com"><kbd><img src="docs/assets/connectors/x.svg" alt="" width="16" valign="middle" /> X · <code>@x:</code></kbd></a> &nbsp;
+  <a href="https://www.jetbrains.com/youtrack"><kbd><img src="docs/assets/connectors/youtrack.svg" alt="" width="16" valign="middle" /> YouTrack · <code>@youtrack:</code></kbd></a> &nbsp;
+  <a href="https://cli.github.com"><kbd><img src="docs/assets/connectors/github.svg" alt="" width="16" valign="middle" /> GitHub CLI · <code>@github:</code></kbd></a> &nbsp;
+  <a href="https://orca.dev"><kbd><img src="docs/assets/connectors/orca.svg" alt="" width="16" valign="middle" /> Orca · <code>@orca:</code></kbd></a> &nbsp;
+  <a href="https://maka.agungsundoro.com"><kbd><img src="docs/assets/connectors/maka.svg" alt="" width="16" valign="middle" /> Maka · <code>@maka:</code></kbd></a>
 </p>
 
 **[Connectors →](docs/connectors.md)** · **[MCP servers →](docs/mcp.md)**
