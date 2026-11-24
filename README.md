@@ -12,8 +12,8 @@
 <p align="center">
   <strong>One calm place for everything you ask AI to do.</strong><br/>
   An assistant is a Markdown file. A workspace is a folder. A conversation is a real
-  <code>claude</code>, <code>codex</code>, <code>pi</code>, <code>opencode</code> or
-  <code>gemini</code> process on your own machine — nothing simulated.
+  <code>claude</code>, <code>codex</code>, <code>pi</code> or <code>gemini</code>
+  process — one of eight agent CLIs — on your own machine. Nothing simulated.
 </p>
 
 <p align="center">
@@ -60,7 +60,7 @@ into the workspace as a file.
 
 </td>
 <td width="50%">
-  <a href="docs/conversations.md"><picture><source srcset="docs/assets/readme-features/chat.webp" type="image/webp" /><img src="docs/assets/readme-features/chat.poster.jpg" alt="A launch note answer with an attached brief, a collapsed process fold and three suggested follow-ups" width="100%" /></picture></a>
+  <a href="docs/conversations.md"><picture><source srcset="docs/assets/readme-features/chat.webp" type="image/webp" /><img src="docs/assets/readme-features/chat.poster.jpg" alt="A launch note answer over an expanded process fold listing its reasoning and the Read and Write tools, with the composer dock below it showing the machine, harness and MCP chips, the message field and its actions row" width="100%" /></picture></a>
 </td>
 </tr>
 <tr>
@@ -140,6 +140,44 @@ workspace. A thread can be pinned there, terminal included.
 <tr>
 <td width="50%" valign="middle">
 
+### Nine connectors, one roster
+
+Nine rows, one table. The Gmail, Drive and YouTube Studio accounts sit beside the MCP
+servers and the CLI binary this workspace already had — one row per connector, not one
+per mailbox — and each row states its kind, its scope and whether it answers: a rejected
+YouTrack token, a `gh` that is installed but not signed in, a mailbox with one of two
+accounts holding the scopes its tier asked for. An account-bearing row carries its
+accounts and a `read` → `write` → `full` tier chosen per workspace. The definition
+travels with the workspace; the tokens stay on this machine.
+
+</td>
+<td width="50%" valign="middle">
+
+<a href="docs/connectors.md"><picture><source srcset="docs/assets/readme-features/connectors.webp" type="image/webp" /><img src="docs/assets/readme-features/connectors.poster.jpg" alt="The workspace Connectors roster: nine rows, one per connector, each with its kind, scope and status — a rejected YouTrack token, a GitHub CLI not signed in, a mailbox with one of its two accounts signed in — then a switch to the Built-in catalog" width="100%" /></picture></a>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### The machine's own switches
+
+**Account → Harnesses** is the inventory: every agent CLI this machine has, where its
+binary lives, the models it reports and one switch. Off is not uninstalled — the CLI
+keeps its path and stops being spawned or offered in any picker. The profile, sound and
+notification pages sit beside it, and the same inventory is what a **Test & scan** stores
+for an ssh host.
+
+</td>
+<td width="50%" valign="middle">
+
+<a href="docs/machines.md"><picture><source srcset="docs/assets/readme-features/account-harnesses.webp" type="image/webp" /><img src="docs/assets/readme-features/account-harnesses.poster.jpg" alt="Account → Harnesses: the machine's agent CLI inventory, with a meter reading 6 / 8 installed, a search narrowing the list to 4 of 8, and one row per CLI showing its command, the path it was found at and an on/off switch" width="100%" /></picture></a>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
 ### The year, in two charts
 
 Spend and activity are folded from the turns themselves — cost and tokens per day, one
@@ -148,20 +186,24 @@ assistant gets its own calendar and bill.
 
 </td>
 <td width="50%">
-  <a href="docs/conversations.md#usage-and-activity"><picture><source srcset="docs/assets/readme-features/usage.webp" type="image/webp" /><img src="docs/assets/readme-features/usage.poster.jpg" alt="The overview's spend chart and a calendar heatmap of active days" width="100%" /></picture></a>
+  <a href="docs/conversations.md#usage-and-activity"><picture><source srcset="docs/assets/readme-features/usage.webp" type="image/webp" /><img src="docs/assets/readme-features/usage.poster.jpg" alt="The overview's This year block: turns, active days, spend and tokens above a calendar heatmap with one square per day, with the crew grid above it" width="100%" /></picture></a>
 </td>
 </tr>
 </table>
 
-**Also in the box:** an execution timeline per answer · a links-and-paths drawer
-derived from each thread · delegation cards and a session tree behind `spawn N` /
-`spawn per` · `@entity`, `@thread:`, `@artifact:`, `@maka:`, `@youtrack:` and
-`@orca:` mentions resolved before the agent sees them · personal and shared artifact
-shelves with a two-clock archive sweep · a folder-per-thread base directory with
-`/project:` skills · a terminal beside the chat (``Ctrl+` ``) · voice with barge-in and
-read-aloud · ZIP backups on a rolling schedule · one-verb agent CLI with an audit log ·
-two-way sync with a shared server, evaluator included · a command palette and a
-keyboard guide that cannot drift from the handlers.
+**Also in the box:** nine shipped connectors with per-account OAuth and a
+`read` → `write` → `full` tier per workspace · the harness inventory at **Account →
+Harnesses**, with the profile, sound and notification pages beside it · **Learning**
+with a scope you choose before it spends a run · a rebuilt composer dock and
+delegation cards that fold into a session tree behind `spawn N` / `spawn per` · an
+execution timeline per answer · a links-and-paths drawer derived from each thread ·
+`@entity`, `@thread:`, `@artifact:`, `@maka:`, `@youtrack:`, `@orca:`, `@gmail:`,
+`@drive:`, `@youtube:`, `@youtube-studio:` and `@x:` mentions resolved before the agent
+sees them · personal and shared artifact shelves with a two-clock archive sweep · a
+folder-per-thread base directory with `/project:` skills · a terminal beside the chat
+(``Ctrl+` ``) · voice with barge-in and read-aloud · ZIP backups on a rolling schedule ·
+one-verb agent CLI with an audit log · two-way sync with a shared server, evaluator
+included · a command palette and a keyboard guide that cannot drift from the handlers.
 
 ## Use cases
 
@@ -178,24 +220,53 @@ keyboard guide that cannot drift from the handlers.
 
 ## Supported assistants
 
-Works with the assistant CLIs you already have. Entity finds them on `PATH`, and an
-assistant's Configuration dialog can pin a machine-wide executable per harness. They
-are installed from a terminal once; after that you never need one to use the app.
+Works with the assistant CLIs you already have — eight of them. Entity finds each on
+`PATH`, and **Account → Harnesses** pins a machine-wide executable where a version
+manager or an app bundle put one somewhere else. They are installed from a terminal
+once; after that you never need one to use the app.
 
 <p>
-  <kbd>Claude Code · <code>claude</code></kbd> &nbsp;
-  <kbd>Codex CLI · <code>codex</code></kbd> &nbsp;
-  <kbd>Gemini CLI · <code>gemini</code></kbd> &nbsp;
-  <kbd>opencode · <code>opencode</code></kbd> &nbsp;
-  <kbd>pi · <code>pi</code></kbd>
+  <a href="https://docs.claude.com/en/docs/claude-code/overview"><kbd><img src="docs/assets/harness/claude.svg" alt="" width="16" valign="middle" /> Claude Code · <code>claude</code></kbd></a> &nbsp;
+  <a href="https://developers.openai.com/codex/cli/"><kbd><img src="docs/assets/harness/codex.svg" alt="" width="16" valign="middle" /> Codex · <code>codex</code></kbd></a> &nbsp;
+  <a href="https://opencode.ai/docs/"><kbd><img src="docs/assets/harness/opencode.svg" alt="" width="16" valign="middle" /> opencode · <code>opencode</code></kbd></a> &nbsp;
+  <a href="https://github.com/google-gemini/gemini-cli"><kbd><img src="docs/assets/harness/gemini.svg" alt="" width="16" valign="middle" /> Gemini CLI · <code>gemini</code></kbd></a> &nbsp;
+  <a href="https://ollama.com"><kbd><img src="docs/assets/harness/ollama.svg" alt="" width="16" valign="middle" /> Ollama · <code>ollama</code></kbd></a> &nbsp;
+  <a href="https://github.com/earendil-works/pi"><kbd><img src="docs/assets/harness/pi.svg" alt="" width="16" valign="middle" /> pi · <code>pi</code></kbd></a> &nbsp;
+  <a href="https://antigravity.google"><kbd><img src="docs/assets/harness/antigravity.svg" alt="" width="16" valign="middle" /> Antigravity · <code>agy</code></kbd></a> &nbsp;
+  <a href="https://github.com/NousResearch/hermes-agent"><kbd><img src="docs/assets/harness/hermes.svg" alt="" width="16" valign="middle" /> Hermes Agent · <code>hermes</code></kbd></a>
 </p>
 
-A run is a real process with a real exit code. Entity never invents a reply: if the
-binary is missing or not signed in, the turn says so.
+A run is a real process with a real exit code. Entity never invents a reply: a missing
+binary or a signed-out CLI is reported as a failed turn, not a friendly fake answer.
+
+## Connectors
+
+Everything a workspace can reach lives in one roster at **Workspace settings →
+Connectors**: an MCP server, a CLI binary and a REST service are three *kinds* of one
+row, and the old bulk MCP list is a permanent redirect into it. Entity ships nine —
+`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x`, plus `orca`, `youtrack`,
+`github` and `maka` — and installing one records a *definition* in the workspace's
+`connectors.json`, never a credential. An account-bearing connector gets its accounts
+from a browser consent round-trip, one refresh token per account, kept beside
+`integrations.json` in `~/.entity/` at `0600` and never returned by any read.
+
+<p>
+  <img src="docs/assets/connectors/gmail.svg" alt="" width="20" valign="middle" /> Gmail &nbsp;
+  <img src="docs/assets/connectors/google-drive.svg" alt="" width="20" valign="middle" /> Google Drive &nbsp;
+  <img src="docs/assets/connectors/youtube.svg" alt="" width="20" valign="middle" /> YouTube &nbsp;
+  <img src="docs/assets/connectors/youtube-studio.svg" alt="" width="20" valign="middle" /> YouTube Studio &nbsp;
+  <img src="docs/assets/connectors/x.svg" alt="" width="20" valign="middle" /> X &nbsp;
+  <img src="docs/assets/connectors/youtrack.svg" alt="" width="20" valign="middle" /> YouTrack &nbsp;
+  <img src="docs/assets/connectors/github.svg" alt="" width="20" valign="middle" /> GitHub CLI &nbsp;
+  <img src="docs/assets/connectors/orca.svg" alt="" width="20" valign="middle" /> Orca &nbsp;
+  <img src="docs/assets/connectors/maka.svg" alt="" width="20" valign="middle" /> Maka
+</p>
+
+**[Connectors →](docs/connectors.md)** · **[MCP servers →](docs/mcp.md)**
 
 ## Getting started
 
-Requirements: **Node.js `^20.19` or `>=22.12`**, plus one of the CLIs above.
+Requirements: **Node.js `^20.19` or `>=22.12`**, plus one of the eight CLIs above.
 
 ```bash
 git clone https://github.com/agung2001/entity.git
@@ -230,6 +301,7 @@ Full command list, ports, test packs and release builds:
 | [Workspaces and entities](docs/workspaces.md) | the folder tree, the entity file, Learning, chat retention, moving in from another tool |
 | [Conversations](docs/conversations.md) | transcripts, timeline, mentions, delegation sessions and fan-out, base directories, usage and activity |
 | [Skills](docs/skills.md) | how `/project:`, `/workspace:` and `/<harness>:` resolve, attach versus link |
+| [Connectors](docs/connectors.md) | one roster, three kinds, the connector page, accounts and the consent round-trip, tiers, mentions |
 | [MCP servers](docs/mcp.md) | one set per workspace, the server page and its tool list, how each harness receives it, the agent-facing endpoint |
 | [Artifacts and backups](docs/artifacts.md) | personal versus shared shelves, share and unshare, the archive sweep, `artifact://`, ZIP snapshots |
 | [Machines](docs/machines.md) | `~/.ssh/config`, test & scan, the machine that sweeps, pinned threads, the terminal |

@@ -86,10 +86,12 @@ those roles, or from a blank brief.
 entity's own harness for a complete replacement brief. The review is a proposal, not
 a write.
 
-<picture><source srcset="assets/readme-features/learning.webp" type="image/webp" /><img src="assets/readme-features/learning.poster.jpg" alt="A Learning review with a summary, the current and proposed instructions side by side and the changed lines highlighted" width="820" /></picture>
+<picture><source srcset="assets/readme-features/learning.webp" type="image/webp" /><img src="assets/readme-features/learning.poster.jpg" alt="The Learning dialog on an entity page: a conversations count with 5, 10, 25 and All presets, Since and Until date fields, a Review 5 conversations button and the Cancel, Copy proposed and Apply to instructions actions" width="820" /></picture>
 
-- the dialog shows the current file and the proposal **side by side**, line by line,
-  with only the changed lines marked;
+- the scope is chosen **before** the run is paid for — how many conversations, and a
+  Since/Until window; the button names what it will read (`Review 5 conversations`);
+- the review then shows the current file and the proposal **side by side**, line by
+  line, with only the changed lines marked;
 - **Edit proposed** turns the proposal into a textarea, so a good suggestion can be
   made exact before it lands;
 - **Apply to instructions** writes the body through the same writer the editor uses,

@@ -6,7 +6,7 @@ Every turn is a **real harness process** in JSONL stream mode
 (`claude --output-format stream-json`, `pi --mode json`, equivalents for the rest).
 Nothing is simulated, and an answer you cannot reproduce is still one you can read.
 
-<picture><source srcset="assets/readme-features/chat.webp" type="image/webp" /><img src="assets/readme-features/chat.poster.jpg" alt="A launch note answer with an attached brief, a collapsed process fold and three suggested follow-ups" width="820" /></picture>
+<picture><source srcset="assets/readme-features/chat.webp" type="image/webp" /><img src="assets/readme-features/chat.poster.jpg" alt="A launch note answer over an expanded process fold listing its reasoning and the Read and Write tools, with the composer dock below it showing the machine, harness and MCP chips, the message field and its actions row" width="820" /></picture>
 
 ## What a turn keeps
 
@@ -120,7 +120,7 @@ the message; a **search** with no hits only adds a note.
 
 ## A folder per thread
 
-<picture><source srcset="assets/readme-features/folder.webp" type="image/webp" /><img src="assets/readme-features/folder.poster.jpg" alt="The composer for a thread started in a project folder, with the / menu listing the project's own review skill first" width="820" /></picture>
+<picture><source srcset="assets/readme-features/folder.webp" type="image/webp" /><img src="assets/readme-features/folder.poster.jpg" alt="The composer for a thread started in the spring-catalogue folder, with the folder pill beside the harness and the / menu listing the workspace skills it can reach" width="820" /></picture>
 
 **New thread → Start from a folder** pins an optional project directory to the
 conversation. It hides behind a toggle because most threads do not need one.
@@ -270,7 +270,7 @@ own rule sends every follow-up to the same terminal.
 
 ## Usage and activity
 
-<picture><source srcset="assets/readme-features/usage.webp" type="image/webp" /><img src="assets/readme-features/usage.poster.jpg" alt="The overview's spend chart and a calendar heatmap of active days" width="820" /></picture>
+<picture><source srcset="assets/readme-features/usage.webp" type="image/webp" /><img src="assets/readme-features/usage.poster.jpg" alt="The overview's This year block: turns, active days, spend and tokens above a calendar heatmap with one square per day, with the crew grid above it" width="820" /></picture>
 
 Every turn stores its execution: model, duration, token counts and, when the harness
 reports it, a price. The overview folds those records into the current year; an entity
@@ -286,7 +286,7 @@ page folds the same set for one entity.
 
 ## The activity journal and the palette
 
-<picture><source srcset="assets/readme-features/activity.webp" type="image/webp" /><img src="assets/readme-features/activity.poster.jpg" alt="The activity journal listing conversations by time, assistant and machine" width="820" /></picture>
+<picture><source srcset="assets/readme-features/activity.webp" type="image/webp" /><img src="assets/readme-features/activity.poster.jpg" alt="The activity page: a pulse plot of turns per day above a daily journal of conversations, each row naming its entity, query count, machine and harness" width="820" /></picture>
 
 <picture><source srcset="assets/readme-features/command-palette.webp" type="image/webp" /><img src="assets/readme-features/command-palette.poster.jpg" alt="The command palette listing pages, workspaces and chats" width="410" /></picture>
 

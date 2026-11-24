@@ -46,6 +46,8 @@ const ROUTES = {
   entity: (workspace) => `/${workspace}/entities/campaign-writer`,
   skills: (workspace) => `/${workspace}/skills`,
   mcp: (workspace) => `/${workspace}/mcp`,
+  connectors: (workspace) => `/${workspace}/settings?tab=connectors`,
+  'connector-accounts': (workspace) => `/${workspace}/connectors/gmail`,
   machines: (workspace) => `/${workspace}/settings?tab=machines`,
   activity: (workspace) => `/${workspace}/settings?tab=activity`,
   artifacts: (workspace) => `/${workspace}/artifacts/spring-poster.png`,

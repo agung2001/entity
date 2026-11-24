@@ -509,7 +509,9 @@ artifact(studio.id, 'spring-papers-brief.md', `# Spring papers\n\nSix sheets, 20
 artifact(studio.id, 'winter-email.md', `# The winter set\n\nWe are delighted to share our seasonal offering.\n`)
 artifact(studio.id, 'price-list.csv', `collection,sheets,copies,price_eur\nSpring,6,200,148\nAutumn,4,150,96\nCards,,600,42\n`)
 
-/* MCP: three that work anywhere, one parked because it points at a laptop */
+/* MCP: three that work anywhere, one parked because it points at a laptop.
+   `youtrack` sits here too, because an installed `mcp` connector *is* a pool
+   definition — the roster merges the index row with this binding. */
 writeFileSync(
   path.join(workspaces.open(studio.id).path, 'mcp.json'),
   `${JSON.stringify({
@@ -518,6 +520,7 @@ writeFileSync(
       notes: { url: 'https://notes.northwind.example/mcp', headers: { Authorization: '***' } },
       calendar: { command: 'npx', args: ['-y', 'calendar-connector'] },
       files: { command: 'npx', args: ['-y', 'studio-files'] },
+      youtrack: { url: 'https://youtrack.northwind.example/mcp', headers: { Authorization: '***' } },
     },
     disabled: {
       'local-scanner': {
@@ -525,6 +528,82 @@ writeFileSync(
         __remote: true,
         __unavailable: 'its command is a path inside a home directory on the machine that shared it',
       },
+    },
+  }, null, 2)}\n`,
+)
+
+/* The connector roster: five installed rows in the shapes `connector-store`
+   writes, and the accounts they read in the shape `oauth-accounts` keeps. Only
+   definitions here — no token, and nothing outside the demo profile. `youtube`,
+   `x`, `maka` and `orca` are deliberately left uninstalled, so the Built-in pane
+   has something in it. */
+writeFileSync(
+  path.join(workspaces.open(studio.id).path, 'connectors.json'),
+  `${JSON.stringify({
+    schema: 1,
+    rows: {
+      youtrack: {
+        label: 'YouTrack', kind: 'mcp', scope: 'workspace', oauth: false, tier: '',
+        binding: 'mcp.json', mention: '@youtrack:', createdAt: iso(64, 10), installedFrom: 'catalog',
+      },
+      github: {
+        label: 'GitHub CLI', kind: 'cli', scope: 'workspace', oauth: false, tier: '',
+        binding: 'the CLI on this machine', mention: '@github:', createdAt: iso(64, 10),
+        installedFrom: 'catalog',
+      },
+      gmail: {
+        label: 'Gmail', kind: 'rest', scope: 'workspace', oauth: true, tier: 'write',
+        binding: 'oauth · loopback redirect', mention: '@gmail:', createdAt: iso(38, 14),
+        installedFrom: 'catalog',
+      },
+      'google-drive': {
+        label: 'Google Drive', kind: 'rest', scope: 'workspace', oauth: true, tier: 'read',
+        binding: 'oauth · loopback redirect', mention: '@drive:', createdAt: iso(38, 14),
+        installedFrom: 'catalog',
+      },
+      'youtube-studio': {
+        label: 'YouTube Studio', kind: 'rest', scope: 'workspace', oauth: true, tier: 'full',
+        binding: 'oauth · loopback redirect', mention: '@youtube-studio:',
+        createdAt: iso(21, 9), installedFrom: 'catalog',
+      },
+    },
+  }, null, 2)}\n`,
+)
+
+/* Two rows of one mailbox where one has lapsed, so the card shows `connected`
+   beside `needs sign-in` and a scope in `missing` — the state that is invisible
+   in a mock-up and the whole point of the per-account model. */
+const GMAIL_SCOPES = ['gmail.readonly', 'gmail.modify']
+writeFileSync(
+  path.join(DEMO.profile, 'oauth-accounts.json'),
+  `${JSON.stringify({
+    schema: 1,
+    accounts: {
+      gmail: [
+        {
+          email: 'studio@northwind.example', localpart: 'studio', scopes: GMAIL_SCOPES,
+          missing: [], status: 'connected', addedAt: iso(38, 14), refreshedAt: iso(0, 8),
+        },
+        {
+          email: 'orders@northwind.example', localpart: 'orders', scopes: ['gmail.readonly'],
+          missing: ['gmail.modify'], status: 'needs sign-in', addedAt: iso(31, 11),
+          refreshedAt: iso(9, 11),
+        },
+      ],
+      'google-drive': [
+        {
+          email: 'studio@northwind.example', localpart: 'studio',
+          scopes: ['drive.file', 'drive.readonly'], missing: [], status: 'connected',
+          addedAt: iso(38, 14), refreshedAt: iso(0, 8),
+        },
+      ],
+      'youtube-studio': [
+        {
+          email: 'press@northwind.example', localpart: 'press',
+          scopes: ['youtube.readonly', 'yt-analytics.readonly', 'youtube.force-ssl'],
+          missing: [], status: 'connected', addedAt: iso(21, 9), refreshedAt: iso(1, 8),
+        },
+      ],
     },
   }, null, 2)}\n`,
 )

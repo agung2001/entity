@@ -2,7 +2,12 @@
 
 # MCP servers
 
-<picture><source srcset="assets/readme-features/mcp.webp" type="image/webp" /><img src="assets/readme-features/mcp.poster.jpg" alt="The workspace MCP set with the Workspace / On this machine scope switch, transports and the entities that name each server" width="820" /></picture>
+<picture><source srcset="assets/readme-features/mcp.webp" type="image/webp" /><img src="assets/readme-features/mcp.poster.jpg" alt="Workspace Settings → Connectors narrowed to the mcp kind: one row per server with its binding, its mention and whether it is in the pool, adoptable or parked" width="820" /></picture>
+
+**Connectors are the roster now.** An MCP server is one *kind* of connector row — the
+[Connectors](connectors.md) page is where the list, the add sheet and the Built-in catalog
+live, and `:workspace/mcp` redirects there. This page is the `mcp` kind in full: the
+binding, the tool list and how each harness receives the set.
 
 A workspace has one set of servers (`<ws>/mcp.json`) and **every entity gets all of
 them**. Add a server once — on the MCP page, or by **attaching** one a harness

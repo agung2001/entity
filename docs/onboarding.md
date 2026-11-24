@@ -24,7 +24,7 @@ button styles — so a new install's first screen is the product, not a setup fo
 
 ### Step 1 · Name your room 🏠
 
-<img src="assets/onboarding/step-1-name.webp" alt="Step 1 of the wizard: a Workspace name field holding my-workspace, with the live ~/.entity/workspaces/my-workspace folder preview under it" width="820" />
+<img src="assets/onboarding/step-1-name.webp" alt="Step 1 of the wizard: a Workspace name field holding spring-catalogue, with the live Folder: ~/.entity/workspaces/spring-catalogue preview under it and Next: pick your agent → at the foot" width="820" />
 
 One field, defaulted to `my-workspace`, with the folder it will become printed
 underneath and re-derived on every keystroke. The derivation is the workspace store's
@@ -43,14 +43,14 @@ the rooms you add later come from the picker's modal.
 
 ### Step 2 · Pick the agent that answers 🤖
 
-<img src="assets/onboarding/step-2-agent.webp" alt="Step 2 of the wizard: five agent CLIs — Claude Code, Codex CLI, Gemini CLI, opencode and pi — each with its command and installed path, all marked installed, with Claude Code selected" width="820" />
+<img src="assets/onboarding/step-2-agent.webp" alt="Step 2 of the wizard: eight agent CLIs — Claude Code, Codex, opencode, Gemini CLI, Ollama, pi, Antigravity and Hermes Agent — each with its command and path, the installed ones marked INSTALLED and the rest NOT INSTALLED, with the count under the list" width="820" />
 
 entity drives a CLI you already have, so this step is a probe, not a choice of model.
-The CLIs the app knows — `claude`, `codex`, `gemini`, `opencode`, `pi` — are looked
-up on `PATH` and listed as a real radiogroup, so the arrow keys move the selection. Each
-row shows the `command · path` the machine reported, the hint under the list counts
-what was found (`5 CLIs found`, `1 CLI found`, `No CLI found yet`), and the first
-installed CLI is preselected.
+Every CLI the app knows — `claude`, `codex`, `opencode`, `gemini`, `ollama`, `pi`,
+`agy` and `hermes` — is looked up on `PATH` and listed as a real radiogroup, so the
+arrow keys move the selection. Each row shows the `command · path` the machine
+reported, the hint under the list counts what was found (`5 CLIs found`, `1 CLI
+found`, `No CLI found yet`), and the first installed CLI is preselected.
 
 - Nothing chosen disables the primary, which reads `Choose one to continue`.
 - An absent CLI stays in the list, dimmed and labelled `not installed`, so the option
@@ -65,7 +65,7 @@ The wizard detects a CLI. It never installs one and never asks for a key.
 
 ### Step 3 · Say hello 🎉
 
-<img src="assets/onboarding/step-3-reply.webp" alt="Step 3 of the wizard: three prompt chips, the question &quot;What can you do in this workspace?&quot; in the transcript and pi's reply under it, with the primary reading Open my workspace" width="820" />
+<img src="assets/onboarding/step-3-reply.webp" alt="Step 3 of the wizard: three prompt chips, the question What can you do in this workspace? sent to pi and pi's reply under it describing what it can read, write and run in the spring-catalogue room, with the primary reading Open my workspace →" width="820" />
 
 Three fixed chips, so the same question produces the same kind of answer on every
 machine. The one you send is a real one-shot turn of the chosen CLI into a real thread,
@@ -101,7 +101,7 @@ because it is the only thing that can create one.
 
 ## The return launch
 
-<img src="assets/onboarding/return-launch.webp" alt="The return launch: a Welcome back card with the owner row reading owner and admin@studio-mac · local profile, a Continue as owner button and a Use an email and password instead link" width="820" />
+<img src="assets/onboarding/return-launch.webp" alt="The return launch: a Welcome back 👋 card reading Signed in on this machine, an owner row with admin@studio-mac · local profile, a Continue as owner button and a Use an email and password instead link" width="820" />
 
 A machine that finished first run does not ask for a credential again: the profile on
 disk is the credential. The next launch shows `Welcome back 👋` with the owner row, one
