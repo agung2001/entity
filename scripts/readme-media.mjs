@@ -36,10 +36,18 @@ const POSTER_QUALITY = 5
    interaction is sometimes worth 3 MB. */
 const WEBP_BUDGET = 2 * 1024 * 1024
 const POSTER_BUDGET = 220 * 1024
-/* Documents whose assets we police. */
-const DOCS = ['README.md', ...readdirSync(path.join(ROOT, 'docs'))
-  .filter((name) => name.endsWith('.md'))
-  .map((name) => path.join('docs', name))]
+/* Documents whose assets we police: the README, every page under `docs/`, and
+   the per-connector pages one directory down, because those live in their own
+   folder (`docs/connectors/<id>.md`) and embed one still each. */
+const DOCS = ['README.md',
+  ...markdownIn('docs'),
+  ...markdownIn(path.join('docs', 'connectors'))]
+
+function markdownIn(dir) {
+  const full = path.join(ROOT, dir)
+  if (!existsSync(full)) return []
+  return readdirSync(full).filter((name) => name.endsWith('.md')).map((name) => path.join(dir, name))
+}
 
 function run(cmd, args) {
   const result = spawnSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' })
@@ -115,6 +123,12 @@ function posters({ force = false } = {}) {
 /** `media:encode` — one recording becomes the pair a document expects. */
 function encode({ input, name, width = MAX_WIDTH, hero = false, posterAt = null }) {
   if (!existsSync(input)) throw new Error(`no recording at ${input}`)
+  /* A screenshot is a still, and a still ships as the `.webp` alone: no poster,
+     no `<picture>` (`docs/assets/README.md`). Encoding it with `libwebp_anim`
+     would wrap one frame in an animation container and make `media:check`
+     demand a poster that no document would reference. The demo's screenshots
+     are PNG, which is the signal. */
+  if (/\.png$/i.test(input)) return encodeStill({ input, name, width })
   const base = hero ? ASSETS : FEATURES
   const target = path.join(base, `${name}.webp`)
   const poster = path.join(base, `${name}.poster.jpg`)
@@ -145,6 +159,31 @@ function encode({ input, name, width = MAX_WIDTH, hero = false, posterAt = null 
   console.log(`${path.relative(ROOT, poster)}  ${kb(statSync(poster).size)}`)
   console.log('\nUse it with:\n')
   console.log(pictureSnippet(name, 'docs'))
+}
+
+/** A screenshot from `npm run demo`, at the budget the same documents share. */
+function stillBase(name) {
+  const base = name.includes('/') ? path.join(ASSETS, path.dirname(name)) : ASSETS
+  return { base, target: path.join(base, `${path.basename(name)}.webp`) }
+}
+
+function encodeStill({ input, name, width = MAX_WIDTH }) {
+  const { target } = stillBase(name)
+  const scale = `scale='min(${width},iw)':-2:flags=lanczos`
+  run('ffmpeg', [
+    '-v', 'error', '-y', '-i', input,
+    '-vf', scale,
+    '-c:v', 'libwebp',
+    '-lossless', '0',
+    '-q:v', '82',
+    '-an',
+    '-f', 'webp',
+    target,
+  ])
+  const size = statSync(target).size
+  console.log(`${path.relative(ROOT, target)}  ${kb(size)}${size > WEBP_BUDGET ? '  ⚠ over budget' : ''}`)
+  console.log(`\nUse it with:\n\n<img src="assets/${path.relative('docs/assets', target)}" alt="…" width="820" />`)
+  return { target, size }
 }
 
 function pictureSnippet(name, from = 'docs') {
@@ -231,7 +270,7 @@ try {
   } else if (command === 'encode') {
     const input = rest[0]
     const name = rest[1]
-    if (!input || !name) throw new Error('usage: media:encode -- <recording.mov> <feature-name> [--hero] [--poster <seconds>]')
+    if (!input || !name) throw new Error('usage: media:encode -- <recording.mov|screenshot.png> <name> [--hero] [--poster <seconds>]')
     const posterIndex = rest.indexOf('--poster')
     const posterAt = posterIndex >= 0 ? Number(rest[posterIndex + 1]) : null
     encode({ input, name, hero: rest.includes('--hero'), posterAt })
@@ -247,4 +286,4 @@ try {
 }
 }
 
-export { encode, posterFor, posters, check }
+export { encode, encodeStill, posterFor, posters, check }

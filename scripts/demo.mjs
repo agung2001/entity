@@ -21,10 +21,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { DEMO, seedDemo } from './demo-profile.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+/* The connector ids are the catalog's, not a second list: a connector added there
+   gets a still here without this file being edited. */
+const { INSTALLABLE } = createRequire(import.meta.url)('../electron/connector-catalog.cjs')
 const args = process.argv.slice(2)
 const argOf = (name, fallback = '') => {
   const at = args.indexOf(name)
@@ -35,7 +40,39 @@ const PORT = Number(argOf('--port', 5183))
 const SHOT = argOf('--screenshot')
 const SHOTS = path.join(ROOT, '.tmp', 'demo-shots')
 const VIEW = { width: 1440, height: 1000 }
+/* A connector page is the one still that is *the subject* rather than background:
+   the document it illustrates explains that page, so cutting the card in half at
+   the fold hides the half being explained. `--screenshot connector-*` therefore
+   grows the frame to the page's own scroll height (never shrinks below `VIEW`).
+   Every other route keeps the 16:10 frame the README's clips are cut from. */
+const FITS_PAGE = Boolean(SHOT && SHOT.startsWith('connector-'))
+const MAX_FIT = 2200
 const wait = (page, ms) => page.waitForTimeout(ms)
+
+/* Tailscale's page reads a daemon on *this* machine, and the tailnet name, IPv4
+   and account it answers with are none of a document's business. So that one
+   still answers the page's own two calls itself, with an invented tailnet: the
+   link and the QR point at a name that resolves nowhere, and the code in the
+   picture is a dummy. `100.101.102.103` is carrier-grade NAT space, so nothing
+   there is reachable either. */
+const TAILNET = {
+  state: 'running',
+  version: '1.86.2',
+  dnsName: `${DEMO.hostname}.northwind-studio.ts.net`,
+  ipv4: '100.101.102.103',
+  magicdnsSuffix: 'northwind-studio.ts.net',
+  magicdnsEnabled: true,
+  hostName: DEMO.hostname,
+  error: '',
+}
+const SERVING = {
+  running: true,
+  port: 5183,
+  url: `http://${DEMO.hostname}.northwind-studio.ts.net:5183`,
+  addressKind: 'magicdns',
+  startedAt: new Date().toISOString(),
+  pid: 4242,
+}
 
 /* The stills worth taking on the seeded profile: a route per name, so a typo is
    answered with the list instead of a picture of a 404. */
@@ -53,6 +90,9 @@ const ROUTES = {
   artifacts: (workspace) => `/${workspace}/artifacts/spring-poster.png`,
   sound: () => '/account/sound',
 }
+
+/* One still per connector page — `docs/connectors/<id>.md` each embeds its own. */
+for (const id of INSTALLABLE) ROUTES[`connector-${id}`] = (workspace) => `/${workspace}/connectors/${id}`
 
 if (SHOT && !ROUTES[SHOT]) {
   console.error(`[demo] no route for --screenshot ${SHOT}. Seeded: ${Object.keys(ROUTES).join(', ')}`)
@@ -184,8 +224,17 @@ async function takeStill() {
         page.click('button[type="submit"]'),
       ])
     }
+    if (SHOT === 'connector-tailscale') await stubTailscale(page)
     await page.goto(`${base}${ROUTES[SHOT](DEMO.workspace)}`, { waitUntil: 'networkidle' })
     await wait(page, 1200)
+    if (FITS_PAGE) {
+      const tall = await page.evaluate(() =>
+        Math.ceil(document.querySelector('.main-scroll')?.scrollHeight || 0))
+      if (tall > VIEW.height) {
+        await page.setViewportSize({ width: VIEW.width, height: Math.min(tall, MAX_FIT) })
+        await wait(page, 300)
+      }
+    }
 
     fs.mkdirSync(SHOTS, { recursive: true })
     const file = path.join(SHOTS, `${SHOT}.png`)
@@ -194,6 +243,27 @@ async function takeStill() {
   } finally {
     await browser.close()
   }
+}
+
+/** Answer the Tailscale page's own calls with the invented tailnet above, and
+ *  let every other call through to the server.
+ *
+ *  `// ponytail:` interception at the network edge, not a stub daemon or an
+ *  `ENTITY_*` seam in the product: the page under the picture is the real page,
+ *  and only the one read it makes is replaced. If a second connector ever needs
+ *  this, the shape to reach for is the same — never a fake binary in the repo.
+ */
+async function stubTailscale(page) {
+  await page.route('**/__entity/call', (route) => {
+    const fn = String(route.request().postDataJSON()?.fn || '')
+    if (!fn.startsWith('tailscale.')) return route.continue()
+    const data = fn === 'tailscale.serve' ? SERVING : TAILNET
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, data }),
+    })
+  })
 }
 
 /** Resolve once the dev server answers, or give up after ~15 s. */
