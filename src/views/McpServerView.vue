@@ -942,7 +942,11 @@ watch(name, async () => {
             <div class="entp-title">
               <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
               <h1>{{ title }}</h1>
-              <div class="mcpp-cmd-row">
+              <!-- An entry this workspace has not installed and the catalog gives no
+                   launcher for (Maka is installed through its own server, not a script)
+                   has no definition to show, so there is no command to copy and no
+                   shape to print. Both rows stand down rather than dereferencing it. -->
+              <div v-if="definition" class="mcpp-cmd-row">
                 <code class="mcpp-cmd" :title="command">{{ command }}</code>
                 <button
                   class="mcpp-cmd-copy"
@@ -1219,6 +1223,7 @@ watch(name, async () => {
               <dd data-tone="warn">{{ machineLocalNote }}</dd>
             </div>
             <div
+              v-if="definition"
               class="mcpp-fact"
               role="button"
               tabindex="0"

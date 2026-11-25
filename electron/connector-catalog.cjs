@@ -158,6 +158,27 @@ const CATALOG = {
     },
   },
 
+  /* ── the fourth kind: a connector that reads a local daemon ──────────────
+     Tailscale authenticates nothing and stores no token. There is one machine
+     fact to read (`tailscale status --json`), one thing to gate (this repo's own
+     `npm run dev:lan`) and one thing to hand over (the phone's address, as a QR).
+
+     **No `work` block, so no mention.** `@tailscale:` would have nothing to put in
+     a prompt that the turn cannot read itself; what this connector produces is an
+     address a *person* opens on a phone, which is not a prompt. The page it opens
+     is its own component (`TailscalePanel.vue`), not the generic cli cards.
+
+     `verify` is the whole of what this app does to the daemon: `tailscale version`
+     proves the binary answers and prints the build, and no verb ever writes. */
+  tailscale: {
+    label: 'Tailscale',
+    kind: 'cli',
+    binary: 'tailscale',
+    website: 'https://tailscale.com',
+    summary: 'Open this app on your phone by its tailnet name.',
+    verify: { argv: ['version'], okExit: 0 },
+  },
+
   /* ── a shipped server that lives in the workspace ────────────────────────
      Open Design is an MCP server, and unlike Maka it is not something a person
      installs on their own computer: the workspace's own `skills/opendesign/` holds

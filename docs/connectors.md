@@ -45,19 +45,26 @@ it), and a `rest` row is a URL plus whatever its binding names. A `rest` row wit
 `oauth: true` is **account-bearing** — it holds several accounts, and it is the only kind
 that does.
 
+The three kinds are what the *runtime* needs. A row can still behave unlike its kind:
+`tailscale` is a `cli` row with no credential at all, and it is described with its own
+page below.
+
 ## Built-in versus added
 
 The catalog is the one list of what the app ships, and every surface reads it: the
 Built-in pane, the add sheet's cards and the composer's mention menu are three doors on
-one table. Entity ships twelve — `gmail`, `google-drive`, `youtube`, `youtube-studio`,
-`x` and `habitify` account-bearing (`habitify` reads through its provider's remote MCP
-server, and signs in with a client it registers itself); `orca`, `youtrack` and `github`
-the three the composer offered before connectors existed (`youtrack` is an `mcp` row, the
-other two are `cli` rows); `maka` and `open-design`, the MCP-backed ones — `open-design`
-launches from the workspace's own `skills/` directory, so its definition travels;
-`clockify`, whose credential is one API key pasted once instead of an OAuth account, with
-its workspace id and timezone kept as workspace state beside it. Anything else a person
-adds is a custom row: real, working, and shipping no resolver — so it offers no `@` form.
+one table. Entity ships thirteen — `gmail`, `google-drive`, `youtube`,
+`youtube-studio`, `x` and `habitify` account-bearing (`habitify` reads through its
+provider's remote MCP server, and signs in with a client it registers itself); `orca`,
+`youtrack` and `github` the three the composer offered before connectors existed
+(`youtrack` is an `mcp` row, the other two are `cli` rows); `maka` and `open-design`, the
+MCP-backed ones — `open-design` launches from the workspace's own `skills/` directory, so
+its definition travels; `clockify`, whose credential is one API key pasted once instead of
+an OAuth account, with its workspace id and timezone kept as workspace state beside it;
+and `tailscale`, a `cli` row that behaves like none of the others — it authenticates
+nothing, stores no token, and reads one machine-local daemon, so it carries no `@` form
+and gates one command instead. A custom row is whatever a person adds: real, working, and
+shipping no resolver — so it offers no `@` form either.
 
 **Installing records a definition, never a credential.** An `mcp` entry writes a
 placeholder binding only when the workspace has none, because installing must not invent
@@ -149,11 +156,25 @@ no resolver is context-only and says so rather than promising an `@` to silence.
 | `@clockify:<project\|login>:<monday\|this week>` | the hours one project or one person logged in a week |
 | `@youtrack:[<PROJECT>:]<query>` | issues, scoped to a project key or searched |
 | `@orca:<project>[:<path>]` | a project's real path, or one file inside it |
+| `@github:<owner/repo> \| <query>` | one repository by full name, or a search across what the token can see |
 
 The scope segment is **required**, and `all` is explicit: there is no implicit "no scope
 means every mailbox", which is what made the first word ambiguous. A word that is not one
 of your accounts is an error rather than a search, so a typo cannot quietly read the wrong
 mailbox. The query is the rest of the line; the instruction goes on the next line.
+
+## One page per connector
+
+Each connector has its detail page in full — what it reaches, where its credential lives,
+and the mention it answers:
+
+| connector | connector | connector |
+| --- | --- | --- |
+| [Orca](connectors/orca.md) · `@orca:` | [GitHub CLI](connectors/github.md) · `@github:` | [YouTrack](connectors/youtrack.md) · `@youtrack:` |
+| [Maka](connectors/maka.md) · `@maka:` | [Open Design](connectors/open-design.md) · `@opendesign:` | [Gmail](connectors/gmail.md) · `@gmail:` |
+| [Google Drive](connectors/google-drive.md) · `@drive:` | [YouTube](connectors/youtube.md) · `@youtube:` | [YouTube Studio](connectors/youtube-studio.md) · `@youtube-studio:` |
+| [Habitify](connectors/habitify.md) · `@habitify:` | [Clockify](connectors/clockify.md) · `@clockify:` | [X](connectors/x.md) · `@x:` |
+| [Tailscale](connectors/tailscale.md) · no `@` form, one command gated | | |
 
 ## What it deliberately does not do
 

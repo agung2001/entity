@@ -356,6 +356,16 @@ export default defineConfig({
     // `scripts/dev-desktop.mjs` reads the port that was actually bound.
     port: Number(process.env.VITE_DEV_PORT) || 5183,
     strictPort: false,
+    // Vite answers a request only when its `Host` header is localhost or a
+    // literal IP, so `npm run dev:lan` on a phone is served only if the name in
+    // the QR is allowed by name. `.ts.net` is every tailnet's MagicDNS suffix
+    // (one length-prefixed label per tailnet), which is exactly the one host a
+    // phone arrives as; the Tailscale panel sets
+    // `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` to this machine's suffix and Vite
+    // merges it on top of this list. Still no wildcard over the internet: a bare
+    // `true` would allow any Host, and that is the DNS-rebinding hole this
+    // setting exists to close.
+    allowedHosts: ['.ts.net'],
   },
   build: {
     outDir: 'dist',
