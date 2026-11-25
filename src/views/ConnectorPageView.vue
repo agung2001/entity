@@ -9,6 +9,7 @@ import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
+import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
   installConnector,
@@ -78,6 +79,16 @@ const isCli = computed(() => row.value?.kind === 'cli')
 /* An account-bearing connector: a `rest` row whose credential is one refresh
    token per account, on this machine. It is the only kind with an Accounts card. */
 const isOAuth = computed(() => row.value?.kind === 'rest' && row.value?.oauth === true)
+/* The fourth kind has no credential to ask for and no mention to resolve, so every
+   card on the generic page would say something untrue about it: a pitch selling an
+   install, a sign-in that lives in the CLI, a mention the composer does not offer.
+   Its page body is `TailscalePanel`, and the cards below stand down for it. */
+const isTailscale = computed(() => id.value === 'tailscale')
+/* The panel's own read, published upward. The hero states the same three facts the
+   cards below it do, and a second `tailscale status --json` would let the two
+   disagree. `null` means "still reading" — never a zero (DESIGN.md:118). */
+const tsRead = ref(null)
+const tsTone = computed(() => (tsRead.value?.tone === 'ok' ? 'ok' : tsRead.value?.tone === 'fail' ? 'bad' : 'mute'))
 
 /* ── the accounts card ─────────────────────────────────────────────────
    The card is its own component (`ConnectorAccountsCard`); the page keeps only what
@@ -174,6 +185,19 @@ const fields = computed(() => {
      sentence in a `binding` slot would read as if one existed. The pitch says where
      the credential *would* live, in prose, in the card above. */
   const rows = []
+  /* The rail is the page's definition, and this connector's definition is what it
+     reads, what it runs and what that binds — not a `binding` file, of which it has
+     none. `<port>` rather than a number: the field above is where the number lives. */
+  if (isTailscale.value) {
+    return [
+      { k: 'kind', v: 'cli · this machine' },
+      { k: 'reads', v: 'tailscale status --json', mono: true },
+      { k: 'runs', v: 'npm run dev:lan', mono: true },
+      { k: 'binds', v: '0.0.0.0:<port>', mono: true },
+      { k: 'requires', v: 'Tailscale running' },
+      { k: 'for', v: 'every entity · this workspace' },
+    ]
+  }
   if (notInstalled.value) {
     rows.push(
       { k: 'kind', v: entry.kind },
@@ -359,12 +383,26 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
               <template v-else>{{ row.initial }}</template>
             </span>
             <div class="entp-title">
-              <p class="eyebrow">{{ row.kind }} · {{ row.scope }} · {{ hub.workspaceLabel || hub.workspace }}</p>
+              <p class="eyebrow">
+                {{ row.kind }} · {{ isTailscale ? 'this machine' : row.scope }} ·
+                {{ hub.workspaceLabel || hub.workspace }}
+              </p>
               <h1>{{ row.label }}</h1>
               <p class="entp-desc">
-                {{ notInstalled ? row.summary || row.work?.resolves : row.binding || 'no binding recorded' }}
+                {{ isTailscale ? row.summary : notInstalled ? row.summary || row.work?.resolves : row.binding || 'no binding recorded' }}
               </p>
-              <div class="entp-chips">
+              <!-- Tailscale's hero, from the daemon read the panel made: the state
+                   word, the build, and whether the name or the address is what a
+                   phone will use. Nothing here is a count or a zero. -->
+              <div v-if="isTailscale" class="entp-chips">
+                <span class="mcpp-chip" :data-tone="tsTone">
+                  <i aria-hidden="true"></i>{{ tsRead ? tsRead.word : 'reading' }}
+                </span>
+                <span v-if="tsRead?.version" class="entp-chip">v{{ tsRead.version }}</span>
+                <span v-if="tsRead?.serving" class="entp-chip">serving :{{ tsRead.port }}</span>
+                <span v-else-if="tsRead" class="entp-chip">magicdns {{ tsRead.magicdns ? 'on' : 'off' }}</span>
+              </div>
+              <div v-else class="entp-chips">
                 <span
                   class="mcpp-chip"
                   :data-tone="notInstalled ? 'mute' : tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'fail' ? 'bad' : 'mute'"
@@ -388,8 +426,9 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
 
           <!-- The MCP page's panel, on a CLI's facts: what the probe saw and how
                much of it. `samples` is the probe's own answer, so an unprobed row
-               says so instead of printing a zero. -->
-          <aside v-if="notInstalled" class="entp-xp" title="Nothing to probe yet">
+               says so instead of printing a zero. Tailscale has none of this: it
+               stores nothing and resolves no mention, so its hero is one child. -->
+          <aside v-if="notInstalled && !isTailscale" class="entp-xp" title="Nothing to probe yet">
             <div class="entp-lv">
               <span>MENTION</span>
               <b>{{ row.work?.mention ? '1' : '—' }}</b>
@@ -407,7 +446,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </div>
           </aside>
           <aside
-            v-else
+            v-else-if="!isTailscale"
             class="entp-xp"
             :title="`${seenTotal} ${row.samplesLabel || 'reported'} · ${row.status}`"
             :aria-label="`${seenTotal} ${row.samplesLabel || 'reported'}, ${row.status}, using ${row.binary || row.binding || 'its own binary'}`"
@@ -445,7 +484,11 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                that only says "not installed" introduces nothing. The prose comes
                from the catalog (`summary`, then the mention's own `resolves`), so it
                cannot drift from what the resolver actually does. -->
-          <section v-if="notInstalled" class="cxn-card cxn-about">
+          <!-- Tailscale's page body: the daemon read and the one server it gates.
+               It is the whole of `.cxn-main` for that connector — see `isTailscale`. -->
+          <TailscalePanel v-if="isTailscale" @read="tsRead = $event" />
+
+          <section v-if="notInstalled && !isTailscale" class="cxn-card cxn-about">
             <h2>What {{ row.label }} gives you</h2>
             <p class="cxn-about-lead">
               {{ row.summary || (work?.resolves ? `${row.label} resolves ${work.resolves}.` : `${row.label} is a connector this app ships.`) }}
@@ -490,7 +533,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             @changed="onAccountsChanged"
           />
 
-          <section v-if="work" class="cxn-card cxn-work">
+          <section v-if="work && !isTailscale" class="cxn-card cxn-work">
             <h2>In the chat</h2>
             <!-- The account-bearing four put the account first, and their `mention`
                  is only the head (`@gmail:`), so the lead names the shape rather
@@ -541,7 +584,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </p>
           </section>
 
-          <section v-else class="cxn-card">
+          <section v-else-if="!isTailscale" class="cxn-card">
             <h2>In the chat</h2>
             <p class="cxn-note">
               No resolver is shipped for this connector, so there is no
@@ -555,7 +598,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                reachable before installing — "do I even have this?" is the question
                the page is answering. A `rest` row's box would be a token form with
                no binding to write it to, so that one waits. -->
-          <section v-if="!isOAuth && (!notInstalled || isCli)" class="cxn-card">
+          <section v-if="!isTailscale && !isOAuth && (!notInstalled || isCli)" class="cxn-card">
             <h2>{{ isCli ? 'Sign-in' : 'Endpoint and token' }}</h2>
             <template v-if="isCli">
               <p class="cxn-note">
@@ -615,7 +658,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </div>
           </section>
 
-          <section v-if="notInstalled" class="cxn-card">
+          <section v-if="notInstalled && !isTailscale" class="cxn-card">
             <h2>Install</h2>
             <p class="cxn-note">
               Records the definition in this workspace. <b>No credential is copied</b> — a
@@ -634,7 +677,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             <div v-if="error" class="cxn-error" role="alert">{{ error }}</div>
           </section>
 
-          <section v-else class="cxn-card cxn-danger">
+          <section v-else-if="!isTailscale" class="cxn-card cxn-danger">
             <h2>Remove</h2>
             <p class="cxn-note">
               Takes the connector out of this workspace. A credential held by the CLI or by
@@ -651,7 +694,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           <dl class="cxn-facts">
             <template v-for="field in fields" :key="field.k">
               <dt>{{ field.k }}</dt>
-              <dd :title="String(field.v)">{{ field.v }}</dd>
+              <dd :class="{ mono: field.mono }" :title="String(field.v)">{{ field.v }}</dd>
             </template>
           </dl>
         </section>

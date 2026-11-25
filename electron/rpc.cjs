@@ -38,6 +38,7 @@ const pendingWrites = require('./pending-write.cjs')
 const { tilde } = require('./frontmatter.cjs')
 const audit = require('./platform-audit.cjs')
 const remoteSync = require('./remote-sync.cjs')
+const tailscale = require('./tailscale.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
 const usage = require('./usage.cjs')
 const learning = require('./learn.cjs')
@@ -417,6 +418,16 @@ function createRpc({
        it is a plain read and a plain write on the connector's index row. */
     'connector.fields': (args) => connectorStore.fieldsOf(args),
     'connector.setFields': (args) => connectorStore.setFields(args),
+
+    /* Tailscale: one read, one toggle. `start`/`stop` are the only verbs that
+       change anything here, and what they change is a Vite child this app owns
+       — never the daemon. Nothing in this namespace takes a path, an argv or a
+       token from the renderer. */
+    'tailscale.status': () => tailscale.read(),
+    'tailscale.start': ({ port } = {}) => tailscale.start(port),
+    'tailscale.stop': () => tailscale.stop(),
+    'tailscale.serve': () => tailscale.serve(),
+    'tailscale.open': () => tailscale.open(),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
@@ -823,6 +834,14 @@ function createRpc({
       remoteSync.stop()
       backups.stop()
       update.stop()
+      /* The LAN web server is a dev server this app started, so quitting the app
+         is a stop: leaving `vite --host 0.0.0.0` behind would be a listener on
+         the tailnet that nothing on screen admits to. */
+      try {
+        tailscale.stop()
+      } catch {
+        /* a child that already exited is not a failed shutdown */
+      }
       await mcpServer.stop()
     },
     activeCount: () => runner.activeCount() + chats.activeCount(),
