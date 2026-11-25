@@ -285,6 +285,16 @@ export async function clearOauthClient(provider = 'google') {
   return call('connector.oauth.clearClient', { provider })
 }
 
+/** Read a dropped `credentials.json` for confirmation. Answers the id and a mask. */
+export async function readOauthClientFile({ provider = 'google', text }) {
+  return call('connector.oauth.clientFile', { provider, text })
+}
+
+/** Save from a dropped `credentials.json`. Parsing happens in the main process. */
+export async function setOauthClientFile({ provider = 'google', text }) {
+  return call('connector.oauth.setClientFile', { provider, text })
+}
+
 /** The access tiers a connector offers, with the chosen one marked. */
 export async function loadTiers(connectorId) {
   return call('connector.account.tiers', { connector: connectorId, workspace: hub.workspace })
