@@ -738,6 +738,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | A bound `grid-template-columns` wins over the mobile container query | Apply the template only in the band that uses it (`null` below 460) | `tests/e2e/full/24-machines-fleet.spec.js` |
 | Two glyphs on one row say the same thing | The station's tile already draws a machine; a server icon beside the name is the second one | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's bottom border touches the table's top border | Two hairlines a pixel apart read as one thick rule: the field wants a gap *below*, even when it wants none above | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A dashboard re-reads on every visit, or its `cached 15 min` label outlives the constant | One read a day into `<ENTITY_HOME>/github-dashboard.json`, refreshed only by the explicit verb or the expiry, and the label reads `cacheTtlMs` from the payload instead of typing the number | `electron/github-dashboard.cjs`, `ConnectorDashboard.vue` (see *A dashboard caches for a day, in a file*) |
 | A right-aligned column has a left-aligned header | Align the desk's label to the cell's own `justify-content`, or it reads as a different column | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's glyph reads as glued to the first letter | `.wsl-search` is a 32px box around a 20px input; give the input `height: 100%` and the field the app's other field's gap (9px) | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A host name is plain text while a tiny arrow beside it goes somewhere | The name is the link, the row is not: the alias carries the route, the arrow is its shortcut, the address is text | `npm test` (`ui-contract`) |
@@ -1270,6 +1271,41 @@ inventory, and Markdown parsing must not happen until a reply needs it.
 screen, or if `marked`/`dompurify` appear outside the prose engine. `npm run
 build` prints the chunk list — the entry chunk should not grow without a reason.
 
+## A dashboard caches for a day, in a file
+
+A dashboard is a handful of requests against somebody else's rate limit, and its
+numbers move over days, not seconds. So the default for **any** dashboard in this
+app is: **one read a day, stored on disk, refreshed only when someone asks.**
+`electron/github-dashboard.cjs` is the reference implementation.
+
+- **The cache is a file, not a variable.** `<ENTITY_HOME>/github-dashboard.json`
+  (falling back to `~/.entity/`) holds `{ schema, key, at, value }`: the payload
+  verbatim, the clock of the read, and the key it was read for. A restart must not
+  spend the budget again, and `ENTITY_HOME` is honoured so a test or a demo never
+  writes a developer's real home.
+- **The TTL is a day, and it is one constant.** A shorter one buys nothing: a
+  number that changed twice in fifteen minutes was never the number somebody asked
+  about, and what a dashboard costs is requests, not milliseconds.
+- **Only two things read again: the explicit verb and the expiry.** Opening the
+  tab, leaving and coming back, reloading the window — all serve the stored
+  answer. The Refresh button sends `force: true` and is the only way to read
+  sooner than a day.
+- **The key makes stale answers impossible to serve by accident.** It is the
+  readable logins plus the window start, so signing in, signing out, switching the
+  active login, or the day rolling over misses the cache instead of drawing
+  somebody else's numbers.
+- **A failed or rate-limited read is never cached.** Storing a refusal would
+  re-serve it for a day. The tab keeps the last good numbers, stamps them with
+  their `readAt`, and says what happened in its own banner.
+- **The page prints the rule it follows.** The main process sends `cacheTtlMs` with
+  every payload; the header stamp reads `read 3 h ago · cached until 18 Sep 09:40`
+  and the card foot says `served from the 1-day cache` or `cached for 1 day`.
+  **Never hardcode the duration in copy** — a `cached 15 min` label that outlives
+  the constant is a lie about the app's own behaviour, and it was paid for once.
+- **A cache the app cannot write is a miss, never an error.** Reads and writes are
+  wrapped; a read-only home means the next visit asks the service again instead of
+  failing the page.
+
 ## Voice mode opens a microphone
 
 The microphone is the one control in the composer that reaches a device. It sits
@@ -1391,6 +1427,10 @@ Rules that keep it that way:
 11. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.
-12. Styles go in the sheet for the surface (see **Stylesheets are split by
+12. If the page reads a remote service into numbers, it is a dashboard: cache it
+   for a day in a JSON file under `~/.entity/`, re-read only on an explicit verb
+   or the expiry, and print the rule from `cacheTtlMs` (see *A dashboard caches
+   for a day, in a file*).
+13. Styles go in the sheet for the surface (see **Stylesheets are split by
    surface**), and a corner and a type size come from the ladders in
    `tokens.css`.
