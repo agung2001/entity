@@ -79,60 +79,6 @@
   .app {
     flex-direction: column;
   }
-  .rail {
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-  }
-  .rail .brand {
-    padding: 0 8px 0 0;
-  }
-  .ws {
-    display: none;
-  }
-  .rail-toggle {
-    display: none;
-  }
-  .theme-toggle {
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    justify-content: center;
-  }
-  .theme-toggle .lbl,
-  .theme-toggle .rail-kbd {
-    display: none;
-  }
-  .nav {
-    flex-direction: row;
-    gap: 2px;
-  }
-  .nav-label {
-    display: none;
-  }
-  .nav a,
-  .nav button {
-    height: 30px;
-    padding: 0 9px;
-    width: auto;
-  }
-  .nav .count {
-    display: none;
-  }
-  .rail-foot {
-    margin: 0 0 0 auto;
-    padding: 0;
-    border: 0;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-  }
   .view {
     --view-pad: 16px;
     padding: 22px var(--view-pad) 60px;
@@ -271,10 +217,6 @@
   }
   .cbar .sub {
     display: none;
-  }
-  .chist {
-    max-height: 260px;
-    padding: 10px 0 0;
   }
   .cpanel {
     --pad: 14px;
