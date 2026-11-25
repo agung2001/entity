@@ -2644,3 +2644,338 @@
     transition: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THE SKILL DETAIL PAGE — the connector page's shell, applied to a skill
+   ─────────────────────────────────────────────────────────────────────
+   `SkillDetailView.vue` is built out of `directory.css`'s `.entp-*` grammar
+   (bar → hero → grid/rail) and `backdrops.css`'s hero, exactly as
+   `McpServerView.vue` is. Everything below is only what a *skill* needs that
+   an MCP server did not: prose instead of a config file, a file list instead
+   of a tool table, and one destructive verb that has to live in the rail.
+   The shared grammar is never redeclared here — a copy would drift.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Δ2 · the invocation: `.mcpp-cmd` + `.mcpp-cmd-copy` are `McpServerView`'s
+   scoped block (2202–2298), and a scoped style does not cross views. Values
+   are the MCP page's, verbatim, so the two pages' heroes ink the same.
+   Measured on the dark hero: command 12.6:1, copy label 10.1:1. */
+.entp-hero .mcpp-cmd {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.34);
+  color: #cfe4d4;
+}
+.entp-hero .mcpp-cmd-copy {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #c9d2b7;
+}
+.entp-hero .mcpp-chip {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c9d2b7;
+}
+/* The dot is the only colour signal on a chip, so it never stands alone: the
+   label beside it says the same thing in words. */
+.entp-hero .mcpp-chip[data-tone='ok'] i {
+  background: var(--hero);
+}
+.entp-hero .mcpp-chip[data-tone='warn'] i {
+  background: var(--accent);
+}
+.entp-hero .mcpp-chip[data-tone='bad'] i {
+  background: #ff8f75;
+}
+/* a library copy is neither attached nor broken — an unlit dot, not a grey lie */
+.entp-hero .mcpp-chip[data-tone='mute'] i {
+  border: 1px solid currentColor;
+  background: none;
+}
+/* Light mode: the same three, off the cream paper the hero paints there. */
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd {
+  border-color: color-mix(in oklab, var(--hero) 22%, var(--border));
+  background: color-mix(in oklab, #fff 70%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd-copy {
+  border-color: color-mix(in oklab, var(--hero) 22%, var(--border));
+  background: color-mix(in oklab, #fff 72%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-chip {
+  border-color: color-mix(in oklab, var(--hero) 26%, var(--border));
+  background: color-mix(in oklab, #fff 72%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .entp-hero .mcpp-chip i {
+  background: color-mix(in oklab, var(--hero) 70%, var(--ink-2));
+}
+
+/* Δ2b · the one primary on the page. The verb you came here for is "how do I
+   call it", so its copy button wears `--ink` — the page's only filled control.
+   Cream hero 16.5:1; the dark hero inverts the tokens and lands on the same
+   ratio. Scoped twice on purpose: Δ2's hero re-ink is more specific than a
+   bare attribute selector, and a primary that loses to a secondary is not a
+   primary. */
+.entp-hero .mcpp-cmd-copy[data-primary='1'],
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd-copy[data-primary='1'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+.entp-hero .mcpp-cmd-copy[data-primary='1'] svg,
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd-copy[data-primary='1'] svg {
+  width: 12px;
+  height: 12px;
+  color: var(--bg);
+}
+/* A disabled verb still has to be readable: `.btn[disabled]` drops to
+   `opacity:.5`, which would put this label at ~2:1 on the hero. The fill is
+   dropped and the ink kept — `--muted` at full opacity measures 4.62:1 on the
+   hero's lowest stop and 4.28:1 on its mid. */
+.entp-hero .mcpp-cmd-copy[data-primary='1'][disabled],
+:root:not([data-theme='dark']) .entp-hero .mcpp-cmd-copy[data-primary='1'][disabled] {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Δ3 · light-mode re-ink. `backdrops.css` gives the cream hero an eyebrow of
+   `color-mix(--hero 48%, --ink-2)`; on a lime hero that measures 2.63:1, under
+   AA. Plain `--ink-2` is 8.14:1 there. One extra class of specificity because
+   `backdrops.css` is imported after this sheet. */
+:root:not([data-theme='dark']) .entp-hero .entp-title .eyebrow {
+  color: var(--ink-2);
+}
+
+/* Δ4 · prose that is not a fact row. The page's sections are read, not scanned,
+   so they take `--fs-small` at a 76-character measure — the hero's `.entp-desc`
+   caps at 58ch, one step wider because a section has the rail beside it. */
+.skp-prose {
+  margin: 0;
+  max-width: 76ch;
+  font-size: var(--fs-small);
+  line-height: 1.68;
+  color: var(--ink-2);
+}
+.skp-prose + .skp-prose {
+  margin-top: 9px;
+}
+.skp-prose b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.skp-prose code {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+
+/* Δ4b · the rail's two long values, and one column on a phone.
+   `.trunc` caps the path only while the rail is a 306px sidebar; below 980 the
+   rail is the full width, so the cap lifts instead of clipping a path that has
+   the whole row to itself. `.skp-facts` is this page's own class because
+   `McpServerView.vue` keeps its equivalent in a scoped block that does not
+   cross views. */
+@media (min-width: 981px) {
+  .entp-facts dd.trunc {
+    max-width: 186px;
+  }
+}
+@media (max-width: 620px) {
+  .entp-facts.skp-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .entp-facts.skp-facts > div {
+    border-top: 1px solid var(--border);
+  }
+  .entp-facts.skp-facts > div:first-child {
+    border-top: 0;
+  }
+  .entp-facts dd.trunc {
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* the MCP page's own fix, unchanged: the head wraps instead of squeezing its
+     count into a sliver */
+  .entp-sec-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .entp-hero .mcpp-cmd-row {
+    width: 100%;
+  }
+}
+
+/* Δ5 · the file list is a disclosure, not a tab. A skill is one prose file and
+   a handful of assets; a tablist charged a click to see the only thing worth
+   reading, and hid the second file behind a nav the page did not need.
+   `directory.css` already draws `.entp-thr` for the entity page's disclosure
+   rows — this is that row, with the marker removed and the open state squared
+   off against the codebox underneath. */
+details.skf > summary.entp-thr {
+  display: grid;
+  cursor: pointer;
+  list-style: none;
+}
+details.skf > summary.entp-thr::-webkit-details-marker {
+  display: none;
+}
+details.skf > summary.entp-thr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+details.skf[open] > summary.entp-thr {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+details.skf[open] > summary.entp-thr .entp-go {
+  opacity: 1;
+  transform: rotate(90deg);
+}
+/* the copy verb lives in the section head, so it gets that head's `r` shape
+   and does not need a strip of its own inside every open row. `r` is a dotted
+   text link 15px tall — a hit area under the type, padded out and pulled back
+   so the 22px head row keeps its height. */
+.entp-sec-head .r {
+  padding-block: 6px;
+  margin-block: -6px;
+}
+@media (max-width: 620px) {
+  .entp-sec-head .r {
+    padding-block: 14px;
+    margin-block: -14px;
+  }
+}
+details.skf > .codebox {
+  margin: 0;
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  max-height: 260px;
+  /* Δ5b · SKILL.md is prose, not JSON: the shared `.codebox` is a horizontal
+     scroller, which is right for a config file and wrong for a 100-character
+     paragraph. Wrapping keeps the 390 view readable with no stray scrollbar. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Δ6 · loading and unread states inside the main column. The skeleton repeats
+   the prose it replaces (`--skel`, 9px lines) so nothing jumps when the body
+   lands; the error and missing states reuse `.empty-note`. */
+.skp-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-width: 76ch;
+  margin: 0;
+}
+.skp-skel-row {
+  display: block;
+  height: 9px;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+}
+.skp-skel-row:nth-child(1) {
+  width: 100%;
+}
+.skp-skel-row:nth-child(2) {
+  width: 88%;
+}
+.skp-skel-row:nth-child(3) {
+  width: 54%;
+}
+.skp-skel-note {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+/* Δ7 · the shelf has no card of its own — `startfrom.css` paints it as a bare
+   section, which is right on the entity page's grid and leaves it floating
+   here. One hairline closes the main column. */
+.entp-main > .sf {
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* Δ8 · one destructive verb in the rail. `retention.css` dresses the rail's
+   buttons; a hover that reads as "this will destroy something" is the page's
+   job. Reuses the same `data-danger` vocabulary the entity page's rail uses. */
+.entp-rail-actions button[data-danger='1']:hover,
+.entp-rail-actions button[data-danger='1']:focus-visible {
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.entp-rail-actions button[data-danger='1']:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--danger) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* Δ9 · the rail's own rhythm — `mcpp-rail` spaces its children, the bare
+   `.entp-rail` has no gap between a heading and the panel under it. Two classes
+   because `directory.css` imports after this sheet and `.entp-facts` /
+   `.entp-rail-h` / `.entp-rail-actions` each set their own margin at equal
+   specificity. */
+.detail-view .entp-rail > * + * {
+  margin-top: 16px;
+}
+
+/* Δ10 · phone touch targets. The repo already does this: `McpServerView`'s 620
+   block takes its segmented buttons to 44px, and `startfrom.css` takes
+   `.sf-icon` to 44 × 44. The rail's verbs and the invocation copy are the same
+   kind of control, and at 40 × 30 they fail the 44px rule the rest of the app
+   keeps. Scoped to ≤620, where the rail is full width and the command row has
+   already wrapped, so a taller button cannot misalign anything. */
+@media (max-width: 620px) {
+  .entp-rail-actions button,
+  .entp-rail-actions button.tall {
+    min-height: 44px;
+  }
+  .entp-hero .mcpp-cmd-copy {
+    height: 44px;
+    padding: 0 12px;
+  }
+}
+
+/* Δ11 · the rail verb's label re-inks to its button. `retention.css` dresses
+   every `span` inside a rail action as mono micro muted — right for `.hint`,
+   wrong for `.row2 .nm`, which sits in the same bucket and then does
+   `color: inherit` off it. Measured, the label and its own hint come out the
+   same #6b6e73, so a two-line verb reads as one grey block and the row loses
+   its hierarchy. `--ink-2` is what the button already carries (10.56:1), and
+   the hover still lifts both. `:not([data-danger])` keeps the one red verb red
+   — Δ8's vocabulary must not be overridden by a colour rule. */
+.entp-rail-actions button:not([data-danger]) .row2 .nm {
+  color: var(--ink-2);
+}
+.entp-rail-actions button:hover .row2 .nm {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  details.skf[open] > summary.entp-thr .entp-go {
+    transition: none;
+  }
+}
+
+/* Δ12 · the hero's description is three lines, not all of it. The board prints
+   the whole frontmatter description and clamps it: `writer`'s 160 characters
+   and `code`'s 170 both measure 62px, which is exactly three lines at `58ch`
+   and `--fs-small`/1.6. Unclamped, `code` runs to 125px (six lines) and pushes
+   the first file row 63px below the fold at 1440 — the hero stops being a
+   header and becomes an abstract. The section below prints every sentence
+   separately, so clamping loses only what the reader would skim twice. The
+   full text stays on the element and in `title`, so hover and AT still read it. */
+.entp-hero .entp-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
