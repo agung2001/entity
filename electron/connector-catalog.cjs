@@ -51,6 +51,7 @@ const CATALOG = {
     label: 'Orca',
     kind: 'cli',
     binary: 'orca',
+    summary: 'Projects and worktrees Orca already manages on this machine.',
     /* what `Test connection` runs, and what makes the row say `found` */
     verify: { argv: ['--version'], okExit: 0, then: ['repo', 'list', '--json'] },
     work: {
@@ -80,6 +81,7 @@ const CATALOG = {
     label: 'GitHub CLI',
     kind: 'cli',
     binary: 'gh',
+    summary: 'Repositories and searches through the gh CLI already signed in here.',
     verify: { argv: ['auth', 'status'], okExit: 0, then: ['--version'] },
     work: {
       mention: '@github:',
@@ -106,6 +108,7 @@ const CATALOG = {
     label: 'YouTrack',
     kind: 'mcp',
     verify: null,
+    summary: 'Issues, read through this workspace’s MCP pool.',
     work: {
       mention: '@youtrack:',
       resolves: 'issues, scoped to a project key or searched across the workspace',
@@ -151,6 +154,50 @@ const CATALOG = {
       samples: [
         { code: '@maka:one:plan', then: 'notes in the “one” vault matching “plan”' },
         { code: '@maka:retro', then: 'every vault, one query' },
+      ],
+    },
+  },
+
+  /* ── a shipped server that lives in the workspace ────────────────────────
+     Open Design is an MCP server, and unlike Maka it is not something a person
+     installs on their own computer: the workspace's own `skills/opendesign/` holds
+     it, and `skills/**` syncs. So the entry carries the `launcher` that install
+     writes into the pool — a workspace-relative path, never a home directory, never
+     a versioned payload path, never a daemon port — and the definition is portable
+     by construction.
+
+     Two facts ride on the entry rather than on a second list in the renderer:
+     `readOnlyTools` is what a mention may call, and `timeoutMs` is the deadline a
+     cold start gets (a first run downloads and starts a server; 12 s reads as a
+     broken server and is not). */
+  'open-design': {
+    label: 'Open Design',
+    kind: 'mcp',
+    verify: null,
+    summary: 'Artifacts, files and searches from the design workspace’s own MCP server.',
+    website: 'https://open-design.ai/',
+    launcher: 'opendesign/bin/opendesign-mcp.sh',
+    timeoutMs: 90_000,
+    readOnlyTools: ['get_active_context', 'get_artifact', 'get_file', 'search_files', 'list_files'],
+    work: {
+      mention: '@opendesign:',
+      resolves: 'an artifact, one file, or a search across the design workspace',
+      syntax: '@opendesign:<artifact|file|search>:<query>',
+      examples: ['@opendesign:artifact:onboarding', '@opendesign:search:nav bar'],
+      returns: 'the matching artifacts and paths, read through this workspace’s MCP pool',
+      resolver: 'opendesign',
+      needs: 'the Open Design server installed into this workspace',
+      page: 'mcp.json',
+      how: [
+        'The first segment is what to read — `artifact`, `file` or `search` — and the rest of the line is the query, which may hold spaces.',
+        '`artifact` and `file` name one thing directly; `search` looks across the design workspace and lists what matched.',
+        'Every read is one of the server’s own read tools. `delete_file` and `delete_project` exist in the pool and are never offered by a mention, so a typo cannot remove anything.',
+        'The server runs from this workspace’s `skills/opendesign/`, which travels with the workspace — the same mention works on a teammate’s machine.',
+        'Its first start downloads and builds, so a cold run gets a 90-second deadline; after that the pool answers immediately.',
+      ],
+      samples: [
+        { code: '@opendesign:artifact:onboarding', then: 'that artifact’s path and content summary' },
+        { code: '@opendesign:search:nav bar', then: 'every file the server matches for those words' },
       ],
     },
   },
@@ -310,6 +357,86 @@ const CATALOG = {
     },
   },
 
+  /* ── a connector that signs in but has no account list ────────────────────
+     Habitify is `rest` + `oauth`, one account per install, and it reads its data
+     through the provider's own **remote MCP server** rather than a REST endpoint.
+     So it is account-bearing for the grant and mention-resolved for the read: the
+     resolver dials `https://mcp.habitify.me/mcp` with the stored access token.
+     `provider: 'habitify'` is what points it at its own provider row — including
+     the dynamic client registration that mints a client id for the loopback port
+     this run actually listens on. */
+  habitify: {
+    label: 'Habitify',
+    kind: 'rest',
+    oauth: true,
+    provider: 'habitify',
+    website: 'https://habitify.me',
+    summary: 'The habits a day was scheduled, and whether they were done.',
+    verify: null,
+    work: {
+      mention: '@habitify:',
+      resolves: 'one day of habits, or one habit on that day',
+      syntax: '@habitify:[<habit>:]<date|today|yesterday>',
+      examples: ['@habitify:today', '@habitify:Meditate:yesterday'],
+      returns: 'the habits scheduled that day with their status, and the provider’s own sentence about the day',
+      resolver: 'habitify',
+      needs: 'a signed-in Habitify account on this machine',
+      page: '',
+      how: [
+        'The date is `today`, `yesterday` or `YYYY-MM-DD` — nothing is guessed, so a malformed date is an error rather than today.',
+        'A habit name before the colon narrows the day to that habit; an exact name wins, a single prefix match is accepted, and two prefix matches are refused instead of picking one.',
+        'The day comes back as it was scheduled: `completed`, `skipped`, `failed`, or `none` for a habit that was due and not logged.',
+        '**Read-only.** The only tool this app calls is `list-habits-by-date`; completing, skipping or logging a habit is never wired, so a turn cannot change what your week looks like.',
+        'The read goes through Habitify’s MCP server with the account’s own access token, which is refreshed on this machine and never shown to a page.',
+        'The account is named by its localpart on the card; no address appears in these rows.',
+      ],
+      samples: [
+        { code: '@habitify:today', then: 'every habit scheduled today, with its status' },
+        { code: '@habitify:Meditate:yesterday', then: 'that one habit, yesterday' },
+      ],
+    },
+  },
+
+  /* ── a paste-once credential ─────────────────────────────────────────────
+     `credential: 'token'` is the other way a `rest` row authenticates: one opaque
+     API key, pasted once, that never refreshes. There is no consent screen and no
+     per-account row — one shared credential, many members — so this entry carries
+     no `oauth` flag and the sheet lands it with no tier.
+
+     Its workspace id, IANA timezone and member map are **workspace** state, kept on
+     the row's `fields` in `connectors.json`: none of them is a secret, and a report
+     computed in the wrong zone is the bug the week math exists to avoid. */
+  clockify: {
+    label: 'Clockify',
+    kind: 'rest',
+    credential: 'token',
+    website: 'https://clockify.me',
+    summary: 'Tracked hours per project and per person.',
+    verify: null,
+    work: {
+      mention: '@clockify:',
+      resolves: 'the hours one project or one person logged in a week',
+      syntax: '@clockify:<project|login>:<monday|this week>',
+      examples: ['@clockify:design-system:this week', '@clockify:avery:2026-03-02'],
+      returns: 'the week’s hours — the project and its members, or one member across every project, then the total and a day-by-day series',
+      resolver: 'clockify',
+      needs: 'an API key on this machine, and this workspace’s Clockify workspace id',
+      page: 'connectors.json',
+      how: [
+        'The first segment is a project name or a member login — one of the two, never both. A word that is neither is an error, so a typo cannot quietly report on the wrong thing.',
+        'The second segment is the week: a Monday written `YYYY-MM-DD`, or `this week`. Leave it out and this week is read, in the workspace’s own timezone.',
+        'A week that is not a real Monday, is in the future, or is older than 2020-01-06 is refused — a silently corrected range would answer about a week nobody asked for.',
+        'The key is pasted once on the connector’s page and checked there against this workspace before it is saved. It never refreshes, and no page ever reads it back.',
+        'Clockify answers 401 for both a bad key and an unknown workspace id, so a rejection names both possibilities rather than blaming the key.',
+        'Only the reports API is read: no user list is fetched, so no email address ever reaches a turn.',
+      ],
+      samples: [
+        { code: '@clockify:design-system:this week', then: 'that project’s hours, its members, and the week total' },
+        { code: '@clockify:avery:2026-03-02', then: 'one member’s week, split by project' },
+      ],
+    },
+  },
+
   x: {
     label: 'X',
     kind: 'rest',
@@ -384,6 +511,7 @@ const CATALOG = {
 const RESOLVERS = new Set([
   'orca', 'github', 'youtrack', 'maka',
   'gmail', 'drive', 'youtube', 'youtube-studio', 'x',
+  'clockify', 'habitify', 'opendesign',
   'artifact', 'thread',
 ])
 
@@ -415,6 +543,9 @@ function entries() {
       id,
       label: entry.label,
       kind: entry.kind,
+      /* `credential` is present only where it is not the default: `token` means a
+         paste-once key rather than an OAuth consent. */
+      credential: entry.credential || '',
       oauth: entry.oauth === true,
       summary: entry.summary || '',
       /* the service's own site, when it ships one — the connector page links here */

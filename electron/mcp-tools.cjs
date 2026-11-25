@@ -10,14 +10,42 @@
  * Nothing secret is returned: env values are never included in the response,
  * and stderr is reduced to the last line of a failure.
  */
+const os = require('node:os')
 const { spawnTracked, killTree } = require('./child-registry.cjs')
 const workspaces = require('./workspace-store.cjs')
 const mcpStore = require('./mcp-store.cjs')
+const catalog = require('./connector-catalog.cjs')
 
 const TIMEOUT_MS = 12_000
+/* A definition may carry its own deadline, because a server whose first start
+   downloads and builds is not slow — it is cold. The bounds are the sane ones: under
+   12 s would refuse a server that is only warming up, and over two minutes is a hang
+   dressed as patience. */
+const MIN_TIMEOUT_MS = 12_000
+const MAX_TIMEOUT_MS = 120_000
 const CACHE_MS = 5 * 60_000
 const MAX_TOOLS = 300
 const cache = new Map()
+
+/**
+ * The deadline one definition gets, and the sentence a cold start deserves.
+ *
+ * A definition that declares `timeoutMs` is saying "my first run is slow"; the error
+ * for it says it is starting rather than that it failed to answer, because those are
+ * different things to do about. Everything else keeps the 12 s default and its
+ * original sentence.
+ */
+function deadlineOf(definition) {
+  const declared = Number(definition?.timeoutMs)
+  if (!Number.isFinite(declared) || declared <= 0) return { ms: TIMEOUT_MS, cold: false }
+  return { ms: Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.round(declared))), cold: true }
+}
+
+/** `Open Design is starting` for a definition that asked for a longer deadline. */
+function coldStartSentence(definition) {
+  const name = String(definition?.label || definition?.name || '').trim()
+  return name ? `${name} is starting — its first run has to warm up. Try again in a moment.` : ''
+}
 
 function cached(key) {
   const hit = cache.get(key)
@@ -34,6 +62,44 @@ function remember(key, value) {
   return value
 }
 
+/**
+ * A definition, with what the catalog knows about a server it ships.
+ *
+ * `mcp.json` holds a binding — a command and its args — not a policy. A shipped entry
+ * carries the deadline a cold start gets and the label an error sentence uses, and
+ * those belong to the definition at the moment it is dialled, so they are attached
+ * here rather than written into the synced pool file (where they would be a second,
+ * drifting copy of the catalog).
+ */
+function withCatalog(name, definition) {
+  const entry = catalog.entryOf(name)
+  if (!definition || typeof definition !== 'object') return definition
+  /* A shipped launcher is written as `$HOME/…` so the *definition* carries no home
+     directory (it syncs, and `machineBoundReason` reads the token as portable). The
+     token is expanded here, at the one point a process is spawned from it. */
+  const expanded =
+    typeof definition.command === 'string'
+      ? { ...definition, command: homeExpanded(definition.command) }
+      : definition
+  if (!entry) return expanded
+  return {
+    ...expanded,
+    name,
+    label: definition.label || entry.label,
+    ...(entry.timeoutMs ? { timeoutMs: entry.timeoutMs } : {}),
+  }
+}
+
+/** `$HOME/…`, `${HOME}/…` and `~/…` → this machine's absolute path. */
+function homeExpanded(command) {
+  const home = os.homedir()
+  for (const token of ['${HOME}', '$HOME', '~']) {
+    if (command === token) return home
+    if (command.startsWith(`${token}/`)) return `${home}${command.slice(token.length)}`
+  }
+  return command
+}
+
 /** Workspace pool first, then the disabled pile, then harness globals. */
 function definitions(workspace) {
   const map = new Map()
@@ -46,10 +112,12 @@ function definitions(workspace) {
     }
   }
   for (const [name, definition] of Object.entries(pool.servers || {})) {
-    map.set(name, { name, definition, source: 'workspace', enabled: true })
+    map.set(name, { name, definition: withCatalog(name, definition), source: 'workspace', enabled: true })
   }
   for (const [name, definition] of Object.entries(pool.disabled || {})) {
-    if (!map.has(name)) map.set(name, { name, definition, source: 'workspace', enabled: false })
+    if (!map.has(name)) {
+      map.set(name, { name, definition: withCatalog(name, definition), source: 'workspace', enabled: false })
+    }
   }
   try {
     for (const group of mcpStore.globals().groups) {
@@ -142,9 +210,15 @@ function stdioSession(definition, work) {
       else resolve(value)
     }
 
+    const deadline = deadlineOf(definition)
     const timer = setTimeout(
-      () => finish(new Error('The MCP server did not answer in time.')),
-      TIMEOUT_MS,
+      () =>
+        finish(
+          new Error(
+            (deadline.cold && coldStartSentence(definition)) || 'The MCP server did not answer in time.',
+          ),
+        ),
+      deadline.ms,
     )
 
     child.on('error', (error) => {
@@ -279,7 +353,7 @@ async function httpSession(definition, work) {
     if (!notify) payload.id = nextId++
 
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), deadlineOf(definition).ms)
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -304,7 +378,12 @@ async function httpSession(definition, work) {
       if (reply.error) throw new Error(reply.error.message || 'MCP request failed.')
       return reply.result
     } catch (error) {
-      if (error?.name === 'AbortError') throw new Error('The MCP server did not answer in time.')
+      if (error?.name === 'AbortError') {
+        throw new Error(
+          (deadlineOf(definition).cold && coldStartSentence(definition)) ||
+            'The MCP server did not answer in time.',
+        )
+      }
       throw error
     } finally {
       clearTimeout(timer)
@@ -395,4 +474,4 @@ async function tools({ workspace, name }) {
   })
 }
 
-module.exports = { tools, callTool, definitions }
+module.exports = { tools, callTool, definitions, deadlineOf }

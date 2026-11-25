@@ -122,7 +122,7 @@ function status({ provider = 'google' } = {}) {
  * are required, the id has to look like a Google client id, and the secret has to
  * be long enough to be one. A refusal writes nothing.
  */
-function setClient({ provider = 'google', clientId, clientSecret } = {}) {
+function setClient({ provider = 'google', clientId, clientSecret, redirectUri } = {}) {
   const name = text(provider, 40) || 'google'
   const meta = providers.providerConfig(name) || providers.providerConfig('google')
   const id = text(clientId)
@@ -143,6 +143,9 @@ function setClient({ provider = 'google', clientId, clientSecret } = {}) {
     clientId: id,
     /* A public client stores no secret at all. */
     ...(secret ? { clientSecret: secret } : {}),
+    /* A dynamically registered client is only valid for the redirect it was minted
+       for, so the redirect is stored beside it and compared on every connect. */
+    ...(redirectUri ? { redirectUri: String(redirectUri) } : {}),
     savedAt: new Date().toISOString(),
   }
   write(store)
@@ -169,14 +172,37 @@ function clientFor(provider = 'google') {
   const meta = providers.providerConfig(name) || providers.providerConfig('google')
   if (!client?.clientId) return null
   if (meta.secretRequired !== false && !client.clientSecret) return null
-  return { clientId: client.clientId, clientSecret: client.clientSecret || '' }
+  return {
+    clientId: client.clientId,
+    clientSecret: client.clientSecret || '',
+    redirectUri: client.redirectUri || '',
+  }
 }
 
 /** `<connector>:<localpart>`, the same key the account store uses. */
 const keyOf = (connector, localpart) => `${String(connector)}:${String(localpart)}`
 
-/** Store one account's refresh token. Written by the consent answer only. */
-function putToken({ connector, localpart, provider = 'google', refreshToken, scopes = [] } = {}) {
+/**
+ * Store one account's tokens. Written by the consent answer only.
+ *
+ * A refresh token is the durable half, but a provider may hand back an access token
+ * with a deadline too, and a resolver that runs before that deadline should use it
+ * instead of paying for a refresh. `clientId` / `redirectUri` / `authorizationServer`
+ * ride along for a dynamically registered client, because a later refresh has to
+ * present the same client it was issued to. Nothing here is ever returned by a verb.
+ */
+function putToken({
+  connector,
+  localpart,
+  provider = 'google',
+  refreshToken,
+  accessToken,
+  expiresAt,
+  scopes = [],
+  clientId,
+  redirectUri,
+  authorizationServer,
+} = {}) {
   if (!connector || !localpart) throw new Error('A token needs a connector and an account.')
   if (!refreshToken) throw new Error('A token needs a refresh token.')
   const store = read()
@@ -184,6 +210,11 @@ function putToken({ connector, localpart, provider = 'google', refreshToken, sco
     provider: String(provider),
     refreshToken: String(refreshToken),
     scopes: Array.isArray(scopes) ? scopes.map(String) : [],
+    ...(accessToken ? { accessToken: String(accessToken) } : {}),
+    ...(Number.isFinite(Number(expiresAt)) ? { expiresAt: Number(expiresAt) } : {}),
+    ...(clientId ? { clientId: String(clientId) } : {}),
+    ...(redirectUri ? { redirectUri: String(redirectUri) } : {}),
+    ...(authorizationServer ? { authorizationServer: String(authorizationServer) } : {}),
     savedAt: new Date().toISOString(),
   }
   write(store)

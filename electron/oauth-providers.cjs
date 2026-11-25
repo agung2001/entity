@@ -17,9 +17,19 @@
  *   baseScope    the scopes every request carries, space-separated
  *   params       extra authorize-query parameters (Google's `access_type=offline`)
  *   clientAuth   'pkce' for a public client — no secret is sent or stored
+ *   pkce         the challenge method; `S256`, always. It is a field rather than a
+ *                constant in `oauth-accounts.cjs` so a provider that only advertises
+ *                `plain` is a visible decision and not a silent downgrade
  *   fixedPort    a port the redirect must use, because the provider validates the
  *                callback URL by exact match (X) — absent means an OS-chosen port
+ *   dynamicClient true when the client id is minted per install with a
+ *                `POST <registry>/reg` (RFC 7591) — there is no client to paste, so
+ *                the card must not ask for one
+ *   registry     the authorization server root a dynamic registration posts to
+ *   resource     the RFC 8707 resource a token is bound to (an MCP server's URL)
  */
+const catalog = require('./connector-catalog.cjs')
+
 const PROVIDERS = {
   google: {
     label: 'Google',
@@ -40,6 +50,7 @@ const PROVIDERS = {
     consoleUrl: 'https://console.cloud.google.com/apis/credentials',
     clientHint: 'Create an OAuth client of type “Desktop app”.',
     secretRequired: true,
+    pkce: 'S256',
     /* Google documents a loopback redirect exemption, so an OS-chosen port is
        legal and no callback needs registering. */
   },
@@ -67,16 +78,66 @@ const PROVIDERS = {
     clientHint: 'Create an app with OAuth 2.0 enabled and use its Client ID — a public client needs no secret.',
     secretRequired: false,
     clientAuth: 'pkce',
+    pkce: 'S256',
     /* X validates the callback by **exact match** — no wildcard, no loopback
        exemption. A random port can never be registered, so X pins one. */
     fixedPort: 8724,
   },
+
+  /* Habitify's MCP server is the resource; `account.habitify.me` is its
+     authorization server. The client is minted per install by `POST /reg`, because
+     it accepts a loopback redirect on an OS-chosen port — which is why there is no
+     client id to paste and no fixed port to pin. `resource` is sent on the token
+     request as RFC 8707 asks, binding the grant to the MCP server it was issued for.
+     Endpoints and the registration shape are from One's verified `habitify/mcp.ts`,
+     not from guesswork. */
+  habitify: {
+    label: 'Habitify',
+    authorize: 'https://account.habitify.me/auth',
+    token: 'https://account.habitify.me/token',
+    registry: 'https://account.habitify.me',
+    resource: 'https://mcp.habitify.me',
+    resourceMetadata: 'https://mcp.habitify.me/.well-known/oauth-protected-resource',
+    baseScope: 'openid profile email',
+    params: {},
+    /* There is no `/userinfo` to read here, so the identity comes out of the grant
+       itself: an OIDC id_token's claims, and — for a server that puts the account
+       beside the tokens instead — the token body's own `email`/`name`. The token is
+       **decoded, never verified**: it names a row for the person who just signed in,
+       nothing downstream trusts it, and a JWKS fetch would be a second network
+       dependency for a screenshot-grade fact. Only `email` and `name` are read.
+       `profileOf` receives the whole token payload, not a fetched profile. */
+    profileOf: (tokenBody = {}) => {
+      const part = String(tokenBody?.id_token || '').split('.')[1]
+      let claims = {}
+      if (part) {
+        try {
+          claims = JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) || {}
+        } catch {
+          claims = {}
+        }
+      }
+      return { email: claims.email || tokenBody?.email || '', name: claims.name || tokenBody?.name || '' }
+    },
+    consoleUrl: '',
+    clientHint: 'Nothing to create: this app registers itself with Habitify when you connect.',
+    secretRequired: false,
+    clientAuth: 'pkce',
+    pkce: 'S256',
+    dynamicClient: true,
+    scopes: ['openid', 'profile', 'email', 'offline_access'],
+  },
 }
 
-/** The provider a connector authenticates against. Everything but X is Google. */
-const PROVIDER_OF = { x: 'x' }
-
-const providerOf = (connector) => PROVIDER_OF[String(connector)] || 'google'
+/**
+ * The provider a connector authenticates against, read from the catalog.
+ *
+ * It used to be a hand-kept map beside this table, so a new row could be added here
+ * and still be looked up as Google. The catalog entry carries `provider`; everything
+ * that does not name one rides Google, which is what `gmail`, `google-drive`,
+ * `youtube` and `youtube-studio` mean.
+ */
+const providerOf = (connector) => catalog.entryOf(connector)?.provider || 'google'
 const providerConfig = (provider) => PROVIDERS[String(provider)] || null
 /** The provider object for a connector, or null when nothing is configured. */
 const configOf = (connector) => providerConfig(providerOf(connector))

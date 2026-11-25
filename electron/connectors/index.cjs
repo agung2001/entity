@@ -44,6 +44,15 @@ function load(head) {
     case 'x':
       mod = require('./x.cjs')
       break
+    case 'clockify':
+      mod = require('./clockify.cjs')
+      break
+    case 'habitify':
+      mod = require('./habitify.cjs')
+      break
+    case 'opendesign':
+      mod = require('./opendesign.cjs')
+      break
     default:
       mod = null
   }
@@ -52,7 +61,16 @@ function load(head) {
 }
 
 /** Every head this registry answers, in the order a person would try them. */
-const HEADS = ['gmail', 'drive', 'youtube', 'youtube-studio', 'x']
+const HEADS = [
+  'gmail',
+  'drive',
+  'youtube',
+  'youtube-studio',
+  'x',
+  'clockify',
+  'habitify',
+  'opendesign',
+]
 
 const has = (head) => HEADS.includes(String(head))
 
@@ -74,12 +92,25 @@ const SUFFIX = {
   youtube: 'Youtube',
   'youtube-studio': 'YoutubeStudio',
   x: 'X',
+  clockify: 'Clockify',
+  habitify: 'Habitify',
+  opendesign: 'Opendesign',
 }
 
-/** `youtube-studio` is the one head whose answer is a report, not a list. */
+/** A head whose answer is a report, not a list, sets its own row ceiling. */
 function rowCeiling(head, fallback) {
   const mod = load(head)
-  return mod?.YT_STUDIO_ROWS || fallback
+  return mod?.ROW_CEILING || mod?.YT_STUDIO_ROWS || fallback
+}
+
+/** The composer's suggestions for a head, or null when the module ships none. */
+function previewFor(head) {
+  return load(head)?.preview || null
+}
+
+/** The save-time check a `credential: 'token'` head ships, or null. */
+function verifyFor(head) {
+  return load(head)?.verify || null
 }
 
 /** The vocabulary a head reads, for the composer's completion list. */
@@ -100,4 +131,4 @@ function isKeyword(head, word) {
   return mod?.ytIsKeyword ? mod.ytIsKeyword(word) : false
 }
 
-module.exports = { HEADS, has, resolverFor, rowCeiling, wordsFor, channelsFor, isKeyword }
+module.exports = { HEADS, has, resolverFor, previewFor, verifyFor, rowCeiling, wordsFor, channelsFor, isKeyword }
