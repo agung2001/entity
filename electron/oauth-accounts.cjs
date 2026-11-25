@@ -211,7 +211,11 @@ function connectorTier(connector, workspace) {
   try {
     const record = workspaces.open(workspace)
     const chosen = indexOf().readIndex(record).rows?.[String(connector)]?.tier
-    return tiersFor(connector).some((candidate) => candidate.id === chosen) ? chosen : DEFAULT_TIER
+    /* A connector whose only tier is `read` (Habitify) has no `full` to fall back to,
+       so the fallback is the table's own default — `tierOf` resolves id → `full` →
+       first, which is what the scope request itself uses. Without this, a one-tier
+       connector showed `read` with nothing marked current. */
+    return tierOf(connector, tiersFor(connector).some((candidate) => candidate.id === chosen) ? chosen : DEFAULT_TIER).id
   } catch {
     return DEFAULT_TIER
   }
@@ -287,11 +291,15 @@ async function complete(job, code) {
     grant_type: 'authorization_code',
     code_verifier: codeVerifier,
   })
-  /* A public client (X) has no secret to send — PKCE is the whole proof. Google's
-     installed-app flow does carry one, so it is added only where it exists. */
+  /* A public client (X, Habitify) has no secret to send — PKCE is the whole proof.
+     Google's installed-app flow does carry one, so it is added only where it exists.
+     Form-encoded with `client_id` only, which is what a DCR registration with
+     `token_endpoint_auth_method: 'none'` requires. */
   if (config.clientAuth !== 'pkce' && providerClient.clientSecret) {
     body.set('client_secret', providerClient.clientSecret)
   }
+  /* RFC 8707: bind the grant to the resource it is for. */
+  if (config.resource) body.set('resource', config.resource)
   const tokenResponse = await fetch(config.token, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
@@ -307,7 +315,7 @@ async function complete(job, code) {
       ok: false,
       code: 'no_refresh_token',
       message:
-        'Nothing was saved. Google returned no refresh token — remove this app from the account\'s granted access and try again.',
+        `Nothing was saved. ${secrets.labelOf(provider)} returned no refresh token — ${config.label} asked for offline access; remove this app from the account's granted access and try again.`,
     }
   }
 
@@ -322,6 +330,11 @@ async function complete(job, code) {
     /* X answers `{ data: { username, name } }` where Google answers a flat
        object, so a provider that nests says how to read it. */
     profile = config.profileOf ? config.profileOf(raw) : raw
+  } else if (config.profileOf) {
+    /* A provider with no userinfo endpoint names the account out of the grant it
+       just got — Habitify's OIDC id_token. Without this branch the identity was
+       always empty and the connect flow always refused. */
+    profile = config.profileOf(token)
   }
   const email = text(profile.email || profile.preferred_username || '', 200)
   if (!email) {
@@ -351,7 +364,20 @@ async function complete(job, code) {
     localpart,
     provider,
     refreshToken: token.refresh_token,
+    /* An access token with a deadline is stored too, so the first mention after a
+       consent does not pay for a refresh it does not need. */
+    accessToken: token.access_token,
+    expiresAt: token.expires_in ? Date.now() + Number(token.expires_in) * 1000 : undefined,
     scopes: granted,
+    /* A dynamically registered client is re-presented by the refresh, so its id and
+       the redirect it was minted for travel with the token. */
+    ...(config.dynamicClient && providerClient?.clientId
+      ? {
+          clientId: providerClient.clientId,
+          redirectUri,
+          authorizationServer: config.registry || '',
+        }
+      : {}),
   })
 
   const store = read()
@@ -368,6 +394,67 @@ async function complete(job, code) {
   store.accounts[connector] = [...rows.filter((entry) => entry.localpart !== localpart), row]
   write(store)
   return { ok: true, account: normalise(row), accounts: store.accounts[connector].map(normalise) }
+}
+
+/* ── dynamic client registration ────────────────────────────────────────
+   A provider with `dynamicClient: true` has no client id to paste: the id is minted
+   by `POST <registry>/reg` for the exact redirect this run will use, so the loopback
+   server has to be listening before the authorize URL can be built. The registration
+   is public (`token_endpoint_auth_method: 'none'`) — PKCE is the whole proof.
+
+   **A moved port is not a broken login.** A loopback redirect on an OS-chosen port
+   changes between runs, and a registration is valid only for the URI it was minted
+   for, so the stored one is re-minted when it no longer matches. The old
+   registration is simply orphaned at the provider; asking a person to re-register by
+   hand would be a setting for something the machine can do itself. */
+
+/**
+ * Does this run need a fresh registration?
+ *
+ * Pure on purpose, and exported: the decision is the only part worth a test, and a
+ * test that has to open a listener and a browser is a test nobody runs.
+ */
+function needsRegistration({ stored, redirectUri, dynamicClient } = {}) {
+  if (!dynamicClient) return false
+  if (!stored?.clientId) return true
+  /* Byte for byte: a client registered for `…:8724/callback` is not valid for
+     `…:53111/callback`, and the authorization server compares the literal string. */
+  return String(stored.redirectUri || '') !== String(redirectUri || '')
+}
+
+/** One anonymous `POST /reg`, for the redirect this run will actually use. */
+async function registerClient(config, redirectUri) {
+  const registry = String(config.registry || '').replace(/\/$/, '')
+  if (!registry) throw new Error(`${config.label} has no registration endpoint configured in this build.`)
+  let response
+  try {
+    response = await fetch(`${registry}/reg`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        client_name: 'Entity',
+        redirect_uris: [redirectUri],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        /* A public client: there is no secret, which is exactly why PKCE is required. */
+        token_endpoint_auth_method: 'none',
+        application_type: 'native',
+      }),
+    })
+  } catch (problem) {
+    throw new Error(
+      `${config.label} could not be reached to register this app (${String(problem?.message || problem)}). Nothing was saved.`,
+    )
+  }
+  const body = await response.json().catch(() => ({}))
+  const clientId = text(body?.client_id, 200)
+  if (!response.ok || !clientId) {
+    const said = text(body?.error_description || body?.error || `HTTP ${response.status}`, 200)
+    throw new Error(
+      `${config.label} refused to register this app for ${redirectUri} (${said}). Habitify accepts a loopback redirect on any port, so a refusal here is the network, not the port. Nothing was saved.`,
+    )
+  }
+  return { clientId, redirectUri }
 }
 
 /**
@@ -392,8 +479,11 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
       message: `No OAuth provider is configured for "${name}" in this build, so no consent screen was opened. Nothing was saved.`,
     }
   }
-  const client = secrets.clientFor(provider)
-  if (!client) {
+  /* A dynamic provider registers itself once the redirect is known, so "no client"
+     is the normal first-run state there and not an error. */
+  const storedClient = config.dynamicClient ? secrets.clientFor(provider) : null
+  const client = config.dynamicClient ? storedClient : secrets.clientFor(provider)
+  if (!config.dynamicClient && !client) {
     return {
       ok: false,
       code: 'client_required',
@@ -492,17 +582,51 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
     /* Port 0 = let the OS pick a free one. Google ignores the port on a loopback
        redirect, which is what makes an ephemeral port legal there; X requires an
        exact registered URL, so it listens on its fixed port instead. */
-    server.listen(config.fixedPort || 0, '127.0.0.1', () => {
+    server.listen(config.fixedPort || 0, '127.0.0.1', async () => {
       const { port } = server.address()
       job.redirectUri = `http://127.0.0.1:${port}/oauth/callback`
+
+      /* A dynamic provider needs the redirect before it will name a client, and the
+         client has to be live *before* the authorize URL is built — so this is the
+         one place the order forces an await. A registration that is still valid for
+         this exact redirect is reused; a moved port mints a fresh one and replaces
+         the stored value in place. */
+      let live = client
+      if (config.dynamicClient) {
+        try {
+          if (needsRegistration({ stored: client, redirectUri: job.redirectUri, dynamicClient: true })) {
+            const minted = await registerClient(config, job.redirectUri)
+            secrets.setClient({ provider, clientId: minted.clientId, redirectUri: minted.redirectUri })
+            live = { clientId: minted.clientId, clientSecret: '', redirectUri: minted.redirectUri }
+          }
+        } catch (problem) {
+          return finish({
+            ok: false,
+            code: 'registration_failed',
+            message: String(problem?.message || problem),
+          })
+        }
+        if (!live?.clientId) {
+          return finish({
+            ok: false,
+            code: 'registration_failed',
+            message: `${config.label} did not issue a client id, so no consent screen was opened. Nothing was saved.`,
+          })
+        }
+      }
+
       const authorize = new URL(config.authorize)
-      authorize.searchParams.set('client_id', client.clientId)
+      authorize.searchParams.set('client_id', live.clientId)
       authorize.searchParams.set('redirect_uri', job.redirectUri)
       authorize.searchParams.set('response_type', 'code')
       authorize.searchParams.set('scope', scope)
       authorize.searchParams.set('state', state)
       authorize.searchParams.set('code_challenge', codeChallenge)
-      authorize.searchParams.set('code_challenge_method', 'S256')
+      authorize.searchParams.set('code_challenge_method', config.pkce || 'S256')
+      /* RFC 8707: a token bound to the resource it will be used against. Sent where
+         the provider names one; tolerated elsewhere, and this build only sends it
+         for a provider that asked for it by carrying `resource`. */
+      if (config.resource) authorize.searchParams.set('resource', config.resource)
       for (const [key, value] of Object.entries(config.params || {})) authorize.searchParams.set(key, value)
       try {
         openExternal(authorize.toString())
@@ -521,6 +645,40 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
 
 
 /**
+ * The client a refresh presents. For a dynamically registered provider the token
+ * record itself carries the id, because the stored registration may have been
+ * replaced by a later run on a different port — and the refresh must still use the
+ * client the refresh token was actually issued to.
+ */
+function clientForToken(config, token, connectorId) {
+  if (config.dynamicClient) {
+    if (!token?.clientId) return null
+    return { clientId: token.clientId, clientSecret: '', redirectUri: token.redirectUri || '' }
+  }
+  return secrets.clientFor(token.provider || providerOf(connectorId))
+}
+
+/**
+ * The refresh form, in one place.
+ *
+ * `client_id` only for a public client — a DCR registration with
+ * `token_endpoint_auth_method: 'none'` has no secret to prove itself with — and the
+ * RFC 8707 `resource` where the provider names one. A dynamically registered
+ * connector stored the client id it was issued to, which is the one the refresh must
+ * present even if the stored registration was later replaced.
+ */
+function tokenForm(config, client, token) {
+  const form = new URLSearchParams({
+    client_id: token?.clientId || client.clientId,
+    refresh_token: token.refreshToken,
+    grant_type: 'refresh_token',
+  })
+  if (config.clientAuth !== 'pkce' && client.clientSecret) form.set('client_secret', client.clientSecret)
+  if (config.resource) form.set('resource', config.resource)
+  return form
+}
+
+/**
  * Exchange a stored refresh token for an access token, and record what that means.
  *
  * One place decides `connected` vs `needs sign-in`, so the roster's aggregate and
@@ -531,25 +689,17 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
 async function refresh(connector, config, connectorId, entry) {
   const token = secrets.tokenFor({ connector: connectorId, localpart: entry.localpart })
   if (!token?.refreshToken) return { ok: false, reason: 'no_token' }
-  const client = secrets.clientFor(token.provider || providerOf(connectorId))
+  const client = clientForToken(config, token, connectorId)
   if (!client) return { ok: false, reason: 'no_client' }
   try {
     const response = await fetch(config.token, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-      body: (() => {
-        const form = new URLSearchParams({
-          client_id: client.clientId,
-          refresh_token: token.refreshToken,
-          grant_type: 'refresh_token',
-        })
-        /* X's public client proves itself with the client id alone. */
-        if (config.clientAuth !== 'pkce' && client.clientSecret) form.set('client_secret', client.clientSecret)
-        return form
-      })(),
+      body: tokenForm(config, client, token),
     })
     const answer = await response.json().catch(() => ({}))
     const ok = response.ok && Boolean(answer?.access_token)
+    if (ok) storeAccessToken(connectorId, entry.localpart, answer)
     const store = read()
     const rows = store.accounts[connectorId] || []
     store.accounts[connectorId] = rows.map((row) =>
@@ -574,30 +724,47 @@ async function accessTokenFor(connector, localpart, workspace) {
   if (!token?.refreshToken) {
     throw new Error(`No account of @${connector}: is signed in yet. Connect one on the connector's page.`)
   }
-  const client = secrets.clientFor(token.provider || provider)
+  /* A consent that answered minutes ago left a live access token: reuse it rather
+     than paying for a refresh on the first mention after connecting. */
+  if (token.accessToken && Number(token.expiresAt) - Date.now() > 60_000) {
+    return { accessToken: token.accessToken, scopes: token.scopes || [] }
+  }
+  const client = clientForToken(config, token, connector)
   if (!client) throw new Error('No OAuth client is saved on this machine, so a token cannot be refreshed.')
   const response = await fetch(config.token, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-    body: (() => {
-      const form = new URLSearchParams({
-        client_id: client.clientId,
-        refresh_token: token.refreshToken,
-        grant_type: 'refresh_token',
-      })
-      if (config.clientAuth !== 'pkce' && client.clientSecret) form.set('client_secret', client.clientSecret)
-      return form
-    })(),
+    body: tokenForm(config, client, token),
   })
   const answer = await response.json().catch(() => ({}))
   if (!response.ok || !answer?.access_token) {
     /* A dead grant is the state the card already draws; the resolver reports it in
        the same words rather than inventing a second vocabulary. */
     throw new Error(
-      `@${connector}:${localpart} needs a sign-in — Google rejected its refresh token.`,
+      `@${connector}:${localpart} needs a sign-in — ${secrets.labelOf(provider)} rejected its refresh token.`,
     )
   }
+  storeAccessToken(connector, localpart, answer)
   return { accessToken: answer.access_token, scopes: token.scopes || [] }
+}
+
+/**
+ * Keep the access token a refresh just returned, so the next reader does not pay for
+ * another one. Only the fields that can go stale are touched — the refresh token,
+ * the client it belongs to and the scopes stay exactly as they were.
+ */
+function storeAccessToken(connector, localpart, answer) {
+  const current = secrets.tokenFor({ connector, localpart })
+  if (!current) return
+  secrets.putToken({
+    ...current,
+    connector,
+    localpart,
+    accessToken: answer.access_token,
+    expiresAt: answer.expires_in ? Date.now() + Number(answer.expires_in) * 1000 : undefined,
+    /* A provider may rotate the refresh token; when it does, that is the live one. */
+    refreshToken: answer.refresh_token || current.refreshToken,
+  })
 }
 
 /** Every account of a connector that has a token here, usable by a resolver. */
@@ -666,6 +833,9 @@ module.exports = {
   CONFIG,
   FILE,
   SCHEMA,
+  /* the small pure decision a registration makes, exported so it can be tested
+     without a listener and without a browser */
+  needsRegistration,
   list,
   read,
   remove,

@@ -64,6 +64,18 @@ const LOOPBACK_HOSTS = new Set([
 ])
 const HOME_PATH = /(?:^|[\s"'=:])(?:~\/|\/Users\/|\/home\/|\/root\/|\/Applications\/|\/opt\/homebrew\/|[A-Za-z]:\\)/
 
+/*
+ * …except a command inside the **workspace's own** skill directory.
+ *
+ * `$HOME/.entity/workspaces/<id>/skills/opendesign/bin/opendesign-mcp.sh` looks like
+ * a home path and is not one: `skills/**` is synced content, so on the other machine
+ * that directory exists under the same relative path, and the program a shipped
+ * connector installs lives there. The token is stripped before the home-path test,
+ * and only for that segment — a literal `/Users/someone/...` is still the sender's
+ * own computer and still parks.
+ */
+const WORKSPACE_SKILL = /^(?:\$\{HOME\}|\$HOME|~)(\/\.entity\/workspaces\/[^/]*\/skills\/)/
+
 /** `a/b/c.md` → `a/b/c.md`; anything that could escape the root → null. */
 function safeRel(value) {
   let rel = String(value || '').replace(/\\/g, '/')
@@ -194,8 +206,14 @@ function machineBoundReason(entry) {
     String(entry.command || ''),
     ...(Array.isArray(entry.args) ? entry.args.map(String) : []),
   ]
-  if (tokens.some((token) => HOME_PATH.test(String(token || '')))) return 'home-path'
+  if (tokens.some((token) => HOME_PATH.test(portableCommand(String(token || ''))))) return 'home-path'
   return ''
+}
+
+/** A workspace-relative skill command, with the home token that names no home taken off. */
+function portableCommand(token) {
+  const match = WORKSPACE_SKILL.exec(token)
+  return match ? token.slice(match[0].length - match[1].length) : token
 }
 
 /** The sentence a parked pool entry carries, so the UI can explain itself. */

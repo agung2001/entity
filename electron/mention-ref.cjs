@@ -414,6 +414,43 @@ function parseMention(raw) {
       : { kind: 'maka', vault: '', query: whole, local }
   }
 
+  /* `@habitify:<date>` or `@habitify:<habit>:<date>` — the habit is optional and the
+     date is the last segment, which is what makes `@habitify:today` a day and
+     `@habitify:Meditate:today` a habit on that day. One object rather than a
+     `target`/`query` pair the router has to know about; the account segment every
+     other account-bearing head takes is absent here on purpose: one account per
+     install, and a mention that names one could never be right on another. */
+  if (head === 'habitify') {
+    return structured
+      ? { kind: 'habitify', target: word, query: tail, local }
+      : { kind: 'habitify', target: '', query: whole, local }
+  }
+
+  /* `@clockify:<project|login>:<week>` — two segments, and the second is a Monday
+     or the words `this week`. A project name may hold spaces in Clockify, but the
+     mention keeps the first segment to one word so the week remains findable;
+     leaving the week off means this week, the same default the resolver takes. */
+  if (head === 'clockify') {
+    /* `this week` is TWO words, so the week is a trailing word unless it is that
+       phrase — cutting at the first space turned it into a week called "this". */
+    const said = tail.trim()
+    const week = /^this week\b/i.test(said) ? 'this week' : said.split(/\s+/)[0] || ''
+    return structured
+      ? { kind: 'clockify', target: word, week, local }
+      : { kind: 'clockify', target: whole, week: '', local }
+  }
+
+  /* `@opendesign:<what>:<query>` — a reader word, then the rest of the line, which
+     may hold spaces. A first word that is not a reader is a search for the whole
+     line, because a design artifact's name is more likely to be a bare word than a
+     verb this grammar forgot. */
+  if (head === 'opendesign') {
+    const readers = new Set(['artifact', 'file', 'search'])
+    return structured && readers.has(word.toLowerCase())
+      ? { kind: 'opendesign', target: word.toLowerCase(), query: tail.split('\n')[0].trim(), local }
+      : { kind: 'opendesign', target: '', query: whole.split('\n')[0].trim(), local }
+  }
+
   /* github: everything after the colon is the query — `owner/repo` names one
      repository, anything else is a search. The slash is inside the word, so a
      `:` does not scope it. */
@@ -461,6 +498,43 @@ function parseMention(raw) {
     return structured
       ? { kind: 'maka', vault: word, query: tail, local }
       : { kind: 'maka', vault: '', query: whole, local }
+  }
+
+  /* `@habitify:<date>` or `@habitify:<habit>:<date>` — the habit is optional and the
+     date is the last segment, which is what makes `@habitify:today` a day and
+     `@habitify:Meditate:today` a habit on that day. One object rather than a
+     `target`/`query` pair the router has to know about; the account segment every
+     other account-bearing head takes is absent here on purpose: one account per
+     install, and a mention that names one could never be right on another. */
+  if (head === 'habitify') {
+    return structured
+      ? { kind: 'habitify', target: word, query: tail, local }
+      : { kind: 'habitify', target: '', query: whole, local }
+  }
+
+  /* `@clockify:<project|login>:<week>` — two segments, and the second is a Monday
+     or the words `this week`. A project name may hold spaces in Clockify, but the
+     mention keeps the first segment to one word so the week remains findable;
+     leaving the week off means this week, the same default the resolver takes. */
+  if (head === 'clockify') {
+    /* `this week` is TWO words, so the week is a trailing word unless it is that
+       phrase — cutting at the first space turned it into a week called "this". */
+    const said = tail.trim()
+    const week = /^this week\b/i.test(said) ? 'this week' : said.split(/\s+/)[0] || ''
+    return structured
+      ? { kind: 'clockify', target: word, week, local }
+      : { kind: 'clockify', target: whole, week: '', local }
+  }
+
+  /* `@opendesign:<what>:<query>` — a reader word, then the rest of the line, which
+     may hold spaces. A first word that is not a reader is a search for the whole
+     line, because a design artifact's name is more likely to be a bare word than a
+     verb this grammar forgot. */
+  if (head === 'opendesign') {
+    const readers = new Set(['artifact', 'file', 'search'])
+    return structured && readers.has(word.toLowerCase())
+      ? { kind: 'opendesign', target: word.toLowerCase(), query: tail.split('\n')[0].trim(), local }
+      : { kind: 'opendesign', target: '', query: whole.split('\n')[0].trim(), local }
   }
 
   /* github: everything after the colon is the query — `owner/repo` names one
@@ -517,6 +591,15 @@ function tokenOf(segment) {
   }
   if (segment.kind === 'artifact') return `${at}artifact:${segment.query}`
   if (segment.kind === 'thread') return `${at}thread:${segment.id}`
+  if (segment.kind === 'opendesign') {
+    return `${at}opendesign:${segment.target ? `${segment.target}:` : ''}${segment.query}`
+  }
+  if (segment.kind === 'habitify') {
+    return `${at}habitify:${segment.target ? `${segment.target}:` : ''}${segment.query}`
+  }
+  if (segment.kind === 'clockify') {
+    return `${at}clockify:${segment.target}${segment.week ? `:${segment.week}` : ''}`
+  }
   if (segment.kind === 'maka') {
     return segment.vault
       ? `${at}maka:${segment.vault}${segment.query ? `:${segment.query}` : ''}`
@@ -1288,6 +1371,57 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     }
   }
 
+  if (kind === 'opendesign') {
+    /* One field: a reader word or a query. The suggestions come from the resolver,
+       so the menu offers only what a send would resolve. */
+    const preview = connectorRegistry.previewFor('opendesign')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, { record: ctx.record, limit: offset + limit + 1 })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
+  if (kind === 'habitify') {
+    /* One field: the date word, or a habit name for that date. The suggestions come
+       from the resolver, so the menu offers only what a send would resolve. */
+    const preview = connectorRegistry.previewFor('habitify')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, { limit: offset + limit + 1 })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
+  if (kind === 'clockify') {
+    /* One field: the project or member login being typed. The preview comes from
+       the resolver itself, so the menu offers only what a send would resolve. */
+    const preview = connectorRegistry.previewFor('clockify')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, {
+      record: ctx.record,
+      limit: offset + limit + 1,
+    })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
   if (kind === 'maka') {
     const vault = String(fields[0] || '').trim()
     const query = fields.slice(1).join(':').trim()
@@ -1834,6 +1968,38 @@ async function resolveOne(ctx, segment) {
          gets sent, and `message.mentions` stays a small card. */
       segment.digest = digest
       if (!digest.concluded) ctx.notes.push(`@thread:${segment.id} has no answer yet`)
+      return
+    }
+
+    if (segment.kind === 'opendesign') {
+      const resolve = connectorRegistry.resolverFor('opendesign')
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling('opendesign', MAX_PER_SOURCE),
+      })
+      segment.mention = { kind: 'opendesign', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found nothing in the design workspace`)
+      return
+    }
+
+    if (segment.kind === 'habitify') {
+      const resolve = connectorRegistry.resolverFor('habitify')
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling('habitify', MAX_PER_SOURCE),
+      })
+      segment.mention = { kind: 'habitify', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no habit`)
+      return
+    }
+
+    if (segment.kind === 'clockify') {
+      /* A token connector has no account segment: one key for the whole workspace,
+         so the resolver is dispatched by the registry like the rest. */
+      const resolve = connectorRegistry.resolverFor('clockify')
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling('clockify', MAX_PER_SOURCE),
+      })
+      segment.mention = { kind: 'clockify', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no tracked hours`)
       return
     }
 

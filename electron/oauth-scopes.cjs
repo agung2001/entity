@@ -112,6 +112,26 @@ const SCOPE_CATALOG = {
       },
     ],
   },
+  /* Habitify's server advertises exactly these four and nothing else: `offline_access`
+     is what makes the token endpoint return a refresh token, so it is part of the
+     read. There is no write tier on purpose — this app never completes, skips or logs
+     a habit, so a scope that allowed it is a permission nobody should be asked for. */
+  habitify: {
+    tiers: [
+      {
+        id: 'read',
+        label: 'Read habits',
+        detail: 'The habits each day was scheduled, and their status. Nothing can be ticked off, skipped or logged.',
+        scopes: [
+          { wire: 'openid', display: 'openid' },
+          { wire: 'profile', display: 'profile' },
+          { wire: 'email', display: 'email' },
+          { wire: 'offline_access', display: 'offline_access' },
+        ],
+      },
+    ],
+  },
+
   /* YouTube **Studio** data is a different grant from the public YouTube search
      above: reading a channel's own analytics needs `yt-analytics.readonly`, and
      the two are separate scopes on purpose. A person who only wants to search

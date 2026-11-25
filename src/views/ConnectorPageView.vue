@@ -11,11 +11,13 @@ import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import {
   connectors,
+  installConnector,
   loadConnectors,
   probeConnectors,
   providerOf,
   removeConnector,
   testConnector,
+  uninstallConnector,
 } from '@/stores/connectors'
 
 /**
@@ -51,7 +53,21 @@ const reveal = ref(false)
 const draft = ref({ host: '', token: '' })
 const confirming = ref(false)
 
-const row = computed(() => connectors.rows.find((entry) => entry.id === id.value) || null)
+/* The installed row, or — when this workspace has none — the catalog's own entry
+   for it. Reading a pitch before installing is the whole point of the Built-in
+   pane: `connector.available` is the same catalog row the sheet draws, marked
+   `installed: false`, and without this fallback its address reported "no
+   connector called that" and sent a person back to the list they came from. */
+const installedRow = computed(() => connectors.rows.find((entry) => entry.id === id.value) || null)
+const catalogRow = computed(() => connectors.available.find((entry) => entry.id === id.value) || null)
+const row = computed(() => installedRow.value || catalogRow.value)
+/* Not installed, and it *could* be: the one fact that changes which verbs this
+   page offers. A custom row that was removed lands here with no catalog entry
+   and is therefore not reinstatable — the `!row` note below covers it. */
+const notInstalled = computed(() => !installedRow.value && Boolean(catalogRow.value))
+/* The catalog's provider is on the entry; the installed row does not carry it, so
+   the account card's provider is read from the row the catalog answered. */
+const rowProvider = computed(() => String(catalogRow.value?.provider || ''))
 /* Which page this address is: the row's own kind. Only a *known* cli/rest row
    gets the smaller page — an unknown id stays on the MCP page, because that one
    already draws the states an unknown id can be in (`not attached · <harness>
@@ -77,6 +93,13 @@ const onAccountsChanged = () => {
    provider is added. */
 const provider = ref('google')
 watch(id, async () => {
+  /* A catalog entry that names its provider answers without a round-trip; only an
+     installed row the catalog does not ship (`oauth: true`, no entry) needs the
+     call table's answer. */
+  if (rowProvider.value) {
+    provider.value = rowProvider.value
+    return
+  }
   try {
     provider.value = await providerOf(id.value)
   } catch {
@@ -89,6 +112,11 @@ watch(id, async () => {
    failed must fall through: `loaded` never turns true on an error, and gating on
    it alone leaves the page blank for as long as the call table is unhappy. */
 const pending = computed(() => !connectors.loaded && !connectors.error)
+/* A catalog row's `provider` lands after the roster read, so the watch above runs
+   once more when it arrives. */
+watch(rowProvider, (next) => {
+  if (next) provider.value = next
+})
 const builtIn = computed(() => Boolean(row.value?.builtIn))
 /* The same banner the MCP page opens with — one recipe, one derived colour, so a
    cli row and an mcp row read as two pages of one product instead of two
@@ -105,10 +133,36 @@ const seenTotal = computed(() =>
 const work = computed(() => row.value?.work || null)
 const searchKey = shortcutLabel('inventory-search')
 
+/* The service's own site, as a host — the same short label the MCP page uses. */
+const websiteLabel = computed(() => {
+  try {
+    return new URL(row.value?.website || '').host.replace(/^www\./, '')
+  } catch {
+    return row.value?.website || ''
+  }
+})
+
+/**
+ * Where this kind's credential lives, in the one sentence that stops a person
+ * looking for a token box that will never exist.
+ *
+ * Read from the same facts `bindingFor` writes on the installed row, so the pitch
+ * cannot promise a different home from the one the binding reports afterwards.
+ */
+const credentialWhere = computed(() => {
+  const entry = row.value
+  if (!entry) return ''
+  if (entry.kind === 'mcp') return 'in mcp.json — the definition travels with the workspace, a token in it does not'
+  if (entry.kind === 'cli') return "in the CLI's own store on this machine — Entity never holds it"
+  if (entry.oauth) return 'on this machine, as a consent you grant per account; never in the workspace'
+  if (entry.credential === 'token') return 'on this machine, as one API key you paste once; never in the workspace'
+  return 'on this machine'
+})
+
 const tone = computed(() => {
   const word = String(row.value?.status || '')
   if (/fail|missing|needs sign-in/i.test(word)) return 'fail'
-  if (/unmanaged|untracked|parked|not probed|not set up/i.test(word)) return 'warn'
+  if (/unmanaged|untracked|parked|not probed|not set up|not installed/i.test(word)) return 'warn'
   if (/found|connected|in the pool|ok/i.test(word)) return 'ok'
   return 'off'
 })
@@ -116,18 +170,35 @@ const tone = computed(() => {
 const fields = computed(() => {
   const entry = row.value
   if (!entry) return []
-  const rows = [
+  /* An entry nobody installed has no binding yet, and printing the catalog's
+     sentence in a `binding` slot would read as if one existed. The pitch says where
+     the credential *would* live, in prose, in the card above. */
+  const rows = []
+  if (notInstalled.value) {
+    rows.push(
+      { k: 'kind', v: entry.kind },
+      { k: 'ships with', v: 'the app — nothing to download' },
+      { k: 'installs into', v: 'this workspace, when you press Install' },
+    )
+    return rows
+  }
+  rows.push(
     { k: 'kind', v: entry.kind },
     { k: 'scope', v: entry.scope === 'machine' ? 'machine — this computer only' : 'workspace — travels with the workspace' },
     { k: 'binding', v: entry.binding || '—' },
-  ]
+  )
   /* An account-bearing connector binds through a consent, not a file, and its
      account count is a fact of the connector, not of a folder (frame C). */
-  if (isOAuth.value) rows.push({ k: 'accounts', v: accountsFact.value })
+  /* Only an installed row has accounts; a pitch says what it *would* need instead
+     of an empty count. */
+  if (isOAuth.value && !notInstalled.value) rows.push({ k: 'accounts', v: accountsFact.value })
   rows.push(
     { k: 'mention', v: entry.mention || 'not offered in the composer' },
     { k: 'origin', v: builtIn.value ? 'built in — the app ships this definition' : 'added in this workspace' },
-    { k: 'status', v: entry.statusDetail ? `${entry.status} · ${entry.statusDetail}` : entry.status },
+    {
+      k: 'status',
+      v: entry.statusDetail ? `${entry.status} · ${entry.statusDetail}` : entry.status,
+    },
   )
   return rows
 })
@@ -179,6 +250,45 @@ async function later() {
   notice.value = isCli.value
     ? 'Nothing to save: this row uses the binary on PATH and the CLI keeps its own sign-in.'
     : 'Token storage lands with the connector catalog; the definition itself is already saved.'
+}
+
+/**
+ * Install this entry from its own page.
+ *
+ * The roster's Built-in pane offers the same verb; this one exists so a person who
+ * read the pitch here does not have to go back to the list to act on it. It does
+ * **not** navigate: the page stays, and `row` flips from the catalog's entry to the
+ * installed row as soon as the answer lands, which is what makes the accounts,
+ * endpoint and Remove cards appear in place.
+ */
+async function install() {
+  if (busy.value) return
+  busy.value = 'install'
+  error.value = ''
+  notice.value = ''
+  try {
+    await installConnector(id.value)
+    notice.value = `${row.value?.label || id.value} installed. Its credential is the next step.`
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  } finally {
+    busy.value = ''
+  }
+}
+
+/** The reverse, so `Uninstall` on a page a person reached from the roster works. */
+async function uninstall() {
+  if (busy.value) return
+  busy.value = 'uninstall'
+  error.value = ''
+  try {
+    await uninstallConnector(id.value)
+    back()
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  } finally {
+    busy.value = ''
+  }
 }
 
 function remove() {
@@ -251,15 +361,27 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             <div class="entp-title">
               <p class="eyebrow">{{ row.kind }} · {{ row.scope }} · {{ hub.workspaceLabel || hub.workspace }}</p>
               <h1>{{ row.label }}</h1>
-              <p class="entp-desc">{{ row.binding || 'no binding recorded' }}</p>
+              <p class="entp-desc">
+                {{ notInstalled ? row.summary || row.work?.resolves : row.binding || 'no binding recorded' }}
+              </p>
               <div class="entp-chips">
-                <span class="mcpp-chip" :data-tone="tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'fail' ? 'bad' : 'mute'">
-                  <i aria-hidden="true"></i>{{ row.status }}
+                <span
+                  class="mcpp-chip"
+                  :data-tone="notInstalled ? 'mute' : tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'fail' ? 'bad' : 'mute'"
+                >
+                  <i aria-hidden="true"></i>{{ notInstalled ? 'not installed' : row.status }}
                   <span v-if="row.mention" class="mcpp-chip-note">{{ row.mention }}</span>
                 </span>
                 <span v-if="builtIn" class="entp-chip">built in</span>
                 <span class="entp-chip">{{ row.kind === 'cli' ? 'local · cli' : 'remote · http' }}</span>
                 <span class="entp-chip">every entity</span>
+                <a
+                  v-if="row.website && notInstalled"
+                  class="entp-chip"
+                  :href="row.website"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >{{ websiteLabel }}</a>
               </div>
             </div>
           </header>
@@ -267,7 +389,25 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           <!-- The MCP page's panel, on a CLI's facts: what the probe saw and how
                much of it. `samples` is the probe's own answer, so an unprobed row
                says so instead of printing a zero. -->
+          <aside v-if="notInstalled" class="entp-xp" title="Nothing to probe yet">
+            <div class="entp-lv">
+              <span>MENTION</span>
+              <b>{{ row.work?.mention ? '1' : '—' }}</b>
+            </div>
+            <div class="entp-xp-main">
+              <div class="entp-xp-head">
+                <span>in the composer</span>
+                <b>{{ row.work?.mention || 'context only' }}</b>
+              </div>
+              <div class="entp-xp-track"><i style="width: 0%"></i></div>
+              <div class="entp-xp-foot">
+                <span>not installed</span>
+                <span>nothing to ask yet</span>
+              </div>
+            </div>
+          </aside>
           <aside
+            v-else
             class="entp-xp"
             :title="`${seenTotal} ${row.samplesLabel || 'reported'} · ${row.status}`"
             :aria-label="`${seenTotal} ${row.samplesLabel || 'reported'}, ${row.status}, using ${row.binary || row.binding || 'its own binary'}`"
@@ -300,11 +440,50 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
            verb, so it is the only one that belongs on the right. -->
       <div class="cxn-page cxn-split">
         <div class="cxn-main">
+          <!-- What this connector is, in the app's own words. Shown for an entry
+               this workspace has not installed: the pitch is the page, and a page
+               that only says "not installed" introduces nothing. The prose comes
+               from the catalog (`summary`, then the mention's own `resolves`), so it
+               cannot drift from what the resolver actually does. -->
+          <section v-if="notInstalled" class="cxn-card cxn-about">
+            <h2>What {{ row.label }} gives you</h2>
+            <p class="cxn-about-lead">
+              {{ row.summary || (work?.resolves ? `${row.label} resolves ${work.resolves}.` : `${row.label} is a connector this app ships.`) }}
+            </p>
+            <dl class="cxn-facts">
+              <dt>kind</dt>
+              <dd>
+                <template v-if="row.kind === 'mcp'">an MCP server — a definition in this workspace's <code class="mono">mcp.json</code></template>
+                <template v-else-if="row.kind === 'cli'">a command-line tool already on this machine</template>
+                <template v-else-if="row.oauth">a REST service you sign in to, one account at a time</template>
+                <template v-else-if="row.credential === 'token'">a REST service reached with one API key you paste once</template>
+                <template v-else>a REST service</template>
+              </dd>
+              <dt v-if="row.work?.mention">mention</dt>
+              <dd v-if="row.work?.mention">
+                <code class="mono">{{ row.work.mention }}</code> — {{ row.work.resolves }}
+              </dd>
+              <dt>where its credential lives</dt>
+              <dd>{{ credentialWhere }}</dd>
+              <dt v-if="row.work?.needs">needs</dt>
+              <dd v-if="row.work?.needs">{{ row.work.needs }}</dd>
+              <dt v-if="row.website">read more</dt>
+              <dd v-if="row.website">
+                <a :href="row.website" target="_blank" rel="noreferrer noopener">{{ websiteLabel }}</a>
+              </dd>
+            </dl>
+            <p class="cxn-note">
+              Installing records the definition in this workspace. It copies no
+              credential — that is asked for here, afterwards, and it stays on this
+              machine.
+            </p>
+          </section>
+
           <!-- The accounts card: one row per connected account, on the connector's
                own page. A component of its own because every account-bearing
                connector needs it and nothing about it is Gmail-specific. -->
           <ConnectorAccountsCard
-            v-if="isOAuth"
+            v-if="isOAuth && !notInstalled"
             ref="accountsCard"
             :connector="id"
             :provider="provider"
@@ -372,7 +551,11 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </p>
           </section>
 
-          <section v-if="!isOAuth" class="cxn-card">
+          <!-- A `cli` row's probe runs the binary the pitch is about, so it stays
+               reachable before installing — "do I even have this?" is the question
+               the page is answering. A `rest` row's box would be a token form with
+               no binding to write it to, so that one waits. -->
+          <section v-if="!isOAuth && (!notInstalled || isCli)" class="cxn-card">
             <h2>{{ isCli ? 'Sign-in' : 'Endpoint and token' }}</h2>
             <template v-if="isCli">
               <p class="cxn-note">
@@ -432,7 +615,26 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </div>
           </section>
 
-          <section class="cxn-card cxn-danger">
+          <section v-if="notInstalled" class="cxn-card">
+            <h2>Install</h2>
+            <p class="cxn-note">
+              Records the definition in this workspace. <b>No credential is copied</b> — a
+              CLI's sign-in stays with the CLI, an MCP binding stays in
+              <code class="mono">mcp.json</code>, and an account is asked for on this page
+              afterwards.
+            </p>
+            <button
+              class="btn btn-ink"
+              type="button"
+              :disabled="Boolean(busy)"
+              @click="install"
+            >
+              {{ busy === 'install' ? 'Installing…' : `Install ${row.label}` }}
+            </button>
+            <div v-if="error" class="cxn-error" role="alert">{{ error }}</div>
+          </section>
+
+          <section v-else class="cxn-card cxn-danger">
             <h2>Remove</h2>
             <p class="cxn-note">
               Takes the connector out of this workspace. A credential held by the CLI or by

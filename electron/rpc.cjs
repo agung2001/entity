@@ -28,6 +28,7 @@ const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
+const connectorTokens = require('./connector-tokens.cjs')
 const turnTimeout = require('./turn-timeout-store.cjs')
 const machineScan = require('./machine-scan.cjs')
 const remoteRunner = require('./remote-runner.cjs')
@@ -403,6 +404,19 @@ function createRpc({
       oauthSecrets.forgetProvider(args?.provider || 'google')
       return answer
     },
+
+    /* A paste-once API key (`credential: 'token'`), beside the OAuth client verbs
+       and just as closed: `status` answers `{ configured, hint }` with four
+       characters and no verb returns the key itself. `test` and `save` both verify
+       upstream FIRST — a key that cannot read this workspace is never written. */
+    'connector.token.status': (args) => connectorTokens.statusOf(args?.connector),
+    'connector.token.test': (args) => connectorTokens.test(args),
+    'connector.token.save': (args) => connectorTokens.save(args),
+    'connector.token.forget': (args) => connectorTokens.forget(args?.connector),
+    /* The workspace state a token connector needs beside its key: not a secret, so
+       it is a plain read and a plain write on the connector's index row. */
+    'connector.fields': (args) => connectorStore.fieldsOf(args),
+    'connector.setFields': (args) => connectorStore.setFields(args),
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),

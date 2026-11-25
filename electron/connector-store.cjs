@@ -45,8 +45,14 @@ const SCHEMA = 1
  * disagree — the earlier version wrote the CLI sentence onto every non-mcp row and
  * made the renderer compensate.
  */
-const bindingFor = ({ kind, oauth }) =>
-  kind === 'mcp' ? 'mcp.json' : oauth === true ? 'oauth · loopback redirect' : 'the CLI on this machine'
+const bindingFor = ({ kind, oauth, credential }) =>
+  kind === 'mcp'
+    ? 'mcp.json'
+    : credential === 'token'
+      ? 'a token on this machine'
+      : oauth === true
+        ? 'oauth · loopback redirect'
+        : 'the CLI on this machine'
 
 /* The initial a row wears, from its own label — one glyph, never a product logo. */
 const initialOf = (label) => {
@@ -312,10 +318,17 @@ function list({ workspace } = {}) {
       builtIn: entry.installedFrom === 'catalog' && catalog.entryOf(id) ? id : '',
       kind: entry.kind,
       scope: 'workspace',
-      binding: entry.binding || bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
+      binding:
+        entry.binding ||
+        bindingFor({
+          kind: entry.kind,
+          oauth: entry.oauth === true,
+          credential: catalog.entryOf(id)?.credential,
+        }),
       /* The shipped syntax, from the catalog — an installed row offers its mention
          exactly when a resolver exists for it. */
       mention: catalog.mentionOf(id) || entry.mention || '',
+      summary: catalog.entryOf(id)?.summary || '',
       work: catalog.workOf(id),
       website: catalog.websiteOf(id),
       /* A declared self-report is what makes it answerable at all. */
@@ -356,7 +369,22 @@ function list({ workspace } = {}) {
         /* a catalog entry that carries accounts says so, so the Built-in row can
            brand it and land on the page the same way the sheet's card does */
         oauth: entry.oauth === true,
-        binding: bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
+        credential: entry.credential || '',
+        /* The catalog's one-line pitch. Without it the page a person reaches
+           *before* installing had only a binding sentence to introduce it, which
+           is the one thing they have not decided on yet. */
+        summary: entry.summary || '',
+        /* The provider a not-yet-installed entry signs in with, and the launcher a
+           shipped MCP entry would write. Both are already catalog data; the detail
+           page needs them to describe the entry *before* installing it, and the
+           renderer must not re-derive either from an id. */
+        provider: entry.provider || '',
+        launcher: entry.launcher || '',
+        binding: bindingFor({
+          kind: entry.kind,
+          oauth: entry.oauth === true,
+          credential: entry.credential,
+        }),
         mention: catalog.mentionOf(id) || '',
         work: catalog.workOf(id),
         website: catalog.websiteOf(id),
@@ -498,6 +526,25 @@ function install({ workspace, id } = {}) {
   if (!entry) throw new Error(`No built-in connector called "${name}".`)
   const index = readIndex(record)
   if (index.rows[name]) return list({ workspace })
+  /* An `mcp` entry that ships a `launcher` is a workspace-owned program: installing
+     it writes the pool definition, because the workspace is where that program
+     lives. The path is workspace-relative — `skills/**` syncs, so a definition
+     written this way works on the second machine too, and the id comes from the
+     record rather than a home directory. Nothing else is invented. */
+  const launcher = entry.kind === 'mcp' ? text(entry.launcher, 200) : ''
+  if (launcher) {
+    const pool = workspaces.mcp(record.id)
+    if (!pool.servers?.[name] && !pool.disabled?.[name]) {
+      workspaces.writeMcp({
+        id: record.id,
+        servers: {
+          ...(pool.servers || {}),
+          [name]: { command: `$HOME/.entity/workspaces/${record.id}/skills/${launcher}` },
+        },
+        disabled: pool.disabled || {},
+      })
+    }
+  }
   index.rows = {
     ...index.rows,
     [name]: {
@@ -508,7 +555,11 @@ function install({ workspace, id } = {}) {
          account: the row lands with 0 accounts and the page's empty state */
       oauth: entry.oauth === true,
       tier: '',
-      binding: bindingFor({ kind: entry.kind, oauth: entry.oauth === true }),
+      binding: bindingFor({
+        kind: entry.kind,
+        oauth: entry.oauth === true,
+        credential: entry.credential,
+      }),
       mention: entry.work?.mention || '',
       createdAt: new Date().toISOString(),
       installedFrom: 'catalog',
@@ -644,6 +695,78 @@ function setTier({ workspace, id, tier } = {}) {
   return list({ workspace })
 }
 
+/**
+ * A connector's **workspace** state: the settings that are not a secret and are not
+ * one person's account.
+ *
+ * Clockify is the first user — its workspace id, IANA timezone and member map belong
+ * to the workspace the report is about, so they travel with it under `fields` on the
+ * connector's own index row. Nothing in here is a credential, which is why it is a
+ * plain read and a plain write with no vault involved.
+ */
+const FIELD_LIMITS = { workspaceId: 60, timezone: 60 }
+
+function fieldsOf({ workspace, id } = {}) {
+  const record = workspaces.open(workspace)
+  const name = text(id, 60)
+  const row = readIndex(record).rows[name] || {}
+  const raw = row.fields && typeof row.fields === 'object' ? row.fields : {}
+  const members = {}
+  if (raw.members && typeof raw.members === 'object') {
+    for (const [login, userId] of Object.entries(raw.members)) {
+      const key = text(login, 40)
+      const value = text(userId, 60)
+      if (key && value) members[key] = value
+    }
+  }
+  return {
+    workspaceId: text(raw.workspaceId, FIELD_LIMITS.workspaceId),
+    timezone: text(raw.timezone, FIELD_LIMITS.timezone),
+    members,
+  }
+}
+
+/**
+ * Save that state. A key this connector does not know is dropped rather than stored,
+ * and an IANA timezone that `Intl` refuses is an error — a wrong zone makes every
+ * week boundary wrong, and a silently-kept UTC would answer about the wrong week.
+ */
+function setFields({ workspace, id, fields } = {}) {
+  const record = workspaces.open(workspace)
+  const name = text(id, 60)
+  if (!name) throw new Error('Which connector should store these fields?')
+  const index = readIndex(record)
+  if (!index.rows[name]) throw new Error('That connector is not installed in this workspace.')
+  const incoming = fields && typeof fields === 'object' ? fields : {}
+  const next = {}
+  if (incoming.workspaceId !== undefined) next.workspaceId = text(incoming.workspaceId, FIELD_LIMITS.workspaceId)
+  if (incoming.timezone !== undefined) {
+    const zone = text(incoming.timezone, FIELD_LIMITS.timezone)
+    if (zone) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: zone })
+      } catch {
+        throw new Error(`“${zone}” is not an IANA timezone, so it was not saved.`)
+      }
+    }
+    next.timezone = zone
+  }
+  if (incoming.members !== undefined) {
+    const members = {}
+    if (incoming.members && typeof incoming.members === 'object') {
+      for (const [login, userId] of Object.entries(incoming.members)) {
+        const key = text(login, 40)
+        const value = text(userId, 60)
+        if (key && value) members[key] = value
+      }
+    }
+    next.members = members
+  }
+  index.rows = { ...index.rows, [name]: { ...index.rows[name], fields: { ...fieldsOf({ workspace, id: name }), ...next } } }
+  writeIndex(record, index)
+  return fieldsOf({ workspace, id: name })
+}
+
 /** `Remove`: the index row and, for a workspace connector, its binding. */
 function remove({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
@@ -731,6 +854,8 @@ module.exports = {
   initialOf,
   definitionOf,
   readIndex,
+  fieldsOf,
+  setFields,
   list,
   add,
   adopt,

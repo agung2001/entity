@@ -409,6 +409,8 @@ const ACCOUNT_MARKS = {
   youtube: 'youtube',
   'youtube-studio': 'youtube-studio',
   x: 'x',
+  /* the mention head and the catalog id differ here, so the mark is named once */
+  opendesign: 'open-design',
 }
 const markOf = (entry) => ACCOUNT_MARKS[String(entry?.kind || '')] || String(entry?.kind || '')
 

@@ -622,9 +622,19 @@ const wideSheet = computed(() => !addKind.value)
           <span role="columnheader">Action</span>
         </div>
 
-        <!-- the catalog: nothing is installed yet, so the only verb is Install -->
+        <!-- the catalog: nothing is installed yet, so the only verb is Install —
+             but the name is still a link. The pitch (what a mention does with it,
+             what it needs, what it binds) is the reason to install, so it has to be
+             readable *before* the decision, not after it. -->
         <template v-if="pane === 'builtin'">
-          <div v-for="row in visible" :key="row.id" class="ct-row" role="row">
+          <router-link
+            v-for="row in visible"
+            :key="row.id"
+            class="ct-row ct-row-link"
+            role="row"
+            :to="{ name: 'connector-page', params: { workspace: hub.workspace, id: row.id } }"
+            :title="`What ${row.label} does, before you install it`"
+          >
             <span class="ct-who" role="cell">
               <span class="ct-mk" data-brand="1" aria-hidden="true">
                 <IntegrationMark :name="row.builtIn" :size="18" />
@@ -643,11 +653,18 @@ const wideSheet = computed(() => !addKind.value)
               <span class="ct-s1"><span class="dot" aria-hidden="true"></span><span class="ct-word">not installed</span></span>
             </span>
             <span class="ct-act" role="cell">
-              <button class="btn btn-sm" type="button" :disabled="busy === row.id" @click="install(row)">
+              <!-- A button inside a link is invalid; the row navigates, so this
+                   stops the click from doing both. -->
+              <button
+                class="btn btn-sm"
+                type="button"
+                :disabled="busy === row.id"
+                @click.prevent.stop="install(row)"
+              >
                 Install
               </button>
             </span>
-          </div>
+          </router-link>
         </template>
 
         <!-- installed, and the machine's own config -->
