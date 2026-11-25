@@ -53,6 +53,7 @@ const isSkill = computed(() => route.name === 'skill')
 const isEntity = computed(() => route.name === 'entity')
 const isMachine = computed(() => route.name === 'machine')
 const isArtifact = computed(() => route.name === 'artifact')
+const isArtifactsIndex = computed(() => route.name === 'artifacts')
 
 const crumbs = computed(() => {
   if (isSkill.value) {
@@ -72,8 +73,16 @@ const crumbs = computed(() => {
     ]
   }
   if (isArtifact.value) {
-    return [{ label: 'artifacts' }, { label: route.params.id }]
+    /* `artifacts` is a link now that the shelf has a page: the trail walked from
+       a file back to a folder, and used to stop at a name with nowhere to go. */
+    return [
+      { label: 'artifacts', to: { name: 'artifacts', params: { workspace: route.params.workspace } } },
+      { label: route.params.id },
+    ]
   }
+  /* The shelf page is flat: its own bar carries the trail of an opened work, so
+     the topbar keeps the single crumb its route already names. */
+  if (isArtifactsIndex.value) return null
   return null
 })
 

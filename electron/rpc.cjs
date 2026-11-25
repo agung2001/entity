@@ -26,6 +26,7 @@ const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
+const githubDashboard = require('./github-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -338,6 +339,12 @@ function createRpc({
     'connector.install': (args) => connectorStore.install(args),
     'connector.uninstall': (args) => connectorStore.uninstall(args),
     'connector.copy': (args) => connectorStore.copyFromMachine(args),
+    /* The GitHub connector's dashboard: who `gh` has signed in, what moved in the
+       last 90 days, and the one switch that makes another login active. Read-only
+       apart from that switch, and no token is ever read. */
+    'github.logins': () => githubDashboard.logins(),
+    'github.dashboard': (args) => githubDashboard.dashboard(args),
+    'github.useActive': (args) => githubDashboard.useActive(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

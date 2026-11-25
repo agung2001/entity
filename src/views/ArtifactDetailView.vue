@@ -25,8 +25,9 @@ import {
 } from '@/stores/artifacts'
 
 /**
- * One artifact, with its bytes loaded only for this page. The shelf itself is
- * the rail's second tier, so there is no list page between the two.
+ * One artifact, with its bytes loaded only for this page. The list page behind
+ * it is `/w/:workspace/artifacts` — works, not rows — and the rail's second tier
+ * stays the file list you arrive from.
  *
  * The page borrows the chat's glass bar: it floats over the file and scrolls
  * beneath it, instead of being a floating card on a page. A Markdown artifact

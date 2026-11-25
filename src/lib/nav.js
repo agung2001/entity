@@ -60,7 +60,7 @@ export function isActive(item, route) {
   const panelOpen = hub.rail.entities || hub.rail.artifacts
   if (panelOpen) return item.panel ? hub.rail[item.panel] : false
   if (item.panel === 'entities') return route.name === 'entity'
-  if (item.panel === 'artifacts') return route.name === 'artifact'
+  if (item.panel === 'artifacts') return route.name === 'artifact' || route.name === 'artifacts'
   if (item.view === 'configurations') return CONFIG_ROUTES.has(String(route.name || ''))
   return route.name === item.name
 }
