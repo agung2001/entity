@@ -394,6 +394,15 @@ function createRpc({
       return answer
     },
     'connector.oauth.clearClient': (args) => oauthSecrets.clearClient(args),
+    /* A downloaded `credentials.json` instead of two typed values: read it for the
+       confirmation line, then store it through the same `setClient` the form uses.
+       Neither entry returns the secret — `previewClientFile` returns a mask. */
+    'connector.oauth.clientFile': (args) => oauthSecrets.previewClientFile(args),
+    'connector.oauth.setClientFile': (args) => {
+      const answer = oauthSecrets.setClientFromFile(args)
+      oauthSecrets.forgetProvider(args?.provider || 'google')
+      return answer
+    },
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
