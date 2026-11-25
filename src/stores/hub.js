@@ -310,7 +310,7 @@ export const hub = reactive({
   wizard: { open: false },
   /* the second tier can temporarily show the workspace list instead of the
      current section's list; it is navigation state, not a route */
-  rail: { entities: false, artifacts: false },
+  rail: { entities: false, artifacts: false, drawer: false },
   toast: { open: false, message: '', actionLabel: '' },
 
   /* --- consoles ------------------------------------------------------ */

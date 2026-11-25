@@ -75,6 +75,11 @@
   --fs-h1: 30px;
   --rail: 228px;
   --rail-bg: #f7f5ef;
+  /* The phone shell's two fixed bands. Plain values, not a scale: nothing else
+     in the app is measured against them, and the tab bar is the only band whose
+     height a thumb can feel. */
+  --appbar-h: 52px;
+  --tabbar-h: 57px;
   /* The loading skeleton's own fill. `--border` on `--surface` is 1.22:1, which
      reads as an almost-blank card, so the placeholder mixes the muted ink in
      (34 % → 1.60:1). Declared as a var so a theme move carries it. */
@@ -159,7 +164,11 @@ button {
 /* ── shell ────────────────────────────────────────────────────── */
 .app {
   display: flex;
+  /* `dvh` so a collapsing URL bar moves the tab bar with the window instead of
+     leaving a 57 px band over the last line of the thread. The `100%` first is
+     the fallback for a webview that has no dynamic viewport unit. */
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
 }
 

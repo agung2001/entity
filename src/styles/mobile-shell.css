@@ -1,0 +1,412 @@
+/**
+ * The phone shell — one layout for everything ≤ 820 px.
+ *
+ * The rail does not disappear here, it changes shape: the icon strip becomes a
+ * 52 px appbar, its five destinations become the tab bar at the foot of the
+ * window, and the second tier becomes a drawer over the page. Every layout rule
+ * below is inside the one breakpoint, so a desktop window keeps the rail
+ * exactly as `rail-two-tier.css` draws it.
+ *
+ * The first block is the exception that proves the rule: the *elements* this
+ * file invents (the tab bar, the drawer's close button, the account sheet's
+ * grabber and update tile) are hidden by default, so a new element is
+ * invisible above the breakpoint without a second `@media` to say so.
+ */
+
+.tabbar,
+.rail-scrim,
+.ab-title,
+.ab-drawer,
+.ab-search,
+.as-grabber,
+.as-upd,
+.rail-t2-x {
+  display: none;
+}
+
+/* ── 1. the frame ─────────────────────────────────────────────────────────
+   Desktop heights and the two fixed bands: nothing here paints a colour, a
+   radius or a shadow of its own. */
+
+@media (max-width: 820px) {
+  /* The rail is the appbar: same component, one row, fixed to the top of the
+     column. The safe-area inset is padding on the bar itself, so the 52 px of
+     content never sits under a notch. */
+  .rail {
+    position: relative;
+    /* above the tab bar: the drawer, its scrim and the account sheet are fixed
+       children of this box, so they stack with it, not with the page */
+    z-index: 45;
+    width: 100%;
+    height: calc(var(--appbar-h) + env(safe-area-inset-top));
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    padding: env(safe-area-inset-top) 8px 0 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--rail-bg);
+    overflow: visible;
+  }
+  .rail[data-collapsed='1'] {
+    width: 100%;
+  }
+
+  .rail-t1 {
+    /* no stacking context here: the account sheet is fixed inside this box and
+       has to paint above the scrim, which is its uncle */
+    z-index: auto;
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    background: none;
+    border-right: 0;
+  }
+  .rail-t1-head {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-bottom: 0;
+  }
+  .rail-brand {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--r-sm);
+  }
+
+  /* Nothing that needed a second column or a hover tooltip survives at this
+     width. The nav moved to the tab bar, the update tile to the account sheet,
+     the theme row into that sheet too. */
+  .rail-nav,
+  .rail-t1-spacer,
+  .rail-theme,
+  .rail-resize,
+  .rail-t1 > .rail-upd {
+    display: none;
+  }
+  .rail-account {
+    width: auto;
+    margin: 0;
+  }
+  .rail-account .who {
+    display: none;
+  }
+  .rail-user {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* The appbar's title block: the section over the workspace, both on one line
+     of their own so the tallest of them never pushes the bar past 52 px. */
+  .ab-title {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    padding: 0 6px;
+    overflow: hidden;
+  }
+  .ab-sec {
+    font-family: var(--font);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ab-ws {
+    font-family: var(--mono);
+    font-size: var(--fs-meta);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Two 44 px verbs, the drawer and search. */
+  .ab-drawer,
+  .ab-search {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .ab-drawer svg,
+  .ab-search svg {
+    width: 17px;
+    height: 17px;
+  }
+  .ab-drawer[aria-expanded='true'] {
+    background: var(--surface-2);
+  }
+
+  /* ── 2. the routed view ─────────────────────────────────────────────────
+     The tab bar is fixed chrome under a scrolling column, so the column owes
+     it a bottom gutter: at max scroll the last line still clears the bar. */
+  main {
+    margin-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  }
+  /* the chat column owns its own scroll and its own composer clearance */
+  .view--chat {
+    padding: 0;
+  }
+
+  /* The topbar carried breadcrumbs and a desktop search button; the appbar now
+     carries both, so the page gives those 56 px back. */
+  .topbar {
+    display: none;
+  }
+
+  /* ── chat: the composer docks above the tab bar ─────────────────────────
+     History is the drawer's job here, so the panel takes the whole width. */
+  .cpanel {
+    flex: 1;
+  }
+
+  /* ── 3. the tab bar ────────────────────────────────────────────────────
+     Five destinations, thumb height, the same labels and counts the rail
+     shows. The inner track is capped so a tablet does not stretch the icons
+     to opposite edges of the window. */
+  .tabbar {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--rail-bg);
+    border-top: 1px solid var(--border);
+  }
+  .tab-track {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    width: 100%;
+    max-width: 520px;
+    height: var(--tabbar-h);
+    margin: 0 auto;
+  }
+  .tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .tab svg {
+    width: 17px;
+    height: 17px;
+  }
+  .tab-lb {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab[aria-current='page'] {
+    color: var(--ink);
+  }
+  /* The current tab is a hairline on the bar's top edge, not a coloured pill:
+     the accent is never text, and a 2 px bar reads at 320 px. */
+  .tab[aria-current='page']::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 22px;
+    height: 2px;
+    margin-left: -11px;
+    background: var(--ink);
+  }
+  .tab .tab-n {
+    position: absolute;
+    top: 6px;
+    right: auto;
+    left: calc(50% + 5px);
+    font-family: var(--mono);
+    font-size: var(--fs-micro);
+    line-height: 1;
+    color: var(--muted);
+  }
+
+  /* ── 4. the second-tier drawer ─────────────────────────────────────────
+     The same `.rail-t2` component the desktop shows as a column, lifted out of
+     the flow: it slides in from the left over the page, above the appbar and
+     the tab bar, with a scrim under it. */
+  .rail-t2 {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: min(320px, 86vw);
+    height: auto;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    border-right: 1px solid var(--border-strong);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 180ms;
+  }
+  .rail[data-drawer='1'] .rail-t2 {
+    transform: none;
+    visibility: visible;
+  }
+  .rail-t2-head {
+    height: 52px;
+  }
+  /* every row is a thumb target, and the close button is the eighth cell */
+  .rail-t2-row {
+    min-height: 48px;
+  }
+  .rail-t2-x {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    margin-left: auto;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .rail-t2-x svg {
+    width: 16px;
+    height: 16px;
+  }
+  /* the drawer's own panel header already names the section; the chat '+'
+     sits before the close button so the two never swap places per section */
+  .rail-t2-head[data-chat='1'] .rail-t2-x {
+    order: 1;
+  }
+
+  .rail-scrim {
+    display: block;
+    position: fixed;
+    top: calc(var(--appbar-h) + env(safe-area-inset-top));
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 59;
+    background: rgba(10, 10, 10, 0.42);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+  .rail-scrim[data-open='1'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── 5. the account sheet ──────────────────────────────────────────────
+     The same `.acct-menu` markup the desktop anchors above the avatar, pinned
+     to the bottom edge as a sheet: grabber, who you are, theme, updates, sign
+     out. It grows from the bottom edge in 160 ms. */
+  /* the desktop rule anchors this 208 px menu beside the avatar; on the phone
+     it is a sheet, so every side is restated at this specificity */
+  .rail-account .acct-menu {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    z-index: 70;
+    min-width: 0;
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom));
+    border: 0;
+    border-top: 1px solid var(--border-strong);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    background: var(--bg);
+    box-shadow: 0 -12px 30px -18px rgba(10, 10, 10, 0.28);
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 160ms;
+    display: block;
+  }
+  .account[data-open='1'] .acct-menu {
+    display: block;
+    transform: none;
+    visibility: visible;
+  }
+  .account[data-open='0'] .acct-menu {
+    pointer-events: none;
+  }
+  .as-grabber {
+    display: block;
+    width: 32px;
+    height: 4px;
+    margin: 8px auto 2px;
+    border-radius: var(--r-pill);
+    background: var(--border-strong);
+  }
+  .acct-menu .acct-head {
+    padding: 8px 8px 10px;
+    margin-bottom: 4px;
+  }
+  .acct-menu .pickopt {
+    min-height: 48px;
+    font-size: var(--fs-small);
+  }
+  /* the update tile is a full-width row here, not a 28 px rail glyph */
+  .as-upd {
+    display: block;
+    padding: 2px 4px;
+  }
+  .as-upd .rail-upd {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .as-upd .upd-tile {
+    min-height: 48px;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 8px;
+    border-radius: var(--r-sm);
+  }
+  .as-upd .rail-upd[data-state='idle'] {
+    display: none;
+  }
+}
+
+/* ── 6. motion ───────────────────────────────────────────────────────────
+   Two 180 ms slides and a 160 ms sheet; under `prefers-reduced-motion` they
+   are the same layout with no travel, never a different one. */
+@media (max-width: 820px) and (prefers-reduced-motion: reduce) {
+  .rail-t2,
+  .acct-menu,
+  .rail-scrim {
+    transition: none;
+  }
+}

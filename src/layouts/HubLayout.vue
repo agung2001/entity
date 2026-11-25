@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 
 import { useRoute, useRouter } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
+import MobileTabBar from '@/components/MobileTabBar.vue'
 import ShortcutsDialog from '@/components/ShortcutsDialog.vue'
 import PageFind from '@/components/PageFind.vue'
 import ToastHost from '@/components/ToastHost.vue'
@@ -242,6 +243,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
     </div>
     <CommandPalette />
     <!-- The app's find: one bar for the whole page, the document included. -->
+    <!-- the phone tab bar; hidden above the breakpoint in mobile-shell.css -->
+    <MobileTabBar />
     <PageFind />
     <ToastHost />
   </div>

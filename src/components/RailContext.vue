@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ArtifactRailPanel from '@/components/ArtifactRailPanel.vue'
 import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
@@ -25,6 +25,20 @@ import { workspaces } from '@/stores/workspaces'
  */
 const route = useRoute()
 const router = useRouter()
+
+/* The same eighth media query every other phone rule lives behind: here it only
+   decides whether this column is a column or a modal drawer. */
+const compact = ref(false)
+let compactQuery = null
+function syncCompact(event) {
+  compact.value = event.matches
+}
+onMounted(() => {
+  compactQuery = window.matchMedia('(max-width: 820px)')
+  compact.value = compactQuery.matches
+  compactQuery.addEventListener('change', syncCompact)
+})
+onBeforeUnmount(() => compactQuery?.removeEventListener('change', syncCompact))
 
 onMounted(loadFleet)
 const newThreadKey = shortcutLabel('new-thread')
@@ -305,7 +319,12 @@ const backLabel = computed(() => {
 </script>
 
 <template>
-  <aside class="rail-t2" aria-label="Context">
+  <aside
+    class="rail-t2"
+    aria-label="Context"
+    :role="compact ? 'dialog' : undefined"
+    :aria-modal="compact ? 'true' : undefined"
+  >
     <header class="rail-t2-head" :data-chat="section.id === 'chat' ? '1' : '0'">
       <button
         v-if="section.back"
@@ -321,6 +340,17 @@ const backLabel = computed(() => {
       </button>
       <h2>{{ section.title }}</h2>
       <span v-if="section.count !== null" class="rail-t2-count">{{ section.count }}</span>
+      <button
+        class="rail-t2-x"
+        type="button"
+        title="Close"
+        aria-label="Close panel"
+        @click="hub.rail.drawer = false"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      </button>
       <button
         v-if="section.id === 'chat'"
         class="rail-t2-add"

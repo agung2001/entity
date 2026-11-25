@@ -5,15 +5,29 @@ import BrandMark from '@/components/BrandMark.vue'
 import NavIcon from '@/components/NavIcon.vue'
 import RailContext from '@/components/RailContext.vue'
 import UpdateBadge from '@/components/UpdateBadge.vue'
-import { ensureChats, hub, initials, liveSummaries, roleById, signOut } from '@/stores/hub'
-import { artifacts } from '@/stores/artifacts'
+import { ensureChats, hub, initials, roleById, signOut } from '@/stores/hub'
 import { isEditable } from '@/lib/dom'
+import { NAV, isActive as isActiveNav, linkFor } from '@/lib/nav'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { gravatarUrl } from '@/lib/gravatar'
 import { themeMode, toggleTheme } from '@/lib/theme'
 
 const route = useRoute()
 const router = useRouter()
+
+/* The phone appbar, the drawer and the account sheet only exist at ≤ 820 px.
+   One media query, matched in script as well as in CSS, so the same markup can
+   carry a menu on a desktop window and a dialog on a phone. */
+const compact = ref(false)
+let compactQuery = null
+function syncCompact(event) {
+  compact.value = event.matches
+}
+onMounted(() => {
+  compactQuery = window.matchMedia('(max-width: 820px)')
+  compact.value = compactQuery.matches
+  compactQuery.addEventListener('change', syncCompact)
+})
 
 const accountOpen = ref(false)
 const accountRoot = ref(null)
@@ -176,6 +190,7 @@ watch(
   () => {
     hub.rail.entities = false
     hub.rail.artifacts = false
+    hub.rail.drawer = false
   },
 )
 
@@ -188,6 +203,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   document.removeEventListener('keydown', onDocumentKey)
+  compactQuery?.removeEventListener('change', syncCompact)
   stopResize()
 })
 
@@ -204,6 +220,7 @@ function onDocumentKey(event) {
   if (isEditable(event.target)) return
 
   if (event.key === 'Escape') {
+    if (hub.rail.drawer) hub.rail.drawer = false
     accountOpen.value = false
     return
   }
@@ -212,69 +229,45 @@ function onDocumentKey(event) {
   toggleRail()
 }
 
+/* What section this is, for the appbar's first line. The drawer names the
+   section too, so the two never disagree. */
+const SECTION_TITLES = {
+  workspaces: 'All workspaces',
+  overview: 'Overview',
+  chat: 'Chat',
+  entity: 'Entities',
+  artifact: 'Artifacts',
+  account: 'Account',
+}
+const sectionTitle = computed(() => {
+  if (hub.rail.entities) return 'Entities'
+  if (hub.rail.artifacts) return 'Artifacts'
+  const name = String(route.name || '')
+  return SECTION_TITLES[name] || SECTION_TITLES[route.meta.crumb] || 'Configurations'
+})
+
+function closeOverlays() {
+  hub.rail.drawer = false
+  accountOpen.value = false
+}
+
 function openAccountPage() {
   accountOpen.value = false
   router.push('/account')
 }
 
-const NAV = [
-  { name: 'overview', view: 'overview', label: 'Overview', icon: 'grid' },
-  { panel: 'entities', view: 'entities', label: 'Entities', icon: 'agent', count: () => hub.agents.length },
-  {
-    panel: 'artifacts',
-    view: 'artifacts',
-    label: 'Artifacts',
-    icon: 'artifact',
-    count: () => artifacts.items.length,
-  },
-  { name: 'chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => liveSummaries().length },
-  {
-    name: 'workspace',
-    view: 'configurations',
-    label: 'Configurations',
-    icon: 'sliders',
-  },
-]
-
-const CONFIG_ROUTES = new Set([
-  'workspace',
-  'skills',
-  'skill',
-  'mcp',
-  'connector-page',
-  'machines',
-  'machine',
-  'activity',
-])
-
-/** The chat icon is "the conversation", so it carries the one to open. Without
-    the id the address landed on /chat and only sometimes gained ?thread. */
-function newestThreadId() {
-  const rows = [...(hub.chat.summaries || [])].sort((a, b) =>
-    String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
-  )
-  return rows[0]?.id || ''
-}
-
-function linkFor(item) {
-  const base = { name: item.name, params: { workspace: hub.workspace } }
-  if (item.name !== 'chat') return base
-  const thread = hub.chat.active || newestThreadId()
-  return thread ? { ...base, query: { thread } } : base
-}
 const onWorkspaces = computed(() => route.name === 'workspaces')
 const onOverview = computed(() => route.name === 'overview')
 const showContext = computed(
-  () => !onWorkspaces.value && (!onOverview.value || hub.rail.entities || hub.rail.artifacts),
+  () =>
+    !onWorkspaces.value &&
+    (!onOverview.value || hub.rail.entities || hub.rail.artifacts || hub.rail.drawer),
 )
 
+/* The tab index is the destination the current address belongs to. Two panels
+   take part: an entity page is "Entities", an artifact page is "Artifacts". */
 function isActive(item) {
-  const panelOpen = hub.rail.entities || hub.rail.artifacts
-  if (panelOpen) return item.panel ? hub.rail[item.panel] : false
-  if (item.panel === 'entities') return route.name === 'entity'
-  if (item.panel === 'artifacts') return route.name === 'artifact'
-  if (item.view === 'configurations') return CONFIG_ROUTES.has(String(route.name || ''))
-  return route.name === item.name
+  return isActiveNav(item, route)
 }
 const user = computed(() => hub.session?.user || 'no session')
 
@@ -309,6 +302,7 @@ function leave() {
     :data-collapsed="collapsed ? '1' : '0'"
     :data-resizing="resizing ? '1' : '0'"
     :data-panel="hub.rail.entities || hub.rail.artifacts ? '1' : '0'"
+    :data-drawer="hub.rail.drawer ? '1' : '0'"
     :style="railStyle"
   >
     <div class="rail-t1">
@@ -324,6 +318,12 @@ function leave() {
           <BrandMark />
         </router-link>
       </header>
+
+      <!-- the phone appbar shows what section this is, over the workspace name -->
+      <span class="ab-title">
+        <span class="ab-sec">{{ sectionTitle }}</span>
+        <span class="ab-ws">{{ hub.workspaceLabel || hub.workspace }}</span>
+      </span>
 
       <nav v-if="!onWorkspaces" class="rail-nav" aria-label="Workspace">
         <template v-for="item in NAV" :key="item.view">
@@ -395,8 +395,34 @@ function leave() {
         </svg>
       </button>
 
+      <button
+        v-if="showContext"
+        class="ab-drawer"
+        type="button"
+        :aria-label="`Open the ${sectionTitle} panel`"
+        :aria-expanded="hub.rail.drawer ? 'true' : 'false'"
+        @click="hub.rail.drawer = !hub.rail.drawer"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M2.2 4.4h11.6M2.2 8h11.6M2.2 11.6h7.2" />
+        </svg>
+      </button>
+
+      <button class="ab-search" type="button" aria-label="Search" @click="hub.palette.open = true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" />
+          <path d="M10.5 10.5L14 14" />
+        </svg>
+      </button>
+
       <div ref="accountRoot" class="account rail-account" :data-open="accountOpen ? '1' : '0'">
-        <div class="acct-menu" role="menu" aria-label="Account">
+        <div
+          class="acct-menu"
+          :role="compact ? 'dialog' : 'menu'"
+          :aria-modal="compact ? 'true' : undefined"
+          aria-label="Account"
+        >
+          <span class="as-grabber" aria-hidden="true"></span>
           <div class="acct-head">
             <span class="acct-nm">{{ displayName }}</span>
             <span class="acct-em">{{ role.label }}</span>
@@ -410,6 +436,13 @@ function leave() {
             </svg>
             Account settings
           </button>
+          <button class="pickopt acct-theme" type="button" role="menuitem" data-sfx="off" @click="toggleTheme">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <path d="M13.4 10.2A6 6 0 016.2 2.7 6.2 6.2 0 1013.4 10.2z" />
+            </svg>
+            {{ themeMode === 'dark' ? 'Light theme' : 'Dark theme' }}
+          </button>
+          <div class="as-upd"><UpdateBadge /></div>
           <button class="pickopt acct-signout" type="button" role="menuitem" data-sfx="close" @click="leave">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
               <path d="M6 2.5H3.5A1.5 1.5 0 002 4v8a1.5 1.5 0 001.5 1.5H6" />
@@ -438,6 +471,12 @@ function leave() {
         </button>
       </div>
     </div>
+
+    <div
+      class="rail-scrim"
+      :data-open="hub.rail.drawer || accountOpen ? '1' : '0'"
+      @click="closeOverlays"
+    ></div>
 
     <RailContext v-if="showContext" />
 
