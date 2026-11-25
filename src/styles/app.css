@@ -35,6 +35,7 @@
 @import './thread-metadata.css';
 @import './connectors.css';
 @import './connector-page.css';
+@import './tailscale.css';
 @import './account-backups.css';
 @import './update.css';
 @import './insights.css';
@@ -44,5 +45,6 @@
 @import './startfrom.css';
 @import './definition-write.css';
 @import './page-find.css';
+@import './artifacts-index.css';
 @import './mobile-shell.css';
 @import './entities-page.css';

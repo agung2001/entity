@@ -9,6 +9,10 @@ import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
+import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
+import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
+import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
   installConnector,
@@ -78,6 +82,29 @@ const isCli = computed(() => row.value?.kind === 'cli')
 /* An account-bearing connector: a `rest` row whose credential is one refresh
    token per account, on this machine. It is the only kind with an Accounts card. */
 const isOAuth = computed(() => row.value?.kind === 'rest' && row.value?.oauth === true)
+/* The fourth kind has no credential to ask for and no mention to resolve, so every
+   card on the generic page would say something untrue about it: a pitch selling an
+   install, a sign-in that lives in the CLI, a mention the composer does not offer.
+   Its page body is `TailscalePanel`, and the cards below stand down for it. */
+const isTailscale = computed(() => id.value === 'tailscale')
+/* The panel's own read, published upward. The hero states the same three facts the
+   cards below it do, and a second `tailscale status --json` would let the two
+   disagree. `null` means "still reading" — never a zero (DESIGN.md:118). */
+const tsRead = ref(null)
+const tsTone = computed(() => (tsRead.value?.tone === 'ok' ? 'ok' : tsRead.value?.tone === 'fail' ? 'bad' : 'mute'))
+
+/* A `cli` row's accounts are the CLI's own sign-ins — read from `gh auth status`,
+   never written here, and never a token field. GitHub is the only such row this
+   app ships. */
+const isGithubCli = computed(() => isCli.value && row.value?.builtIn === 'github')
+/* The binary line the read-only card prints: `gh <version> · <path>`. The status
+   read answers the path and never a version, so an unknown part is left out
+   rather than invented — and a binary nobody found is the whole `—`. */
+const ghBinary = computed(() => {
+  const { found, path, version } = github.binary || {}
+  if (!found || !path) return '—'
+  return `gh${version ? ` ${version}` : ''} · ${path}`
+})
 
 /* ── the accounts card ─────────────────────────────────────────────────
    The card is its own component (`ConnectorAccountsCard`); the page keeps only what
@@ -174,6 +201,19 @@ const fields = computed(() => {
      sentence in a `binding` slot would read as if one existed. The pitch says where
      the credential *would* live, in prose, in the card above. */
   const rows = []
+  /* The rail is the page's definition, and this connector's definition is what it
+     reads, what it runs and what that binds — not a `binding` file, of which it has
+     none. `<port>` rather than a number: the field above is where the number lives. */
+  if (isTailscale.value) {
+    return [
+      { k: 'kind', v: 'cli · this machine' },
+      { k: 'reads', v: 'tailscale status --json', mono: true },
+      { k: 'runs', v: 'npm run dev:lan', mono: true },
+      { k: 'binds', v: '0.0.0.0:<port>', mono: true },
+      { k: 'requires', v: 'Tailscale running' },
+      { k: 'for', v: 'every entity · this workspace' },
+    ]
+  }
   if (notInstalled.value) {
     rows.push(
       { k: 'kind', v: entry.kind },
@@ -208,10 +248,119 @@ async function load() {
   draft.value = { host: row.value?.statusDetail || '', token: '' }
 }
 
+/* ── the tabs ────────────────────────────────────────────────────────
+   The strip exists only for the GitHub connector this app ships (`builtIn ===
+   'github'`): a tab that led to another connector's half-built dashboard would be
+   a promise nobody kept, so every other row — including a custom `cli` row — gets
+   no tab at all rather than a disabled one.
+
+   The two tabs live in the address: `?tab=dashboard` is a place a person can
+   bookmark, and the bare address / `?tab=overview` drops the parameter rather than
+   spelling the default out. `SkillsView` set the precedent for the guard. */
+const TABS = ['overview', 'dashboard']
+const tab = computed(() =>
+  TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
+)
+/* Only GitHub has a second tab, and only the row the catalog shipped has a `work`
+   block to gate on. A custom `cli` row that happens to be called github is not it. */
+const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
+const dashboardTab = computed(
+  () => Boolean(githubRow.value?.work) && installedRow.value?.builtIn === 'github',
+)
+
+/* The two locks, in the order a person meets them: no binary, then no login. Both
+   sentences are fixed copy — a computed reason would drift from the state it
+   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
+const lock = computed(() => {
+  if (!dashboardTab.value || !github.loaded) return null
+  if (!github.binary?.found) {
+    return {
+      before: 'Dashboard needs the ',
+      code: 'gh',
+      after: " binary. It is not on this machine's PATH.",
+      title: 'Needs the gh binary on this machine',
+    }
+  }
+  if (!github.logins.length) {
+    return {
+      before: 'Dashboard needs a signed-in ',
+      code: 'gh',
+      after: ' account. ',
+      code2: 'gh auth status',
+      after2: ' found none on this machine.',
+      title: 'Needs a signed-in gh account on this machine',
+    }
+  }
+  return null
+})
+/* Both tabs are always present in the tablist; a locked Dashboard still takes
+   focus, because the reason under the strip is the thing to read and a
+   `disabled` attribute would make it unreachable by keyboard. */
+const canOpen = (name) => name === 'overview' || !lock.value
+
+function select(name) {
+  if (!canOpen(name)) return
+  const query = { ...route.query }
+  if (name === 'overview') delete query.tab
+  else query.tab = name
+  /* `replace`, not `push`: switching a tab is not a step in a history a person
+     wants to walk back through one press at a time. */
+  router.replace({ query })
+}
+/* The address spells the default out as little as possible: a bare address and
+   `?tab=overview` are the same place, and a value nobody defined is not a place at
+   all — both end up with no `tab` parameter at all. Only a load that actually
+   carries a stray `tab` pays for the rewrite, so `?tab=dashboard` never touches
+   the address it was given. */
+function normalizeTab() {
+  if (route.query.tab === undefined || String(route.query.tab) === 'dashboard') return
+  const query = { ...route.query }
+  delete query.tab
+  router.replace({ query }).catch(() => {})
+}
+/* Roving tabindex, the pattern `SkillsView`'s strip already uses: one stop for the
+   whole strip, and the arrows walk it. A locked tab is the exception — it keeps
+   `tabindex="0"` so the reason under the strip is reachable by Tab, which is what
+   `aria-disabled` is for. */
+function onTabKey(event) {
+  const delta = { ArrowLeft: -1, ArrowRight: 1 }[event.key]
+  if (delta === undefined) return
+  event.preventDefault()
+  const next = TABS[(TABS.indexOf(tab.value) + delta + TABS.length) % TABS.length]
+  if (canOpen(next)) select(next)
+}
+
+async function openDashboard() {
+  await readLogins()
+  if (tab.value === 'dashboard' && !lock.value) await readDashboard()
+}
 onMounted(async () => {
+  normalizeTab()
   await load()
   probeConnectors().catch(() => {})
+  /* The gate is answered by `gh`, so it is asked once the row is known: reading
+     it on every connector's page would run the CLI for a tab that cannot exist. */
+  if (dashboardTab.value) await openDashboard()
 })
+/* A deep link straight to the tab: the strip rendered before `gh` answered, so the
+   gate resolves late and the read has to wait for it rather than run against a
+   lock it does not yet know about. */
+watch(
+  () => [tab.value, Boolean(lock.value), dashboardTab.value],
+  async ([name, locked, hasTab]) => {
+    if (!hasTab) return
+    if (!github.loaded) await readLogins()
+    if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
+  },
+)
+/* Re-checking the CLI from the accounts card changes the gate under the strip, so
+   the strip follows. */
+watch(
+  () => github.logins.length,
+  (count) => {
+    if (!count && tab.value === 'dashboard') select('overview')
+  },
+)
 
 const back = () => {
   hub.rail.connectors = true
@@ -359,12 +508,26 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
               <template v-else>{{ row.initial }}</template>
             </span>
             <div class="entp-title">
-              <p class="eyebrow">{{ row.kind }} · {{ row.scope }} · {{ hub.workspaceLabel || hub.workspace }}</p>
+              <p class="eyebrow">
+                {{ row.kind }} · {{ isTailscale ? 'this machine' : row.scope }} ·
+                {{ hub.workspaceLabel || hub.workspace }}
+              </p>
               <h1>{{ row.label }}</h1>
               <p class="entp-desc">
-                {{ notInstalled ? row.summary || row.work?.resolves : row.binding || 'no binding recorded' }}
+                {{ isTailscale ? row.summary : notInstalled ? row.summary || row.work?.resolves : row.binding || 'no binding recorded' }}
               </p>
-              <div class="entp-chips">
+              <!-- Tailscale's hero, from the daemon read the panel made: the state
+                   word, the build, and whether the name or the address is what a
+                   phone will use. Nothing here is a count or a zero. -->
+              <div v-if="isTailscale" class="entp-chips">
+                <span class="mcpp-chip" :data-tone="tsTone">
+                  <i aria-hidden="true"></i>{{ tsRead ? tsRead.word : 'reading' }}
+                </span>
+                <span v-if="tsRead?.version" class="entp-chip">v{{ tsRead.version }}</span>
+                <span v-if="tsRead?.serving" class="entp-chip">serving :{{ tsRead.port }}</span>
+                <span v-else-if="tsRead" class="entp-chip">magicdns {{ tsRead.magicdns ? 'on' : 'off' }}</span>
+              </div>
+              <div v-else class="entp-chips">
                 <span
                   class="mcpp-chip"
                   :data-tone="notInstalled ? 'mute' : tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : tone === 'fail' ? 'bad' : 'mute'"
@@ -388,8 +551,9 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
 
           <!-- The MCP page's panel, on a CLI's facts: what the probe saw and how
                much of it. `samples` is the probe's own answer, so an unprobed row
-               says so instead of printing a zero. -->
-          <aside v-if="notInstalled" class="entp-xp" title="Nothing to probe yet">
+               says so instead of printing a zero. Tailscale has none of this: it
+               stores nothing and resolves no mention, so its hero is one child. -->
+          <aside v-if="notInstalled && !isTailscale" class="entp-xp" title="Nothing to probe yet">
             <div class="entp-lv">
               <span>MENTION</span>
               <b>{{ row.work?.mention ? '1' : '—' }}</b>
@@ -407,7 +571,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </div>
           </aside>
           <aside
-            v-else
+            v-else-if="!isTailscale"
             class="entp-xp"
             :title="`${seenTotal} ${row.samplesLabel || 'reported'} · ${row.status}`"
             :aria-label="`${seenTotal} ${row.samplesLabel || 'reported'}, ${row.status}, using ${row.binary || row.binding || 'its own binary'}`"
@@ -438,14 +602,88 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
            sign-in, removing it — stays in the wide one, because those are the
            blocks with a control in them. The definition is the only card with no
            verb, so it is the only one that belongs on the right. -->
-      <div class="cxn-page cxn-split">
-        <div class="cxn-main">
+      <!-- The page is the `cxn` container, so the strip and the tab body are
+           inside it: the dashboard's own breakpoints are about this column's
+           width, not the window's, and a container query cannot see out of an
+           ancestor it is not nested in. -->
+      <div class="cxn-page">
+        <nav
+          v-if="dashboardTab"
+          class="sk-tabs cxn-tabs"
+          role="tablist"
+          aria-label="Connector sections"
+          @keydown="onTabKey"
+        >
+          <button
+            id="cxn-tab-overview"
+            type="button"
+            role="tab"
+            :aria-selected="tab === 'overview'"
+            :tabindex="tab === 'overview' ? 0 : -1"
+            aria-controls="cxn-pane-overview"
+            @click="select('overview')"
+          >Overview</button>
+          <!-- A locked tab is not `disabled`: it keeps its place in the tab order
+               so the reason under the strip is reachable, and activating it does
+               nothing rather than moving focus somewhere a person did not ask to
+               go. -->
+          <button
+            id="cxn-tab-dashboard"
+            type="button"
+            role="tab"
+            :aria-selected="tab === 'dashboard'"
+            :tabindex="tab === 'dashboard' || lock ? 0 : -1"
+            aria-controls="cxn-pane-dashboard"
+            :aria-disabled="lock ? 'true' : undefined"
+            :class="{ 'is-locked': Boolean(lock) }"
+            :aria-describedby="lock ? 'cxn-tab-why' : undefined"
+            :title="lock ? lock.title : 'What moved in the last 90 days'"
+            @click="select('dashboard')"
+          >
+            <svg
+              v-if="lock"
+              class="lk"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            ><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+            Dashboard
+          </button>
+          <!-- The reason is a line, not a tooltip: it stays on screen for as long
+               as the tab is locked, which is the only way it can be read by
+               somebody who never hovers. -->
+          <p v-if="lock" id="cxn-tab-why" class="tab-why">
+            {{ lock.before }}<code class="mono">{{ lock.code }}</code>{{ lock.after }}<template
+              v-if="lock.code2"
+            ><code class="mono">{{ lock.code2 }}</code>{{ lock.after2 }}</template>
+          </p>
+        </nav>
+
+        <ConnectorDashboard
+          v-if="dashboardTab && tab === 'dashboard'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+        />
+
+        <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
+          <div class="cxn-main">
           <!-- What this connector is, in the app's own words. Shown for an entry
                this workspace has not installed: the pitch is the page, and a page
                that only says "not installed" introduces nothing. The prose comes
                from the catalog (`summary`, then the mention's own `resolves`), so it
                cannot drift from what the resolver actually does. -->
-          <section v-if="notInstalled" class="cxn-card cxn-about">
+          <!-- Tailscale's page body: the daemon read and the one server it gates.
+               It is the whole of `.cxn-main` for that connector — see `isTailscale`. -->
+          <TailscalePanel v-if="isTailscale" @read="tsRead = $event" />
+
+          <section v-if="notInstalled && !isTailscale" class="cxn-card cxn-about">
             <h2>What {{ row.label }} gives you</h2>
             <p class="cxn-about-lead">
               {{ row.summary || (work?.resolves ? `${row.label} resolves ${work.resolves}.` : `${row.label} is a connector this app ships.`) }}
@@ -489,8 +727,11 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :provider="provider"
             @changed="onAccountsChanged"
           />
+          <!-- A `cli` row's accounts are the CLI's own sign-ins: read from `gh auth
+               status`, never written here, and never a token field. -->
+          <ConnectorGithubAccounts v-else-if="isGithubCli && !notInstalled" />
 
-          <section v-if="work" class="cxn-card cxn-work">
+          <section v-if="work && !isTailscale" class="cxn-card cxn-work">
             <h2>In the chat</h2>
             <!-- The account-bearing four put the account first, and their `mention`
                  is only the head (`@gmail:`), so the lead names the shape rather
@@ -541,7 +782,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </p>
           </section>
 
-          <section v-else class="cxn-card">
+          <section v-else-if="!isTailscale" class="cxn-card">
             <h2>In the chat</h2>
             <p class="cxn-note">
               No resolver is shipped for this connector, so there is no
@@ -555,7 +796,30 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                reachable before installing — "do I even have this?" is the question
                the page is answering. A `rest` row's box would be a token form with
                no binding to write it to, so that one waits. -->
-          <section v-if="!isOAuth && (!notInstalled || isCli)" class="cxn-card">
+          <!-- The shipped `github` row is the one cli connector whose credential
+               is gh's own: there is nothing here to sign in to, so the card says
+               how the app asks instead of offering a form that could only fail. -->
+          <section v-if="isGithubCli" class="cxn-card">
+            <div class="cxn-card-head">
+              <h2>How Entity asks</h2>
+              <span class="spacer"></span>
+            </div>
+            <dl class="cxn-facts">
+              <dt>binary</dt>
+              <dd>{{ ghBinary }}</dd>
+              <dt>mention</dt>
+              <dd>
+                <code class="mono">{{ row.work?.mention || '@github:' }}</code> — the entity
+                resolver reads it
+              </dd>
+              <dt>credential</dt>
+              <dd>kept by gh in the macOS keyring — never read by Entity</dd>
+              <dt>commands</dt>
+              <dd>7 allow-listed reads · no write verb</dd>
+            </dl>
+          </section>
+
+          <section v-else-if="!isTailscale && !isOAuth && (!notInstalled || isCli)" class="cxn-card">
             <h2>{{ isCli ? 'Sign-in' : 'Endpoint and token' }}</h2>
             <template v-if="isCli">
               <p class="cxn-note">
@@ -615,7 +879,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </div>
           </section>
 
-          <section v-if="notInstalled" class="cxn-card">
+          <section v-if="notInstalled && !isTailscale" class="cxn-card">
             <h2>Install</h2>
             <p class="cxn-note">
               Records the definition in this workspace. <b>No credential is copied</b> — a
@@ -634,7 +898,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             <div v-if="error" class="cxn-error" role="alert">{{ error }}</div>
           </section>
 
-          <section v-else class="cxn-card cxn-danger">
+          <section v-else-if="!isTailscale" class="cxn-card cxn-danger">
             <h2>Remove</h2>
             <p class="cxn-note">
               Takes the connector out of this workspace. A credential held by the CLI or by
@@ -646,15 +910,16 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           </section>
         </div>
 
-        <section class="cxn-card cxn-rail cxn-def">
-          <h2>Definition</h2>
-          <dl class="cxn-facts">
-            <template v-for="field in fields" :key="field.k">
-              <dt>{{ field.k }}</dt>
-              <dd :title="String(field.v)">{{ field.v }}</dd>
-            </template>
-          </dl>
-        </section>
+          <section class="cxn-card cxn-rail cxn-def">
+            <h2>Definition</h2>
+            <dl class="cxn-facts">
+              <template v-for="field in fields" :key="field.k">
+                <dt>{{ field.k }}</dt>
+                <dd :class="{ mono: field.mono }" :title="String(field.v)">{{ field.v }}</dd>
+              </template>
+            </dl>
+          </section>
+        </div>
       </div>
     </template>
   </div>

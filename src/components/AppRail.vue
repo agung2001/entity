@@ -248,6 +248,7 @@ const SECTION_TITLES = {
   entities: 'Entities',
   entity: 'Entities',
   artifact: 'Artifacts',
+  artifacts: 'Artifacts',
   account: 'Account',
 }
 const sectionTitle = computed(() => {

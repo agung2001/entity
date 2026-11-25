@@ -16,6 +16,7 @@ const EntityDetailView = () => import('@/views/EntityDetailView.vue')
 const SkillsView = () => import('@/views/SkillsView.vue')
 const SkillDetailView = () => import('@/views/SkillDetailView.vue')
 const ConnectorPageView = () => import('@/views/ConnectorPageView.vue')
+const ArtifactsIndexView = () => import('@/views/ArtifactsIndexView.vue')
 const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
 const MachinesView = () => import('@/views/MachinesView.vue')
 const MachineDetailView = () => import('@/views/MachineDetailView.vue')
@@ -242,6 +243,15 @@ const router = createRouter({
             query: to.query,
           }),
           meta: { crumb: 'connectors', title: 'Connector · entity' },
+        },
+        {
+          /* The shelf itself, above the file page: `artifact` owns
+             `:workspace/artifacts/:id(.*)`, which also swallows `/artifacts`, so
+             the index has to be declared first and win on its own address. */
+          path: ':workspace/artifacts',
+          name: 'artifacts',
+          component: ArtifactsIndexView,
+          meta: { crumb: 'artifacts', title: 'Artifacts · entity' },
         },
         {
           path: ':workspace/artifacts/:id(.*)',
