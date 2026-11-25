@@ -54,6 +54,7 @@ const WORKSPACE_TABS = [
   { id: 'machines', label: 'Machines', hint: 'this machine and its ssh hosts' },
   { id: 'chats', label: 'Chats', hint: 'silence, archiving and removal' },
   { id: 'artifacts', label: 'Artifacts', hint: 'shelf age, archiving and removal' },
+  { id: 'transfer', label: 'Transfer', hint: 'one file out, one file in' },
   { id: 'activity', label: 'Activity', hint: 'recent workspace events' },
 ]
 

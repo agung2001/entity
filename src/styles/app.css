@@ -36,6 +36,7 @@
 @import './connectors.css';
 @import './connector-page.css';
 @import './tailscale.css';
+@import './transfer.css';
 @import './account-backups.css';
 @import './update.css';
 @import './insights.css';

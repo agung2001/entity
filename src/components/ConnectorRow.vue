@@ -30,7 +30,7 @@ defineProps({
   busy: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['adopt', 'copy', 'uninstall', 'connect'])
+const emit = defineEmits(['adopt', 'copy', 'uninstall', 'connect', 'share'])
 
 /* The name is the link, the row is not (`DESIGN.md`). One roster, one address:
    an MCP server and a cli/rest row open the same `connectors/:id` page, and the
@@ -121,6 +121,23 @@ const scopeTitle = (row) => {
     </span>
 
     <span class="ct-act" role="cell">
+      <!-- `Share` is on every row that can actually travel. A machine row cannot:
+           its definition names a loopback URL or a local binary, so a file carrying
+           it would not work anywhere else. An unmanaged row is not in this
+           workspace's pool yet, so there is nothing here for the file to name.
+           The store refuses both on its own; the row does not offer what it
+           refuses. -->
+      <button
+        v-if="row.scope !== 'machine' && !row.unmanaged"
+        class="btn btn-sm btn-ghost"
+        type="button"
+        :disabled="busy"
+        :title="`Writes a file for ${row.label}. Credentials do not travel unless you ask.`"
+        :aria-label="`Share ${row.label}`"
+        @click="emit('share', row)"
+      >
+        Share
+      </button>
       <button
         v-if="row.scope === 'machine'"
         class="btn btn-sm"
