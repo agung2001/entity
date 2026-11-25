@@ -513,57 +513,215 @@
   text-transform: uppercase;
   cursor: pointer;
 }
-.md-tabs button[aria-selected='true'] {
-  border-color: var(--border);
-  background: var(--bg);
-  color: var(--ink);
-}
-.md-tools {
+/* The formatting pill: over the selection, out of the flow. It is the floating
+   card the chat header and the menus use — the same glass shadow and radii —
+   because it is the same kind of thing: chrome that belongs to a range, not to
+   the page. */
+.md-pill {
+  position: fixed;
+  z-index: 120;
   display: flex;
+  align-items: center;
   gap: 1px;
-  margin-left: 4px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: 0 4px 12px color-mix(in oklab, var(--ink) 12%, transparent), 0 0 0 1px color-mix(in oklab, var(--ink) 4%, transparent);
 }
-.md-tools button {
-  width: 24px;
-  height: 24px;
+.md-pill button {
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   border: 1px solid transparent;
   border-radius: var(--r-xs);
   background: none;
-  color: var(--muted);
+  color: var(--ink-2);
   font: inherit;
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
+  font-size: var(--fs-label);
   cursor: pointer;
 }
-.md-tools button:hover:not(:disabled) {
+.md-pill button:hover {
   border-color: var(--border);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--ink);
 }
-.md-count {
+.md-pill-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--border);
+}
+/* The same pill, one field wide: an address is edited where the link is. */
+.md-pill--link {
+  gap: 3px;
+  padding: 3px;
+}
+.md-pill-input {
+  width: 220px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  outline: none;
+}
+.md-words {
   margin-left: auto;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
 }
+.md-tabs button[aria-selected='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--ink);
+}
+/* The rich-text surface. Typography follows the compact prose tier the team
+   already writes in (Multica's editor benchmark): a 14.5px body at 1.625
+   leading, 10px between paragraphs, 20px of list indent, a 3px quote rule — so
+   Write and Review are one measure and the text does not shift sideways when
+   the tab changes. */
 .md-input {
-  display: block;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  min-height: 260px;
-  padding: 11px 13px;
+  flex: 1 1 auto;
+  min-height: var(--md-floor, 260px);
   border: 0;
   outline: none;
-  resize: vertical;
   background: var(--bg);
   color: var(--ink-2);
-  font-size: var(--fs-secondary);
+  font-size: var(--fs-body);
   line-height: 1.62;
 }
+.md-richtext {
+  display: flex;
+  flex-direction: column;
+  padding: 11px 13px;
+}
+/* The host takes the column it was given and nothing more: `--md-floor` is the
+   document's floor, from `rows`. */
+.md-rich {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.md-richtext .tiptap,
+.md-richtext .ProseMirror {
+  flex: 1;
+  min-height: var(--md-floor, 260px);
+  outline: none;
+  caret-color: var(--ink);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+.md-richtext .ProseMirror > :first-child {
+  margin-top: 0;
+}
+.md-richtext .ProseMirror > :last-child {
+  margin-bottom: 0;
+}
+
+/* Headings — compact hierarchy: h1 22 (1.5x), h2 18, h3 16, h4 14.5. Below h3
+   the hierarchy is carried by weight and colour rather than by size alone. */
+.md-richtext h1,
+.md-richtext h2,
+.md-richtext h3,
+.md-richtext h4 {
+  margin: 24px 0 8px;
+  font-family: var(--font);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+.md-richtext h1 {
+  font-size: var(--fs-h4);
+}
+.md-richtext h2 {
+  font-size: var(--fs-h6);
+}
+.md-richtext h3,
+.md-richtext h4 {
+  font-size: var(--fs-body);
+}
+.md-richtext p {
+  margin: 10px 0;
+}
+.md-richtext ul,
+.md-richtext ol {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+.md-richtext ul {
+  list-style: disc;
+}
+.md-richtext ol {
+  list-style: decimal;
+}
+.md-richtext li {
+  margin: 3px 0;
+}
+.md-richtext li > p {
+  margin: 0;
+}
+.md-richtext li::marker {
+  color: var(--muted);
+}
+.md-richtext blockquote {
+  margin: 10px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+.md-richtext a {
+  color: var(--accent-ink);
+  text-underline-offset: 2px;
+}
+.md-richtext code {
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+.md-richtext pre {
+  margin: 12px 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.md-richtext pre code {
+  padding: 0;
+  background: none;
+}
+.md-richtext hr {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.md-richtext s {
+  color: var(--muted);
+}
+/* The empty document still says what it is for. */
+.md-richtext .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted);
+  pointer-events: none;
+}
+
 .md-preview {
   min-height: 260px;
-  max-height: 54vh;
   overflow: auto;
   padding: 14px 16px;
   font-size: var(--fs-secondary);

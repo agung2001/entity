@@ -112,6 +112,13 @@ export const SHORTCUT_GROUPS = [
         desktop: ['mod', 'S'],
         browser: ['mod', 'S'],
       },
+      {
+        id: 'find',
+        label: 'Find in the page',
+        desc: 'Search everything on this screen — the Markdown artifact or the entity Instructions field included — and step through every match. Esc closes it.',
+        desktop: ['mod', 'F'],
+        browser: ['mod', 'F'],
+      },
     ],
   },
   {
