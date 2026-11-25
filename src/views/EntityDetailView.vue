@@ -46,10 +46,7 @@ const route = useRoute()
 const router = useRouter()
 const saving = ref(false)
 
-async function goEntities() {
-  await router.push({ name: 'overview', params: { workspace: route.params.workspace } })
-  hub.rail.entities = true
-}
+const goEntities = () => router.push({ name: 'entities', params: { workspace: route.params.workspace } })
 
 const form = reactive({ harness: '', model: '', instructions: '' })
 const seeding = ref(false)

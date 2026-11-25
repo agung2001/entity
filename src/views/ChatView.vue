@@ -1247,7 +1247,13 @@ watch(
           <div class="empty-note">
             <b>No entity in this workspace yet.</b>
             <span>A thread is a real conversation with one entity's file. Create an entity first.</span>
-            <button class="empty-link" type="button" @click="hub.rail.entities = true">Go to entities</button>
+            <button
+              class="empty-link"
+              type="button"
+              @click="router.push({ name: 'entities', params: { workspace: hub.workspace } })"
+            >
+              Go to entities
+            </button>
           </div>
         </section>
 
