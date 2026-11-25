@@ -51,6 +51,9 @@ const PROVIDERS = {
     clientHint: 'Create an OAuth client of type “Desktop app”.',
     secretRequired: true,
     pkce: 'S256',
+    /* The console hands out a downloadable `credentials.json` for this kind, so
+       the card offers a drop zone here and nowhere else. */
+    clientFile: true,
     /* Google documents a loopback redirect exemption, so an OS-chosen port is
        legal and no callback needs registering. */
   },

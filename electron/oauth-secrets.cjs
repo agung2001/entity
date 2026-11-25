@@ -112,6 +112,9 @@ function status({ provider = 'google' } = {}) {
     instruction: meta.clientHint || '',
     /* Present only where the provider needs it registered (X). */
     callback: providers.callbackOf(name),
+    /* True where the console hands out a downloadable client file (Google), so
+       the card offers a drop zone only on that provider's page. */
+    acceptsClientFile: Boolean(meta.clientFile),
   }
 }
 
@@ -150,6 +153,71 @@ function setClient({ provider = 'google', clientId, clientSecret, redirectUri } 
   }
   write(store)
   return status({ provider: name })
+}
+
+/* ── a downloaded `credentials.json` ──────────────────────────────────────
+   Google hands out a file, not two strings, so the card can accept the file and
+   this module reads it. The file is a courier: parsed here in the main process,
+   never stored, and the entry that lands in `oauth-secrets.json` is exactly the
+   one the typed form writes. Nothing below logs or returns the text. */
+const FILE_MAX = 64 * 1024
+/* Fixed length, never a slice of the value: how long a secret is, is not a fact a
+   page needs. */
+const SECRET_MASK = '••••••••••••'
+
+/**
+ * Read the client id and secret out of a downloaded `credentials.json`.
+ *
+ * Pure: reads nothing from disk, writes nothing. The id's suffix and the secret's
+ * length are `setClient`'s rules and run when the person saves, so the file path
+ * and the typed path cannot disagree about what a valid client is.
+ *
+ * Every refusal names the field or the *kind* of file — never a value, never the
+ * file's contents.
+ */
+function parseClientFile(source, provider = 'google') {
+  const name = String(provider)
+  if (name !== 'google') {
+    throw new Error(
+      `A ${providers.labelOf(name)} client is not a file the console lets you download — paste its client id instead.`,
+    )
+  }
+  const body = String(source ?? '')
+  if (body.length > FILE_MAX) {
+    throw new Error('That file is far larger than a credentials file. Pick the credentials.json the console downloaded.')
+  }
+  let file = null
+  try {
+    file = JSON.parse(body)
+  } catch {
+    throw new Error('That file is not JSON. Pick the credentials.json the console downloaded.')
+  }
+  if (file?.type === 'service_account' || file?.private_key) {
+    throw new Error(
+      'That is a service-account key. A service account is a robot identity and cannot sign a person in — download a “Desktop app” client instead.',
+    )
+  }
+  if (file?.web) {
+    throw new Error(
+      'That is a Web-application client, which needs a registered redirect URL. Download a “Desktop app” client instead — it is the one the consent round-trip can use.',
+    )
+  }
+  const installed = file?.installed || {}
+  if (!installed.client_id) throw new Error('That file has no client_id. Pick a “Desktop app” client’s credentials.json.')
+  if (!installed.client_secret) throw new Error('That file has no client_secret. Pick a “Desktop app” client’s credentials.json.')
+  return { clientId: String(installed.client_id), clientSecret: String(installed.client_secret) }
+}
+
+/** What the card shows before Save: the id that was read, and a mask. No write. */
+function previewClientFile({ provider = 'google', text: source } = {}) {
+  const { clientId } = parseClientFile(source, provider)
+  return { clientId, secretMasked: SECRET_MASK }
+}
+
+/** The file path's save: parse, then the same `setClient` the form calls. */
+function setClientFromFile({ provider = 'google', text: source } = {}) {
+  const { clientId, clientSecret } = parseClientFile(source, provider)
+  return setClient({ provider, clientId, clientSecret })
 }
 
 /** Remove a provider's client and every token issued under it. */
@@ -260,6 +328,9 @@ module.exports = {
   labelOf,
   status,
   setClient,
+  parseClientFile,
+  previewClientFile,
+  setClientFromFile,
   clearClient,
   clientFor,
   putToken,

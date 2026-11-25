@@ -513,6 +513,37 @@
 .acct-client .cxn-fields {
   margin-bottom: 9px;
 }
+/* The drop zone is a `<label>`, so the hidden input keeps its click and its
+   keyboard activation: it is a target, not a picture of one. */
+.acct-client-drop {
+  display: block;
+  margin-bottom: 9px;
+  padding: 9px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2, var(--surface));
+  cursor: pointer;
+}
+.acct-client-drop.is-over,
+.acct-client-drop:focus-within {
+  border-color: var(--ink-2);
+}
+.acct-client-drop-h {
+  display: block;
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+}
+.acct-client-drop-d {
+  display: block;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+/* What was read, before Save: the id and a mask, never the file. */
+.acct-client-read {
+  margin: 0 0 9px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
 .acct-client-acts {
   display: flex;
   align-items: center;

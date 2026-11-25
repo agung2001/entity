@@ -470,39 +470,36 @@
   font-size: var(--fs-micro);
   color: var(--muted);
 }
+/* The trigger is the card's ⋯ button, and the menu is a fixed layer in the
+ * body (`ManageWorkspacesView` teleports it): as an absolutely positioned
+ * `<details>` inside the card, the neighbouring card's own paint layer — the
+ * hover lift is a `transform` — covered its lower half. */
 .wsl-menu {
-  position: relative;
   flex: none;
-}
-.wsl-menu summary {
   display: grid;
   place-items: center;
   width: 26px;
   height: 26px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
+  background: none;
   color: var(--muted);
   cursor: pointer;
-  list-style: none;
 }
-.wsl-menu summary::-webkit-details-marker {
-  display: none;
-}
-.wsl-menu summary:hover,
-.wsl-menu[open] summary {
+.wsl-menu:hover,
+.wsl-menu[aria-expanded='true'] {
   background: var(--surface);
   border-color: var(--border);
   color: var(--ink);
 }
-.wsl-menu summary svg {
+.wsl-menu svg {
   width: 13px;
   height: 13px;
 }
 .wsl-menu-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 50;
+  position: fixed;
+  z-index: 90;
   width: 210px;
   padding: 5px;
   border: 1px solid var(--border-strong);
@@ -534,6 +531,17 @@
 }
 .wsl-menu-pop button.danger:hover {
   background: var(--danger-soft);
+}
+/* Nothing styled a disabled item, so an export in flight looked identical to
+ * one a second click would start (DESIGN.md, Common mistakes). */
+.wsl-menu-pop button[disabled] {
+  color: var(--muted);
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.wsl-menu-pop button[disabled]:hover {
+  background: none;
+  color: var(--muted);
 }
 .wsl-counts {
   display: flex;

@@ -101,6 +101,13 @@ app-wide OAuth client per machine, not one per workspace — a client per worksp
 put the same secret in a synced folder N times. It is asked for once, in the card, stored
 `0600`, and only a hint is read back.
 
+Google's console hands out a `credentials.json`, so the card also takes one — dropped or
+picked. The file is a courier, not a store: the renderer reads its text through the File
+API and the **main process** parses it and refuses what cannot work (a service-account key,
+a Web-application client, a missing field), then writes the same entry the typed form
+writes. No copy of the file is kept and nothing about it is rendered but the client id and
+a mask.
+
 The accounts live in `~/.entity/oauth-accounts.json`, beside `integrations.json` — not in
 the workspace — because a credential is not a definition and must not sync. **Every read
 is reduced to seven fields**, so a page cannot render what it was not given, and the

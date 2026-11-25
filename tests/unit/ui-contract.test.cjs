@@ -761,6 +761,23 @@ test('a popover inside a dialog is a teleported, measured layer', () => {
   assert.doesNotMatch(menu[0], /max-height:\s*280px/, 'the suggestion list is still capped at 280px')
 })
 
+test('a card or row menu is a teleported layer, not a native dropdown', () => {
+  /* A card is its own paint layer — its hover lift is a `transform` — so a
+     `<details>` dropdown positioned inside it is covered by the next card and
+     its lower items stop taking clicks. Every card/row menu is the same layer
+     the rail uses: in the body, measured from the trigger, closed by Escape. */
+  const css = allStyles()
+  const pop = css.match(/\n\.wsl-menu-pop \{[^}]*\}/)
+  assert.ok(pop, '.wsl-menu-pop has no base rule')
+  assert.match(pop[0], /position:\s*fixed/, 'the workspace menu is still painted inside the card')
+
+  const view = fs.readFileSync(path.join(SRC, 'views', 'ManageWorkspacesView.vue'), 'utf8')
+  assert.match(view, /<Teleport to="body">/, 'the workspace menu is not teleported out of the card')
+  assert.match(view, /openRowMenu/, 'the workspace menu is not measured from its trigger')
+  assert.match(view, /useDialogDismiss\s*\(/, 'Escape does not close the workspace menu')
+  assert.doesNotMatch(view, /<details class="wsl-menu"/, 'a native dropdown is clipped by the next card')
+})
+
 test('the terminal sheet is a closed card, not a flap', () => {
   const css = allStyles()
   const rule = css.match(/\n\.term-panel \{[^}]*\}/)

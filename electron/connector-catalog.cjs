@@ -441,6 +441,10 @@ const CATALOG = {
     label: 'X',
     kind: 'rest',
     oauth: true,
+    /* Named because it is the one account-bearing entry that does not ride Google.
+       With `providerOf` derived from this table, a missing line here silently sent
+       X's consent screen to Google's endpoints. */
+    provider: 'x',
     verify: null,
     summary: 'Posts and threads an agent may read.',
     work: {

@@ -27,8 +27,10 @@ import {
   loadTiers,
   oauthLabel,
   oauthStatus,
+  readOauthClientFile,
   removeAccount,
   setOauthClient,
+  setOauthClientFile,
   setTier,
   testAccounts,
 } from '@/stores/connectors'
@@ -73,6 +75,14 @@ const clientForm = ref({ clientId: '', clientSecret: '' })
 const clientOpen = ref(false)
 const clientBusy = ref(false)
 const clientError = ref('')
+/* A dropped or picked `credentials.json`, held as text until Save. The main
+   process parses it; this is only the courier, it is never rendered, and it is
+   dropped the moment it is stored or cancelled. */
+const pickedText = ref('')
+const pickedRead = ref(false)
+/* The mask the main process answered with — fixed length, never a slice. */
+const pickedMask = ref('')
+const clientDrop = ref(false)
 
 /* ── how much access ───────────────────────────────────────────────────
    The tier is written to the workspace's index row, so two workspaces may want
@@ -127,14 +137,18 @@ async function saveClient() {
   clientBusy.value = true
   clientError.value = ''
   try {
-    client.value = await setOauthClient({
-      provider: props.provider,
-      clientId: clientForm.value.clientId,
-      clientSecret: clientForm.value.clientSecret,
-    })
+    /* A dropped file and a typed pair land in the same entry: the file path just
+       skips the transcription. */
+    client.value = pickedText.value
+      ? await setOauthClientFile({ provider: props.provider, text: pickedText.value })
+      : await setOauthClient({
+          provider: props.provider,
+          clientId: clientForm.value.clientId,
+          clientSecret: clientForm.value.clientSecret,
+        })
     /* Cleared the moment it is stored: it lives in a 0600 file now, and a form
        that keeps it is a second copy on screen. */
-    clientForm.value = { clientId: '', clientSecret: '' }
+    dropPicked()
     clientOpen.value = false
     accountsNotice.value = 'Client saved on this machine. Connect the account when you are ready.'
     /* A client alone cannot add an account, so the flow continues by itself. */
@@ -144,6 +158,57 @@ async function saveClient() {
   } finally {
     clientBusy.value = false
   }
+}
+
+/** The text is the courier's copy: dropping it is the whole cleanup. */
+function dropPicked() {
+  pickedText.value = ''
+  pickedRead.value = false
+  pickedMask.value = ''
+  clientForm.value = { clientId: '', clientSecret: '' }
+}
+
+async function cancelClient() {
+  dropPicked()
+  clientError.value = ''
+  clientOpen.value = false
+}
+
+/** Read one file: `File.text()`, so the renderer never opens a descriptor. */
+async function readClientFile(file) {
+  if (!file) return
+  clientError.value = ''
+  try {
+    const text = await file.text()
+    /* Read for the confirmation line first, so a wrong file is visible before
+       anything is written. A refusal names the field, never the contents. */
+    const preview = await readOauthClientFile({ provider: props.provider, text })
+    pickedText.value = text
+    pickedRead.value = true
+    pickedMask.value = preview.secretMasked
+    /* Editable after a read, so one wrong value does not send a person back to
+       the picker. */
+    clientForm.value = { clientId: preview.clientId, clientSecret: '' }
+  } catch (problem) {
+    /* Only the picked state goes: a typed pair is the person's own work, and a
+       refused file must not destroy it. */
+    pickedText.value = ''
+    pickedRead.value = false
+    pickedMask.value = ''
+    clientError.value = String(problem?.message || problem)
+  }
+}
+
+/** The picker: the input's change, or a drop. Reset, so the same file re-reads. */
+function pickClientFile(event) {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  return readClientFile(file)
+}
+
+function dropClientFile(event) {
+  clientDrop.value = false
+  return readClientFile(event.dataTransfer?.files?.[0])
 }
 
 async function forgetClient() {
@@ -405,6 +470,27 @@ onMounted(async () => {
           {{ providerLabel }} console</a>,
         then paste it here — saved on this machine only, never in the workspace.
       </p>
+      <!-- Google's console downloads the client as a file, so the common path is
+           dropping it rather than transcribing two values. A `<label>` wraps the
+           input: the zone is reachable and activatable from the keyboard. -->
+      <label
+        v-if="client.acceptsClientFile"
+        class="acct-client-drop"
+        :class="{ 'is-over': clientDrop }"
+        :aria-label="`Drop or pick a credentials.json for ${providerLabel}`"
+        @dragenter.prevent="clientDrop = true"
+        @dragover.prevent="clientDrop = true"
+        @dragleave.prevent="clientDrop = false"
+        @drop.prevent="dropClientFile"
+      >
+        <input class="sr-only" type="file" accept="application/json,.json" @change="pickClientFile" />
+        <span class="acct-client-drop-h">
+          Drop credentials.json, or pick it
+        </span>
+        <span class="acct-client-drop-d">
+          Read here and stored on this machine — the file itself is not kept.
+        </span>
+      </label>
       <!-- X validates the redirect URL by exact match, so it has to be registered
            literally. Google documents a loopback exemption and needs nothing. -->
       <p v-if="client.callback" class="acct-client-callback">
@@ -435,11 +521,17 @@ onMounted(async () => {
         </label>
       </div>
       <div v-if="clientError" class="cxn-error" role="alert">{{ clientError }}</div>
+      <!-- The id that was read and a mask, so a wrong file is visible before
+           Save. The file's text is never rendered. -->
+      <p v-if="pickedRead" class="acct-client-read">
+        Read <code class="mono">{{ clientForm.clientId }}</code> · secret
+        <code class="mono">{{ pickedMask }}</code>
+      </p>
       <div class="acct-client-acts">
         <button class="btn btn-sm btn-primary" type="button" :disabled="clientBusy" @click="saveClient">
           {{ clientBusy ? 'Saving…' : 'Save and continue' }}
         </button>
-        <button class="btn btn-sm btn-ghost" type="button" :disabled="clientBusy" @click="clientOpen = false">
+        <button class="btn btn-sm btn-ghost" type="button" :disabled="clientBusy" @click="cancelClient">
           Cancel
         </button>
         <span class="spacer"></span>
