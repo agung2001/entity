@@ -1,0 +1,775 @@
+/*
+ * Transfer — one page, two jobs.
+ *
+ * Every colour and size here is a token from `tokens.css`; the only literals are
+ * the ones the layout needs (a column width, a radius on the drop target). All
+ * classes are page-scoped `.tr-*`, because this app has one stylesheet per page
+ * and a bare name like `.opt` already means something else in `retention.css`.
+ *
+ * The two columns are the Chats shape — a reading column and a 260px aside —
+ * because a diff and the four numbers that summarise it belong side by side. The
+ * aside is the only thing that states a total, and the button says the same
+ * number, so a mismatch is visible rather than plausible.
+ */
+
+.tr-page {
+  padding-bottom: 40px;
+}
+
+/* The heading block is the cabinet's banner (`.sk-hero` in `skill.css`), so this
+   page declares only what the banner does not: one column, because there is no
+   collection meter to sit beside the title, and the gap the tab strip needs.
+   `.tr-head` used to live here and collided with `TraceTimeline`'s own `.tr-*`
+   block in `workspaces.css` — a trace row's flex layout was being worn by a page
+   title. The banner has no class in common with it. */
+.tr-hero {
+  margin-bottom: 4px;
+}
+
+.tr-hero .sk-hero-in {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* `.sk-tabs` in `skill.css` is the app's tab strip; this page wears the same
+   geometry without reaching across stylesheets for it. */
+.tr-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 18px 0 22px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.tr-tabs button {
+  padding: 11px 12px 10px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tr-tabs button:first-child {
+  padding-left: 0;
+}
+
+.tr-tabs button:hover {
+  color: var(--ink);
+}
+
+.tr-tabs button[aria-selected='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.tr-tabs button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* ── the two columns ──────────────────────────────────────────────── */
+
+.tr-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 18px;
+  align-items: start;
+}
+
+.tr-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tr-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.tr-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tr-card-head h2 {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-card-head .btn {
+  margin-left: auto;
+}
+
+/* The one-line summary a preset or a file wears. `.role-badge` is the same
+   pill; this is the page's own so it can sit on `.tr-card-head` alone. */
+.tr-pill {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── the radio rows ───────────────────────────────────────────────── */
+
+.tr-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tr-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-opt:hover {
+  background: var(--surface-2);
+}
+
+.tr-opt:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.tr-opt[aria-checked='true'] {
+  border-color: var(--field-edge);
+  background: var(--surface-2);
+}
+
+.tr-opt[data-danger='1'][aria-checked='true'] {
+  border-color: var(--danger);
+}
+
+.tr-opt[aria-checked='true'] .tr-opt-dot {
+  border-color: var(--ink);
+  background: var(--ink);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+.tr-opt-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1px solid var(--field-edge);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.tr-opt-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tr-opt-copy b {
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-opt-copy span {
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ── the seal row ─────────────────────────────────────────────────── */
+
+/* `.sfx-row` in `account-live.css` is the app's switch row; the geometry is
+   repeated rather than borrowed so this page owns its own measure. */
+.tr-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.tr-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tr-copy b {
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-copy span {
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.sfx-switch:disabled {
+  cursor: not-allowed;
+}
+
+.sfx-switch[aria-checked='true']:disabled {
+  background: var(--muted);
+}
+
+/* ── the connector sheet's two lists ──────────────────────────────────
+   Two columns, not a table: four short lines each, and a table would put a
+   header over a list that already has one. `Stays here` is the column that
+   answers the question the sheet exists for, so it reads second and wears the
+   quiet surface — the file is what leaves. */
+.tr-travel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.tr-travel > div {
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.tr-travel h3 {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tr-travel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.tr-travel li {
+  position: relative;
+  padding-left: 12px;
+}
+
+/* One mark per line, so the two columns are read as lists and not as sentences. */
+.tr-travel li::before {
+  content: '';
+  position: absolute;
+  top: 0.55em;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.tr-travel > [data-stays='1'] li::before {
+  background: var(--ok);
+}
+
+.tr-share-token {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 620px) {
+  .tr-travel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── fields ───────────────────────────────────────────────────────── */
+
+.tr-pass {
+  margin-top: 14px;
+}
+
+.tr-pass .lbl {
+  margin-bottom: 6px;
+}
+
+/* The error state is the edge, never the whole control: an input that is
+   outlined in `--danger` still reads as an input. */
+.tr-pass .acct-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.tr-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tr-check input {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--ink);
+}
+
+/* ── a warning band ───────────────────────────────────────────────── */
+
+/* The same band `.skinstall-modal .notice` paints: a 3px accent edge on a soft
+   fill. It reads as a note here, which is why it is not `--danger`. */
+.tr-band {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--accent-soft);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* ── the aside ────────────────────────────────────────────────────── */
+
+.tr-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+/* Definitions, because this is a list of label/value pairs and not a table. */
+.tr-nums {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.tr-nums > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tr-nums dt {
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+.tr-nums dd {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-size {
+  margin: 0;
+}
+
+.tr-name {
+  margin: 0;
+  font-size: var(--fs-label);
+  line-height: 1.4;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.tr-go {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Disabled is a flat fill with a muted label, never a fade — the brief's rule, and
+   the mock-up's own words for `Replace everything`. The app-wide `.btn[disabled]`
+   fades instead, which turns a danger outline into "still a red button, just dim"
+   on the one control whose whole job is to say the destructive path is not open. */
+.tr-page .btn[disabled] {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* ── receive: the drop target ─────────────────────────────────────── */
+
+.tr-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 34px 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: center;
+}
+
+.tr-drop[data-drag='1'] {
+  border-color: var(--ink);
+  background: var(--surface-2);
+}
+
+.tr-drop-title {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-drop .mnote {
+  margin: 0;
+}
+
+/* The input is the browser's file picker; the button in front of it is the only
+   thing anyone should see, so the input is out of the flow but still reachable
+   by the label that already focuses it. */
+.tr-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── receive: the unlock ──────────────────────────────────────────── */
+
+.tr-unlock {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tr-unlock .tr-pass {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+/* ── receive: the diff ────────────────────────────────────────────── */
+
+.tr-diff {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.tr-diff > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.tr-drow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-drow:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+.tr-drow svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.tr-drow[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.tr-gname {
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-chips {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* Three actions, three colours, and the words still say which is which — colour
+   alone never carries the meaning. */
+.tr-chips i,
+.tr-paths i {
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-label);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.tr-chips i[data-k='add'],
+.tr-paths i[data-k='add'] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.tr-chips i[data-k='replace'],
+.tr-paths i[data-k='replace'] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.tr-chips i[data-k='keep'],
+.tr-paths i[data-k='keep'],
+.tr-paths i[data-k='skip'] {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.tr-paths {
+  margin: 0 0 10px;
+  padding: 0 0 0 24px;
+  list-style: none;
+}
+
+.tr-paths li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+.tr-paths li .mono {
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* ── the placement sheet ──────────────────────────────────────────── */
+
+/* `.modal` is 520px wide — a diff reads in that measure, a two-row choice with
+   four numbers under it does not. The sheet is its own width and nothing else
+   about `.modal` changes. */
+.tr-place {
+  width: min(620px, 94vw);
+}
+
+.tr-place-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The mark is a letter in a box, the way the wizard's is: a transfer has no
+   logo, and a made-up glyph would look like one. */
+.tr-place-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tr-place-head h2 {
+  margin: 0;
+}
+
+.tr-place-sub {
+  margin: 6px 0 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.tr-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The placement rows are the same control as `.tr-opt` but sit inside a sheet,
+   where the copy is a sentence rather than a note. Same geometry, same dot. */
+.tr-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tr-mode:hover {
+  background: var(--surface-2);
+}
+
+.tr-mode:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.tr-mode[aria-checked='true'] {
+  border-color: var(--field-edge);
+  background: var(--surface-2);
+}
+
+.tr-mode[data-danger='1'][aria-checked='true'] {
+  border-color: var(--danger);
+}
+
+.tr-mode[aria-checked='true'] .tr-mode-dot {
+  border-color: var(--ink);
+  background: var(--ink);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+.tr-mode-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1px solid var(--field-edge);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.tr-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tr-mode-copy b {
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tr-mode-copy span {
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.tr-place-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 14px 0 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.tr-place-nums > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tr-place-nums dt {
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+.tr-place-nums dd {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* What a replace takes, not what it adds: the number that loses something is on
+   the danger edge. */
+.tr-place-nums dd[data-take='1'] {
+  color: var(--danger);
+}
+
+.tr-place-word {
+  margin-top: 14px;
+}
+
+.tr-place-word .lbl {
+  margin-bottom: 6px;
+}
+
+.tr-place-foot .spacer {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 760px) {
+  .tr-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tr-aside {
+    order: -1;
+  }
+
+  .tr-unlock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

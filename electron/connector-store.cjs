@@ -854,6 +854,7 @@ module.exports = {
   initialOf,
   definitionOf,
   readIndex,
+  writeIndex,
   fieldsOf,
   setFields,
   list,

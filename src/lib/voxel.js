@@ -50,6 +50,16 @@ export const VOXELS = [
       '111111111', '000111000', '000111000', '000010000',
     ],
   },
+  /* a handle, then a case that carries both eyes inside it — the page's subject
+     is a file leaving, so the ornament is the thing it leaves in */
+  {
+    id: 'case',
+    name: 'Cargo case',
+    mask: [
+      '000000000', '000111000', '111111111', '111111111', '111111111',
+      '111111111', '011111110', '000000000', '000000000',
+    ],
+  },
 ]
 
 const BY_ID = new Map(VOXELS.map((voxel) => [voxel.id, voxel]))

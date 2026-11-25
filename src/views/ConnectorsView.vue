@@ -2,8 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ConnectorKindPicker from '@/components/ConnectorKindPicker.vue'
+import ConnectorShareDialog from '@/components/ConnectorShareDialog.vue'
+import ConnectorAlreadyHereDialog from '@/components/ConnectorAlreadyHereDialog.vue'
 import IntegrationMark from '@/components/IntegrationMark.vue'
+import { call } from '@/composables/localBridge'
 import { readPaste } from '@/lib/mcp-paste'
+import { readTransferFile } from '@/lib/transfer'
 import ConnectorRow from '@/components/ConnectorRow.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
@@ -331,6 +335,149 @@ function connectAccount(row) {
   router.push({ name: 'connector-page', params: { workspace: hub.workspace, id: row.id } })
 }
 
+/* ── a connector file, in either direction ─────────────────────────── */
+
+/* Send: one row, one sheet. The sheet asks the store what would travel, so the
+   two lists it prints are the store's answer rather than a copy of its rules. */
+const shareRow = ref(null)
+const shareOpen = ref(false)
+function share(row) {
+  if (!row || busy.value) return
+  shareRow.value = row
+  shareOpen.value = true
+}
+function closeShare() {
+  shareOpen.value = false
+  shareRow.value = null
+}
+
+/* Receive: a dropped file. `hereFile` is the inspect answer; `hereLocked` is the
+   file's name while a passphrase stands between us and that answer. Both live in
+   one sheet because both are the same question — what does this file do here? */
+const hereOpen = ref(false)
+const hereFile = ref(null)
+const hereLocked = ref('')
+const hereError = ref('')
+const hereBusy = ref(false)
+const herePass = ref('')
+const dropping = ref(0)
+const picked = ref(null)
+
+const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files')
+
+function onDragEnter(event) {
+  if (!hasFiles(event)) return
+  dropping.value += 1
+}
+function onDragOver(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+function onDragLeave() {
+  dropping.value = Math.max(0, dropping.value - 1)
+}
+function onDrop(event) {
+  dropping.value = 0
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  take(event.dataTransfer.files?.[0])
+}
+
+/* The reader is in the renderer because the main process never sees a dropped
+   file: the bytes come from the drag, not from a path. */
+async function take(file) {
+  if (!file || hereBusy.value) return
+  try {
+    const read = await readTransferFile(file)
+    picked.value = { name: read.name, data: read.data }
+    await openFile('')
+  } catch (error) {
+    /* A refused file is a toast, never a sheet: there is nothing to decide. */
+    toast(error.message)
+  }
+}
+
+/* One read, two callers: the drop (no passphrase yet) and the sheet's own
+   unlock. The store decides whether an answer is reachable without a key, so
+   this does not guess from the extension. */
+async function openFile(passphrase = '') {
+  if (!picked.value || hereBusy.value) return
+  hereBusy.value = true
+  hereError.value = ''
+  try {
+    const found = await call('transfer.connectorInspect', {
+      workspace: hub.workspace,
+      filename: picked.value.name,
+      data: picked.value.data,
+      passphrase,
+    })
+    herePass.value = passphrase
+    hereFile.value = found
+    hereLocked.value = ''
+    if (found.present) {
+      hereOpen.value = true
+      return
+    }
+    /* Nothing here has that name: there is no choice to put in a sheet, so the
+       row is written and the toast says whether a sign-in is still owed. */
+    hereOpen.value = false
+    await installThe({ mode: 'update' })
+  } catch (error) {
+    if (error.code === 'passphrase') {
+      hereLocked.value = picked.value.name
+      hereFile.value = null
+      hereOpen.value = true
+      hereError.value = passphrase ? 'Wrong passphrase. Nothing was installed.' : ''
+    } else {
+      hereError.value = error.message
+      hereOpen.value = false
+      toast(error.message)
+    }
+  } finally {
+    hereBusy.value = false
+  }
+}
+
+async function installThe({ mode }) {
+  if (!picked.value) return
+  hereBusy.value = true
+  hereError.value = ''
+  try {
+    const result = await call('transfer.connectorInstall', {
+      workspace: hub.workspace,
+      filename: picked.value.name,
+      data: picked.value.data,
+      passphrase: herePass.value,
+      mode,
+    })
+    hereOpen.value = false
+    hereFile.value = null
+    picked.value = null
+    toast(
+      `${result.label} ${
+        result.updated ? 'updated' : `installed${result.beside ? ` as ${result.id}` : ''}`
+      }${result.needsSignIn ? ' · it needs a sign-in here' : ''}`,
+    )
+    pane.value = 'installed'
+    await read({ probe: false })
+  } catch (error) {
+    hereError.value = error.message
+  } finally {
+    hereBusy.value = false
+  }
+}
+
+function closeHere() {
+  if (hereBusy.value) return
+  hereOpen.value = false
+  hereFile.value = null
+  hereLocked.value = ''
+  hereError.value = ''
+  herePass.value = ''
+  picked.value = null
+}
+
 function startAdd() {
   addKind.value = ''
   addForm.value = {
@@ -505,7 +652,14 @@ const wideSheet = computed(() => !addKind.value)
 </script>
 
 <template>
-  <div class="cxn-page" :class="{ 'cxn-embedded': embedded }">
+  <div
+    class="cxn-page"
+    :class="{ 'cxn-embedded': embedded }"
+    @dragenter="onDragEnter"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
     <!-- The heading row carries the page's one action. The title is an `h1` at the
          Machines page's size, and the sub carries the one mandated sentence. -->
     <div class="conn-head">
@@ -603,6 +757,13 @@ const wideSheet = computed(() => !addKind.value)
 
     <div v-if="connectors.error" class="cxn-error" role="alert">{{ connectors.error }}</div>
 
+    <!-- A file can be dropped anywhere on this page, so the page says so while a
+         drag is in flight. It is a band and not an overlay: the roster underneath
+         is still the thing being looked at. -->
+    <div v-if="dropping" class="tr-band cxn-drop" role="status">
+      Drop a connector file to install it here. One file, one connector.
+    </div>
+
     <div v-if="!connectors.loaded && connectors.loading" class="cxn-empty">Reading this workspace's connectors…</div>
 
     <!-- One table, one bounded scroll box: the page height stays put while a
@@ -678,6 +839,7 @@ const wideSheet = computed(() => !addKind.value)
             @copy="copyHere"
             @uninstall="uninstall"
             @connect="connectAccount"
+            @share="share"
           />
         </template>
       </div>
@@ -690,6 +852,28 @@ const wideSheet = computed(() => !addKind.value)
       </button>
     </p>
     <p v-else class="cxn-empty">No connectors yet. Add one, or copy one from this machine.</p>
+
+    <!-- The two connector-file sheets. Both are dialogs, so both are teleported:
+         `.cxn-page` is a query container, and `layout` containment would make it
+         the containing block for a `position: fixed` child. -->
+    <Teleport to="body">
+      <ConnectorShareDialog
+        :open="shareOpen"
+        :row="shareRow"
+        :workspace="String(hub.workspace || '')"
+        @close="closeShare"
+      />
+      <ConnectorAlreadyHereDialog
+        :open="hereOpen"
+        :file="hereFile"
+        :locked="hereLocked"
+        :busy="hereBusy"
+        :error="hereError"
+        @close="closeHere"
+        @unlock="openFile"
+        @install="installThe"
+      />
+    </Teleport>
 
     <!-- The add sheet: kind picker, then that kind's fields, then verify, then save.
          Teleported, like every other fixed sheet in this app: inside the page's

@@ -44,6 +44,7 @@ const learning = require('./learn.cjs')
 const suggestions = require('./suggest.cjs')
 const enhancement = require('./enhance.cjs')
 const backups = require('./backup-store.cjs')
+const transfer = require('./transfer-store.cjs')
 const retention = require('./retention-store.cjs')
 const artifactRetention = require('./artifact-retention-store.cjs')
 const voice = require('./voice.cjs')
@@ -224,6 +225,26 @@ function createRpc({
         ? { name: user.name || user.username, email: user.email }
         : args?.owner || null
       return workspaces.claimOwner({ ...args, owner })
+    },
+    /* transfer: one file out, one file in. The renderer hands over the bytes it
+       picked and never a path, so the only directory this process writes to is
+       the one it chose itself. */
+    'transfer.send': (args) => transfer.send(args),
+    'transfer.inspect': (args) => transfer.inspect(args),
+    'transfer.apply': (args) => transfer.apply(args),
+    'transfer.place': (args) => transfer.place(args),
+    'transfer.connectorSend': (args) => transfer.connectorSend(args),
+    'transfer.connectorInspect': (args) => transfer.connectorInspect(args),
+    'transfer.connectorInstall': (args) => transfer.connectorInstall(args),
+    /* The one path this feature hands back is the file it just wrote, and it is
+       named from the directory the store chose — never a path the renderer sent. */
+    'transfer.reveal': ({ filename } = {}) => {
+      if (typeof reveal !== 'function') {
+        throw new Error('Revealing files is not available in this build.')
+      }
+      const file = transfer.filePath(filename)
+      reveal(file)
+      return { file }
     },
     'workspace.library': ({ machine } = {}) => localData.scanSkillLibrary({ machine }),
     'skills.names': ({ machine } = {}) => localData.scanSkillNames({ machine }),
@@ -798,7 +819,10 @@ function createRpc({
     try {
       return { ok: true, data: await handler(args || {}) }
     } catch (error) {
-      return { ok: false, error: String(error?.message || error) }
+      /* `code` is the refusal's class (`passphrase`, `transfer`), and the
+         renderer reads it to decide between a field and a band. Dropping it here
+         makes every refusal look like a bug. */
+      return { ok: false, error: String(error?.message || error), code: String(error?.code || 'error') }
     }
   }
 

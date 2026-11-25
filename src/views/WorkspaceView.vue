@@ -7,6 +7,7 @@ import WorkspaceArtifactsView from '@/views/WorkspaceArtifactsView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import ConnectorsView from '@/views/ConnectorsView.vue'
 import MachinesView from '@/views/MachinesView.vue'
+import WorkspaceTransferView from '@/views/WorkspaceTransferView.vue'
 import { ROLES, hub, roleById, toast } from '@/stores/hub'
 import { gravatarUrl } from '@/lib/gravatar'
 import { activeWorkspace, updateWorkspace } from '@/stores/workspaces'
@@ -19,7 +20,7 @@ import { activeWorkspace, updateWorkspace } from '@/stores/workspaces'
 const router = useRouter()
 const route = useRoute()
 const current = computed(() => activeWorkspace.value)
-const TABS = ['general', 'members', 'skills', 'connectors', 'machines', 'chats', 'artifacts', 'activity']
+const TABS = ['general', 'members', 'skills', 'connectors', 'machines', 'chats', 'artifacts', 'transfer', 'activity']
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
 
 /* The tab is part of the URL, so a link can land on Activity and Back works. */
@@ -350,6 +351,7 @@ async function save() {
     <MachinesView v-else-if="tab === 'machines'" embedded />
     <WorkspaceChatsView v-else-if="tab === 'chats'" />
     <WorkspaceArtifactsView v-else-if="tab === 'artifacts'" />
+    <WorkspaceTransferView v-else-if="tab === 'transfer'" />
     <ActivityView v-else embedded />
   </div>
 </template>

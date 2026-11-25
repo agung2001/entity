@@ -30,10 +30,11 @@
    identity and the status sentence the flexible rest. */
 .ct {
   /* Sized to what the cells actually hold, measured on the live page: `kind` is a
-     3–4 letter word (18px of text), `scope` is `workspace` (54px), and the widest
-     verb is `Copy here` in a 53px button. An over-wide track steals from the two
-     columns that carry sentences. */
-  --ct-tracks: minmax(0, 1.4fr) 30px 68px minmax(0, 1.2fr) 96px;
+     3–4 letter word (18px of text), `scope` is `workspace` (54px), and the action
+     track fits two verbs at once — `Share` beside `Uninstall`, or `Share` beside
+     `Copy here` on a machine row. An over-wide track steals from the two columns
+     that carry sentences. */
+  --ct-tracks: minmax(0, 1.4fr) 30px 68px minmax(0, 1.2fr) 132px;
   --ct-gap: 12px;
 }
 
@@ -612,7 +613,7 @@ a.ct-who:hover .ct-name {
      columns more than they are worth. Kind and scope stay visible in the meta
      line, and the head drops the same two labels so it cannot drift. */
   .ct {
-    --ct-tracks: minmax(0, 1.4fr) minmax(0, 1.2fr) 96px;
+    --ct-tracks: minmax(0, 1.4fr) minmax(0, 1.2fr) 132px;
   }
   .ct-kind,
   .ct-scope,
@@ -705,4 +706,11 @@ a.ct-who:hover .ct-name {
 .ct-src svg {
   width: 11px;
   height: 11px;
+}
+
+/* The drag band. `.tr-band` is the transfer page's warning shape and this is the
+   same shape saying something that is not a warning: one line, above the roster,
+   only while a file is in the air. */
+.cxn-drop {
+  margin: 10px 0 0;
 }
