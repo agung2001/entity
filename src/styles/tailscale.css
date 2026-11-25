@@ -1,0 +1,358 @@
+/* ── Tailscale's connector page ────────────────────────────────────────────
+   The one connector whose page is two cards of its own (`TailscalePanel.vue`)
+   instead of the generic pitch + sign-in pair. Everything here is `ts-`, and the
+   four form primitives are scoped to `.ts-lan` rather than declared globally:
+   `.field` is already used by the login form (`login.css:86`), so a bare rule
+   would reach a page this connector has nothing to do with.
+
+   The card furniture is `connector-page.css`'s: `.cxn-card`, `.cxn-card-head`,
+   `.cxn-facts`, `.cxn-note`, `.state`, `.btn`. Only what is genuinely new is
+   drawn here. */
+
+/* ── the tailnet card's read ────────────────────────────────────────────────
+   A skeleton bar, not a spinner: the tracks are the real `dt`/`dd` pair, so the
+   first honest answer lands without moving anything. Static on purpose — a
+   shimmer on a read that takes 200ms is flicker, and the README's own demo does
+   not need the repaint. */
+.ts-note {
+  margin: 0 0 11px;
+}
+.ts-skel {
+  display: block;
+  height: 9px;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+}
+.ts-skel-sm {
+  width: 56px;
+}
+.ts-skel-md {
+  width: 108px;
+}
+.ts-skel-lg {
+  width: 164px;
+}
+
+/* ── the LAN card ───────────────────────────────────────────────────────── */
+.ts-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.ts-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ts-copy b {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+}
+.ts-copy span {
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+/* ── why the verb is off ────────────────────────────────────────────────────
+   The sentence the disabled button points at. Danger is the default because the
+   common reason is a thing that is broken, not a thing that is late; `wait` is
+   the two states that fix themselves (`starting`, a port out of range). */
+.ts-why {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--danger) 4%, var(--bg));
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.ts-why .spacer {
+  flex: 1;
+}
+.ts-why code {
+  color: var(--ink);
+}
+.ts-why[data-tone='wait'] {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: var(--accent-soft);
+}
+.ts-why[data-tone='ok'] {
+  border-color: color-mix(in oklab, var(--ok) 26%, var(--border));
+  background: color-mix(in oklab, var(--ok) 5%, var(--bg));
+}
+
+/* ── the hero's state chip ──────────────────────────────────────────────────
+   The MCP page's hero chip rules are scoped to that component, so the same chip
+   on a connector hero fell back to `--bg`/`--border-strong` — a dark box on the
+   dark banner and a dot that said nothing. These are the repo's own values
+   (`backdrops.css:194`, `McpServerView.vue:2282`), not new ones, and the tone is
+   carried by the dot as well as the word. */
+.cxn-hero .mcpp-chip {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c9d2b7;
+}
+.cxn-hero .mcpp-chip[data-tone='bad'] {
+  color: #ff8f75;
+}
+.cxn-hero .mcpp-chip[data-tone='ok'] {
+  color: #cfe3bb;
+}
+.cxn-hero .mcpp-chip[data-tone='ok'] i {
+  background: var(--ok);
+}
+.cxn-hero .mcpp-chip[data-tone='warn'] i {
+  background: var(--accent);
+}
+.cxn-hero .mcpp-chip[data-tone='bad'] i {
+  background: var(--danger);
+}
+:root:not([data-theme='dark']) .cxn-hero .mcpp-chip {
+  border-color: color-mix(in oklab, var(--hero) 22%, var(--border));
+  background: color-mix(in oklab, #fff 62%, transparent);
+  color: var(--ink-2);
+}
+:root:not([data-theme='dark']) .cxn-hero .mcpp-chip[data-tone='bad'] {
+  color: var(--danger);
+}
+:root:not([data-theme='dark']) .cxn-hero .mcpp-chip[data-tone='ok'] {
+  color: var(--ok-ink, var(--ink-2));
+}
+
+/* ── the verb when it cannot run ────────────────────────────────────────────
+   Not `opacity: .5` (`context.css:168` leaves the primary's label at ~2.2:1).
+   The repo's other disabled treatment (`context.css:562`) is reused instead:
+   `--muted` on `--surface-2` is 4.53:1, so a verb that says "not yet" can still
+   be read — and it keeps its icon, so the card head does not reflow when the
+   tailnet comes up (spec 15: the same width both ways).
+
+   `aria-disabled`, not `disabled`: a `disabled` button is not focusable, so the
+   `aria-describedby` that carries the reason could never be heard (spec §9.2). */
+.ts-lan .cxn-card-head .btn[aria-disabled='true']:not(.btn-sm) {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  opacity: 1;
+}
+.ts-lan .cxn-card-head .btn[aria-disabled='true'],
+.ts-lan .cxn-card-head .btn:disabled {
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── the port field ─────────────────────────────────────────────────────────
+   A 120px field and the sentence that explains the default beside it. The field
+   takes `--field-edge`, not the hairline: it is the one control here a person
+   types into, so it owes 1.4.11 a boundary (`tokens.css:33`). */
+.ts-port {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+.ts-lan .field {
+  display: grid;
+  gap: 5px;
+}
+.ts-lan .field-lbl {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ts-lan .input {
+  height: 32px;
+  width: 100%;
+  padding: 0 9px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  transition: border-color 0.13s ease;
+}
+.ts-lan .input:hover:not([disabled]) {
+  border-color: var(--muted);
+}
+/* The ring is global (`tokens.css:158`); the field only darkens its edge, which
+   is what tells a person the box is live as well as focused. */
+.ts-lan .input:focus-visible {
+  border-color: var(--ink);
+}
+.ts-lan .input[disabled] {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.ts-lan .input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.ts-lan .field-hint {
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  margin: 0;
+  max-width: 70ch;
+}
+.ts-lan .field-hint code {
+  color: var(--ink-2);
+}
+
+/* ── serving: the code, the address, the two ways to use it ─────────────────
+   252 = the 232px code plus its own 10px white border. The code is white in both
+   themes: a phone camera reads contrast, and a dark-mode QR is a support ticket. */
+.ts-serve {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 12px;
+}
+.ts-qr {
+  width: 252px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+.ts-qr svg {
+  width: 232px;
+  height: 232px;
+  display: block;
+}
+.ts-qr-side {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  min-width: 0;
+}
+.ts-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+  overflow: hidden;
+}
+.ts-url span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-url-acts {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.ts-caution {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, var(--border));
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  max-width: 62ch;
+}
+
+/* ── collapse ───────────────────────────────────────────────────────────────
+   The page is already the `cxn` container (`.cxn-page`), so these are the same
+   query box the accounts table uses. 560 is where the code and its column stop
+   fitting side by side — stack, or the URL is a 40px pale. */
+@container cxn (max-width: 559.99px) {
+  .ts-port {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ts-serve {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ts-qr {
+    width: 100%;
+    max-width: 296px;
+  }
+  .ts-qr svg {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .ts-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ts-lan .cxn-card-head {
+    flex-wrap: wrap;
+  }
+  /* Every verb on these two cards is a thumb target at phone width — including
+     Refresh, which is 28 px only where a card head has room for a hint
+     (`spec.md` §8: 44 px under 560, and acceptance 11 counts every live target). */
+  .ts-lan .btn,
+  .ts-tailnet .btn {
+    height: 44px;
+    padding: 0 12px;
+  }
+  .ts-url-acts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .ts-url-acts .btn {
+    width: 100%;
+  }
+}
+
+/* 360px: the code is the widest thing on the page and it never leaves the card —
+   `width:100%` inside a padded box, so the 4-module quiet zone still lands on
+   white. Nothing else needs a step here; the rules above already stacked. */
+@container cxn (max-width: 470px) {
+  .ts-lan .cxn-card-head {
+    row-gap: 8px;
+  }
+  .ts-url {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 8px 9px;
+  }
+  .ts-url .btn {
+    height: 44px;
+  }
+}
+
+/* Motion is decoration here: nothing on this page moves to tell you something.
+   The probe pulse and the one border transition go quiet when the viewer asked
+   for that (`spec.md` §9.13), and a skeleton bar is a static bar either way. */
+@media (prefers-reduced-motion: reduce) {
+  .ts-tailnet .state i,
+  .ts-lan .state i {
+    animation: none;
+  }
+  .ts-lan .input,
+  .ts-lan .btn,
+  .ts-tailnet .btn {
+    transition: none;
+  }
+}

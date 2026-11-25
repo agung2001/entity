@@ -84,12 +84,29 @@ const railHosts = computed(() => {
   })
 })
 
+/* The shelf panel has a page as well as a list, so its title is the way to the
+   page: a rail whose heading names something you cannot reach is a dead end. */
+const shelfTitle = () => ({
+  id: 'artifacts',
+  title: 'Artifacts',
+  count: artifacts.items.length,
+  to: { name: 'artifacts', params: { workspace: hub.workspace } },
+})
+
 const section = computed(() => {
   const name = String(route.name || 'overview')
   if (hub.rail.entities) return { id: 'entities', title: 'Entities', count: hub.agents.length }
-  if (hub.rail.artifacts) return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
-  if (name === 'entity') return { id: 'entities', title: 'Entities', count: hub.agents.length }
-  if (name === 'artifact') return { id: 'artifacts', title: 'Artifacts', count: artifacts.items.length }
+  if (hub.rail.artifacts) return shelfTitle()
+  /* The roster page and one entity's page both keep the entity list beside
+     them: the page is the same directory drawn wider, so the rail must not turn
+     into some other section — the machines it used to fall through to — just
+     because the route is the roster rather than a file. */
+  if (name === 'entity' || name === 'entities')
+    return { id: 'entities', title: 'Entities', count: hub.agents.length }
+  /* The shelf page keeps the shelf list: it is the same shelf, drawn as works
+     instead of rows, and the rail beside it must not turn into some other
+     section just because the route is a page rather than a file. */
+  if (name === 'artifact' || name === 'artifacts') return shelfTitle()
   /* The working list only: the header must never disagree with the rows above
      the Archived divider. */
   if (name === 'chat') return { id: 'chat', title: 'Chats', count: activeSummaryCount() }
@@ -288,6 +305,13 @@ function newChat() {
   history.value?.newThread()
 }
 
+/* A section whose heading names a page: the heading is the link, and the list
+   behind it stays as it is. */
+function openSection() {
+  const to = section.value.to
+  if (to) router.push(to)
+}
+
 function goBack() {
   const to = section.value.back
   if (to === 'machines') {
@@ -339,7 +363,18 @@ const backLabel = computed(() => {
           <path d="M10 3L5 8l5 5" />
         </svg>
       </button>
-      <h2>{{ section.title }}</h2>
+      <h2>
+        <button
+          v-if="section.to"
+          class="rail-t2-title"
+          type="button"
+          :title="`Open the ${section.title.toLowerCase()} page`"
+          @click="openSection"
+        >
+          {{ section.title }}
+        </button>
+        <template v-else>{{ section.title }}</template>
+      </h2>
       <span v-if="section.count !== null" class="rail-t2-count">{{ section.count }}</span>
       <button
         class="rail-t2-x"

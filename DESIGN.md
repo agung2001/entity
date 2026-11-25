@@ -738,6 +738,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | A bound `grid-template-columns` wins over the mobile container query | Apply the template only in the band that uses it (`null` below 460) | `tests/e2e/full/24-machines-fleet.spec.js` |
 | Two glyphs on one row say the same thing | The station's tile already draws a machine; a server icon beside the name is the second one | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's bottom border touches the table's top border | Two hairlines a pixel apart read as one thick rule: the field wants a gap *below*, even when it wants none above | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A dashboard re-reads on every visit, or its `cached 15 min` label outlives the constant | One read a day into `<ENTITY_HOME>/github-dashboard.json`, refreshed only by the explicit verb or the expiry, and the label reads `cacheTtlMs` from the payload instead of typing the number | `electron/github-dashboard.cjs`, `ConnectorDashboard.vue` (see *A dashboard caches for a day, in a file*) |
 | A right-aligned column has a left-aligned header | Align the desk's label to the cell's own `justify-content`, or it reads as a different column | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's glyph reads as glued to the first letter | `.wsl-search` is a 32px box around a 20px input; give the input `height: 100%` and the field the app's other field's gap (9px) | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A host name is plain text while a tiny arrow beside it goes somewhere | The name is the link, the row is not: the alias carries the route, the arrow is its shortcut, the address is text | `npm test` (`ui-contract`) |
@@ -780,6 +781,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | A reply leaves the thread in the archive | Un-archive as its own write, before the turn's metadata baseline | `tests/e2e/full/19-retention.spec.js` |
 | A recursive copy of an unreadable directory kills the process | `fs.cpSync({ recursive })` aborts on a permission error instead of throwing; walk the tree with `readdirSync` first and fail with a message | `npm test` (`workspace-skills`) |
 | A menu item is disabled but looks and behaves like an enabled one | Style `[disabled]` (`opacity: .42`, `cursor: not-allowed`) in the same change that disables it | `chat-rail-rows.css` (`.rchat-menu-item[disabled]`) |
+| A disabled button carries `aria-describedby` that a screen reader can never read | `disabled` removes the button from the tab order, so the sentence it points at is unreachable: use `aria-disabled="true"` and refuse the click in the handler (`verbDisabled`), then style `[aria-disabled='true']` as well as `[disabled]` | `TailscalePanel.vue` (the LAN verb), `tailscale.css` |
 | A popover floats off screen because its height was hardcoded | Measure `offsetHeight` after render and flip from the measurement | `ChatHistoryRail.openRowMenu` |
 | Unsent text disappears when you switch threads (or reload) | Drafts are per thread in the store, persisted through `src/lib/drafts.js`; the composer reports every change and adopts the new thread's text | `tests/e2e/full/15-drafts.spec.js` |
 | A finished turn switches the conversation you are reading | Store the result and update the rail row; `active` moves only from a click, a deep link, a new thread or a delete | `tests/e2e/full/14-turn-settles.spec.js` |
@@ -808,6 +810,13 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | The first line of the thread slides under the glass bar | The measured header height is its border box, not `contentRect` (which excludes padding) | `ChatView.watchHead` |
 | Thread tags only exist on the open conversation | Tags are thread metadata: the header shows and edits them, the rail shows them on every row and filters by them | `ChatView`, `ChatHistoryRail`, `ThreadTagsDialog` |
 | Two counters take a header track from the title and search, or float over the answer | Conversation totals close the composer's context row, before voice and help | `.cp-stats` |
+| The shelf is a wall of file names, so finding "the mockup from yesterday" means remembering the png's name | A shelf is drawn as **works**: the folders that wrote a document or a batch of images, with a ranked cover shot, one card each — derived from the rows the store already returned, never a second store | `src/lib/artifact-works.js`, `npm test` (`artifacts-index`) |
+| The count in the toolbar and the list under it disagree | Every number on the shelf comes from one `groupWorks()` pass, and a type pill's count and its filter are the same `typeOf` | `npm test` (`artifacts-index`, "every bucket adds up to itself") |
+| The rail beside a page lists another section entirely | `RailContext.section` is a route map with an `overview` fallback, so a route it does not name gets Overview's panel. Every route in a section goes in the map (`artifact` and `artifacts`), and `AppRail`'s `SECTION_TITLES` gets the label | `npm test` (`artifacts-index`, "the shelf page arrives with the shelf rail") |
+| A page's own top bar is drawn inside the reading measure | `.ash-bar` sat inside `.ash-band`, so its hairline stopped at 1180 and its crumb began where the column began — 28px right of the crumb on the page above. A bar is the page's top edge: its content box equals the scroll area's, `padding: 0 var(--view-pad)`, `width: 100%`, and the column below pays the inset (`width: min(100% - 2 * var(--view-pad), 1180px); margin: 20px auto 0`) — `.detail-view`'s split. Compare `.ash-bar` with `.entp-bar` x/width at 1440 (both 300 / 1140 with the rail open) | `npm test` (`artifacts-index`, "the shelf's bar is the page's top edge, not the column's") |
+| A section heading names a page nobody can open | A section that has a page carries `to`, and its `h2` wraps a `.rail-t2-title` button — the heading is the link, the type and the ellipsis stay the bar's | `npm test` (`artifacts-index`, "the section heading is the way to a section that has a page") |
+| A "reveal this folder" button throws `That artifact is not a file.` | `artifact.reveal` is a file verb and there is no directory reveal in the call table: reveal the deepest row whose `dirname` is the work, fall back to its cover, and omit the button when neither exists | `ArtifactsIndexView` |
+| A lazy cover reflows the grid as it arrives | The preview keeps a fixed `aspect-ratio` before the image exists, and the grid is one `auto-fill` declaration | `artifacts-index.css` |
 | A Markdown or code artifact is dumped as raw text in a bordered box | Documents use the chat glass bar and open in MarkdownEditor / CodeEditor, full-bleed under it; Save writes back to the same file, never a copy | `ArtifactDetailView`, `artifact.writeText` |
 | A members list is a row of unlabeled name/email/role fields | Each member is a card led by their Gravatar (initials when there is no email), with labelled inputs and an icon remove button; the owner row is marked | `WorkspaceView` |
 | A media artifact is a small image in a bordered box | Images, audio and video get the full-bleed grid stage: details and file actions in a floating top bar, zoom in a vertical rail, wheel/button zoom, drag to pan at any scale, Fit to reset; documents keep the plain preview | `ArtifactDetailView` |
@@ -907,6 +916,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | Mark picker, pick menus, model suggestions, zoom, minimap card | `MarkPicker.vue`, `PickMenu.vue`, `ModelInput.vue`, `ChatArtifacts.vue`, `ThreadMinimap.vue` | Esc via the same stack |
 | Thread tags | `src/components/ThreadTagsDialog.vue` | Esc, scrim, Cancel (guarded while saving) |
 | Artifact document editor | `src/views/ArtifactDetailView.vue` | page surface; Save button and the catalog `save` shortcut |
+| Artifact shelf (works, not rows) | `src/views/ArtifactsIndexView.vue` | page surface; `.ash-bar` is the page's top edge (`.entp-bar`'s geometry, full-bleed, 56px, sticky glass); `Esc` closes the opened work before it leaves the page |
 | Thread metadata | `src/components/ThreadMetadataPanel.vue` | Esc (an open path row folds first), close button; chat-header toggle + shortcut |
 | Delegation hold (a plan waiting for you) | `src/components/DelegationHold.vue` | Esc cancels (not while Run is in flight); Cancel, Stop and expiry settle it |
 | Definition write (a rewrite waiting for you) | `src/components/DefinitionWriteCard.vue` | Esc = `Not now` (not while Apply is in flight); Apply is the only other answer |
@@ -1071,12 +1081,25 @@ text passes under it.
 - The tint is roughly two-thirds of `--bg` over `blur(16px) saturate(1.8)`. Keep
   it light enough that a line of text under the bar stays readable as a smudge.
 
-### A detail page reuses the thread's header, material and all
+### Any page with its own top bar reuses the thread's header, material and all
 
 `.entp-bar` (entity and MCP detail pages) is not a container: it is the page's
 own top edge, the same 56px sticky pane of frosted glass as `.cp-head` — the
 same tint, the same `blur(16px) saturate(1.8)`, the same hairline. The page
 scrolls *beneath* it, which is what proves it is glass.
+
+**This is the app's navigation standard, not a detail-page detail.** Every page
+that draws its own *sticky* bar — `.entp-bar` on the entity and MCP pages,
+`.ash-bar` on the artifact shelf — is the same 56px surface at the same x, and
+each one is verified that way: compare the bar's `x`/`width` with `.entp-bar`'s
+at 1440, not by eye. (`.ovc-bar` on the overview is a different object: a 58px
+row inside that page's column, not a sticky pane, and it is not what the rule
+is about.) Three numbers must agree: the bar's content box equals the
+scroll area's (rail open, folded, or 1920), its padding is `0 var(--view-pad)`,
+and the column below is inset by that same pad. Position the column instead —
+wrap the bar *inside* the `min(100% - 2 * var(--view-pad), 1180px)` measure —
+and the hairline stops ~60px short of both window edges and the crumb sits right
+of the one above it, which is exactly what "containerised" means.
 
 - **`position: sticky; top: 0`** on the bar, `z-index: 3`; nothing else needs to
   know its height, because it is in the flow and the page's own scroll container
@@ -1090,6 +1113,10 @@ scrolls *beneath* it, which is what proves it is glass.
   coincide at 1280 by accident.
 - **Percentages, never `100vw`.** The page starts after the rail: `100vw` is the
   window, and a bar built from it overlaps the rail by its width.
+- **The crumb is one object on every second row.** Mono, `--fs-micro`, `0.09em`,
+  uppercase, `--muted`, with the value one rung stronger — `.entp-crumb`,
+  `.ovc-barcrumb` and `.ash-crumb` are the same style, because a breadcrumb that
+  changes its type on every page is three bars, not one.
 - **The body keeps its measure.** Only the bar is full-bleed; `.detail-view > :not(.entp-bar)`
   is `min(100% - 2 * var(--view-pad), 1180px)`, centred, with the bar's height as
   its only top gap.
@@ -1149,6 +1176,56 @@ stayed in the list forever or was destroyed. Archive is the honest middle.
   `.rchat-menu-item`, so a mid-turn action was pixel-identical to an enabled one.
 - **Escape closes the row menu** and returns focus to the ⋯ that opened it:
   `useDialogDismiss`, like every other dismissible surface.
+
+## The shelf is a page of folders, and the rail is still the list
+
+The artifact rail answers *which file*. It cannot answer *which folder*, and that
+is the question somebody who just finished a mockup actually has: they remember
+the shot, not the name of the png inside it. `/w/:workspace/artifacts` is that
+page, and it is a second view of the same rows rather than a second store.
+
+- **A work is derived, never stored.** `src/lib/artifact-works.js` groups the
+  rows `artifact.list` already returns, by the folders their ids sit in. A folder
+  is a work when it holds a document (`.md`, `.html`, `.htm`, `.mjs`, `.cjs`,
+  `.css`) or, with no children, a batch of images; a qualifying ancestor takes
+  the folder below it, and every remaining row is a *loose* file. It is pure ESM
+  with no Vue, no DOM and no imports, so `tests/unit/artifacts-index.test.cjs`
+  holds the rule and the page cannot drift from it. Nothing is written to make a
+  card, so an upload is a card after one read and a migration is never needed.
+- **A cover is a real file, ranked, and never invented.** `cover.png` beats
+  `preview.png` beats a numbered shot beats any other image; only rasters under
+  900 KB qualify, because a 4 MB screenshot is a card that stutters the grid. A
+  work with no shot draws its dominant extension instead of a grey rectangle —
+  an absence drawn as an absence.
+- **The counts are one partition, and they add up.** `Files`, `Works`, `Loose`,
+  the meter's `73 / 94` and every type pill come from the same pass, so the
+  pills always sum to the file count. A bucket's count and the filter it runs are
+  the same function (`typeOf`), or the number and the list disagree in the one
+  place a person is checking.
+- **The cards are why this page exists, so the shot is the card.** A 16:10 crop,
+  `object-fit: cover` with `object-position: top left` — every capture's identity
+  is its top-left corner (breadcrumb, title, first row). One
+  `repeat(auto-fill, minmax(298px, 1fr))` at a 14px gap, and the aspect ratio is
+  fixed before the image arrives, so a lazy cover never reflows the grid.
+- **`Esc` closes the opened work before it leaves the page.** One window listener
+  owns the two keys this page has (`inventory-search` from the catalog, and
+  `Escape`), and it defers to `dialogDepth()` so a dialog's Escape is still the
+  dialog's.
+- **The page arrives with the shelf beside it, and the heading opens the page.**
+  `RailContext`'s `section` is a route→section map with an `overview` default,
+  so a *page* route it does not name silently falls through: `/w/:ws/artifacts`
+  listed the machines next to the shelf. Any route that belongs to a section
+  goes in that map (`artifact` **and** `artifacts`), and a section that has a
+  page carries `to` — its `h2` wraps a `.rail-t2-title` button, so the heading
+  that names the page is the way to it instead of a dead end. `AppRail`'s
+  `SECTION_TITLES` gets the same name, or the collapsed rail calls the page
+  *Configurations*.
+- **Reveal is a file verb, so it lives on the opened work.** `artifact.reveal`
+  refuses a directory (`That artifact is not a file.`) and there is no directory
+  reveal in the call table. The button reveals the deepest row whose own
+  `dirname` is the work, falls back to the work's cover, and is omitted entirely
+  when the work has neither — a disabled button for a thing that cannot happen is
+  furniture.
 
 ## An artifact is a file with the chat's bar, not a card in a page
 
@@ -1277,6 +1354,41 @@ inventory, and Markdown parsing must not happen until a reply needs it.
 screen, or if `marked`/`dompurify` appear outside the prose engine. `npm run
 build` prints the chunk list — the entry chunk should not grow without a reason.
 
+## A dashboard caches for a day, in a file
+
+A dashboard is a handful of requests against somebody else's rate limit, and its
+numbers move over days, not seconds. So the default for **any** dashboard in this
+app is: **one read a day, stored on disk, refreshed only when someone asks.**
+`electron/github-dashboard.cjs` is the reference implementation.
+
+- **The cache is a file, not a variable.** `<ENTITY_HOME>/github-dashboard.json`
+  (falling back to `~/.entity/`) holds `{ schema, key, at, value }`: the payload
+  verbatim, the clock of the read, and the key it was read for. A restart must not
+  spend the budget again, and `ENTITY_HOME` is honoured so a test or a demo never
+  writes a developer's real home.
+- **The TTL is a day, and it is one constant.** A shorter one buys nothing: a
+  number that changed twice in fifteen minutes was never the number somebody asked
+  about, and what a dashboard costs is requests, not milliseconds.
+- **Only two things read again: the explicit verb and the expiry.** Opening the
+  tab, leaving and coming back, reloading the window — all serve the stored
+  answer. The Refresh button sends `force: true` and is the only way to read
+  sooner than a day.
+- **The key makes stale answers impossible to serve by accident.** It is the
+  readable logins plus the window start, so signing in, signing out, switching the
+  active login, or the day rolling over misses the cache instead of drawing
+  somebody else's numbers.
+- **A failed or rate-limited read is never cached.** Storing a refusal would
+  re-serve it for a day. The tab keeps the last good numbers, stamps them with
+  their `readAt`, and says what happened in its own banner.
+- **The page prints the rule it follows.** The main process sends `cacheTtlMs` with
+  every payload; the header stamp reads `read 3 h ago · cached until 18 Sep 09:40`
+  and the card foot says `served from the 1-day cache` or `cached for 1 day`.
+  **Never hardcode the duration in copy** — a `cached 15 min` label that outlives
+  the constant is a lie about the app's own behaviour, and it was paid for once.
+- **A cache the app cannot write is a miss, never an error.** Reads and writes are
+  wrapped; a read-only home means the next visit asks the service again instead of
+  failing the page.
+
 ## Voice mode opens a microphone
 
 The microphone is the one control in the composer that reaches a device. It sits
@@ -1398,6 +1510,10 @@ Rules that keep it that way:
 11. If the change taught you a new failure mode, add a row to **Common
    mistakes**. If it introduced a new kind of surface, add it to **Surfaces**
    above.
-12. Styles go in the sheet for the surface (see **Stylesheets are split by
+12. If the page reads a remote service into numbers, it is a dashboard: cache it
+   for a day in a JSON file under `~/.entity/`, re-read only on an explicit verb
+   or the expiry, and print the rule from `cacheTtlMs` (see *A dashboard caches
+   for a day, in a file*).
+13. Styles go in the sheet for the surface (see **Stylesheets are split by
    surface**), and a corner and a type size come from the ladders in
    `tokens.css`.

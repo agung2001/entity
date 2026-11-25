@@ -11,10 +11,12 @@ const WelcomeView = () => import('@/views/WelcomeView.vue')
 const HubLayout = () => import('@/layouts/HubLayout.vue')
 const OverviewView = () => import('@/views/OverviewView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
+const EntitiesView = () => import('@/views/EntitiesView.vue')
 const EntityDetailView = () => import('@/views/EntityDetailView.vue')
 const SkillsView = () => import('@/views/SkillsView.vue')
 const SkillDetailView = () => import('@/views/SkillDetailView.vue')
 const ConnectorPageView = () => import('@/views/ConnectorPageView.vue')
+const ArtifactsIndexView = () => import('@/views/ArtifactsIndexView.vue')
 const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
 const MachinesView = () => import('@/views/MachinesView.vue')
 const MachineDetailView = () => import('@/views/MachineDetailView.vue')
@@ -165,6 +167,15 @@ const router = createRouter({
           meta: { crumb: 'chat', title: 'Chat · entity' },
         },
         {
+          /* The index is a sibling **above** the detail route: `:name` would
+             otherwise swallow the bare path and send `entities` to a page
+             looking for an entity called nothing. */
+          path: ':workspace/entities',
+          name: 'entities',
+          component: EntitiesView,
+          meta: { crumb: 'entities', title: 'Entities · entity' },
+        },
+        {
           path: ':workspace/entities/:name',
           name: 'entity',
           component: EntityDetailView,
@@ -232,6 +243,15 @@ const router = createRouter({
             query: to.query,
           }),
           meta: { crumb: 'connectors', title: 'Connector · entity' },
+        },
+        {
+          /* The shelf itself, above the file page: `artifact` owns
+             `:workspace/artifacts/:id(.*)`, which also swallows `/artifacts`, so
+             the index has to be declared first and win on its own address. */
+          path: ':workspace/artifacts',
+          name: 'artifacts',
+          component: ArtifactsIndexView,
+          meta: { crumb: 'artifacts', title: 'Artifacts · entity' },
         },
         {
           path: ':workspace/artifacts/:id(.*)',

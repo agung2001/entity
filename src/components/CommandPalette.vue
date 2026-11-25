@@ -121,18 +121,18 @@ const navigationItems = computed(() => [
     label: 'Entities',
     meta: 'Entity directory',
     act: () => {
-      hub.rail.entities = true
+      hub.rail.entities = false
       hub.rail.artifacts = false
+      router.push({ name: 'entities', params: { workspace: hub.workspace } })
     },
   },
   {
     id: 'nav:artifacts',
     label: 'Artifacts',
-    meta: 'Files in this workspace',
-    act: () => {
-      hub.rail.entities = false
-      hub.rail.artifacts = true
-    },
+    /* A destination, like Skills: the page answers "which folder", the rail
+       panel answers "which file", and the palette row goes to the page. */
+    meta: 'Every folder that finished something',
+    act: () => router.push({ name: 'artifacts', params: { workspace: hub.workspace } }),
   },
   {
     id: 'nav:skills',

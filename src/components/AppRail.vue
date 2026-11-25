@@ -171,6 +171,16 @@ function onNavClick(item, event) {
     if (collapsed.value) expandRail()
     return
   }
+  /* Entities is a page now, not a shelf: the row is a link, so a click always
+     navigates — to the index from anywhere, or nowhere when it is already open.
+     Folding the rail out from under the page it just opened is not a gesture
+     anybody asked for. */
+  if (item.name === 'entities') {
+    hub.rail.entities = false
+    hub.rail.artifacts = false
+    expandRail()
+    return
+  }
   if (isActive(item)) {
     event.preventDefault()
     toggleRail()
@@ -235,8 +245,10 @@ const SECTION_TITLES = {
   workspaces: 'All workspaces',
   overview: 'Overview',
   chat: 'Chat',
+  entities: 'Entities',
   entity: 'Entities',
   artifact: 'Artifacts',
+  artifacts: 'Artifacts',
   account: 'Account',
 }
 const sectionTitle = computed(() => {

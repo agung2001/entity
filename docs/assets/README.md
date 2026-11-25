@@ -18,6 +18,11 @@ docs/assets/
     chat.webp                chat.poster.jpg
     entity.webp              entity.poster.jpg
     …
+  onboarding/
+    step-1-name.webp         stills: the webp alone
+  connectors/
+    gmail.webp               one still per connector page, beside its svg
+    gmail.svg
 ```
 
 ## The markup
@@ -130,6 +135,19 @@ through the clip:
 npm run media:encode -- recording.mov chat             # → features/chat.webp + poster
 npm run media:encode -- recording.mov readme-hero --hero  # → assets/readme-hero.webp
 ```
+
+A screenshot takes the same verb and produces a still instead, because the input is a
+PNG: no poster and no `libwebp_anim`, so `media:check` never asks for a pair it should not
+have. This is how the per-connector pages get their picture:
+
+```bash
+npm run demo -- --port 5299 --screenshot connector-gmail
+npm run media:encode -- .tmp/demo-shots/connector-gmail.png connectors/gmail
+```
+
+A connector still is captured **to the page's own height**, not to the 1440 × 1000 frame
+the README clips use: the page is the subject, so cutting the card off at the fold would
+hide the half the document explains.
 
 A clip whose middle is still moving — the hero scrolls — can name its poster frame
 instead, so the fallback is the frame you meant:
