@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import EntityMark from '@/components/EntityMark.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import UiIcon from '@/components/UiIcon.vue'
+import VoxelMark from '@/components/VoxelMark.vue'
 import { isEditable } from '@/lib/dom'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { entities, loadEntities } from '@/stores/entities'
@@ -288,14 +289,22 @@ function onRowKey(row, event) {
            30px grid, and one measure on the right that states the gap the
            roster shows below. -->
       <section class="ent-hero" aria-labelledby="entities-title">
-        <div class="ent-hero-main">
-          <p class="eyebrow">Workspace · Entities</p>
-          <h1 id="entities-title">Entities</h1>
-          <p class="ent-lede">
-            Each file in <code class="mono">{{ folder }}</code> names a harness, a model and a
-            working directory — open a name to read its instructions, its skills and its
-            machines.
-          </p>
+        <div class="ent-hero-id">
+          <!-- The page's ornament, in the slot every other index page uses: the
+               specimen sheet's voxel, drawn the way the character is — square
+               cells on an integer grid, one flat fill per light angle, no path
+               and no request. A roster has no single entity's face, so it wears
+               the object, not a mood. -->
+          <span class="ent-crest" aria-hidden="true"><VoxelMark shape="drone" /></span>
+          <div class="ent-hero-main">
+            <p class="eyebrow">Workspace · Entities</p>
+            <h1 id="entities-title">Entities</h1>
+            <p class="ent-lede">
+              Each file in <code class="mono">{{ folder }}</code> names a harness, a model and a
+              working directory — open a name to read its instructions, its skills and its
+              machines.
+            </p>
+          </div>
         </div>
 
         <div v-if="!entities.error" class="ent-meter" role="group" aria-label="Description coverage">

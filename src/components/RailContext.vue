@@ -96,7 +96,12 @@ const section = computed(() => {
   const name = String(route.name || 'overview')
   if (hub.rail.entities) return { id: 'entities', title: 'Entities', count: hub.agents.length }
   if (hub.rail.artifacts) return shelfTitle()
-  if (name === 'entity') return { id: 'entities', title: 'Entities', count: hub.agents.length }
+  /* The roster page and one entity's page both keep the entity list beside
+     them: the page is the same directory drawn wider, so the rail must not turn
+     into some other section — the machines it used to fall through to — just
+     because the route is the roster rather than a file. */
+  if (name === 'entity' || name === 'entities')
+    return { id: 'entities', title: 'Entities', count: hub.agents.length }
   /* The shelf page keeps the shelf list: it is the same shelf, drawn as works
      instead of rows, and the rail beside it must not turn into some other
      section just because the route is a page rather than a file. */
