@@ -37,7 +37,7 @@ the reason.
 | --- | --- | --- |
 | `mcp` | a server definition, bound to this workspace's `mcp.json` | `mcp.json`, `0600` |
 | `cli` | a binary on this machine with a declared self-report | the CLI's own store |
-| `rest` | a service reached over HTTP | a `mcp.json` header, or an OAuth account |
+| `rest` | a service reached over HTTP | a `mcp.json` header, an OAuth account, or a pasted API key |
 
 `kind` is what the runtime needs, not a label: an `mcp` row writes a binding, a `cli` row
 stores the `argv` and exit code that mean "usable" (`gh auth status`, nothing guessed for
@@ -49,11 +49,15 @@ that does.
 
 The catalog is the one list of what the app ships, and every surface reads it: the
 Built-in pane, the add sheet's cards and the composer's mention menu are three doors on
-one table. Entity ships nine — `gmail`, `google-drive`, `youtube`, `youtube-studio` and
-`x` account-bearing; `orca`, `youtrack` and `github` the three the composer offered
-before connectors existed (`youtrack` is an `mcp` row, the other two are `cli` rows); and
-`maka`, the MCP-backed one. Anything else a person adds is a custom row: real, working,
-and shipping no resolver — so it offers no `@` form.
+one table. Entity ships twelve — `gmail`, `google-drive`, `youtube`, `youtube-studio`,
+`x` and `habitify` account-bearing (`habitify` reads through its provider's remote MCP
+server, and signs in with a client it registers itself); `orca`, `youtrack` and `github`
+the three the composer offered before connectors existed (`youtrack` is an `mcp` row, the
+other two are `cli` rows); `maka` and `open-design`, the MCP-backed ones — `open-design`
+launches from the workspace's own `skills/` directory, so its definition travels;
+`clockify`, whose credential is one API key pasted once instead of an OAuth account, with
+its workspace id and timezone kept as workspace state beside it. Anything else a person
+adds is a custom row: real, working, and shipping no resolver — so it offers no `@` form.
 
 **Installing records a definition, never a credential.** An `mcp` entry writes a
 placeholder binding only when the workspace has none, because installing must not invent
@@ -64,6 +68,12 @@ the index and syncs; `mcp.json` stays the binding, never renamed or moved, becau
 runtime contract rather than a settings file.
 
 ## The connector page
+
+**The page is readable before the connector is installed.** Reaching it from the Built-in
+pane shows the same address with the pitch filled in — what the service gives you, the
+mention it answers, where its credential would live — and the configuration cards held
+back, because an uninstalled connector has no binding for an accounts card or a token box
+to write to. One **Install** button turns it into the installed page in place.
 
 `:workspace/connectors/:id` picks its shape from the row's `kind` — never from which route
 object matched. Each fact is stated once, in the rail: **kind**, **scope**, **binding**,
@@ -94,7 +104,10 @@ put the same secret in a synced folder N times. It is asked for once, in the car
 The accounts live in `~/.entity/oauth-accounts.json`, beside `integrations.json` — not in
 the workspace — because a credential is not a definition and must not sync. **Every read
 is reduced to seven fields**, so a page cannot render what it was not given, and the
-refresh token sits in a file no call-table entry returns: `email` and `localpart` name the
+refresh token sits in a file no call-table entry returns. `connector-tokens.json` is the
+second vault, also `0600` and atomic, for the one credential kind that never refreshes: a
+pasted API key, one per connector, of which a page learns only `{ configured, hint }` and
+the hint is the last four characters. In the account file, `email` and `localpart` name the
 row and the scope segment a mention takes; `scopes` and `missing` are what this account
 holds and what a tier asked for and the provider refused; `status` is `connected`, `needs
 sign-in`, `signing in` or `parked`; `addedAt` and `refreshedAt` are when the consent
@@ -123,7 +136,10 @@ no resolver is context-only and says so rather than promising an `@` to silence.
 | `@youtube:<account\|all>:<query>` | videos, searched as that account's grant |
 | `@youtube-studio:<account>[:<channel>]:<what> [<days>]` | the channel's own analytics, comments and traffic |
 | `@x:<account\|all>:<query>` | recent posts, retweets excluded |
+| `@habitify:[<habit>:]<date\|today\|yesterday>` | the habits a day was scheduled, and whether they were done |
 | `@maka:[<vault>:]<query>` | notes, in one vault or across every vault |
+| `@opendesign:<artifact\|file\|search>:<query>` | an artifact, one file, or a search across the design workspace |
+| `@clockify:<project\|login>:<monday\|this week>` | the hours one project or one person logged in a week |
 | `@youtrack:[<PROJECT>:]<query>` | issues, scoped to a project key or searched |
 | `@orca:<project>[:<path>]` | a project's real path, or one file inside it |
 

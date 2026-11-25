@@ -35,6 +35,13 @@ and its page links the service's site when the catalog names one — Maka is the
 at `https://maka.agungsundoro.com`. The mark is bundled (`src/assets/connectors/`),
 not fetched, so a shipped connector renders offline.
 
+`open-design` is the case where the *definition itself* belongs to the workspace: the
+server lives in the workspace's own `skills/opendesign/`, so installing it writes a
+workspace-relative launcher rather than a path to somebody's home directory, and the
+entry carries its own `timeoutMs` (a first start has to warm up, and 12 s reads as a
+broken server) and `readOnlyTools` (the reads a mention may call — `delete_file` and
+`delete_project` are never among them).
+
 **A remote chat turn gets the workspace MCP set too.** It stages entities, skills
 and artifacts, then hands the harness the same definitions a local turn would use:
 an HTTP server directly, and a loopback server through an ssh reverse tunnel opened

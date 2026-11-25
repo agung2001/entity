@@ -110,6 +110,9 @@ the chat header opens a drawer with that residue, newest first:
 | `@thread:t_abc123` | another conversation in this workspace: its title, questions and last answer, injected as context |
 | `@file:notes/brief.md` | a file under the thread's base folder, resolved to a real path |
 | `@maka:atlas:plan` | notes found through the Maka MCP server (vault, then query) |
+| `@opendesign:search:nav bar` | files found through the workspace's own design MCP server |
+| `@clockify:avery:this week` | tracked hours for one person or project, read with a pasted API key |
+| `@habitify:today` | the habits a day was scheduled, read through Habitify's remote MCP server |
 | `@youtrack:AC:login bug` | issues through the YouTrack MCP server, scoped to `project: AC` |
 | `@orca:Atlas:src/app.ts` | an absolute path inside an Orca project |
 

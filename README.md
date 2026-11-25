@@ -139,20 +139,22 @@ workspace. A thread can be pinned there, terminal included.
 <tr>
 <td width="50%" valign="middle">
 
-### Nine connectors, one roster
+### Twelve connectors, one roster
 
-Nine rows, one table. The Gmail, Drive and YouTube Studio accounts sit beside the MCP
-servers and the CLI binary this workspace already had — one row per connector, not one
-per mailbox — and each row states its kind, its scope and whether it answers: a rejected
-YouTrack token, a `gh` that is installed but not signed in, a mailbox with one of two
-accounts holding the scopes its tier asked for. An account-bearing row carries its
-accounts and a `read` → `write` → `full` tier chosen per workspace. The definition
-travels with the workspace; the tokens stay on this machine.
+Twelve rows, one table. The Gmail, Drive, YouTube Studio and Habitify accounts sit
+beside the MCP servers and the CLI binary this workspace already had — one row per
+connector, not one per mailbox — and each row states its kind, its scope and whether it
+answers: a rejected YouTrack token, a `gh` that is installed but not signed in, a
+mailbox with one of two accounts holding the scopes its tier asked for. An
+account-bearing row carries its accounts and a `read` → `write` → `full` tier chosen per
+workspace. A row's page is readable **before** you install it — the pitch, the mention
+it offers and where its credential would live, with no configuration to fill in yet. The
+definition travels with the workspace; the tokens stay on this machine.
 
 </td>
 <td width="50%" valign="middle">
 
-<a href="docs/connectors.md"><picture><source srcset="docs/assets/readme-features/connectors.webp" type="image/webp" /><img src="docs/assets/readme-features/connectors.poster.jpg" alt="The workspace Connectors roster: nine rows, one per connector, each with its kind, scope and status — a rejected YouTrack token, a GitHub CLI not signed in, a mailbox with one of its two accounts signed in — then a switch to the Built-in catalog" width="100%" /></picture></a>
+<a href="docs/connectors.md"><picture><source srcset="docs/assets/readme-features/connectors.webp" type="image/webp" /><img src="docs/assets/readme-features/connectors.poster.jpg" alt="The workspace Connectors roster: rows, one per connector, each with its kind, scope and status — a rejected YouTrack token, a GitHub CLI not signed in, a mailbox with one of its two accounts signed in — then a switch to the Built-in catalog" width="100%" /></picture></a>
 
 </td>
 </tr>
@@ -190,14 +192,15 @@ assistant gets its own calendar and bill.
 </tr>
 </table>
 
-**Also in the box:** nine shipped connectors with per-account OAuth and a
+**Also in the box:** twelve shipped connectors with per-account OAuth and a
 `read` → `write` → `full` tier per workspace · the harness inventory at **Account →
 Harnesses**, with the profile, sound and notification pages beside it · **Learning**
 with a scope you choose before it spends a run · a rebuilt composer dock and
 delegation cards that fold into a session tree behind `spawn N` / `spawn per` · an
 execution timeline per answer · a links-and-paths drawer derived from each thread ·
-`@entity`, `@thread:`, `@artifact:`, `@maka:`, `@youtrack:`, `@orca:`, `@gmail:`,
-`@drive:`, `@youtube:`, `@youtube-studio:` and `@x:` mentions resolved before the agent
+`@entity`, `@thread:`, `@artifact:`, `@maka:`, `@opendesign:`, `@youtrack:`, `@orca:`,
+`@github:`, `@gmail:`, `@drive:`, `@youtube:`, `@youtube-studio:`, `@x:`, `@clockify:`
+and `@habitify:` mentions resolved before the agent
 sees them · personal and shared artifact shelves with a two-clock archive sweep · a
 folder-per-thread base directory with `/project:` skills · a terminal beside the chat
 (``Ctrl+` ``) · voice with barge-in and read-aloud · ZIP backups on a rolling schedule ·
@@ -210,7 +213,7 @@ included · a command palette and a keyboard guide that cannot drift from the ha
 | --- | --- |
 | **Run a small content studio** | one workspace, an entity per role (brand writer, editor, researcher), shared Notion and Slack servers, skills for voice and structure — a launch campaign produced end to end |
 | **Review numbers every week** | an entity with `dir:` pointing at the finance folder and a budget skill; answers land as artifacts on the shelf with the chart inline |
-| **Keep research you can cite** | `@maka:` pulls notes from your vault, `@youtrack:` scopes issues to a project, and the links drawer collects every reference the thread touched |
+| **Keep research you can cite** | `@maka:` pulls notes from your vault, `@opendesign:` reads the workspace's design files, `@youtrack:` scopes issues to a project, and the links drawer collects every reference the thread touched |
 | **Give a coding agent a home** | one entity per repo with `dir:` and its own skill set, `@file:` mention for files, a terminal in the same folder, spend per repo in the charts |
 | **Share assistants with a team** | connect a workspace to a server, members sign in as themselves, MCP servers and skills travel with the workspace, and the guard scans everything before it is written |
 | **Keep a shelf without hoarding** | saves land personal, one click shares a file with the room, and two clocks archive then delete by last opened — while a live thread keeps the files it still names |
@@ -242,12 +245,18 @@ binary or a signed-out CLI is reported as a failed turn, not a friendly fake ans
 
 Everything a workspace can reach lives in one roster at **Workspace settings →
 Connectors**: an MCP server, a CLI binary and a REST service are three *kinds* of one
-row, and the old bulk MCP list is a permanent redirect into it. Entity ships nine —
-`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x`, plus `orca`, `youtrack`,
-`github` and `maka` — and installing one records a *definition* in the workspace's
-`connectors.json`, never a credential. An account-bearing connector gets its accounts
-from a browser consent round-trip, one refresh token per account, kept beside
-`integrations.json` in `~/.entity/` at `0600` and never returned by any read.
+row, and the old bulk MCP list is a permanent redirect into it. Entity ships twelve —
+`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x` and `habitify` account-bearing;
+`orca`, `youtrack` and `github` the three the composer offered first; `maka` and
+`open-design` the MCP-backed ones; and `clockify`, whose credential is one API key you
+paste once. Installing one records a *definition* in the workspace's `connectors.json`,
+never a credential. An account-bearing connector gets its accounts from a browser
+consent round-trip, one refresh token per account, kept beside `integrations.json` in
+`~/.entity/` at `0600` and never returned by any read — and a paste-once key lives in
+`connector-tokens.json` beside it, also `0600`, of which a page only ever learns the last
+four characters. **Every connector's page reads before you install it**: the pitch, the
+mention it answers and where its credential would live, with the configuration cards
+held back until there is a binding for them to write to.
 
 <p>
   <a href="https://mail.google.com"><kbd><img src="docs/assets/connectors/gmail.svg" alt="" width="16" valign="middle" /> Gmail · <code>@gmail:</code></kbd></a> &nbsp;
@@ -258,7 +267,10 @@ from a browser consent round-trip, one refresh token per account, kept beside
   <a href="https://www.jetbrains.com/youtrack"><kbd><img src="docs/assets/connectors/youtrack.svg" alt="" width="16" valign="middle" /> YouTrack · <code>@youtrack:</code></kbd></a> &nbsp;
   <a href="https://cli.github.com"><kbd><img src="docs/assets/connectors/github.svg" alt="" width="16" valign="middle" /> GitHub CLI · <code>@github:</code></kbd></a> &nbsp;
   <a href="https://orca.dev"><kbd><img src="docs/assets/connectors/orca.svg" alt="" width="16" valign="middle" /> Orca · <code>@orca:</code></kbd></a> &nbsp;
-  <a href="https://maka.agungsundoro.com"><kbd><img src="docs/assets/connectors/maka.svg" alt="" width="16" valign="middle" /> Maka · <code>@maka:</code></kbd></a>
+  <a href="https://maka.agungsundoro.com"><kbd><img src="docs/assets/connectors/maka.svg" alt="" width="16" valign="middle" /> Maka · <code>@maka:</code></kbd></a> &nbsp;
+  <a href="https://clockify.me"><kbd><img src="docs/assets/connectors/clockify.svg" alt="" width="16" valign="middle" /> Clockify · <code>@clockify:</code></kbd></a> &nbsp;
+  <a href="https://habitify.me"><kbd><img src="docs/assets/connectors/habitify.svg" alt="" width="16" valign="middle" /> Habitify · <code>@habitify:</code></kbd></a> &nbsp;
+  <a href="https://open-design.ai/"><kbd><img src="docs/assets/connectors/open-design.svg" alt="" width="16" valign="middle" /> Open Design · <code>@opendesign:</code></kbd></a>
 </p>
 
 **[Connectors →](docs/connectors.md)** · **[MCP servers →](docs/mcp.md)**

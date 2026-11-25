@@ -12,7 +12,7 @@ import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import { readPaste } from '@/lib/mcp-paste'
 import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
-import { connectors, loadConnectors } from '@/stores/connectors'
+import { connectors, installConnector, loadConnectors } from '@/stores/connectors'
 
 /**
  * One MCP server, as a page — the same shell as the entity detail page
@@ -46,23 +46,24 @@ const heroColor = computed(() => heroColorFor(name.value))
    an MCP server, so its page can wear the real YouTrack mark instead of a
    generic globe — the roster already knows which ids are built in, so this reads
    that answer rather than keeping a second list of brands here. */
-const brand = computed(() => {
-  const row = connectors.rows.find((entry) => entry.id === name.value)
-  return String(row?.builtIn || '')
-})
+/* The installed row, or the catalog's entry for a server this workspace has not
+   installed. Without the fallback, `:workspace/connectors/open-design` reached
+   from the Built-in pane said "no definition" about a connector the app ships —
+   the pitch was only readable after installing the thing it describes. */
+const installedRow = computed(() => connectors.rows.find((entry) => entry.id === name.value) || null)
+const catalogRow = computed(() => connectors.available.find((entry) => entry.id === name.value) || null)
+const row = computed(() => installedRow.value || catalogRow.value)
+/* Not installed, and the catalog ships it: the one fact that swaps the verbs. */
+const notInstalled = computed(() => !installedRow.value && Boolean(catalogRow.value))
+
+const brand = computed(() => String(row.value?.builtIn || ''))
 
 /* The service's own site, when the catalog names one. A shipped connector with no
    site stays quiet; a bare host is what a person needs to recognise the service. */
-const website = computed(() => {
-  const row = connectors.rows.find((entry) => entry.id === name.value)
-  return String(row?.website || '')
-})
+const website = computed(() => String(row.value?.website || ''))
 /* A built-in carries a display label (`Maka`); the route id is the slug. The page
    reads the shipped name, not the URL segment, so the heading matches the roster. */
-const title = computed(() => {
-  const row = connectors.rows.find((entry) => entry.id === name.value)
-  return String(row?.label || name.value)
-})
+const title = computed(() => String(row.value?.label || name.value))
 const websiteLabel = computed(() => {
   try {
     return new URL(website.value).host.replace(/^www\./, '')
@@ -91,10 +92,9 @@ const parkedReason = computed(() =>
    inside a home directory. The roster already knows this (`connector.list`);
    reading that answer here keeps one derivation, and keeps the page from saying
    `ready` with no hint that a remote thread will never see it. */
-const machineLocalNote = computed(() => {
-  const row = connectors.rows.find((entry) => entry.id === name.value)
-  return row?.machineLocal ? String(row.machineNote || 'it answers on this computer only') : ''
-})
+const machineLocalNote = computed(() =>
+  row.value?.machineLocal ? String(row.value.machineNote || 'it answers on this computer only') : '',
+)
 
 /* Every harness config on this machine, read once per visit. The rail lists
    what this returns and nothing else — a path or a label is never guessed. */
@@ -104,13 +104,25 @@ const globalLoading = ref(false)
    what a server the workspace does not own is drawn from. */
 const globalRow = ref(null)
 
-const definition = computed(() => poolEntry.value || globalRow.value?.definition || null)
+/* What this page is about: the pool's own binding, a harness copy on this
+   machine, or — for an entry the catalog ships and this workspace has not
+   installed — the launcher it would write. The launcher is a real field on the
+   catalog entry, so this is a shape the app declares, not a guess at one. */
+const definition = computed(() => {
+  if (poolEntry.value) return poolEntry.value
+  if (globalRow.value?.definition) return globalRow.value.definition
+  const launcher = String(row.value?.launcher || '')
+  if (!launcher) return null
+  return { command: `$HOME/.entity/workspaces/<id>/skills/${launcher}` }
+})
 const transport = computed(() => (definition.value ? transportOf(definition.value) : 'unknown'))
 const command = computed(() => (definition.value ? commandLine(definition.value) : ''))
 
 const tools = ref({ loading: false, error: '', list: [], readAt: '' })
 /* `readAt` is the server's own answer to "when", so a chip can say
    `probed 2 min ago` from the same read that produced its tool list. */
+/* The one write this page performs itself: installing an entry the app ships. */
+const busy = ref(false)
 const query = ref('')
 const searchEl = ref(null)
 const kind = ref('all')
@@ -238,6 +250,17 @@ const probedLabel = computed(() => {
 })
 
 const state = computed(() => {
+  /* Installed nowhere, but shipped: `not installed`, with the install one click
+     away. This is the state the Built-in pane's link lands in. */
+  if (!inPool.value && notInstalled.value) {
+    return {
+      id: 'available',
+      label: 'not installed',
+      note: 'the app ships it',
+      tone: 'warn',
+      why: 'This server is a definition Entity ships, and this workspace has not installed it yet. Installing writes the binding — the definition travels with the workspace, so the same address works on another machine.',
+    }
+  }
   if (!inPool.value) {
     return globalRow.value
       ? {
@@ -796,6 +819,26 @@ async function toggleEnabled() {
   }
 }
 
+/**
+ * Install the entry this page is about.
+ *
+ * No navigation: `installedRow` arrives with the answer, so the page repaints as
+ * the installed version of itself — the Attach/Detach verbs and the live tool
+ * probe become reachable without a second click.
+ */
+async function install() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    await installConnector(name.value)
+    await loadTools(true)
+  } catch (problem) {
+    tools.value = { ...tools.value, error: String(problem?.message || problem) }
+  } finally {
+    busy.value = false
+  }
+}
+
 async function remove() {
   if (!confirming.value) {
     confirming.value = true
@@ -879,7 +922,7 @@ watch(name, async () => {
       </div>
     </div>
 
-    <template v-if="definition">
+    <template v-if="definition || notInstalled">
       <section class="entp-hero" :style="{ '--hero': heroColor }">
         <PixelBackdrop variant="hero" :color="heroColor" :count="18" />
         <div class="entp-hero-inner">
@@ -1239,8 +1282,28 @@ watch(name, async () => {
 
           <p class="entp-rail-h">Manage</p>
           <div class="entp-rail-actions">
+            <!-- Nothing installed, and the app ships it: the only verb that makes
+                 sense here. It is the roster's own Install, on the page a person
+                 reached by wanting to read about it first. -->
             <button
-              v-if="!inPool"
+              v-if="notInstalled"
+              class="tall"
+              type="button"
+              :disabled="busy"
+              :aria-label="`Install ${title} into this workspace`"
+              @click="install"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <path d="M8 2.8v8M5.2 8l2.8 3.2L10.8 8M3 13.2h10" />
+              </svg>
+              <span class="row2">
+                <span class="nm">Install</span>
+                <i>the definition travels with the workspace; the credential stays on this machine</i>
+              </span>
+              <span class="hint">built in</span>
+            </button>
+            <button
+              v-else-if="!inPool"
               class="tall"
               type="button"
               :disabled="!globalRow?.definition"

@@ -57,6 +57,12 @@ flowchart LR
 - Per-harness wiring keeps the token out of `ps` — `codex` receives it as
   `ENTITY_MCP_<NAME>_TOKEN`, and the temp config that carries it is `0600` and
   removed when the process exits.
+- A connector's credentials live in two vaults on this machine, both `0600`, both
+  written atomically, and neither returned by any call: `oauth-secrets.json` holds
+  the client and one refresh token per account, and `connector-tokens.json` holds a
+  paste-once API key per connector. A page learns `{ configured, hint }` and the
+  hint is the last four characters — never the value. A key is checked against the
+  service *before* it is written, so a rejected one is never stored.
 - Chat transcripts hold model thinking and tool output. They live only in the
   workspace's thread JSON and are never sent anywhere by the hub.
 
