@@ -121,8 +121,9 @@ const navigationItems = computed(() => [
     label: 'Entities',
     meta: 'Entity directory',
     act: () => {
-      hub.rail.entities = true
+      hub.rail.entities = false
       hub.rail.artifacts = false
+      router.push({ name: 'entities', params: { workspace: hub.workspace } })
     },
   },
   {

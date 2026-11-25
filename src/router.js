@@ -11,6 +11,7 @@ const WelcomeView = () => import('@/views/WelcomeView.vue')
 const HubLayout = () => import('@/layouts/HubLayout.vue')
 const OverviewView = () => import('@/views/OverviewView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
+const EntitiesView = () => import('@/views/EntitiesView.vue')
 const EntityDetailView = () => import('@/views/EntityDetailView.vue')
 const SkillsView = () => import('@/views/SkillsView.vue')
 const SkillDetailView = () => import('@/views/SkillDetailView.vue')
@@ -163,6 +164,15 @@ const router = createRouter({
           name: 'chat',
           component: ChatView,
           meta: { crumb: 'chat', title: 'Chat · entity' },
+        },
+        {
+          /* The index is a sibling **above** the detail route: `:name` would
+             otherwise swallow the bare path and send `entities` to a page
+             looking for an entity called nothing. */
+          path: ':workspace/entities',
+          name: 'entities',
+          component: EntitiesView,
+          meta: { crumb: 'entities', title: 'Entities · entity' },
         },
         {
           path: ':workspace/entities/:name',

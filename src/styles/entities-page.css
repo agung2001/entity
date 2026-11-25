@@ -1,0 +1,922 @@
+/* ── the entities index ───────────────────────────────────────────────────
+   The roster the 236 px rail panel could not be. It is one band under the
+   page's bar: a cabinet that states what the folder holds, a facts strip, one
+   search field with the state segments beside it, and a bounded table.
+
+   Everything is a token, because a roster is the surface that gets read in both
+   themes most often. Breakpoints are container queries on the band, not window
+   media queries: the rail takes 236 px and the workspace tabs take a nested
+   rail, so the column — not the window — is what runs out of room. */
+
+.ent-band {
+  container-type: inline-size;
+  container-name: entpage;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A bare chevron, because the crumb beside it already says where the arrow
+   goes. `directory.css` already sizes `.entp-bar .back` for a 12px glyph; the
+   page only needs to keep it from taking the 9px of right padding that a
+   labelled back button wants. */
+.view.detail-view > .entp-bar .back {
+  padding: 0;
+  justify-content: center;
+  width: 30px;
+}
+.entp-crumb .crumb-n {
+  margin-left: 3px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--muted);
+}
+
+/* A 30 px chevron is a desktop target. On a phone the bar is a **sibling** of
+   `.ent-band`, not inside it, so no container query can reach it: this is the
+   one rule on the page that has to answer to the window. */
+@media (max-width: 700px) {
+  .view.detail-view > .entp-bar .back {
+    width: 44px;
+    height: 44px;
+    margin-left: -10px;
+  }
+  /* A 32 px `.btn-sm` is the desktop density; a thumb needs the same 44 the
+     back chevron just took. Page-scoped, so `.btn` itself keeps its height. */
+  .view.detail-view > .entp-bar .entp-actions .btn {
+    height: 44px;
+  }
+}
+
+/* `directory.css:1591` hides the bar's first verb below 760 px — right on the
+   entity page, whose first verb repeats *Open chat* a few pixels below. Here it
+   is **Reload**, and a hidden reload is a page that cannot recover from a stale
+   read. */
+.view.detail-view > .entp-bar .entp-actions .btn:first-child {
+  display: inline-flex;
+}
+
+/* ── the cabinet ────────────────────────────────────────────────────────
+   The skills page's material (`.sk-hero`): accent paper, a 30 px grid at 16%,
+   one measure on the right. The hero colour is the workspace accent — a roster
+   has no character of its own to dress in. */
+.ent-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  gap: 26px;
+  align-items: stretch;
+  padding: 22px 24px;
+  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--border));
+  border-radius: var(--r-lg);
+  color: var(--ink);
+  background:
+    radial-gradient(72% 95% at 10% 0%, color-mix(in oklab, var(--accent) 26%, var(--bg)), transparent 62%),
+    radial-gradient(48% 80% at 96% 100%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 70%),
+    linear-gradient(120deg, var(--bg), color-mix(in oklab, var(--accent) 9%, var(--bg)) 54%, var(--bg));
+  box-shadow:
+    0 18px 50px color-mix(in oklab, var(--accent) 12%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--bg) 70%, transparent);
+}
+.ent-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--accent) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--accent) 28%, transparent) 1px, transparent 1px);
+  background-size: 30px 30px;
+  opacity: 0.16;
+}
+.ent-hero-main {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ent-hero .eyebrow {
+  margin: 0 0 10px;
+  color: color-mix(in oklab, var(--accent) 30%, var(--ink-2));
+}
+.ent-hero h1 {
+  margin: 0 0 10px;
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.038em;
+  line-height: 1;
+}
+.ent-lede {
+  max-width: 62ch;
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.ent-lede code {
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--bg) 66%, transparent);
+  font-size: var(--fs-meta);
+}
+
+/* ── the coverage meter ────────────────────────────────────────────────
+   One number, stated three ways: the tile, the ratio, and the sentence a person
+   acts on. `.sk-meter`'s recipe, with a taller track — twelve files, not a
+   percentage, so the stripes are readable segments. */
+.ent-meter {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 300px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 32%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--bg) 62%, transparent);
+}
+.ent-meter-lv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 48px;
+  min-height: 62px;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--accent) 10%, var(--bg));
+  font-family: var(--mono);
+}
+.ent-meter-lv span {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.ent-meter-lv b {
+  margin-top: 2px;
+  font-size: var(--fs-h3);
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in oklab, var(--accent) 42%, var(--ink));
+  font-variant-numeric: tabular-nums;
+}
+.ent-meter-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ent-meter-head,
+.ent-meter-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ent-meter-head b {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ent-meter-foot {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.ent-meter-track {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--surface-2) 68%, var(--bg));
+}
+.ent-meter-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 60%, var(--bg)), var(--accent));
+  transition: width 450ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ent-meter-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 7px,
+    color-mix(in oklab, var(--bg) 58%, transparent) 7px 9px
+  );
+}
+
+/* ── the facts strip ───────────────────────────────────────────────────
+   The machines page's grammar: a key, a value, never a sentence. */
+.ent-strip {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 18px 22px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.ent-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px 18px;
+  flex: 1 1 620px;
+  margin: 0;
+}
+.ent-facts > div {
+  min-width: 0;
+}
+.ent-facts dt {
+  margin: 0 0 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ent-facts dd {
+  margin: 0;
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ent-facts dd.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+.ent-facts dd b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the toolbar ───────────────────────────────────────────────────────── */
+.ent-tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 20px 0 0;
+}
+.ent-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  transition:
+    border-color 130ms ease-out,
+    box-shadow 130ms ease-out;
+}
+.ent-search svg {
+  width: 14px;
+  height: 14px;
+  margin: 0 8px 0 10px;
+  flex: none;
+  color: var(--muted);
+}
+.ent-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  outline: none;
+}
+.ent-search input::placeholder {
+  color: var(--muted);
+}
+.ent-search:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.ent-search .search-kbd {
+  margin-right: 8px;
+}
+.ent-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.ent-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ent-seg button b {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ent-seg button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.ent-seg button[aria-pressed='true'] {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.ent-seg button[aria-pressed='true'] b {
+  color: var(--ink);
+}
+.ent-seg button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.ent-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the roster ────────────────────────────────────────────────────────
+   A table, bounded, sticky head, 58 px rows. One custom property carries the
+   track list so a container tier rewrites the columns in one place. */
+.ent-table {
+  --cols: minmax(0, 1fr) 168px 152px 150px 118px 44px;
+
+  max-height: min(62vh, 620px);
+  margin: 14px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.ent-table .row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+  column-gap: 14px;
+  padding: 9px 14px;
+  min-height: 58px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  transition: background-color 130ms ease-out;
+}
+.ent-table > .row:first-child {
+  border-top: 0;
+}
+.ent-table .row.head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 0;
+  padding: 7px 14px;
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ent-table .row.head > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ent-table .row:not(.head):hover {
+  background: var(--surface);
+}
+.ent-table .row:not(.head):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* the six cells */
+.ent-id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ent-mk {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+.ent-idt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ent-idt b {
+  font-weight: 600;
+  font-size: var(--fs-small);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the name is the link, the row is not — DESIGN.md */
+.ent-nm {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  border-radius: var(--r-2xs);
+}
+.ent-nm:hover {
+  border-bottom-color: var(--border-strong);
+}
+.ent-nm:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.ent-desc {
+  display: block;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-secondary);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ent-desc--none {
+  font-style: italic;
+}
+/* a row that cannot resolve says so on its own line, not in a toast */
+.ent-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ent-flag::before {
+  content: '!';
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 700;
+}
+.ent-rt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.ent-rt .chipm {
+  margin-right: 0;
+}
+.ent-mdl {
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ent-th {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ent-thn {
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.ent-thn b {
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ent-thn--l {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ent-xp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ent-lvl {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.ent-lvl b {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ent-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 34px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--muted) 20%, var(--surface));
+}
+.ent-track i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+.ent-st {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ent-seen {
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ent-acts {
+  display: flex;
+  justify-content: flex-end;
+}
+.ent-row-act {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ent-row-act svg {
+  width: 14px;
+  height: 14px;
+}
+.ent-row-act:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.ent-row-act:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* ── the three states that replace the rows, never the page ─────────────
+   The hero, the folder and the search stay put, so a person keeps their place. */
+.ent-table .ent-skel {
+  display: block;
+  background: var(--skel);
+  border-radius: var(--r-2xs);
+  animation: ent-page-pulse 1.3s ease-in-out infinite;
+}
+.ent-skel--mark {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+}
+.ent-skel--nm {
+  width: 58%;
+  height: 9px;
+}
+.ent-skel--line {
+  width: 78%;
+  height: 8px;
+}
+.ent-skel--chip {
+  width: 46px;
+  height: 9px;
+}
+@keyframes ent-page-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.ent-band .empty-note {
+  margin: 14px 0 0;
+}
+.ent-band .empty-note code {
+  font-size: var(--fs-meta);
+}
+.ent-band .empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ent-ribbon {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--border));
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+}
+.ent-ribbon-b {
+  flex: 1;
+  min-width: 0;
+}
+.ent-ribbon b {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+.ent-ribbon p {
+  margin: 2px 0 0;
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+
+/* ── night: the same cabinet, one layer down ───────────────────────────
+   The light cabinet is built from tokens, so night only deepens the grid and
+   drops the paper shadow — no colour is written twice. */
+:root[data-theme='dark'] .ent-hero {
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+:root[data-theme='dark'] .ent-hero::before {
+  opacity: 0.12;
+}
+
+/* ── the tiers, on the band's own width ────────────────────────────────── */
+@container entpage (max-width: 1000px) {
+  .ent-table {
+    --cols: minmax(0, 1fr) 140px 132px 118px 104px 40px;
+  }
+  .ent-hero {
+    gap: 20px;
+  }
+  .ent-meter {
+    width: 250px;
+  }
+}
+@container entpage (max-width: 880px) {
+  .ent-hero {
+    flex-direction: column;
+    gap: 18px;
+  }
+  .ent-meter {
+    width: 100%;
+  }
+  /* The level track is the column that leaves first: it is a nicety, while the
+     state is the reason a person scans the list. The cells re-map by hand,
+     because a grid with a hidden column would otherwise leave the hole. */
+  .ent-table {
+    --cols: minmax(0, 1fr) 132px 118px 110px 40px;
+  }
+  .ent-xp {
+    display: none;
+  }
+  .ent-st {
+    grid-column: 4;
+  }
+  .ent-acts {
+    grid-column: 5;
+  }
+  .ent-table .row.head > :nth-child(4) {
+    display: none;
+  }
+}
+@container entpage (max-width: 700px) {
+  .ent-band {
+    margin-top: 14px;
+  }
+  .ent-hero {
+    padding: 18px 16px;
+  }
+  .ent-hero h1 {
+    font-size: var(--fs-h2);
+  }
+  .ent-tool {
+    gap: 8px;
+  }
+  /* a thumb needs 44 px, and the field goes the band's full width */
+  .ent-search {
+    flex: 1 1 100%;
+    height: 44px;
+  }
+  .ent-seg {
+    flex: 1 1 100%;
+    overflow-x: auto;
+  }
+  .ent-seg button {
+    flex: 1 1 0;
+    justify-content: center;
+    height: 44px;
+    font-size: var(--fs-secondary);
+  }
+  .ent-count {
+    flex: 1 1 100%;
+    margin-left: 0;
+    text-align: right;
+  }
+  /* The table becomes cards: two tracks, four stacked rows, the head gone. The
+     name keeps the link and a stretched pseudo-element makes the card the tap
+     target, while the chevron sits above it. */
+  .ent-table {
+    max-height: none;
+    overflow: visible;
+  }
+  .ent-table .row.head {
+    display: none;
+  }
+  .ent-table .row {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 6px;
+    padding: 11px 12px;
+  }
+  /* The card is the tap target, but the name is still the only link: a stretched
+     pseudo-element on it means a thumb anywhere on the card opens the entity
+     without the row becoming an anchor. The chevron sits above it. */
+  .ent-nm::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+  .ent-id {
+    grid-column: 1;
+    grid-row: 1;
+    align-items: flex-start;
+    gap: 9px;
+  }
+  .ent-mk {
+    width: 34px;
+    height: 34px;
+  }
+  .ent-idt b {
+    font-size: var(--fs-body);
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  .ent-desc {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    text-overflow: clip;
+    overflow: hidden;
+  }
+  .ent-rt,
+  .ent-th,
+  .ent-st {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .ent-rt {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .ent-th {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .ent-st {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    justify-content: space-between;
+  }
+  .ent-seen {
+    margin-top: 0;
+  }
+  .ent-acts {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    position: relative;
+    z-index: 1;
+  }
+  .ent-row-act {
+    width: 44px;
+    height: 44px;
+    margin: -6px -6px 0 0;
+  }
+  .ent-flag {
+    white-space: normal;
+  }
+  /* a 5 px dot disappears at arm's length; the word still carries the meaning.
+     The mockup's `font-size: var(--fs-micro)` is already the base `.state` step,
+     so this tier only needs the dot. */
+  .ent-st .state i {
+    width: 6px;
+    height: 6px;
+  }
+  .ent-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container entpage (max-width: 420px) {
+  .ent-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ent-meter-lv {
+    width: 44px;
+    min-height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ent-table .ent-skel {
+    animation: none;
+  }
+  .ent-table .row,
+  .ent-search,
+  .ent-meter-track i {
+    transition: none;
+  }
+}

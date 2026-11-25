@@ -179,9 +179,7 @@ const toChat = (query) => {
 const openThread = (id) => toChat({ thread: id })
 const openChat = () => toChat()
 const newThread = () => toChat({ new: '1' })
-const openEntities = () => {
-  hub.rail.entities = true
-}
+const openEntities = () => router.push({ name: 'entities', params: { workspace: hub.workspace } })
 /* The create dialog belongs to the rail's entity panel and its `openCreate()`
    is not reachable from a page, so this opens that panel and presses its own
    Add control. One dialog, one owner — the page never copies it. */
