@@ -681,13 +681,29 @@
   flex: 1;
   min-height: 0;
   height: auto;
+  display: flex;
+  flex-direction: column;
+}
+/* The document is the column, not a box in it: the rich-text host takes the
+   height the artifact page gives the editor and scrolls its own text. */
+.artifact-scroll--document .md-rich {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.artifact-scroll--document .md-richtext {
+  flex: 1;
+  min-height: 0;
   padding: 16px 18px;
-  resize: none;
+  overflow: auto;
+}
+.artifact-scroll--document .md-richtext .ProseMirror {
+  flex: 1;
+  min-height: 0;
 }
 .artifact-scroll--document .md-preview {
   flex: 1;
   min-height: 0;
-  max-height: none;
   padding: 18px 22px;
   overflow: auto;
 }

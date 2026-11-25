@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppRail from '@/components/AppRail.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
 import ShortcutsDialog from '@/components/ShortcutsDialog.vue'
+import PageFind from '@/components/PageFind.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import WorkspaceWizard from '@/components/WorkspaceWizard.vue'
 import { closeWizard, hub, toast } from '@/stores/hub'
@@ -240,6 +241,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
       <WorkspaceWizard v-if="hub.wizard.open" mode="modal" :open="hub.wizard.open" @created="onCreated" @close="closeWizard" />
     </div>
     <CommandPalette />
+    <!-- The app's find: one bar for the whole page, the document included. -->
+    <PageFind />
     <ToastHost />
   </div>
 </template>

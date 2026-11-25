@@ -1151,13 +1151,51 @@ the chat header recipe rather than a floating rounded card.
   three text lines and is taller than 56px, so the view measures its **border
   box** into `--abar-h`; the scroll and the media stage reserve that, never a
   hard-coded number.
-- A **Markdown** artifact opens in `MarkdownEditor` (Write / Review, word count,
-  formatting tools) as the surface itself: `.artifact-scroll--editor` removes
-  the side gutters, the frame and the bottom padding, and the editor flexes to
-  the full width and height under the bar. A short document must not leave a
-  white strip below the textarea. Save writes back to the same id through
-  `artifact.writeText` — `saveText` allocates a new name and is only for derived
-  exports. `save` is in the shortcut catalog.
+- A **Markdown** artifact opens in `MarkdownEditor` (Write / Review, word count)
+  as the surface itself: `.artifact-scroll--editor` removes the side gutters, the
+  frame and the bottom padding, and the editor flexes to the full width and
+  height under the bar. A short document must not leave a white strip below the
+  editor. Save writes back to the same id through `artifact.writeText` —
+  `saveText` allocates a new name and is only for derived exports. `save` is in
+  the shortcut catalog.
+- **The Write surface is a Tiptap editor over the same Markdown the file holds**
+  (`MarkdownEditor` shell, lazy `MarkdownRichText`). The artifact document and
+  the entity Instructions field mount the same shell, so both get the same
+  document, the same find and the same formatting. `Review` is still the renderer
+  this app already had, and the two read one string, so they cannot disagree.
+  The roundtrip is `@tiptap/markdown` in both directions — `contentType:
+  'markdown'` in, `getMarkdown()` out — never an HTML detour and never a
+  hand-written serialiser. The editor is the heavy chunk (Tiptap + ProseMirror);
+  the shell that draws the bar and the find UI is a few kB, so a page that only
+  reviews a document never downloads an editor.
+- **Formatting is a pill over the selection, not a permanent tool strip.** The
+  shape is Multica's issue editor: `md-pill` teleported to `body`, drawn at the
+  selection's own coordinates (flipped above the range near the bottom edge),
+  carrying bold / italic / strike / inline code / link, a separator, then the
+  heading cycle, bullet list and quote. Link swaps the pill for one address
+  field rather than inserting a placeholder to hunt down. It appears when a range
+  is picked and goes when it collapses, because a bar that is always there costs
+  the document a row and acts on a caret it is not describing. The prose tier
+  follows the same benchmark: a 14.5px body at 1.625 leading over 10px paragraph
+  spacing and 20px of list indent, so Write and Review are one measure and the
+  text does not shift sideways when the tab changes.
+- **Find is the page's, not the editor's.** `PageFind` is the app's counterpart
+  of a browser's find bar: one field, mounted once in `HubLayout`, that walks
+  every text node on screen. The Markdown document is searched with everything
+  else, because by the time you search it, what you wrote is ordinary text in the
+  DOM — so an entity's Instructions and an artifact's prose need no find of their
+  own, and no surface may grow one. `find` in the shortcut catalog opens it,
+  Escape closes it through `useDialogDismiss`, Enter and Shift+Enter step, and
+  the bar reports `3 / 17` or `no matches` with `aria-live="polite"`. It skips
+  itself (`[data-find-skip]`) and anything `aria-hidden`, so the field cannot
+  match its own placeholder.
+- **The highlight is the Custom Highlight API, never a wrapper element.** Painting
+  a match by wrapping it in a `<mark>` would rewrite the nodes ProseMirror
+  derives its document from — the next `setContent` would have to explain a
+  `<mark>` it never wrote. `::highlight(page-find)` and
+  `::highlight(page-find-on)` in `page-find.css` paint the ranges instead, so
+  finding text inside the editor is the same operation as finding it anywhere
+  else.
 - Other text artifacts keep a plain scrollable preview; PDFs keep the iframe;
   binaries keep Download. Editing is not offered where it would corrupt the
   file.

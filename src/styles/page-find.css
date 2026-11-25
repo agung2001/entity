@@ -1,0 +1,80 @@
+/* ── find in the page ──────────────────────────────────────────────────
+   The app's counterpart of the browser's find bar: one field for the whole
+   screen, the Markdown document included, because what you wrote there is text
+   on the page by the time you search it.
+
+   It floats where a browser's bar does — top right, over the content — so the
+   page does not reflow underneath it while you are reading what it found. */
+
+.pagefind {
+  position: fixed;
+  top: 10px;
+  right: 14px;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--ink) 14%, transparent), 0 0 0 1px color-mix(in oklab, var(--ink) 4%, transparent);
+}
+.pagefind > svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--muted);
+}
+.pagefind-input {
+  width: 210px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  outline: none;
+}
+.pagefind-input:focus {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.pagefind-count {
+  min-width: 62px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--accent-ink);
+  text-align: right;
+}
+.pagefind button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+.pagefind button:hover {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* The paint. The Custom Highlight API styles ranges without wrapping them in
+   elements, which is the only way to highlight text inside an editor that
+   re-derives its document from the DOM. Every hit is one accent tint, and the
+   hit you are on is the same tint at full strength. */
+::highlight(page-find) {
+  background-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+::highlight(page-find-on) {
+  background-color: color-mix(in oklab, var(--accent) 92%, transparent);
+  color: var(--ink);
+}

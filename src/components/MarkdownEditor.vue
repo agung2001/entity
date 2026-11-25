@@ -1,10 +1,20 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { loadProse, proseReady, renderProse } from '@/lib/prose'
 
 /**
- * A small Markdown editor and reviewer: toolbar in write mode, rendered
- * document in preview mode. The preview is sanitized before it reaches the DOM.
+ * The Markdown surface. `Write` is a rich-text editor over the same Markdown the
+ * file holds; `Review` is the renderer this app already had. Both read one
+ * string, so the two cannot disagree.
+ *
+ * The editor itself is the lazy chunk: a page that only reviews a document never
+ * downloads Tiptap, which is why this shell is cheap and `MarkdownRichText` is
+ * not.
+ *
+ * This surface has no find of its own. What you type is on the page as text, so
+ * `PageFind` — the app's one find, the counterpart of the browser's — searches
+ * it along with the rest of the screen, and highlighting never has to rewrite a
+ * node the editor owns.
  */
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -14,8 +24,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
+const RichText = defineAsyncComponent(() => import('@/components/MarkdownRichText.vue'))
+
 const mode = ref('write')
-const area = ref(null)
 
 const preview = computed(() => {
   /* reading the flag re-runs this the moment the parser chunk lands */
@@ -28,44 +39,16 @@ const words = computed(() => {
   return text ? text.split(/\s+/).length : 0
 })
 
-onMounted(() => loadProse().catch(() => {}))
+/* `rows` is a floor rather than a frame: the document flows with the page. */
+const floor = computed(() => `${Math.round(props.rows * 22)}px`)
 
+/* Review unmounts the editor, so the document is written before it is reviewed:
+   a tab switch must not lose what the editor has not published yet. */
 function update(value) {
   emit('update:modelValue', value)
 }
 
-function replaceSelection(before, after = '', fallback = 'text') {
-  if (props.disabled) return
-  const el = area.value
-  if (!el) return
-  const start = el.selectionStart ?? 0
-  const end = el.selectionEnd ?? 0
-  const selected = props.modelValue.slice(start, end) || fallback
-  const next = `${props.modelValue.slice(0, start)}${before}${selected}${after}${props.modelValue.slice(end)}`
-  update(next)
-  nextTick(() => {
-    el.focus()
-    el.setSelectionRange(start + before.length, start + before.length + selected.length)
-  })
-}
-
-function prefixLine(prefix) {
-  if (props.disabled) return
-  const el = area.value
-  if (!el) return
-  const start = el.selectionStart ?? 0
-  const lineStart = props.modelValue.lastIndexOf('\n', Math.max(0, start - 1)) + 1
-  const next = `${props.modelValue.slice(0, lineStart)}${prefix}${props.modelValue.slice(lineStart)}`
-  update(next)
-  nextTick(() => {
-    el.focus()
-    el.setSelectionRange(start + prefix.length, start + prefix.length)
-  })
-}
-
-function link() {
-  replaceSelection('[', '](https://)', 'link text')
-}
+onMounted(() => loadProse().catch(() => {}))
 </script>
 
 <template>
@@ -89,28 +72,18 @@ function link() {
           Review
         </button>
       </div>
-      <div v-if="mode === 'write'" class="md-tools" role="toolbar" aria-label="Markdown formatting">
-        <button type="button" title="Heading" aria-label="Heading" :disabled="disabled" @click="prefixLine('## ')">H</button>
-        <button type="button" title="Bold" aria-label="Bold" :disabled="disabled" @click="replaceSelection('**', '**', 'bold')"><b>B</b></button>
-        <button type="button" title="Italic" aria-label="Italic" :disabled="disabled" @click="replaceSelection('_', '_', 'italic')"><i>I</i></button>
-        <button type="button" title="Inline code" aria-label="Inline code" :disabled="disabled" @click="replaceSelection('`', '`', 'code')"><span class="mono">`</span></button>
-        <button type="button" title="Link" aria-label="Link" :disabled="disabled" @click="link">↗</button>
-        <button type="button" title="List" aria-label="List" :disabled="disabled" @click="prefixLine('- ')">•</button>
-      </div>
-      <span class="md-count">{{ words }} words</span>
+      <span class="md-words">{{ words }} words</span>
     </div>
 
-    <textarea
-      v-if="mode === 'write'"
-      ref="area"
-      class="md-input mono"
-      :value="modelValue"
-      :rows="rows"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      spellcheck="false"
-      @input="update($event.target.value)"
-    ></textarea>
+    <div v-if="mode === 'write'" class="md-input">
+      <RichText
+        :model-value="modelValue"
+        :disabled="disabled"
+        :placeholder="placeholder"
+        :floor="floor"
+        @update:model-value="update"
+      />
+    </div>
     <div v-else class="md-preview" v-html="preview"></div>
   </div>
 </template>
