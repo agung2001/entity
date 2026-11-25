@@ -237,6 +237,7 @@ const SECTION_TITLES = {
   chat: 'Chat',
   entity: 'Entities',
   artifact: 'Artifacts',
+  artifacts: 'Artifacts',
   account: 'Account',
 }
 const sectionTitle = computed(() => {

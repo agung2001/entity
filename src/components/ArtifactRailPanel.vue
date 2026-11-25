@@ -130,6 +130,20 @@ function open(item) {
   router.push({ name: 'artifact', params: { workspace: hub.workspace, id: item.id } })
 }
 
+/** The shelf has a page of its own — works, not rows — and the panel is where a
+    person finds out it exists. The count is the shelf you are looking at. */
+function openShelf() {
+  hub.rail.artifacts = false
+  const query = artifacts.scope === 'shared' ? { shelf: 'shared' } : {}
+  router.push({ name: 'artifacts', params: { workspace: hub.workspace }, query })
+}
+
+const shelfCount = computed(() =>
+  artifacts.scope === 'shared' ? counts.value.shared : counts.value.personal,
+)
+
+const onShelfPage = computed(() => route.name === 'artifacts')
+
 const filtersActive = computed(() => ext.value !== 'all' || sort.value !== 'newest')
 
 defineExpose({ pickUpload })
@@ -274,6 +288,24 @@ defineExpose({ pickUpload })
     </div>
 
     <p v-else class="rail-t2-empty">{{ emptyCopy }}</p>
+
+    <!-- The way out of a 236 px panel: the same shelf, drawn as the folders that
+         finished something. Present in every state, because it is navigation and
+         not a result — and absent on the page it leads to. -->
+    <button
+      v-if="!onShelfPage"
+      class="rail-t2-row rail-artifact-all"
+      type="button"
+      :title="groupHead"
+      @click="openShelf"
+    >
+      <span class="rail-t2-ic" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 4.5A1.5 1.5 0 013.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0114 6v6a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12V4.5z" />
+        </svg>
+      </span>
+      <span class="t"><b>All artifacts · {{ shelfCount }}</b></span>
+    </button>
 
     <p v-if="scopeNote && !failed && !artifacts.loading" class="rail-t2-note">{{ scopeNote }}</p>
   </div>
