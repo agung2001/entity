@@ -250,17 +250,23 @@ function toggleReferenced() {
   patch({ protectReferenced: !settings.value?.protectReferenced }, 'referenced')
 }
 
-/** The shelf is the rail's own panel, not a page: this opens it where it lives. */
+/** The shelf is a page of its own now (`/w/:workspace/artifacts`): the works,
+    their covers and the loose files. The rail panel is still the file list. */
 function openShelf() {
   hub.rail.entities = false
-  hub.rail.artifacts = true
+  hub.rail.artifacts = false
+  router.push({
+    name: 'artifacts',
+    params: { workspace: hub.workspace },
+    query: shelf.value === 'shared' ? { shelf: 'shared' } : {},
+  })
 }
 
-/* The rail already has a scope switch, so "open my shelf" is the same panel with
-   the personal scope selected — one shelf on one panel, not a second one. */
+/* The page carries the same scope switch as the rail, so "open my shelf" is the
+   page with the personal shelf selected — one shelf, one address. */
 function openPersonalShelf() {
   artifacts.scope = 'personal'
-  openShelf()
+  router.push({ name: 'artifacts', params: { workspace: hub.workspace } })
 }
 
 /* ── erase all ─────────────────────────────────────────────────────── */

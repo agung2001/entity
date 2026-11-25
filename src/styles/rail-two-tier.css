@@ -660,6 +660,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A section title that has a page behind it reads as a link — the shelf's head
+   says "Artifacts" and clicking it opens the page — while keeping the h2 as the
+   heading, so the bar's type never moves. */
+.rail-t2-title {
+  all: unset;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: var(--r-2xs);
+  cursor: pointer;
+}
+.rail-t2-title:hover {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rail-t2-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .rail-t2-count {
   flex: none;
   font-family: var(--mono);
@@ -1243,6 +1265,15 @@
 .rail-artifact-panel {
   flex: 1;
   min-height: 0;
+}
+/* The artifact panel's last row leaves the panel: the shelf is a page now, and a
+   door in a fixed 236 px column is the only place to say so. */
+.rail-artifact-all {
+  flex: none;
+  color: var(--ink-2);
+}
+.rail-artifact-all b {
+  color: var(--ink-2);
 }
 .rail-panel-tools {
   display: flex;

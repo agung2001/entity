@@ -1,0 +1,1345 @@
+/* ── artifacts index — the shelf, drawn as works ────────────────────────────
+   This page is the entity roster's shell one population over (`skill.css` is the
+   same shell for skills, `backdrops.css` holds the original recipe): a sticky
+   bar, an accent hero with a meter in its right column, a facts strip, a toolbar
+   and a bounded table. It gets its own prefix because the two pages move
+   independently.
+
+   Every breakpoint for the column is a container query on `.ash-band`, never a
+   window media query: the rail takes its width and the workspace tabs take
+   theirs, so the column — not the window — is what runs out of room. Tiers are
+   1000 / 880 / 700 / 420. The one exception is the bar, which is not in the
+   column (see the shell block below) and tiers on the window's 820.
+
+   Tokens only. The single dark block at the bottom is the whole night state. */
+
+/* ── the shell: one bar geometry for the whole app ──────────────────────────
+   A page's own top bar is the page's top edge, and it is **not** part of the
+   reading measure: `.entp-bar` on the entity page is 56 px, pads
+   `0 var(--view-pad)`, spans the whole content area and sticks as glass, and
+   every page that has one uses that geometry. So the view stops paying the
+   gutter and the column below pays it instead — the same split `.detail-view`
+   makes. A bar inside the 1180 px measure is a bar whose hairline stops 60 px
+   short of the window and whose crumb sits right of the one above it. */
+.view.ash-page {
+  max-width: none;
+  width: 100%;
+  padding: 0 0 80px;
+}
+
+/* the bar: back · crumb · the page's one filled button */
+.ash-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 56px;
+  padding: 0 var(--view-pad);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  /* the thread header's material, so the two bars read as the same surface */
+  background: color-mix(in oklab, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  backdrop-filter: blur(16px) saturate(1.8);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 30%, transparent);
+}
+
+/* the reading measure: inset by the gutter the bar pads with, and centred */
+.ash-band {
+  container-type: inline-size;
+  container-name: ashelf;
+  display: flex;
+  flex-direction: column;
+  width: min(100% - (2 * var(--view-pad)), 1180px);
+  margin: 20px auto 0;
+}
+.ash-back {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -6px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.ash-back svg {
+  width: 15px;
+  height: 15px;
+}
+.ash-back:hover {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+.ash-back:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+/* The second-row crumb is one object across the app: `.entp-bar`'s and
+   `.ovc-bar`'s are both mono micro uppercase, so this is too — a bar that
+   changes its breadcrumb's type on every page is three bars, not one. */
+.ash-crumb {
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-crumb-n {
+  margin-left: 2px;
+  color: var(--ink-2);
+}
+.ash-spacer {
+  flex: 1;
+}
+.ash-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ── the hero: warm paper, the accent grid, one measure in the aside ───────── */
+.ash-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 22px 24px;
+  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--border));
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 140% at 88% -20%, color-mix(in oklab, var(--accent) 20%, transparent), transparent 62%),
+    radial-gradient(90% 120% at 8% 120%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 58%),
+    linear-gradient(120deg, #fffdf8, #fff8ec 54%, #fffdf9);
+  color: var(--ink);
+  box-shadow:
+    0 18px 50px color-mix(in oklab, var(--accent) 10%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 70%, transparent);
+}
+.ash-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--accent) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--accent) 28%, transparent) 1px, transparent 1px);
+  background-size: 30px 30px;
+  opacity: 0.16;
+}
+.ash-hero-in {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 26px;
+  align-items: stretch;
+}
+.ash-hero .eyebrow {
+  color: color-mix(in oklab, var(--accent) 30%, var(--ink-2));
+}
+.ash-hero-id {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+/* The page's ornament: the specimen sheet's station, drawn on the mark's own
+   9 × 9 grid. The tile behind it follows the paper, the voxels keep the ink. */
+.ash-crest {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid color-mix(in oklab, var(--mk) 26%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--mk) 7%, #fff);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 70%, transparent);
+}
+.ash-crest .vx {
+  width: 36px;
+  height: 36px;
+}
+.ash-hero-text {
+  min-width: 0;
+}
+.ash-h1 {
+  margin: 0 0 10px;
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.038em;
+  line-height: 1;
+  color: var(--ink);
+}
+.ash-lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+/* the aside: how many works can actually show a picture */
+.ash-meter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  width: 300px;
+  padding: 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 32%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, #fff 62%, transparent);
+}
+.ash-lv {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-height: 62px;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, #fff 55%, transparent);
+  font-family: var(--mono);
+}
+.ash-lv span {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.ash-lv b {
+  margin-top: 2px;
+  font-size: var(--fs-h3);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ash-meter-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ash-meter-head,
+.ash-meter-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ash-meter-head b {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.ash-meter-foot {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.ash-track {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--muted) 12%, var(--surface));
+}
+.ash-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 60%, #fff), var(--accent));
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ash-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 7px, color-mix(in oklab, var(--ink) 22%, transparent) 7px 9px);
+}
+
+/* ── the facts strip: six key/value cells, never a sentence ───────────────── */
+.ash-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px 18px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.ash-strip > div {
+  min-width: 0;
+}
+.ash-strip dt {
+  margin: 0 0 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ash-strip dd {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-strip dd b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.ash-mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+
+/* ── the toolbar: search · shelf · count ─────────────────────────────────── */
+.ash-tool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 0;
+}
+.ash-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  transition: border-color 0.13s ease-out, box-shadow 0.13s ease-out;
+}
+.ash-search svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0 8px 0 10px;
+  color: var(--muted);
+}
+.ash-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  outline: none;
+}
+.ash-search input::placeholder {
+  color: var(--muted);
+}
+.ash-search:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* the hint's look is `.search-kbd` in `context.css`; this is where it sits */
+.ash-search .search-kbd {
+  margin-left: auto;
+  margin-right: 8px;
+}
+.ash-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.ash-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ash-seg button b {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ash-seg button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.ash-seg button[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.ash-seg button[aria-pressed='true'] b {
+  color: var(--ink);
+}
+.ash-seg button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.ash-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── the populations, as pills — they always sum to the file count ────────── */
+.ash-types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 2px;
+  margin-top: 9px;
+}
+.ash-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink-2);
+  font: inherit;
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ash-pill b {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ash-pill:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.ash-pill[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+.ash-pill[aria-pressed='true'] b {
+  color: color-mix(in oklab, var(--bg) 74%, var(--ink));
+}
+.ash-pill:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ── a section head above the cards ──────────────────────────────────────── */
+.ash-sechead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 9px;
+  margin: 22px 0 0;
+}
+.ash-sechead h2 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.ash-tot {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.ash-ledge {
+  margin-top: 26px;
+}
+
+/* ── the works: one card is one folder that finished something ───────────── */
+.ash-works {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(298px, 1fr));
+  gap: 14px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ash-work {
+  min-width: 0;
+}
+.ash-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  text-decoration: none;
+  transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out, transform 0.14s ease-out;
+}
+.ash-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 10px 26px color-mix(in oklab, var(--ink) 7%, transparent);
+  transform: translateY(-1px);
+}
+.ash-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* the preview: a real shot from the shelf, never invented art. 16 : 10 before
+   and after it arrives, so the grid never reflows under the person's eyes. */
+.ash-shot {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.ash-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* every shot on the shelf is a page capture whose identity is at the top left
+     — breadcrumb, title, first row — so the crop keeps that corner */
+  object-position: top left;
+  animation: ash-fade 0.16s ease-out;
+  transition: transform 0.2s ease-out;
+}
+.ash-card:hover .ash-shot img {
+  transform: scale(1.04);
+}
+/* no shot: the folder's dominant extension, sized and named — an absence drawn
+   as an absence, not a grey rectangle that reads as broken */
+.ash-none {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  height: 100%;
+  text-align: center;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--muted) 8%, transparent) 7px 8px),
+    var(--surface-2);
+}
+.ash-none b {
+  font-family: var(--mono);
+  font-size: var(--fs-h3);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.ash-none i {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ash-shots {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--ink) 78%, transparent);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.ash-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 12px 11px;
+}
+.ash-body > span {
+  display: block;
+}
+.ash-name {
+  overflow: hidden;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-par {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  color: var(--muted);
+}
+.ash-mix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.ash-mix span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.ash-mix i {
+  flex: none;
+  align-self: center;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-2xs);
+  background: var(--border-strong);
+}
+.ash-mix b {
+  font-weight: 500;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ash-meta {
+  margin-top: auto;
+  padding-top: 4px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-dot {
+  margin: 0 4px;
+  opacity: 0.55;
+}
+
+/* skeletons keep the card's own geometry */
+.ash-card--skel {
+  pointer-events: none;
+}
+.ash-skel {
+  display: block;
+  border-radius: var(--r-2xs);
+  background: var(--skel);
+  animation: ash-pulse 1.3s ease-in-out infinite;
+}
+.ash-skel--shot {
+  height: 100%;
+  border-radius: 0;
+}
+.ash-skel--l {
+  height: 9px;
+}
+
+/* ── loose files: the rows no folder claims ──────────────────────────────── */
+.ash-loose {
+  margin: 12px 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  list-style: none;
+}
+.ash-lrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 76px;
+  align-items: stretch;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-small);
+}
+.ash-loose > .ash-lrow:first-child {
+  border-top: 0;
+}
+.ash-lrow:hover {
+  background: var(--surface);
+}
+.ash-lfn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ash-ft {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+.ash-lfn a {
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border-bottom: 1px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-lfn a:hover {
+  border-bottom-color: var(--border-strong);
+}
+.ash-lfn a:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--r-2xs);
+}
+.ash-lsz,
+.ash-lage {
+  align-self: center;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── a work, opened: its own head then its files ─────────────────────────── */
+.ash-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ash-crumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-bottom: 1px solid transparent;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.ash-crumbs a:hover {
+  border-bottom-color: var(--border-strong);
+}
+.ash-whead {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ash-whead-shot {
+  display: block;
+  flex: none;
+  width: 168px;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.ash-whead-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+.ash-whead-none {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--muted) 8%, transparent) 7px 8px),
+    var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-h3);
+  color: var(--ink-2);
+}
+.ash-whead-main {
+  flex: 1;
+  min-width: 0;
+}
+.ash-whead-main h1 {
+  margin: 0 0 4px;
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.ash-whead-main p {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.ash-whead-main .ash-dot {
+  opacity: 0.5;
+  margin: 0 5px;
+}
+
+/* the entity roster's table, with the entity columns swapped for file ones */
+.ash-table {
+  overflow: auto;
+  max-height: min(62vh, 620px);
+  margin: 12px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  overscroll-behavior: contain;
+  --cols: minmax(0, 1fr) 96px 84px 88px 32px;
+}
+.ash-row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+  column-gap: 14px;
+  min-height: 52px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  transition: background-color 0.13s ease-out;
+}
+.ash-table > .ash-row:first-child {
+  border-top: 0;
+}
+.ash-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 0;
+  padding: 7px 14px;
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ash-head > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-head .ash-k3,
+.ash-head .ash-k4 {
+  text-align: right;
+}
+.ash-row:not(.ash-head):hover {
+  background: var(--surface);
+}
+.ash-row:not(.ash-head):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+  border-radius: var(--r-sm);
+}
+.ash-k2,
+.ash-k3,
+.ash-k4 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-k3,
+.ash-k4 {
+  text-align: right;
+}
+.ash-fn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.ash-nm {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ash-kind {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.ash-num {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ash-acts {
+  display: flex;
+  justify-content: flex-end;
+}
+.ash-rowact {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ash-rowact svg {
+  width: 14px;
+  height: 14px;
+}
+.ash-rowact:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.ash-rowact:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* ── states, drawn in place: the grid is replaced, never the page ────────── */
+.ash-ribbon {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--border));
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+}
+.ash-ribbon svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--danger);
+}
+.ash-ribbon-b {
+  flex: 1;
+  min-width: 0;
+}
+.ash-ribbon b {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+.ash-ribbon p {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.ash-empty {
+  margin: 14px 0 0;
+  padding: 26px 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: center;
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.ash-empty b {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.ash-empty q {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-style: normal;
+  color: var(--ink-2);
+}
+.ash-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ── night: the same page, one layer down ────────────────────────────────── */
+:root[data-theme='dark'] .ash-hero {
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
+  background:
+    radial-gradient(120% 140% at 88% -20%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 62%),
+    linear-gradient(120deg, #1b1813, #211d16 54%, #1a1712);
+  color: #f2eee4;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+:root[data-theme='dark'] .ash-hero::before {
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--accent) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--accent) 22%, transparent) 1px, transparent 1px);
+  background-size: 30px 30px;
+  opacity: 0.12;
+}
+:root[data-theme='dark'] .ash-hero .eyebrow {
+  color: color-mix(in oklab, var(--accent) 56%, #c9c2b2);
+}
+:root[data-theme='dark'] .ash-h1 {
+  color: #f7f3e6;
+}
+:root[data-theme='dark'] .ash-lede {
+  color: #c7c2b6;
+}
+:root[data-theme='dark'] .ash-crest {
+  border-color: color-mix(in oklab, var(--mk) 22%, var(--border));
+  background: color-mix(in oklab, var(--mk) 6%, var(--surface-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+:root[data-theme='dark'] .ash-meter {
+  border-color: color-mix(in oklab, var(--accent) 26%, rgba(255, 255, 255, 0.12));
+  background: rgba(0, 0, 0, 0.24);
+}
+:root[data-theme='dark'] .ash-lv {
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
+  background: rgba(255, 255, 255, 0.055);
+}
+:root[data-theme='dark'] .ash-lv b,
+:root[data-theme='dark'] .ash-meter-head b {
+  color: #f2eee4;
+}
+:root[data-theme='dark'] .ash-track {
+  background: rgba(0, 0, 0, 0.28);
+}
+:root[data-theme='dark'] .ash-track::after {
+  background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 0, 0, 0.4) 7px 9px);
+}
+:root[data-theme='dark'] .ash-shots {
+  background: color-mix(in oklab, #151411 82%, transparent);
+  color: #f2eee4;
+}
+
+/* ── container tiers: the band is the container ───────────────────────────── */
+@container ashelf (max-width: 1000px) {
+  .ash-hero-in {
+    gap: 20px;
+  }
+  .ash-meter {
+    width: 250px;
+  }
+  .ash-works {
+    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+    gap: 12px;
+  }
+}
+@container ashelf (max-width: 880px) {
+  .ash-hero-in {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .ash-meter {
+    width: 100%;
+  }
+  .ash-table {
+    --cols: minmax(0, 1fr) 84px 88px 32px;
+  }
+  .ash-k2 {
+    display: none;
+  }
+}
+@container ashelf (max-width: 700px) {
+  /* touch tier: the desktop grammar keeps its 26–30px controls, a phone target
+     is 44. The bar is not in this container — its own tier is the window's. */
+  .ash-pill,
+  .ash-seg button,
+  .ash-lrow {
+    min-height: 44px;
+  }
+  .ash-pill,
+  .ash-seg button {
+    height: auto;
+  }
+  .ash-hero {
+    padding: 18px 16px;
+  }
+  .ash-h1 {
+    font-size: var(--fs-h2);
+  }
+  .ash-tool {
+    gap: 8px;
+  }
+  .ash-search {
+    flex: 1 1 100%;
+    height: 44px;
+  }
+  .ash-seg {
+    flex: 1 1 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ash-seg::-webkit-scrollbar {
+    display: none;
+  }
+  .ash-seg button {
+    flex: none;
+    height: 44px;
+    padding: 0 11px;
+    font-size: var(--fs-secondary);
+  }
+  .ash-count {
+    flex: 1 1 100%;
+    margin-left: 0;
+    text-align: right;
+  }
+  .ash-types {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .ash-types::-webkit-scrollbar {
+    display: none;
+  }
+  .ash-works {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ash-shot {
+    aspect-ratio: 16 / 9;
+  }
+  .ash-body {
+    padding: 11px 13px 12px;
+  }
+  .ash-name {
+    font-size: var(--fs-body);
+  }
+  /* the file table becomes a card: name, then type, then size and edited */
+  .ash-table {
+    overflow: visible;
+    max-height: none;
+    padding: 0;
+    --cols: minmax(0, 1fr) auto;
+  }
+  .ash-head {
+    display: none;
+  }
+  .ash-row {
+    padding: 11px 12px;
+    row-gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .ash-fn {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 44px;
+  }
+  .ash-nm {
+    font-size: var(--fs-body);
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  .ash-k2 {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-items: baseline;
+    gap: 10px;
+    overflow: visible;
+  }
+  .ash-k3 {
+    grid-column: 1;
+    grid-row: 3;
+    text-align: left;
+  }
+  .ash-k4 {
+    grid-column: 2;
+    grid-row: 3;
+    text-align: right;
+  }
+  .ash-acts {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+  .ash-rowact {
+    width: 44px;
+    height: 44px;
+    margin: -8px -8px 0 0;
+  }
+  .ash-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ash-lrow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+  .ash-lfn {
+    min-height: 44px;
+  }
+  .ash-lsz {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .ash-lage {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: var(--fs-micro);
+  }
+  .ash-sechead h2 {
+    font-size: var(--fs-body);
+  }
+  .ash-whead-shot {
+    width: 120px;
+  }
+}
+@container ashelf (max-width: 420px) {
+  .ash-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ash-lv {
+    width: 44px;
+    min-height: 56px;
+  }
+}
+
+/* ── the bar's own tier, measured on the window ──────────────────────────────
+   `.ash-bar` sits outside `.ash-band` on purpose: it is the page's top edge, not
+   reading content. A container query therefore cannot reach it, and the band's
+   700 tier is not the phone — the drawer mode that puts the rail away is. One
+   window breakpoint, the same 820 the rest of the chrome uses. */
+@media (max-width: 820px) {
+  .ash-bar {
+    height: 52px;
+  }
+  .ash-back,
+  .ash-actions .btn {
+    min-height: 44px;
+    height: auto;
+  }
+  .ash-back {
+    width: 44px;
+    margin-left: -10px;
+  }
+  /* back + crumb + Upload: Reveal is the page's second verb and needs room the
+     phone does not have */
+  .ash-actions .btn:not(.btn-ink) {
+    display: none;
+  }
+}
+
+/* ── motion: none of it carries information, so all of it can stop ────────── */
+@media (prefers-reduced-motion: reduce) {
+  .ash-skel {
+    animation: none;
+  }
+  .ash-track i,
+  .ash-row,
+  .ash-card,
+  .ash-shot img,
+  .ash-search {
+    transition: none;
+  }
+  .ash-card:hover {
+    transform: none;
+  }
+  .ash-card:hover .ash-shot img {
+    transform: none;
+  }
+  .ash-shot img {
+    animation: none;
+  }
+}
+
+@keyframes ash-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes ash-fade {
+  from {
+    opacity: 0;
+  }
+}
