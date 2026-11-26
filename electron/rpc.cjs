@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const youtrackDashboard = require('./youtrack-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -366,6 +367,13 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The YouTrack connector's dashboard, read over the MCP endpoint the same
+       workspace declares: `probe` answers whether the tab can open at all, and
+       `dashboard` is the two paginated reads the pane's numbers come from. Both
+       are read-only — the module has no call site for a write tool — and neither
+       returns the `Authorization` value it sends. */
+    'youtrack.probe': (args) => youtrackDashboard.probe(args),
+    'youtrack.dashboard': (args) => youtrackDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above
