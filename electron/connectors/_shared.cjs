@@ -140,6 +140,18 @@ async function get(url, accessTokenValue, connector) {
       `@${connector}: the API is not enabled in this Google Cloud project. Enable it, wait a minute, and try again — ${said.slice(0, 220)}`,
     )
   }
+  /* A 401 that says "insufficient permission" is a *scope* problem, not a stale
+     token: the consent Google holds is valid, it just does not carry the scope
+     this report needs. Saying "sign in again" sent people to a sign-in that
+     returns the same token and the same 401. */
+  if (
+    /insufficient permission|insufficient_scope/i.test(said) ||
+    body?.error?.reason === 'insufficientPermissions'
+  ) {
+    throw new Error(
+      `@${connector}: the connected account lacks permission for this report — Google answered 401 ${said.slice(0, 160).replace(/\.+$/, '')}. Re-consent with the scope this view needs, or read it as unavailable.`,
+    )
+  }
   if (response.status === 401 || /invalid_grant|Invalid Credentials/i.test(said)) {
     throw new Error(
       `@${connector}: needs a sign-in — Google rejected the token. Sign in on the connector's page.`,

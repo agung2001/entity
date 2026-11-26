@@ -12,7 +12,7 @@ const path = require('node:path')
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'lynk-dash-'))
 process.env.ENTITY_HOME = HOME
-const lynk = require('../../electron/lynk-dashboard.cjs')
+const lynk = require('../../electron/connectors/lynk/dashboard.cjs')
 
 const FOLDER = '1AbCdEfGhIjKlMnOpQrStUvWxYz'
 const SUFFIX = ' - Transactions'
@@ -20,11 +20,13 @@ const SUFFIX = ' - Transactions'
 fs.writeFileSync(
   path.join(HOME, 'lynk-dashboard.json'),
   JSON.stringify({
-    schema: 1,
+    /* The store's own schema: a hand-written answer has to be one the reader accepts,
+       and bumping this number is what retires an answer written before a change. */
+    schema: 2,
     key: `ws|lynk|${FOLDER}|${SUFFIX}`,
     at: Date.now(),
     value: {
-      sheets: { total: 2, withTab: 2, empty: 0, unreadable: 0 },
+      sheets: { total: 2, withTab: 2, empty: 0, unreadable: 0, failed: 0 },
       ms: 4200,
       folderId: FOLDER,
       suffix: SUFFIX,

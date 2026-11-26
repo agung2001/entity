@@ -255,7 +255,7 @@ function onRowKey(row, event) {
          20px margin, so wrapping the page in one element would inset the bar from
          the window edge and float it 20px under the top bar. -->
     <div class="entp-bar">
-      <button class="back" type="button" aria-label="Back to the overview" @click="goOverview">
+      <button class="back back-icon" type="button" aria-label="Back to the overview" @click="goOverview">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
           <path d="M7.5 2.5L4 6l3.5 3.5" />
         </svg>

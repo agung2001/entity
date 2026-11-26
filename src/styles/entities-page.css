@@ -15,11 +15,17 @@
   flex-direction: column;
 }
 
-/* A bare chevron, because the crumb beside it already says where the arrow
-   goes. `directory.css` already sizes `.entp-bar .back` for a 12px glyph; the
-   page only needs to keep it from taking the 9px of right padding that a
-   labelled back button wants. */
-.view.detail-view > .entp-bar .back {
+/* A bare chevron, because the crumb beside it already says where the arrow goes.
+   `directory.css` already sizes `.entp-bar .back` for a 12px glyph; this page only
+   needs to keep it from taking the 9px of right padding a *labelled* back button
+   wants.
+
+   **`.back-icon` is the shape, not the page.** This rule used to say `.back`, and
+   four pages whose button carries its label — Connectors, MCP, Entities, Skills —
+   were squeezed into 30px: the flex item with the least resistance gave way, which
+   was the 12px glyph, so every one of them rendered as a label with no arrow
+   (measured: `svg 0x12`). A page-specific size must name the shape it is sizing. */
+.view.detail-view > .entp-bar .back-icon {
   padding: 0;
   justify-content: center;
   width: 30px;
@@ -37,7 +43,7 @@
    `.ent-band`, not inside it, so no container query can reach it: this is the
    one rule on the page that has to answer to the window. */
 @media (max-width: 700px) {
-  .view.detail-view > .entp-bar .back {
+  .view.detail-view > .entp-bar .back-icon {
     width: 44px;
     height: 44px;
     margin-left: -10px;

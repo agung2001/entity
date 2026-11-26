@@ -40,10 +40,11 @@ const platform = require('./platform-brief.cjs')
 const { createParser } = require('./chat-transcript.cjs')
 const catalog = require('./connector-catalog.cjs')
 const oauthAccounts = require('./oauth-accounts.cjs')
-/* The five account-bearing connectors live in `electron/connectors/`, one file
-   each, plus the plumbing they share. This file keeps the mention grammar and the
-   dispatch; it does not know what a message, a file or a video is. */
+/* The account-bearing connectors live in `electron/connectors/`, one file each, plus
+   the plumbing they share. This file keeps the mention grammar and the dispatch; it
+   does not know what a message, a file or a video is. */
 const connectorRegistry = require('./connectors/index.cjs')
+const registry = require('./connectors/registry.cjs')
 const { accountScope, connectorOfKind, idScope, queryInsert } = require('./connectors/_shared.cjs')
 
 /* The heads the parser accepts, derived from the catalog rather than written a
@@ -58,19 +59,12 @@ const KINDS = new Set(
     .filter(Boolean),
 )
 
-/* The mention head → resolver kind for the account-bearing connectors. Derived
-   from the catalog so a fifth provider is one entry there: `google-drive` is
-   written `@drive:` because that is what a person types. */
-const ACCOUNT_KIND = {
-  gmail: 'gmail',
-  drive: 'drive',
-  /* the catalog id and the mention head differ here, which is the whole reason
-     this map exists: `@gcal:` reads `google-calendar`'s accounts. */
-  'gcal': 'calendar',
-  youtube: 'youtube',
-  'youtube-studio': 'youtube-studio',
-  x: 'x',
-}
+/* The mention head → resolver kind for the account-bearing connectors, from the
+   registry. That map is the only place the three names a connector has are written
+   down — the row id (`google-drive`), the kind (`drive`) and the head a person types
+   (`@drive:`) — so a provider added there is offered here, and `@gcal:` is a declared
+   alias rather than a special case in the parser. */
+const ACCOUNT_KIND = registry.accountHeads()
 
 /* `connectorOfKind` now lives in `connectors/_shared.cjs`, with the rest of the
    account plumbing — one definition, so the parser and the resolvers cannot

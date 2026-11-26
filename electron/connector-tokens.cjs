@@ -103,7 +103,7 @@ function tokenFor(connector) {
  * The connector's own save-time check, from the registry.
  *
  * A `credential: 'token'` head ships `verify({ token, workspaceId })` in
- * `electron/connectors/<id>.cjs`; the registry is the one place that maps a name to
+ * `electron/connectors/<id>/connector.cjs`; the registry is the one place that maps a name to
  * it, so a head with no verify is refused rather than silently trusted. Required at
  * call time, in the direction that keeps the module graph acyclic.
  */

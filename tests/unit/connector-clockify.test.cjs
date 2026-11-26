@@ -8,7 +8,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const clockify = require('../../electron/connectors/clockify.cjs')
+const clockify = require('../../electron/connectors/clockify/api.cjs')
 
 /* Mon 2026-03-02 → Mon 2026-03-09 in Los Angeles: the week US DST starts, so the
    week is 167 hours (clock forward on Sunday 8 March) and the end offset is PDT. */

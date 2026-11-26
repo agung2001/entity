@@ -14,8 +14,8 @@ import { readPaste } from '@/lib/mcp-paste'
 import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
 import { connectors, installConnector, loadConnectors } from '@/stores/connectors'
 import ConnectorTabs from '@/components/ConnectorTabs.vue'
-import ConnectorYoutrackDashboard from '@/components/ConnectorYoutrackDashboard.vue'
-import { probe, youtrack } from '@/composables/youtrackDashboard'
+import ConnectorYoutrackDashboard from '@/connectors/youtrack/YoutrackDashboard.vue'
+import { probe, youtrack } from '@/connectors/youtrack/useYoutrack'
 
 /**
  * One MCP server, as a page — the same shell as the entity detail page
