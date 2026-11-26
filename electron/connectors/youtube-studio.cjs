@@ -68,6 +68,30 @@ function ytWindow(days) {
   }
 }
 
+/* Studio spells its traffic sources as constants; a person reads a sentence. One
+   table, at module scope, because the dashboard names the same sources in a
+   different shape — two copies would drift and the mention and the page would
+   disagree about what `RELATED_VIDEO` is called. */
+const YT_TRAFFIC_NAMES = {
+  SUBSCRIBER: 'Subscriber feed',
+  YT_SEARCH: 'YouTube search',
+  RELATED_VIDEO: 'Suggested videos',
+  PLAYLIST: 'Playlists',
+  EXT_URL: 'External links',
+  YT_CHANNEL: 'Channel page',
+  NO_LINK_OTHER: 'Direct or unknown',
+  YT_OTHER_PAGE: 'Other YouTube pages',
+  NOTIFICATION: 'Notifications',
+  END_SCREEN: 'End screens',
+  SHORTS_FEED: 'Shorts feed',
+  HASHTAGS: 'Hashtags',
+  LIVE_REDIRECT: 'Live redirects',
+  CAMPAIGN_CARD: 'Campaign cards',
+  IMMERSIVE: 'Immersive feed',
+  ADVERTISING: 'Advertising',
+  SHORTS: 'Shorts feed',
+}
+
 /* The vocabulary, in the order a person would try them. One list, so the error
    message and the documentation cannot disagree. Used by `ytIntent` too: a word
    that is a keyword is never mistaken for a channel name. */
@@ -366,31 +390,11 @@ async function ytTraffic(token, channel, days, dimension = 'insightTrafficSource
     sort: '-views',
     maxResults: 12,
   })
-  /* Studio spells these as constants; a person reads a sentence. */
-  const NAMES = {
-    SUBSCRIBER: 'Subscriber feed',
-    YT_SEARCH: 'YouTube search',
-    RELATED_VIDEO: 'Suggested videos',
-    PLAYLIST: 'Playlists',
-    EXT_URL: 'External links',
-    YT_CHANNEL: 'Channel page',
-    NO_LINK_OTHER: 'Direct or unknown',
-    YT_OTHER_PAGE: 'Other YouTube pages',
-    NOTIFICATION: 'Notifications',
-    END_SCREEN: 'End screens',
-    SHORTS_FEED: 'Shorts feed',
-    HASHTAGS: 'Hashtags',
-    LIVE_REDIRECT: 'Live redirects',
-    CAMPAIGN_CARD: 'Campaign cards',
-    IMMERSIVE: 'Immersive feed',
-    ADVERTISING: 'Advertising',
-    SHORTS: 'Shorts feed',
-  }
   const total = rows.reduce((sum, row) => sum + ytNum(row.views), 0)
   return rows.map((row) => {
     const views = ytNum(row.views)
     const share = total ? ((views / total) * 100).toFixed(1) : '0.0'
-    const name = NAMES[row[dimension]] || row[dimension]
+    const name = YT_TRAFFIC_NAMES[row[dimension]] || row[dimension]
     return {
       id: String(row[dimension] || ''),
       account: channel.title,
@@ -775,4 +779,9 @@ module.exports = {
   YT_STUDIO_KEYWORDS,
   ytIsKeyword,
   ytChannelChoices,
+  /* the dashboard's read half, so it reads what this module already knows
+     how to read instead of keeping a second copy of Google's plumbing */
+  ytChannels,
+  ytWindow,
+  YT_TRAFFIC_NAMES,
 }

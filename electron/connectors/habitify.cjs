@@ -233,8 +233,11 @@ function statusOf(raw) {
   return 'none'
 }
 
-async function read(token, day, { limit }) {
-  const sessionId = await openSession(token)
+/* `sessionId` is the one optional argument: a mention opens its own session, while
+   the dashboard walks a week inside one — two round trips per day is a cost a
+   seven-day read should not pay seven times. */
+async function read(token, day, { limit, sessionId: reuse = '' } = {}) {
+  const sessionId = reuse || (await openSession(token))
   const dateArg = await dateArgFor(token, sessionId)
   const reply = await rpc(
     {
@@ -348,4 +351,15 @@ async function preview(fields = [], { limit = 8 } = {}) {
   }
 }
 
-module.exports = { ROW_CEILING, MCP_TOOL, civilDay, dayOf, accessTokenFor, resolve, preview }
+module.exports = {
+  ROW_CEILING,
+  MCP_TOOL,
+  civilDay,
+  dayOf,
+  accessTokenFor,
+  openSession,
+  read,
+  statusOf,
+  resolve,
+  preview,
+}

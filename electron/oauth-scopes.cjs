@@ -116,6 +116,31 @@ const SCOPE_CATALOG = {
      is what makes the token endpoint return a refresh token, so it is part of the
      read. There is no write tier on purpose — this app never completes, skips or logs
      a habit, so a scope that allowed it is a permission nobody should be asked for. */
+  /* The calendar asks for the narrowest grant that can draw a week: `readonly`
+     reads every event on the calendars a person ticked and nothing else. The
+     write tier adds `calendar.events`, which is what lets a *mention* create, and
+     it is deliberately not what the Dashboard tab reads — the tab is the read.
+     There is no `full` tier: `calendar` also reaches sharing and ACLs, and nothing
+     this app draws needs them. */
+  'google-calendar': {
+    tiers: [
+      {
+        id: 'read',
+        label: 'Read your calendars',
+        detail: 'Every event on the calendars you ticked, and the busy blocks between. Nothing can be created, moved or cancelled.',
+        scopes: [{ wire: GOOGLE_AUTH('calendar.readonly'), display: 'calendar.readonly' }],
+      },
+      {
+        id: 'write',
+        label: 'Read and create events',
+        detail: 'Read every calendar, plus create an event when a mention asks for one. Nothing is moved or cancelled without that same ask.',
+        scopes: [
+          { wire: GOOGLE_AUTH('calendar.readonly'), display: 'calendar.readonly' },
+          { wire: GOOGLE_AUTH('calendar.events'), display: 'calendar.events' },
+        ],
+      },
+    ],
+  },
   habitify: {
     tiers: [
       {
@@ -127,6 +152,30 @@ const SCOPE_CATALOG = {
           { wire: 'profile', display: 'profile' },
           { wire: 'email', display: 'email' },
           { wire: 'offline_access', display: 'offline_access' },
+        ],
+      },
+    ],
+  },
+
+  /* Lynk.id reads a folder of Google Sheets. `drive.readonly` is the scope that
+     reaches a folder the app did not create — `drive.file`, the Drive connector's
+     read tier, only sees what this app made, so it cannot open a spreadsheet the
+     store wrote in the browser. `spreadsheets.readonly` is what lets the rows out of
+     a Sheet once the file itself is reachable: Drive access alone gets you the file
+     object, not its grid.
+
+     There is one tier on purpose, matching Habitify: this connector never writes to
+     Drive or to a Sheet, so a write tier would ask for a permission nothing uses. */
+  lynk: {
+    tiers: [
+      {
+        id: 'read',
+        label: 'Read a Drive folder',
+        detail:
+          'List one Drive folder and read the Google Sheets inside it. Nothing can be created, changed or deleted.',
+        scopes: [
+          { wire: GOOGLE_AUTH('drive.readonly'), display: 'drive.readonly' },
+          { wire: GOOGLE_AUTH('spreadsheets.readonly'), display: 'spreadsheets.readonly' },
         ],
       },
     ],

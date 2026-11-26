@@ -300,6 +300,75 @@ export async function loadTiers(connectorId) {
   return call('connector.account.tiers', { connector: connectorId, workspace: hub.workspace })
 }
 
+/* ── the Lynk.id report's settings ───────────────────────────────────
+
+   Lynk.id has no syntax to configure, so everything it needs is a field on the
+   connector row: which Drive folder, which tab suffix, and the two facts the
+   numbers are printed in (rupiah, Jakarta time). They live in `connectors.json`
+   beside the binding — not in a file of their own, and not as a constant — so two
+   workspaces may point at two folders and neither report leaks into the other.
+
+   `folderId` is the one that matters: it is the dashboard's cache key, which is
+   why changing it anywhere goes through here. */
+export const lynkConfig = reactive({
+  folderId: '',
+  folderName: '',
+  sheetSuffix: ' - Transactions',
+  currency: 'IDR',
+  timezone: 'Asia/Jakarta',
+  loaded: false,
+  loading: false,
+  error: '',
+})
+
+function adoptLynk(fields) {
+  lynkConfig.folderId = String(fields?.folderId || '')
+  lynkConfig.folderName = String(fields?.folderName || '')
+  lynkConfig.sheetSuffix = String(fields?.sheetSuffix || ' - Transactions')
+  lynkConfig.currency = String(fields?.currency || 'IDR')
+  lynkConfig.timezone = String(fields?.timezone || 'Asia/Jakarta')
+  return lynkConfig
+}
+
+/** The folder this workspace reads, as stored. Cheap enough to run on the page. */
+export async function loadLynkConfig({ id = 'lynk' } = {}) {
+  lynkConfig.loading = true
+  try {
+    adoptLynk(await call('connector.fields', { workspace: hub.workspace, id }))
+    lynkConfig.error = ''
+  } catch (problem) {
+    lynkConfig.error = String(problem?.message || problem)
+  } finally {
+    lynkConfig.loading = false
+    lynkConfig.loaded = true
+  }
+  return lynkConfig
+}
+
+/**
+ * Write the settings. Answers the row as stored, so the page never prints what it
+ * hoped was saved: `connector.setFields` refuses a malformed folder id and a
+ * non-IANA timezone, and the refusal is the caller's message to show.
+ */
+export async function saveLynkConfig(fields = {}, { id = 'lynk' } = {}) {
+  const answer = await call('connector.setFields', {
+    workspace: hub.workspace,
+    id,
+    fields,
+  })
+  adoptLynk(answer)
+  lynkConfig.error = ''
+  /* The folder just changed the answer's identity, and the stored report belongs
+     to the folder that was read. `Forget` is the same call with an empty id. */
+  await call('connector.lynkForget').catch(() => null)
+  return answer
+}
+
+/** Point the dashboard at nothing — the tab locks, and the card offers a picker. */
+export async function forgetLynkFolder({ id = 'lynk' } = {}) {
+  return saveLynkConfig({ folderId: '', folderName: '' }, { id })
+}
+
 /** Choose how much this connector's accounts may do. The next consent asks for it. */
 export async function setTier({ connector, tier }) {
   const answer = await call('connector.account.setTier', {

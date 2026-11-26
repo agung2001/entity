@@ -13,6 +13,9 @@ import { hub, toast } from '@/stores/hub'
 import { readPaste } from '@/lib/mcp-paste'
 import { setMcpEnabled, workspaces, writeMcp } from '@/stores/workspaces'
 import { connectors, installConnector, loadConnectors } from '@/stores/connectors'
+import ConnectorTabs from '@/components/ConnectorTabs.vue'
+import ConnectorYoutrackDashboard from '@/components/ConnectorYoutrackDashboard.vue'
+import { probe, youtrack } from '@/composables/youtrackDashboard'
 
 /**
  * One MCP server, as a page — the same shell as the entity detail page
@@ -57,6 +60,107 @@ const row = computed(() => installedRow.value || catalogRow.value)
 const notInstalled = computed(() => !installedRow.value && Boolean(catalogRow.value))
 
 const brand = computed(() => String(row.value?.builtIn || ''))
+
+/* ── the YouTrack dashboard, when this page is that server ─────────────
+   The strip is generalised — `ConnectorTabs` is shared with the `cli` page — but
+   only one server has a second tab to offer, and it is the row the catalog ships
+   under this id. A custom server that happens to be called `youtrack` is not the
+   shipped definition, and a server called something else gets no tab at all
+   rather than a disabled one promising a pane that does not exist. */
+const isYoutrack = computed(() => name.value === 'youtrack')
+const TABS = ['overview', 'dashboard']
+/* The address spells the default out as little as possible: a bare address and
+   `?tab=overview` are the same place, and a value nobody defined is not a place at
+   all. Only this page's strip reads it, so the rewrite stays here. */
+const tab = computed(() => {
+  const asked = String(route.query.tab || '')
+  return TABS.includes(asked) ? asked : 'overview'
+})
+
+/**
+ * Why the Dashboard cannot be opened, in the one sentence a person reads.
+ *
+ * Four states, four fixed sentences, written next to each other so they cannot
+ * drift apart. The `code` parts are the names somebody has to open or paste —
+ * they stay mono in the strip, which is why the sentence is split rather than
+ * written whole.
+ *
+ * `missing` prefers the probe's own message when it names a narrower cause: an
+ * entry that exists but declares no `search_issues` is not a missing entry, and
+ * telling a person to add a `mcp.json` server they already have is how a fix
+ * turns into a hunt.
+ *
+ * It reads `probeState`, never `state`. The strip answers one question — is there
+ * a token this tracker accepts — and only the probe was asked it. A token that was
+ * fine a second ago and is `refused` by the time the first page comes back is not
+ * a reason to take the tab away: the person asked for the pane, and the pane draws
+ * its own refusal with the code, the file and the header to fix. Locking on the
+ * read's sharper answer hid that panel behind Overview.
+ */
+function lockFor(read) {
+  const state = read.probeState
+  if (!read.probed) {
+    return {
+      title: 'Checking the token in this workspace’s mcp.json',
+      before: 'checking the token…',
+      after: '',
+    }
+  }
+  if (state === 'ok') return null
+  if (state === 'missing') {
+    /* The probe's message already says which part is absent (no `youtrack` entry
+       at all, or one with no `url`), so its sentence is the whole reason. */
+    const said = String(read.message || '').trim()
+    if (said) return { title: said, before: said, after: '' }
+    return {
+      title: 'Dashboard needs a youtrack entry in this workspace’s mcp.json',
+      before: 'The Dashboard needs a ',
+      code: 'youtrack',
+      after: ' entry with a ',
+      code2: 'url',
+      after2: ' in this workspace’s mcp.json.',
+    }
+  }
+  if (state === 'refused') {
+    const code = Number(read.status) || 401
+    return {
+      title: `The token in mcp.json was refused with HTTP ${code}`,
+      before: `YouTrack refused the token in this workspace’s `,
+      code: 'mcp.json',
+      after: ` — HTTP ${code}. The value after `,
+      code2: 'servers.youtrack.headers.Authorization',
+      after2: ' is present and dead: replace it with a permanent token from the tracker’s own page.',
+    }
+  }
+  /* `offline` and `timeout` are one fact from the reader's side: the endpoint did
+     not answer. Naming the host is what tells a person whether they are pointed at
+     the right tracker at all. */
+  const host = String(read.host || '')
+  return {
+    title: host ? `${host} did not answer` : 'YouTrack did not answer',
+    before: host ? `The YouTrack endpoint at ` : 'The YouTrack endpoint ',
+    code: host || '',
+    after: state === 'timeout' ? ' did not answer in 8 s.' : ' did not answer. Check this machine’s connection.',
+  }
+}
+
+const lock = computed(() => (isYoutrack.value ? lockFor(youtrack) : null))
+/* A locked deep link keeps the strip, keeps the reason and renders the overview:
+   an empty dashboard behind a selected tab would announce a pane that is not on
+   screen. The address is left alone — the reason under the strip is the fix, and
+   rewriting the URL would hide which state a person landed in. */
+const selectedTab = computed(() => (lock.value && tab.value === 'dashboard' ? 'overview' : tab.value))
+const dashboardTitle = 'Who is stuck, on what — read live from this workspace’s YouTrack'
+
+function selectTab(next) {
+  if (next === 'dashboard' && lock.value) return
+  const query = { ...route.query }
+  if (next === 'overview') delete query.tab
+  else query.tab = next
+  /* `replace`, not `push`: a tab is not a step in a history a person wants to walk
+     back through one press at a time. */
+  router.replace({ query }).catch(() => {})
+}
 
 /* The service's own site, when the catalog names one. A shipped connector with no
    site stays quiet; a bare host is what a person needs to recognise the service. */
@@ -874,6 +978,11 @@ function back() {
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  /* The Dashboard strip needs one answer before it can offer a tab: does this
+     workspace's `mcp.json` hold a token this tracker accepts. It is asked here,
+     once, and never again on a timer — the pane has its own Refresh, and a probe
+     per render would be a poll with extra steps. */
+  if (isYoutrack.value) probe().catch(() => {})
   /* The roster's own rows are where `builtIn` lives, so the brand mark and the
      shipped mention contract come from one read instead of two. */
   if (!connectors.loaded || connectors.workspace !== hub.workspace) await loadConnectors()
@@ -900,6 +1009,9 @@ watch(name, async () => {
   steps.value = []
   reading.value = null
   receipt.value = null
+  /* A different server is a different credential: `/connectors/orca` → `/connectors/youtrack`
+     must not inherit the answer the previous page's probe left on the shared store. */
+  if (isYoutrack.value) probe().catch(() => {})
   if (!connectors.loaded || connectors.workspace !== hub.workspace) await loadConnectors()
   await loadGlobal()
   await loadTools()
@@ -1027,7 +1139,42 @@ watch(name, async () => {
         </div>
       </section>
 
-      <div class="entp-grid">
+      <!-- The strip the `cli` connectors already have, mounted here because this
+           page *is* that connector's surface — a YouTrack row is `kind: 'mcp'`, so
+           it never reaches `ConnectorPageView`'s branch.
+
+           Both the strip and the pane sit inside one `.cxn-page`, for the reason
+           that wrapper exists: the reason line under the strip has a
+           `@container cxn` rule of its own that folds it under the tabs at a
+           narrow measure, and a container query with no ancestor container never
+           matches. `.entp-grid` stays outside — it has its own measure rules, and
+           wrapping the Overview body in this container would re-point every one
+           of them. -->
+      <div v-if="isYoutrack" class="cxn-page">
+        <ConnectorTabs
+          :tab="selectedTab"
+          :lock="lock"
+          :title="dashboardTitle"
+          @select="selectTab"
+        />
+
+        <div
+          v-if="selectedTab === 'dashboard' && !lock"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+        >
+          <ConnectorYoutrackDashboard />
+        </div>
+      </div>
+
+      <div
+        v-if="!isYoutrack || selectedTab === 'overview'"
+        :id="isYoutrack ? 'cxn-pane-overview' : undefined"
+        :role="isYoutrack ? 'tabpanel' : undefined"
+        :aria-labelledby="isYoutrack ? 'cxn-tab-overview' : undefined"
+        class="entp-grid"
+      >
         <div class="entp-main">
           <section class="entp-sec">
             <div class="entp-sec-head">

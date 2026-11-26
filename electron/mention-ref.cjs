@@ -64,6 +64,9 @@ const KINDS = new Set(
 const ACCOUNT_KIND = {
   gmail: 'gmail',
   drive: 'drive',
+  /* the catalog id and the mention head differ here, which is the whole reason
+     this map exists: `@gcal:` reads `google-calendar`'s accounts. */
+  'gcal': 'calendar',
   youtube: 'youtube',
   'youtube-studio': 'youtube-studio',
   x: 'x',

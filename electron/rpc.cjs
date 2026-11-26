@@ -27,7 +27,21 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const calendarDashboard = require('./calendar-dashboard.cjs')
 const fitbitDashboard = require('./fitbit-dashboard.cjs')
+const lynkDashboard = require('./lynk-dashboard.cjs')
+/* The YouTube Studio dashboard reads the same kinds of things from a different
+   grant: an account roster and one window of numbers. Same file-cached, one-read
+   shape, no token ever leaves the main process. */
+const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
+/* The YouTrack dashboard reads the same shape from an MCP endpoint instead of an
+   OAuth grant: one probe, two paginated searches, no token ever leaves the main
+   process. */
+const youtrackDashboard = require('./youtrack-dashboard.cjs')
+/* Habitify's dashboard reads one day and its week over the MCP session the
+   connector already opens: no token ever leaves the main process, and the only
+   upstream tool either call can reach is `list-habits-by-date`. */
+const habitifyDashboard = require('./habitify-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -189,6 +203,20 @@ function createRpc({
   /* Threads are private to their account; the server's per-request identity has
      to reach the chat store, not just the call table. */
   chats.setIdentityResolver(() => currentUser())
+
+  /* The Lynk.id read layer takes its settings from the connector row, never from a
+     constant: which folder, and which tab suffix. `connector.fields` is the only
+     place those live, so this is the one read they go through.
+
+     The names are translated, not forwarded. The row stores `sheetSuffix` (the
+     field the settings form writes); the read layer destructures `suffix`, and
+     `tabOf()` matches a tab with `endsWith(suffix)` — an empty string matches
+     every tab, so a forwarded-but-renamed key would sum every tab in every
+     spreadsheet instead of one. Spelled out here so the shape cannot drift. */
+  const lynkFields = async (args) => {
+    const fields = connectorStore.fieldsOf({ workspace: args?.workspace, id: args?.id || 'lynk' })
+    return { folderId: fields.folderId, suffix: fields.sheetSuffix }
+  }
 
   const handlers = {
     /* workspace */
@@ -372,6 +400,59 @@ function createRpc({
        log anything. No token is ever read: the module refreshes one on this machine
        and keeps it there. */
     'fitbit.dashboard': (args) => fitbitDashboard.readDay(args),
+    /* Google Calendar's dashboard: six counts and a week of events, read per
+       account from the grant the accounts card already holds. The `accounts` read is
+       the tab strip's gate — it answers before the tab is pressed, so a person sees
+       the lock without clicking through to it. */
+    'calendar.dashboard': (args) => calendarDashboard.dashboard(args),
+    'calendar.accounts': () => calendarDashboard.accounts(),
+    /* The Lynk.id dashboard, read from the Drive folder this workspace picked. The
+       folder and the tab suffix are never constants here: they are read off the
+       connector row on every call, so two workspaces may point at two folders and
+       neither report can be the other's. */
+    'connector.lynkFolders': async (args) => lynkDashboard.folders(args),
+    'connector.lynkTestFolder': async (args) => lynkDashboard.testFolder(await lynkFields(args)),
+    'connector.lynkDashboard': async (args) =>
+      lynkDashboard.dashboard({
+        workspace: args?.workspace,
+        id: args?.id,
+        days: args?.days,
+        force: args?.force === true,
+        ...(await lynkFields(args)),
+      }),
+    'connector.lynkForget': () => {
+      lynkDashboard.forgetCache()
+      return { ok: true }
+    },
+    /* How far the read has got. Asked once a second while a folder is open, so a
+       seventy-spreadsheet folder can say `Reading 34 of 70` instead of nothing at
+       all. It reads no folder and spends no request. */
+    'connector.lynkProgress': () => lynkDashboard.progressOf(),
+    /* Clockify's dashboard reads, lazy like the token verbs: the connector module
+       is only parsed on the page that needs it. `workspaces` answers the Overview
+       selector, `dashboard` the tab — both read-only, both keep the key in this
+       process, and neither takes one as an argument. */
+    'connector.workspaces': ({ workspace } = {}) =>
+      require('./connectors/clockify.cjs').workspaces(workspaces.open(workspace)),
+    'connector.dashboard': ({ workspace, ...rest } = {}) =>
+      require('./connectors/clockify.cjs').dashboard(workspaces.open(workspace), rest),
+    /* The YouTube Studio dashboard. Read-only Google calls, no write scope used,
+       and the analytics/revenue/comment scopes are separate grants — a refusal is
+       a `null` field with the missing scope named, never a `0`. */
+    'youtube.roster': () => youtubeStudioDashboard.roster(),
+    'youtube.dashboard': (args) => youtubeStudioDashboard.dashboard(args),
+    /* The YouTrack connector's dashboard, read over the MCP endpoint the same
+       workspace declares: `probe` answers whether the tab can open at all, and
+       `dashboard` is the two paginated reads the pane's numbers come from. Both
+       are read-only — the module has no call site for a write tool — and neither
+       returns the `Authorization` value it sends. */
+    'youtrack.probe': (args) => youtrackDashboard.probe(args),
+    'youtrack.dashboard': (args) => youtrackDashboard.dashboard(args),
+    /* The Habitify connector's dashboard: which accounts this machine holds and
+       what one day was scheduled. Read-only on both calls — the only upstream tool
+       either one can reach is `list-habits-by-date`. */
+    'habitify.accounts': () => habitifyDashboard.accounts(),
+    'habitify.dashboard': (args) => habitifyDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

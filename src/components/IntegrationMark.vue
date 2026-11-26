@@ -76,6 +76,28 @@ const showOrcaIcon = computed(() => !failed.value)
     decoding="async"
   />
 
+  <!-- Lynk.id is a wordmark and a glyph, and only the glyph survives at 22 px: the
+       lettering is `#E8F5F2` (near-white), so on `--bg` it disappears entirely — 174
+       px of a 2280 px drawing differ. So the row shows the glyph alone, cropped by
+       its own box, on `.mk-tile`'s 14 % brand wash; the wordmark is used once, on the
+       hero's `#0d1512` plate, where the lettering is the point. -->
+  <svg
+    v-else-if="name === 'lynk'"
+    class="int-mark-svg int-mark-brand int-mark-lynk"
+    :width="size"
+    :height="(size * 17) / 12.65"
+    viewBox="50.6 7 12.65 17"
+    aria-hidden="true"
+  >
+    <title>Lynk.id</title>
+    <path
+      fill="#00bb79"
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+      d="M56.9181 8.26221C59.8583 8.26221 62.2414 10.4467 62.2414 13.1407V22.2254C62.2414 23.2056 61.3741 23.9999 60.3051 23.9999H53.5312C52.4616 23.9999 51.5949 23.2056 51.5949 22.2254V13.1407C51.5949 10.4467 53.978 8.26221 56.9181 8.26221Z"
+    />
+  </svg>
+
   <svg
     v-else-if="name === 'youtrack'"
     class="int-mark-svg int-mark-brand"
@@ -187,6 +209,27 @@ const showOrcaIcon = computed(() => !failed.value)
     <path fill="#00832d" d="M43.65 25 57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" />
     <path fill="#2684fc" d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" />
     <path fill="#ffba00" d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" />
+  </svg>
+
+  <!-- Google's own 200×200 calendar glyph: seven paths, and the only colour in
+       the hero the app does not own. The brand hexes are Google's, printed here
+       rather than in `tokens.css`, because they are not this app's palette. -->
+  <svg
+    v-else-if="name === 'google-calendar'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 0 200 200"
+    aria-hidden="true"
+  >
+    <title>Google Calendar</title>
+    <path fill="#fff" d="M152.63 47.37H47.37v105.26h105.26z" />
+    <path fill="#ea4335" d="M152.63 200l47.37-47.37h-47.37z" />
+    <path fill="#fbbc04" d="M200 47.37h-47.37v105.26H200z" />
+    <path fill="#34a853" d="M152.63 152.63H47.37V200h105.26z" />
+    <path fill="#188038" d="M0 152.63v28.42A19 19 0 0 0 18.95 200h28.42v-47.37z" />
+    <path fill="#1967d2" d="M200 47.37V18.95A18.95 18.95 0 0 0 181.05 0h-28.42v47.37z" />
+    <path fill="#4285f4" d="M152.63 0H18.95A18.95 18.95 0 0 0 0 18.95v133.68h47.37V47.37h105.26z" />
   </svg>
 
   <svg

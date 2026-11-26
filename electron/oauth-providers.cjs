@@ -102,7 +102,13 @@ const PROVIDERS = {
     resource: 'https://mcp.habitify.me',
     resourceMetadata: 'https://mcp.habitify.me/.well-known/oauth-protected-resource',
     baseScope: 'openid profile email',
-    params: {},
+    /* `prompt=consent` for the same reason Google needs it: `offline_access` on its own
+       does not guarantee a refresh token. When Habitify already holds a live consent it
+       re-uses it, and a re-use comes back with an access token and **no**
+       `refresh_token` — which the exchange reads as a dead grant. Forcing the screen
+       makes every Re-authorize return one, so the connector has something to refresh
+       with forever. One's `habitify/plugin.ts` sends exactly this line. */
+    params: { prompt: 'consent' },
     /* There is no `/userinfo` to read here, so the identity comes out of the grant
        itself: an OIDC id_token's claims, and — for a server that puts the account
        beside the tokens instead — the token body's own `email`/`name`. The token is
