@@ -27,6 +27,17 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+/* The YouTube Studio dashboard reads the same kinds of things from a different
+   grant: an account roster and one window of numbers. Same file-cached, one-read
+   shape, no token ever leaves the main process. */
+const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
+/* The YouTrack dashboard reads the same shape from an MCP endpoint instead of an
+   OAuth grant: one probe, two paginated searches, no token ever leaves the main
+   process. */
+const youtrackDashboard = require('./youtrack-dashboard.cjs')
+/* Habitify's dashboard reads one day and its week over the MCP session the
+   connector already opens: no token ever leaves the main process, and the only
+   upstream tool either call can reach is `list-habits-by-date`. */
 const habitifyDashboard = require('./habitify-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
@@ -367,6 +378,26 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* Clockify's dashboard reads, lazy like the token verbs: the connector module
+       is only parsed on the page that needs it. `workspaces` answers the Overview
+       selector, `dashboard` the tab — both read-only, both keep the key in this
+       process, and neither takes one as an argument. */
+    'connector.workspaces': ({ workspace } = {}) =>
+      require('./connectors/clockify.cjs').workspaces(workspaces.open(workspace)),
+    'connector.dashboard': ({ workspace, ...rest } = {}) =>
+      require('./connectors/clockify.cjs').dashboard(workspaces.open(workspace), rest),
+    /* The YouTube Studio dashboard. Read-only Google calls, no write scope used,
+       and the analytics/revenue/comment scopes are separate grants — a refusal is
+       a `null` field with the missing scope named, never a `0`. */
+    'youtube.roster': () => youtubeStudioDashboard.roster(),
+    'youtube.dashboard': (args) => youtubeStudioDashboard.dashboard(args),
+    /* The YouTrack connector's dashboard, read over the MCP endpoint the same
+       workspace declares: `probe` answers whether the tab can open at all, and
+       `dashboard` is the two paginated reads the pane's numbers come from. Both
+       are read-only — the module has no call site for a write tool — and neither
+       returns the `Authorization` value it sends. */
+    'youtrack.probe': (args) => youtrackDashboard.probe(args),
+    'youtrack.dashboard': (args) => youtrackDashboard.dashboard(args),
     /* The Habitify connector's dashboard: which accounts this machine holds and
        what one day was scheduled. Read-only on both calls — the only upstream tool
        either one can reach is `list-habits-by-date`. */
