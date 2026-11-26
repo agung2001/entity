@@ -31,6 +31,10 @@ const githubDashboard = require('./github-dashboard.cjs')
    grant: an account roster and one window of numbers. Same file-cached, one-read
    shape, no token ever leaves the main process. */
 const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
+/* The YouTrack dashboard reads the same shape from an MCP endpoint instead of an
+   OAuth grant: one probe, two paginated searches, no token ever leaves the main
+   process. */
+const youtrackDashboard = require('./youtrack-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -375,6 +379,13 @@ function createRpc({
        a `null` field with the missing scope named, never a `0`. */
     'youtube.roster': () => youtubeStudioDashboard.roster(),
     'youtube.dashboard': (args) => youtubeStudioDashboard.dashboard(args),
+    /* The YouTrack connector's dashboard, read over the MCP endpoint the same
+       workspace declares: `probe` answers whether the tab can open at all, and
+       `dashboard` is the two paginated reads the pane's numbers come from. Both
+       are read-only — the module has no call site for a write tool — and neither
+       returns the `Authorization` value it sends. */
+    'youtrack.probe': (args) => youtrackDashboard.probe(args),
+    'youtrack.dashboard': (args) => youtrackDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above
