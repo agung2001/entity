@@ -13,8 +13,15 @@ import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
 import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
+import ConnectorHabitifyDashboard from '@/components/ConnectorHabitifyDashboard.vue'
 import { call } from '@/composables/localBridge'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  habitify,
+  connected as habitifyConnected,
+  readAccounts as readHabitifyAccounts,
+  readDashboard as readHabitifyDashboard,
+} from '@/composables/habitifyDashboard'
 import {
   readDashboard as readStudioDashboard,
   readRoster,
@@ -126,6 +133,9 @@ const accountsCard = ref(null)
 const accountsFact = ref('no account connected')
 const onAccountsChanged = () => {
   accountsFact.value = accountsCard.value?.accountsFact() || 'no account connected'
+  /* The Dashboard tab's gate is the account list, so a sign-in or a removal has to
+     reach the strip too: the card just changed the fact the lock is computed from. */
+  if (dashKind.value === 'habitify') readHabitifyAccounts().catch(() => {})
 }
 
 /* The provider a connector authenticates against, from the provider table in main
@@ -263,11 +273,11 @@ async function load() {
 
 /* ── the tabs ────────────────────────────────────────────────────────
    The strip exists only for the connectors this app ships a dashboard for: GitHub
-   (`builtIn === 'github'`), YouTube Studio (`builtIn === 'youtube-studio'`) and
-   Clockify (`builtIn === 'clockify'`). A tab that led to another connector's
-   half-built dashboard would be a promise nobody kept, so every other row —
-   including a custom `cli` row, or a custom row that borrowed one of those names
-   — gets no tab at all rather than a disabled one.
+   (`builtIn === 'github'`), YouTube Studio (`builtIn === 'youtube-studio'`),
+   Clockify (`builtIn === 'clockify'`) and Habitify (`builtIn === 'habitify'`). A tab
+   that led to another connector's half-built dashboard would be a promise nobody
+   kept, so every other row — including a custom `cli` row, or a custom row that
+   borrowed one of those names — gets no tab at all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -288,14 +298,24 @@ const dashKind = computed(() => {
   if (installedRow.value?.builtIn === 'github' && githubRow.value?.work) return 'github'
   if (installedRow.value?.builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
   if (installedRow.value?.builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
+  /* Habitify's reader lives in this app, so its own `work` block is the whole
+     gate — there is no roster to look up beside the row. */
+  if (installedRow.value?.builtIn === 'habitify' && installedRow.value?.work) return 'habitify'
   return ''
 })
 const dashboardTab = computed(() => Boolean(dashKind.value))
+/* The day is part of the address for the same reason the tab is: `?tab=dashboard&day=`
+   is a place a person can send somebody. Anything that is not a civil date is not a
+   day, so it falls back to the main process's "today" rather than being forwarded. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const day = computed(() => (DAY.test(String(route.query.day || '')) ? String(route.query.day) : ''))
 /* What the tab offers, in the connector's own words: GitHub's board is 90 days,
-   the channel board is the 28 the window chips start on, Clockify's week is a week. */
+   the channel board is the 28 the window chips start on, Clockify's week is a week,
+   and Habitify's is one day and the week around it. */
 const dashboardHint = computed(() => {
   if (dashKind.value === 'studio') return 'What moved in the last 28 days'
   if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
+  if (dashKind.value === 'habitify') return 'What a day was scheduled with, and the week around it'
   return 'What moved in the last 90 days'
 })
 
@@ -453,10 +473,26 @@ const clockifyLock = computed(() => {
   }
   return null
 })
+/* Habitify's one lock: no account whose grant this machine holds. It is read from
+   the account card's own call rather than re-derived here, and the sentence is
+   fixed copy for the same reason the three above are. */
+const habitifyLock = computed(() => {
+  if (!habitify.loaded) return null
+  if (!habitifyConnected()) {
+    return {
+      before: 'Dashboard needs a signed-in ',
+      code: 'Habitify',
+      after: ' account on this machine. Connect one above.',
+      title: 'Needs a signed-in Habitify account on this machine',
+    }
+  }
+  return null
+})
 const lock = computed(() => {
   if (dashKind.value === 'github') return githubLock.value
   if (dashKind.value === 'studio') return studioLock.value
   if (dashKind.value === 'clockify') return clockifyLock.value
+  if (dashKind.value === 'habitify') return habitifyLock.value
   return null
 })
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
@@ -467,11 +503,26 @@ const canOpen = (name) => name === 'overview' || !lock.value
 function select(name) {
   if (!canOpen(name)) return
   const query = { ...route.query }
-  if (name === 'overview') delete query.tab
-  else query.tab = name
+  if (name === 'overview') {
+    delete query.tab
+    /* The day belongs to the tab: a bare Overview address is the whole place, and
+       leaving `?day=` on it would keep a parameter nothing on screen reads. */
+    delete query.day
+  } else query.tab = name
   /* `replace`, not `push`: switching a tab is not a step in a history a person
      wants to walk back through one press at a time. */
   router.replace({ query })
+}
+/* A day picked in the tab is a different address, and the tab's own read follows it:
+   the address is what the read is keyed on, so going through it keeps a reload and a
+   shared link asking for the same day rather than whichever one was read last. */
+function selectDay({ day: wanted = '', force = false } = {}) {
+  const query = { ...route.query, tab: 'dashboard' }
+  if (DAY.test(String(wanted))) query.day = wanted
+  else delete query.day
+  router.replace({ query }).catch(() => {})
+  /* `force` is Refresh: the same day, asked again, past the day-long cache. */
+  if (force || wanted !== habitify.day) readHabitifyDashboard({ day: wanted, force }).catch(() => {})
 }
 /* The address spells the default out as little as possible: a bare address and
    `?tab=overview` are the same place, and a value nobody defined is not a place at
@@ -515,6 +566,13 @@ async function openDashboard() {
     await readSpaces()
     return
   }
+  /* Habitify's gate is the account list, which is a file read — cheaper than `gh
+     auth status` and the only thing that can answer whether the tab may open. */
+  if (dashKind.value === 'habitify') {
+    if (!habitify.loaded) await readHabitifyAccounts()
+    if (tab.value === 'dashboard' && !lock.value) await readHabitifyDashboard({ day: day.value })
+    return
+  }
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
@@ -553,16 +611,36 @@ watch(
       if (storedKey.value.configured && !spacesLoaded.value) await readSpaces()
       return
     }
+    if (dashKind.value === 'habitify') {
+      if (!habitify.loaded) await readHabitifyAccounts()
+      if (name === 'dashboard' && !locked && !habitify.readAt) await readHabitifyDashboard({ day: day.value })
+      return
+    }
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
 )
+/* A day in the address that this renderer has not read yet — a link followed, or a
+   reload — is read here rather than left showing the day before it. */
+watch(day, (next) => {
+  if (dashKind.value !== 'habitify' || tab.value !== 'dashboard' || lock.value) return
+  if (next && next !== habitify.day) readHabitifyDashboard({ day: next }).catch(() => {})
+})
 /* Re-checking the CLI from the accounts card changes the gate under the strip, so
    the strip follows. */
 watch(
   () => github.logins.length,
   (count) => {
     if (!count && tab.value === 'dashboard' && dashKind.value === 'github') select('overview')
+  },
+)
+/* The same for a Habitify consent granted or revoked on the accounts card: an
+   account that arrived unlocks the tab, and one that went away must not leave the
+   pane open. */
+watch(
+  () => habitify.accounts.filter((entry) => entry.hasToken).length,
+  (count) => {
+    if (!count && tab.value === 'dashboard' && dashKind.value === 'habitify') select('overview')
   },
 )
 /* The same for a consent granted or revoked on the accounts card: a channel that
@@ -920,10 +998,12 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           </p>
         </nav>
 
-        <!-- Two dashboards, one id: the strip's `aria-controls` names the pane, and
-             a pane that swapped its own name per connector would be two tabs. -->
+        <!-- One dashboard, one id: the strip's `aria-controls` names the pane, and a
+             pane that swapped its own name per connector would be four tabs. Every
+             dashboard is a link in this one chain — a standalone `v-if` beside it
+             would let the Overview pane render underneath the dashboard. -->
         <ConnectorClockifyDashboard
-          v-if="dashboardTab && tab === 'dashboard' && dashKind === 'clockify'"
+          v-if="dashKind === 'clockify' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
@@ -931,7 +1011,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           @changed="readClockifyState"
         />
         <ConnectorDashboard
-          v-if="dashKind === 'github' && tab === 'dashboard'"
+          v-else-if="dashKind === 'github' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
@@ -942,6 +1022,14 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
           @overview="select('overview')"
+        />
+        <ConnectorHabitifyDashboard
+          v-else-if="dashKind === 'habitify' && tab === 'dashboard'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          :day="day"
+          @select-day="selectDay"
         />
 
         <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">

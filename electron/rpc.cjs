@@ -35,6 +35,10 @@ const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
    OAuth grant: one probe, two paginated searches, no token ever leaves the main
    process. */
 const youtrackDashboard = require('./youtrack-dashboard.cjs')
+/* Habitify's dashboard reads one day and its week over the MCP session the
+   connector already opens: no token ever leaves the main process, and the only
+   upstream tool either call can reach is `list-habits-by-date`. */
+const habitifyDashboard = require('./habitify-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -394,6 +398,11 @@ function createRpc({
        returns the `Authorization` value it sends. */
     'youtrack.probe': (args) => youtrackDashboard.probe(args),
     'youtrack.dashboard': (args) => youtrackDashboard.dashboard(args),
+    /* The Habitify connector's dashboard: which accounts this machine holds and
+       what one day was scheduled. Read-only on both calls — the only upstream tool
+       either one can reach is `list-habits-by-date`. */
+    'habitify.accounts': () => habitifyDashboard.accounts(),
+    'habitify.dashboard': (args) => habitifyDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above
