@@ -428,12 +428,15 @@ const CATALOG = {
     website: 'https://habitify.me',
     summary: 'The habits a day was scheduled, and whether they were done.',
     verify: null,
+    /* The dashboard tab gates on this block, the same way the `opendesign` entry's
+       does: `page` is empty because a `rest` row binds through a consent, not an
+       `mcp.json`, and `documented` already leaves a non-MCP kind with no page. */
     work: {
       mention: '@habitify:',
-      resolves: 'one day of habits, or one habit on that day',
+      resolves: 'a day, and optionally one habit within that day',
       syntax: '@habitify:[<habit>:]<date|today|yesterday>',
       examples: ['@habitify:today', '@habitify:Meditate:yesterday'],
-      returns: 'the habits scheduled that day with their status, and the provider’s own sentence about the day',
+      returns: 'the habit name, its status word and the day each row was scheduled on',
       resolver: 'habitify',
       needs: 'a signed-in Habitify account on this machine',
       page: '',
@@ -441,9 +444,8 @@ const CATALOG = {
         'The date is `today`, `yesterday` or `YYYY-MM-DD` — nothing is guessed, so a malformed date is an error rather than today.',
         'A habit name before the colon narrows the day to that habit; an exact name wins, a single prefix match is accepted, and two prefix matches are refused instead of picking one.',
         'The day comes back as it was scheduled: `completed`, `skipped`, `failed`, or `none` for a habit that was due and not logged.',
-        '**Read-only.** The only tool this app calls is `list-habits-by-date`; completing, skipping or logging a habit is never wired, so a turn cannot change what your week looks like.',
-        'The read goes through Habitify’s MCP server with the account’s own access token, which is refreshed on this machine and never shown to a page.',
-        'The account is named by its localpart on the card; no address appears in these rows.',
+        '**Read-only.** The only tool this app calls is `list-habits-by-date`; nothing here writes to Habitify, so completing, skipping or logging a habit cannot happen from a turn or from the Dashboard.',
+        'The read goes through Habitify’s MCP server with the account’s own access token, refreshed on this machine and named by its localpart — no address appears in these rows.',
       ],
       samples: [
         { code: '@habitify:today', then: 'every habit scheduled today, with its status' },
@@ -489,6 +491,46 @@ const CATALOG = {
         { code: '@clockify:design-system:this week', then: 'that project’s hours, its members, and the week total' },
         { code: '@clockify:avery:2026-03-02', then: 'one member’s week, split by project' },
       ],
+    },
+  },
+
+  /* ── a report made of a Drive folder, with no mention behind it ──────────
+     Lynk.id ships no resolver on purpose. It is a **report**, not a lookup: the
+     answer is one table computed from up to a hundred spreadsheets, and its only
+     setting — which folder they live in — belongs to the workspace, not to a line
+     typed in the composer. So this entry carries `work` with no `mention` and no
+     `resolver`: the page draws its config card and no syntax, `mentionOf()` returns
+     '', and the composer never offers `@lynk:` for something nothing answers.
+
+     `provider: 'google'` is implicit (it is the default in `oauth-providers`), but
+     the grant is not the Drive connector's: `drive.readonly` reaches the whole
+     Drive, which `drive.file` cannot, so it is declared in its own tier in
+     `oauth-scopes.cjs`. */
+  lynk: {
+    label: 'Lynk.id',
+    kind: 'rest',
+    oauth: true,
+    website: 'https://lynk.id',
+    summary:
+      'What the store sold, read from the Google Sheets in one Drive folder — one spreadsheet per product, one ` - Transactions` tab each.',
+    verify: null,
+    work: {
+      resolves:
+        'the store\u2019s sales, walked out of the spreadsheets in the Drive folder this workspace picked',
+      returns:
+        'revenue, orders, buyers and a product table, for a chosen window, plus the month-by-month series',
+      needs: 'a signed-in Google account with drive.readonly, and one Drive folder full of Lynk.id spreadsheets',
+      page: 'connectors.json',
+      how: [
+        'The folder is the only setting. It lives on this workspace\u2019s connector row, so two workspaces may point at two different folders and neither report is a constant in the code.',
+        'One spreadsheet per product, and the rows are read from the tab named by the suffix \u2014 ` - Transactions` unless this workspace changed it.',
+        'A spreadsheet without that tab is counted in the folder and not read: a product that never sold is a fact, not a zero.',
+        'Free rows stay in the table with `Rp 0`, because a product that took 238 orders and no money is a real result. Free orders are counted as orders, never as revenue.',
+        'Revenue is the sheet\u2019s own price column, summed in rupiah. Nothing is converted and no currency is guessed.',
+        '`drive.readonly` is what lets the folder be listed and its children opened. A grant without it refuses the read rather than answering an empty table.',
+        'The answer is cached on this machine for six hours; re-reading is a button, not a side effect of visiting the tab.',
+      ],
+      samples: [],
     },
   },
 

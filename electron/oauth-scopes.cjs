@@ -157,6 +157,30 @@ const SCOPE_CATALOG = {
     ],
   },
 
+  /* Lynk.id reads a folder of Google Sheets. `drive.readonly` is the scope that
+     reaches a folder the app did not create — `drive.file`, the Drive connector's
+     read tier, only sees what this app made, so it cannot open a spreadsheet the
+     store wrote in the browser. `spreadsheets.readonly` is what lets the rows out of
+     a Sheet once the file itself is reachable: Drive access alone gets you the file
+     object, not its grid.
+
+     There is one tier on purpose, matching Habitify: this connector never writes to
+     Drive or to a Sheet, so a write tier would ask for a permission nothing uses. */
+  lynk: {
+    tiers: [
+      {
+        id: 'read',
+        label: 'Read a Drive folder',
+        detail:
+          'List one Drive folder and read the Google Sheets inside it. Nothing can be created, changed or deleted.',
+        scopes: [
+          { wire: GOOGLE_AUTH('drive.readonly'), display: 'drive.readonly' },
+          { wire: GOOGLE_AUTH('spreadsheets.readonly'), display: 'spreadsheets.readonly' },
+        ],
+      },
+    ],
+  },
+
   /* YouTube **Studio** data is a different grant from the public YouTube search
      above: reading a channel's own analytics needs `yt-analytics.readonly`, and
      the two are separate scopes on purpose. A person who only wants to search

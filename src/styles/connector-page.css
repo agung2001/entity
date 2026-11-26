@@ -211,6 +211,15 @@
 .cxn-work-wrap {
   white-space: normal;
 }
+/* The stored-key sentence is prose, and `.cxn-facts dd` clips one line: a fact you
+   have to hover to read is not a fact. The card's own gap does not apply here, so
+   the line keeps its own before the fields. */
+.cxn-key-state {
+  margin: 0 0 12px;
+}
+.cxn-key-state dd {
+  white-space: normal;
+}
 .cxn-work-eg {
   display: flex;
   flex-wrap: wrap;
@@ -723,6 +732,85 @@
   flex-wrap: wrap;
   min-width: 0;
 }
+/* The chips and the day picker are one control: the chips are this week, the picker
+   is any other day. Grouped so the row wraps as a unit rather than leaving the
+   picker stranded on a second line by itself. */
+.dsh-day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.dsh-picker {
+  position: relative;
+}
+.dsh-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    color 0.14s ease;
+}
+.dsh-pick:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.dsh-pick:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+}
+/* A native date input, dropped under its button: the calendar is the browser's, so
+   there is no grid to author and no dependency to add. Anchored on its right edge,
+   because the picker sits at the end of the row and a layer that grew rightwards
+   would hang off the sheet. Only a border and the page's own background — it is a
+   small control, not a card, so it does not get a shadow. */
+.dsh-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.dsh-pop .lbl {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dsh-pop input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--ink);
+}
+.dsh-pop input:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 1px;
+}
 .dsh-chip {
   display: inline-flex;
   align-items: center;
@@ -1124,6 +1212,32 @@ table.dsh-tbl {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* A habit is a name and nothing else: no repository, no author, no link. One line,
+   ellipsised rather than clamped, because the row's whole job is naming the habit and
+   a wrapped name would move every other cell off the 58px rhythm. */
+.dsh-hab {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-hab .nm {
+  font-size: var(--fs-secondary);
+  line-height: 1.28;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A rest day is present, not absent: the name stays in the list to show the habit
+   exists and was scheduled, and only the ink steps back so it does not compete with
+   the rows that were answered. */
+.dsh-tbl tbody tr[data-s='skipped'] .dsh-hab .nm {
+  color: var(--muted);
+}
+/* The row's own state is `data-s` on the `<tr>`, not a second copy in a class: the
+   status pill below says the word, and the attribute is what a reader — a style, or
+   a test — can reach without parsing it. */
 /* `skill.css` already draws `.st` — a 5px dot and mono micro caps. Only the box
    and the tone are this table's, so only those are named again: the pill keeps the
    shared dot geometry and gains an edge. */
@@ -1191,6 +1305,16 @@ table.dsh-tbl {
   margin-top: 10px;
   font-size: var(--fs-secondary);
   color: var(--ink-2);
+}
+/* The day that could be read has nothing, so the row answers the question that
+   raises: where the schedule resumes. The sentence takes the body ink rather than
+   the muted note, and the verb is the one thing in the row there is to press. */
+.emptyrow td > .nx {
+  color: var(--ink-2);
+}
+.emptyrow td > .nx-go {
+  display: inline-flex;
+  margin-top: 12px;
 }
 .dsh-foot {
   margin: 9px 0 0;
@@ -1271,12 +1395,6 @@ table.dsh-tbl {
   grid-template-columns: 74px minmax(0, 1fr);
   gap: 2px 10px;
 }
-/* The quota card is three rows of short numbers under a meter, so it sits tighter
-   than the Overview tab's facts list — the same values, less air. */
-.dsh-card .cxn-facts.tight dt,
-.dsh-card .cxn-facts.tight dd {
-  padding-block: 3px;
-}
 /* The fill is the bar's own signal and the `aria-label` carries the numbers, so a
    screen reader gets a measured sentence instead of a graphic. */
 .dsh-meter {
@@ -1331,6 +1449,271 @@ table.dsh-tbl {
 }
 .dsh-tbl tr.skrow td {
   height: 58px;
+}
+
+/* ── the YouTube Studio dashboard: one channel, one window, one line ──────
+   Same band, same tiles, same table as the GitHub tab — the shape is the app's,
+   not a connector's. What is named here is only what a channel needs and a
+   repository does not: a daily chart, a share with a denominator, and a window
+   that ends two days before today. */
+
+/* The band's own sentence, printed once under the tiles. It is the page's most
+   load-bearing line of prose, so it is body text with the two dates in ink, not
+   a footnote in a smaller size. */
+.dsh-note {
+  margin: 0 0 16px;
+  max-width: 74ch;
+  font-size: var(--fs-secondary);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dsh-note b {
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* Inside a card the note is the card's caption and pays the card's padding, not
+   the page's margin. */
+.dsh-note-in {
+  margin: -1px 0 10px;
+}
+
+/* One pixel of air between the channel chips and the window chips: two groups on
+   one line need a divider, or `main` reads as a window size. */
+.dsh-sep {
+  width: 1px;
+  height: 16px;
+  align-self: center;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* The second line of a tile: the delta in ink and what it is measured against in
+   muted. One line, ellipsis, because six tiles across cannot all wrap. */
+.dsh-kpi .d {
+  display: block;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsh-kpi .d b {
+  font-weight: 500;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.dsh-kpi .d em {
+  font-style: normal;
+}
+/* A dash is not a number. Dropping the whole tile to muted splits the band into
+   what the grant answered and what it did not, which is the only reading that
+   stays honest when three of six tiles are `—`. */
+.dsh-kpi[data-unread='1'] .v,
+.dsh-kpi[data-unread='1'] .d b {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Two moving parts in the main column — three cards and the note above them — so
+   the gap is stated once instead of on each card. */
+.dsh-main > * + * {
+  margin-top: 14px;
+}
+
+/* ── the chart ──────────────────────────────────────────────────────────
+   Four elements on a 640×120 grid: the baseline, the filled band, the line, the
+   peak. No canvas and no library, because the series is one polyline and the axis
+   is three labels — both of which already scale with `viewBox`. */
+.yt-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.yt-chart .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.yt-chart .area {
+  fill: color-mix(in oklab, var(--hero) 26%, transparent);
+}
+.yt-chart .line {
+  fill: none;
+  stroke: color-mix(in oklab, var(--hero) 45%, var(--ink-2));
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* A hole, not a highlight: the band under the peak is already the hero colour, so
+   a solid dot would disappear into the thing it is marking. */
+.yt-chart .dot {
+  fill: var(--bg);
+  stroke: color-mix(in oklab, var(--hero) 45%, var(--ink-2));
+  stroke-width: 1.5;
+}
+
+/* Three labels for three facts: where the window starts, the highest day, where
+   it ends. The peak is the only one that is decoration, so it is the one the
+   narrow window drops. */
+.yt-axis {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.yt-axis .pk {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-2);
+}
+
+/* ── the traffic rail ───────────────────────────────────────────────────
+   A share needs a denominator, so the number beside the bar and the width of the
+   bar are the same number: `38.4%` over a 38.4%-wide fill. */
+.yt-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yt-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 0 8px;
+  padding: 4px 0;
+  font-size: var(--fs-secondary);
+}
+.yt-bars .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.yt-bars .pc {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The track spans both columns under its own label, so a 306px rail does not
+   spend half its measure on a label and a bar sitting side by side. */
+.yt-bars .bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.yt-bars .bar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--hero) 55%, var(--ink-2));
+  transition: width 0.16s ease;
+}
+/* The tail of a breakdown (`Other`, `Direct or unknown`) is the residual no named
+   source claimed. Dimmed rather than coloured like a source that was measured. */
+.yt-bars .bar i[data-dim='1'] {
+  background: var(--border-strong);
+}
+
+/* A number column is right-aligned and tabular, and so is its head — six rows of
+   digits under one left-aligned word do not line up. */
+.dsh-tbl thead th.num,
+.dsh-tbl td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.dsh-tbl td.num {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+/* The comments table names its video in a cell rather than a lead column, so it
+   clamps to two lines the way `.dsh-pr a` does and keeps the full title in its
+   `title`. */
+.dsh-tbl td.vd a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-tbl td.vd a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A comment names its author in mono micro caps above the text, the way a table
+   row names its id above its title. */
+.dsh-cmt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-cmt .who {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.15;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsh-cmt a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-secondary);
+  line-height: 1.28;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-cmt a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* An act that moves the page rather than leaving it: the affordance of a link,
+   the reach of a button. Used inside a cell and inside a foot, which is why it is
+   not a `.btn`. */
+.dsh-linkbtn {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.dsh-linkbtn:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+.dsh-foot .dsh-linkbtn {
+  margin-top: 0;
+  font-size: inherit;
 }
 
 /* ── the accounts card, the `cli` variant ─────────────────────────────────
@@ -1522,6 +1905,10 @@ table.dsh-tbl {
     height: 26px;
     font-size: var(--fs-label);
   }
+  .dsh-pick {
+    height: 26px;
+    font-size: var(--fs-label);
+  }
   .dsh-when {
     margin-left: 0;
     font-size: var(--fs-micro);
@@ -1529,6 +1916,11 @@ table.dsh-tbl {
     white-space: normal;
   }
   .dsh-when .sep {
+    display: none;
+  }
+  /* Two axis labels fit a phone; three collide. The peak survives in the chart's
+     `aria-label` and in its dot, so nothing is lost that was not decorative. */
+  .yt-axis .pk {
     display: none;
   }
   /* The head's four labels cannot survive a 320px measure, so the table stops
@@ -1614,6 +2006,1620 @@ table.dsh-tbl {
   .dsh-kpi,
   .dsh-meter i {
     transition: none;
+  }
+}
+
+/* ── the Clockify dashboard: the `.dsh-*` band, plus what only this week
+      needs ─────────────────────────────────────────────────────────────────
+   The band, the tiles and the two tables are the GitHub dashboard's primitives,
+   untouched: `.dsh-bar` already stacks, `.dsh-when` already pushes itself right,
+   and `.dsh-tbl` is the 58 px roster. Below are only the boxes the Clockify frame
+   draws that the GitHub one does not — a leading label, a provenance tag, the
+   workspace segment, the week stepper, the share bar, the signed delta, the
+   individual card and the call ledger.
+
+   Every one of them is scoped to `.ck-` so a change here cannot move the GitHub
+   tab, and every breakpoint is a query on `cxn` (the page column) rather than on
+   the window, because the same window shows a full dashboard in a wide workspace
+   and this folded one in a narrow sheet. */
+
+/* `.dsh-bar` is a row: the GitHub band fits on one line. This band has two — a
+   choice then a provenance — so it states the column rather than inheriting the
+   row and wrapping the second line beside the first. */
+.ck-lines {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+}
+/* Each line is one row: the workspace is a choice and the read is an instrument, so
+   a line that wraps puts the stepper under the segment and reads as a second,
+   unrelated control. `min-width:0` lets the segment shrink rather than the line. */
+.ck-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ck-lead {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ck-src {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ck-src code {
+  color: var(--ink-2);
+}
+.ck-src[data-tone='bad'] {
+  color: var(--danger);
+  white-space: normal;
+}
+/* `new` marks the one call this tab adds. It is a claim about what existed before,
+   so it is a label and never a colour: the accent tint is the frame's, nothing more. */
+.ck-new {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: var(--r-2xs);
+  padding: 1px 4px;
+  margin-left: 4px;
+}
+
+/* A workspace name is long and the segment holds two or three of them: the track
+   may shrink, the name ends in an ellipsis, and the row's height never moves. */
+.ck-seg {
+  max-width: 100%;
+  overflow: hidden;
+}
+.ck-seg button {
+  min-width: 0;
+}
+.ck-seg button .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 132px;
+}
+/* The member count is the map's coverage, not a badge: mono so it lines up with
+   the `mapped / total` in the tiles. */
+.ck-seg button .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  padding-left: 4px;
+}
+
+/* ── the week stepper ────────────────────────────────────────────────────
+   Two quiet buttons around a printed range. The range is the label and the buttons
+   are the instrument, so 26 px holds it; next week is disabled because a week with
+   no end yet reads as a bug. */
+.ck-wk {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ck-wkbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  /* `background` and `color` only: a width or height transition would relayout the
+     band on every press. */
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.ck-wkbtn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.ck-wkbtn:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 1px;
+}
+.ck-wkbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ck-wktext {
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+/* ── the share bar ───────────────────────────────────────────────────────
+   7 px, one fill, no animation on the width: the numbers land with the row. */
+.ck-bar {
+  position: relative;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.ck-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  /* The inset ring is what keeps an accent fill from bleeding into the track's
+     own edge on a light surface. */
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-ink) 38%, transparent);
+}
+/* A person with no entries gets the empty track and no fill: a 2 % stub reads as
+   "a little", which is the one thing it is not. */
+.ck-bar.mut > i,
+.ck-bar.mut {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.ck-none {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+
+/* A signed change: `up` and `dn` are the two directions, and `flat` is a week that
+   did not move — printed as an em dash rather than `+0h 00m`. `--ok-ink`/`--danger`
+   are the ink half of the pair: raw `--ok` is 3.78:1 as text on a light surface. */
+.ck-delta {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.ck-delta.up {
+  color: var(--ok-ink);
+}
+.ck-delta.dn {
+  color: var(--danger);
+}
+.dsh-kpi .q .ck-delta {
+  margin-right: 4px;
+}
+/* The denominator in `5 / 6` and `4 / 7`: the same figure, one step quieter, so the
+  eye reads the numerator first. */
+.ck-sub {
+  font-size: 0.62em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+/* ── the names ───────────────────────────────────────────────────────────
+   The pick is text, not a button: six visible buttons in a column of names turns a
+   roster into a toolbar. Padding plus a negative margin grows a 27 px target into
+   the 34 px row without opening it. */
+.ck-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ck-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-login {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-pick {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 0;
+  margin: -4px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.14s ease;
+}
+.ck-pick:hover {
+  border-bottom-color: var(--border-strong);
+}
+.ck-pick[aria-pressed='true'] {
+  color: var(--ink);
+  font-weight: 500;
+  border-bottom-color: var(--ink);
+}
+.ck-pick:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-2xs);
+}
+.ck-tbl tfoot td {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ck-tbl tfoot td b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the individual card ─────────────────────────────────────────────────
+   One subject, three facts: who, how much, and what changed. `.plist` is already
+   the command palette's own scroll list in `surfaces.css`, so this list is named
+   for itself rather than borrowing a dialog's class. */
+.ck-me .hd {
+  padding: 12px 14px 9px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+.ck-me-head {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 14px;
+}
+.ck-av {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-ink) 26%, transparent);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.ck-me-who {
+  min-width: 0;
+}
+.ck-me-who b {
+  display: block;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-me-who span {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.ck-me-tot {
+  text-align: right;
+}
+.ck-me-tot b {
+  display: block;
+  font-family: var(--font);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.ck-me-tot span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.ck-me-cols {
+  border-top: 1px solid var(--border);
+}
+.ck-me-cols > div {
+  padding: 12px 14px 14px;
+  min-width: 0;
+}
+.ck-me-cols h4 {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ck-me-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* Name and hours on one line, the bar on the next: the bar is the proportion of a
+   person's week, so it needs the full measure rather than the 54 px a third column
+   would leave it. */
+.ck-me-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 3px 0;
+}
+.ck-me-list .nm {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-me-list .hr {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.ck-me-list .ck-bar {
+  grid-column: 1 / -1;
+  height: 5px;
+}
+.ck-me-empty {
+  padding: 0 14px 14px;
+}
+
+/* ── the week chart ──────────────────────────────────────────────────────
+   Seven columns on an ended baseline. A zero day keeps a 3 % floor: a bar of no
+   height reads as a day the payload did not answer for. */
+.ck-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+  padding: 14px 14px 10px;
+  align-items: end;
+}
+.ck-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.ck-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  height: 74px;
+}
+.ck-fill {
+  display: block;
+  min-height: 2px;
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-ink) 38%, transparent);
+  transition: height 0.16s ease;
+}
+.ck-fill.zero {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.ck-hr {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.ck-dl {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── the call ledger ─────────────────────────────────────────────────────
+   The four requests, with the filter that makes them different from each other:
+   without `groups:` four identical rows would read as one row printed four times. */
+.ck-io-rows {
+  display: grid;
+  gap: 1px;
+}
+.ck-io .r {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 14px;
+  font-size: var(--fs-secondary);
+}
+.ck-io .r .k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 2px;
+}
+.ck-io .r .v {
+  min-width: 0;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ck-io .r .v code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink);
+}
+.ck-io .r .v .g {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ck-io .dsh-foot {
+  padding: 10px 14px 12px;
+  margin: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ── the breakpoints this week needs ────────────────────────────────────
+   Same ladder as the GitHub tab, plus the three boxes only this frame has. The
+   tile grid, the rail and the `.dsh` column are already handled above by rules
+   the two tabs share, so only the additions are repeated here. */
+
+@container cxn (max-width: 899.99px) {
+  /* The rail goes 2-up under the cards, so the ledger's 58 px key column has half
+     the measure it had: it folds above its value instead of shrinking. */
+  .ck-io .r {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    padding: 7px 12px;
+  }
+  .ck-io .r .k {
+    padding-top: 0;
+  }
+}
+
+@container cxn (max-width: 659.99px) {
+  /* The two tables have stacked here; the individual card follows, and its total
+     moves under the name rather than squeezing the name to an ellipsis. */
+  .ck-me-head {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+  .ck-av {
+    width: 34px;
+    height: 34px;
+    font-size: var(--fs-meta);
+  }
+  .ck-me-tot {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    text-align: left;
+  }
+  .ck-me-tot b {
+    font-size: var(--fs-h5);
+  }
+  .ck-me-tot span {
+    margin-top: 0;
+  }
+  .ck-week {
+    gap: 3px;
+    padding: 12px 10px 8px;
+  }
+  .ck-col {
+    height: 56px;
+  }
+}
+
+@container cxn (max-width: 559.99px) {
+  /* At a finger width the name is the only way to change the card below, so it
+     pays for a 44 px box; the negative margin grows the target into the row's own
+     padding instead of opening it. */
+  .ck-pick {
+    min-height: 44px;
+    padding: 12px 0;
+    margin: -12px 0;
+  }
+  /* A 44 px inline-block inside an 18 px line box left one row taller than the
+     next; a fixed-height flex row holds every name on the same box. */
+  .ck-name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    line-height: 20px;
+  }
+  /* The table stops being a table here: with `table-layout: fixed` a block `tbody`
+     is still forced into the declared columns, which clips every name. Name and
+     hours on one row, the bar under both — nothing dropped, nothing clipped. */
+  .ck-tbl colgroup,
+  .ck-tbl thead {
+    display: none;
+  }
+  .ck-tbl,
+  .ck-tbl tbody,
+  .ck-tbl tfoot,
+  .ck-tbl tr,
+  .ck-tbl td {
+    display: block;
+  }
+  .ck-tbl tr.skrow td {
+    height: auto;
+  }
+  .ck-tbl tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'nm hr'
+      'bar bar';
+    gap: 6px 10px;
+    height: auto;
+    padding: 9px 12px;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  }
+  .ck-tbl tbody td {
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  .ck-tbl td.c-nm {
+    grid-area: nm;
+  }
+  .ck-tbl td.c-bar {
+    grid-area: bar;
+  }
+  .ck-tbl td.c-hr {
+    grid-area: hr;
+    text-align: right;
+  }
+  /* `-2h 30m` beside `32h 10m` reads as one figure split in two, and a third row
+     per member doubles the roster for a column the frame drops at this width too
+     (`hide-sm` on the same cell). The week's own change is still printed in the
+     first tile and in the footer, so nothing is lost — only repeated closer. */
+  .ck-tbl td.c-dv {
+    display: none;
+  }
+  /* The footer is one sentence: the numbers it totals are already printed above
+     every row, so only the sentence stays and the per-column totals fold away. */
+  .ck-tbl tfoot tr {
+    display: block;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .ck-tbl tfoot td {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    white-space: normal;
+  }
+  .ck-tbl tfoot td.c-bar,
+  .ck-tbl tfoot td.c-hr,
+  .ck-tbl tfoot td.c-dv {
+    display: none;
+  }
+  .ck-tbl .emptyrow td {
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+  }
+  /* 44 px of target: 36 px button inside a 4 px tray. Only the narrow view pays. */
+  .ck-seg {
+    width: 100%;
+  }
+  .ck-seg button {
+    flex: 1 1 auto;
+    justify-content: center;
+    height: 36px;
+  }
+  .ck-lead,
+  .ck-src {
+    display: none;
+  }
+  /* The stepper is the only way to change the read, so it pays for a 44 px box
+     like every other control at this width; the printed range stays put so the
+     row grows once, not twice. */
+  .ck-wkbtn {
+    width: 44px;
+    height: 44px;
+  }
+  .ck-wk {
+    gap: 4px;
+  }
+  .ck-day .ck-hr {
+    font-size: var(--fs-micro);
+    letter-spacing: -0.02em;
+  }
+}
+
+/* The shimmer is already gone (`dsh-skel`, above, is shared). What is left is this
+   tab's own two: the stepper's hover and the week's bars growing to their value.
+   Both are decoration; the printed figure beside each bar is the answer. */
+@media (prefers-reduced-motion: reduce) {
+  .ck-wkbtn,
+  .ck-pick,
+  .ck-fill {
+    transition: none;
+  }
+}
+
+/* ══ the YouTrack pack: the two report bands, the flow, the project bars ══
+   Everything above is the GitHub pack, unchanged. Everything below is what the
+   second dashboard adds on top of it — named against classes that pack never
+   used, so neither pane can inherit the other's shape. Every colour is a token
+   or a `color-mix` of tokens: `--ok-ink` is quoted from `tokens.css:89`/`:117`
+   and not declared here, because plain `--ok` is 4.02:1 on white and the done
+   column is 12 px text.
+
+   The four bar fills are mixed from the **ink** tokens, not the fill tokens:
+   `--accent` at 44% is 1.22:1 on white — a bar nobody can see. `--accent-ink` and
+   `--ok-ink` are the same hue at text weight and clear 3:1 in both themes. */
+
+/* A report's own heading, between its tiles and its table. It is not a card head:
+   it names a band, so it sits on the page, not in a frame. */
+.dsh-sect {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 22px 0 11px;
+}
+.dsh-sect:first-of-type {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.dsh-band > .dsh-sect {
+  margin-bottom: 11px;
+}
+.dsh-band > .dsh-sect + .dsh-kpis {
+  margin-bottom: 18px;
+}
+.dsh-main > .dsh-sect {
+  margin-top: 26px;
+}
+.dsh-sect h2 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h5);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  color: var(--ink);
+}
+.dsh-sect .why {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.dsh-sect .why b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.dsh-sect .spacer {
+  flex: 1;
+}
+/* The jump is a link on the page, not inside a banner, so it needs the whole look
+   the `.dsh-wait`-scoped rule never gave it. */
+.dsh-sect .dsh-jump {
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.dsh-sect .dsh-jump:hover,
+.dsh-sect .dsh-jump:focus-visible {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+/* The second band's tiles sit on the table above them, so they lose the band's
+   bottom margin and take the section's top one. */
+.dsh-main > .dsh-kpis {
+  margin: 0;
+}
+
+/* ── the team table: numbers are a column, not prose ─────────────────── */
+.dsh-tbl-team thead th.num,
+.dsh-tbl-team td.num {
+  text-align: right;
+}
+.dsh-tbl-team td.num {
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.dsh-tbl-team td.num b {
+  color: var(--ink);
+  font-weight: 500;
+}
+/* The two columns whose value needs a token's own colour rather than ink: a
+   stalled count is the thing the tab exists to surface, and a done count is the
+   one column that is good news. */
+.dsh-tbl-team td.num.stalled {
+  color: var(--danger);
+}
+.dsh-tbl-team td.num.oldest {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+.dsh-tbl-team td.num.done {
+  color: var(--ok-ink);
+}
+
+/* A monogram, a name, a login, and a share bar under them. The bar is the only
+   place colour speaks on this row, and the number beside it says the same thing
+   in words — `aria-hidden` on the bar, the count in the cell. */
+.dsh-nm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.dsh-nm .t {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-nm b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A 26-character login is the longest the tracker holds, so the cell clips rather
+   than wrapping the row open; the full value stays in the `title`. */
+.dsh-nm .lg {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 26ch;
+}
+.dsh-mm {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  align-self: center;
+}
+.dsh-share {
+  display: block;
+  height: 2px;
+  margin-top: 5px;
+  max-width: 190px;
+  background: var(--surface-2);
+  border-radius: var(--r-2xs);
+  overflow: hidden;
+}
+.dsh-share i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--ink-2) 62%, var(--surface-2));
+}
+/* The percentage under a count, small enough to be a gloss rather than a second
+   number competing with the one above it. */
+.dsh-pc {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+/* ── the flow: 7 days, two bars each, no library ─────────────────────── */
+.dsh-flow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  height: 92px;
+  padding: 2px 0 0;
+}
+.dsh-flow-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+}
+/* `align-items: flex-end` is what makes the two bars grow from the baseline: the
+   `height` on each `i` is a share of the shared peak, so the tallest column in
+   either series touches the top and every other column is read against it. */
+.dsh-flow-col .bars {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  min-height: 0;
+}
+.dsh-flow-col .bars i {
+  display: block;
+  width: 45%;
+  border-radius: var(--r-2xs) var(--r-2xs) 0 0;
+  min-height: 2px;
+}
+.dsh-flow-col .bars i[data-k='created'],
+.dsh-legend i[data-k='created'] {
+  background: color-mix(in oklab, var(--accent-ink) 70%, var(--surface-2));
+}
+.dsh-flow-col .bars i[data-k='resolved'],
+.dsh-legend i[data-k='resolved'] {
+  background: color-mix(in oklab, var(--ok-ink) 88%, var(--surface-2));
+}
+.dsh-flow-col .lb {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+}
+.dsh-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dsh-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dsh-legend i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-2xs);
+}
+.dsh-legend .spacer {
+  flex: 1;
+}
+
+/* ── projects: a name, a bar, a count ───────────────────────────────── */
+.dsh-projs li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+/* A short name is a key (`AC`, `AFAB`), so it keeps the mono face and the row
+   keeps one height whatever the word is. */
+.dsh-projs .nm {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-projs .when {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-pbar {
+  display: block;
+  height: 4px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.dsh-pbar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--accent-ink) 70%, var(--surface-2));
+}
+/* Ranked against the largest row, so the first row is the one that reads as
+   "full" — a bar scaled to the total would make every row a stub. */
+.dsh-projs li:first-child .dsh-pbar i {
+  background: color-mix(in oklab, var(--accent-ink) 92%, var(--surface-2));
+}
+
+/* A chart with nothing in it is one line, not seven empty bars. Scoped to the
+   flow card by its heading: `.dsh-none` is shared with the GitHub pack's rail,
+   and a rule for one card must not reach into another's frame. */
+[aria-labelledby='dsh-flow-head'] > .dsh-none {
+  margin: 0;
+  align-self: center;
+  grid-column: 1 / -1;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* The same sentence is one `<li>` inside the project list, where every row is
+   `name | bar | count`: an empty list has no bar to draw, so the line spans it. */
+.dsh-projs li.dsh-none {
+  display: block;
+  padding-top: 0;
+}
+
+/* ── the reads card: what this pane may call, and where the token is ──── */
+.reads .reads-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  line-height: 1.55;
+}
+.reads .tokcard {
+  margin-top: 11px;
+}
+/* Three facts about one credential: what it is, which file, which header. A
+   sign-in form here would be a second place for a token to live, and a wrong one
+   — so the card prints the two names a person has to open and nothing else. */
+.tokcard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+.tokcard .k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tokcard code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tokcard .n {
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── the responsive pass, `@container cxn` like the rest of this file ──
+   These follow the measure the page is given, never the window's. */
+@container cxn (max-width: 899.99px) {
+  .dsh-sect {
+    margin: 18px 0 10px;
+  }
+}
+
+@container cxn (max-width: 640px) {
+  .dsh-sect h2 {
+    font-size: var(--fs-h6);
+  }
+  .dsh-sect .why {
+    width: 100%;
+  }
+  .dsh-sect .spacer,
+  .dsh-sect .dsh-jump {
+    display: none;
+  }
+  /* `In prog.` and `Discussed` are the two columns a narrow measure can drop
+     without losing the answer — and they drop from head and row together, so no
+     label sits over the wrong column. */
+  .dsh-tbl-team thead th:nth-child(3),
+  .dsh-tbl-team td:nth-child(3),
+  .dsh-tbl-team thead th:nth-child(4),
+  .dsh-tbl-team td:nth-child(4) {
+    display: none;
+  }
+  .dsh-nm .lg {
+    display: none;
+  }
+  .dsh-projs li {
+    grid-template-columns: 56px minmax(0, 1fr) 30px;
+  }
+}
+
+@container cxn (max-width: 559.99px) {
+  .dsh-tbl-team thead {
+    display: none;
+  }
+  .dsh-tbl-team,
+  .dsh-tbl-team tbody,
+  .dsh-tbl-team tr,
+  .dsh-tbl-team td {
+    display: block;
+  }
+  .dsh-tbl-team tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 0;
+    height: auto;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dsh-tbl-team tbody td {
+    padding: 0;
+    border: 0;
+    height: auto;
+  }
+  .dsh-tbl-team tbody td.who {
+    flex: 0 0 100%;
+    margin-bottom: 2px;
+  }
+  .dsh-tbl-team tbody td.num {
+    text-align: left;
+    flex: 0 0 auto;
+    margin-right: 12px;
+  }
+  .dsh-tbl-team tbody td.num:last-child {
+    margin-right: 0;
+  }
+  /* The two dropped columns come back as labelled facts: at this width a stacked
+     row has the room, and "in progress 14" is shorter than two columns' worth of
+     head. */
+  .dsh-tbl-team thead th:nth-child(3),
+  .dsh-tbl-team td:nth-child(3),
+  .dsh-tbl-team thead th:nth-child(4),
+  .dsh-tbl-team td:nth-child(4) {
+    display: block;
+  }
+  /* The label a screen reader hears too: "open 13", not a bare 13 under a head
+     that is no longer on screen. */
+  .dsh-tbl-team tbody td.num::before {
+    content: attr(data-l) ' ';
+    font-family: var(--mono);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .dsh-tbl-team td.num b {
+    font-size: var(--fs-secondary);
+  }
+  .dsh-pc {
+    display: none;
+  }
+  .dsh-share {
+    max-width: none;
+  }
+  .dsh-flow {
+    height: 78px;
+  }
+  .dsh-legend {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+/* ── the strip on an `mcp` page ────────────────────────────────────────────
+   `ConnectorPageView` puts its strip inside `.cxn-page` and lets the strip's own
+   `margin-bottom` do the spacing before the body. An `mcp` page has no `.cxn-page`
+   of its own, so this pack adds one directly above `.entp-grid` — and that grid
+   carries a `margin-top` for the page it was written for, where nothing sits
+   above it. Both margins present would be a 52 px gap under the tabs; the strip's
+   is the one that describes the distance between a strip and its panel. */
+.cxn-page + .entp-grid {
+  margin-top: 0;
+}
+
+/* ── Lynk.id: a report over a Drive folder ───────────────────────────────
+   One connector ships a wordmark instead of a glyph, one report card that is a
+   folder picker over a static row of facts, and one table whose columns are money
+   rather than a pull request. Everything else on this page is reused as it is —
+   `.dsh-band`, the chips, `.dsh-wait`, `.dsh-tblscroll`, `.dsh-meter`, the rail.
+
+   The three brand hexes below are the whole colour budget: `#00bb79` is Lynk.id's
+   green, `#0d1512` is the plate its wordmark is drawn on, and `#e8f5f2` is that
+   wordmark's lettering. They never colour text, a border, or a background that
+   something other than the mark sits in. */
+
+/* The hero's one wordmark. A 95×24 drawing needs 26 px of height to stay legible
+   and the lettering is near-white, so it gets the brand plate at the same height
+   as the 66 px box it replaces — a white word on `--bg` is an empty box. */
+.cxn-hero-mark.cxn-hero-mk {
+  width: auto;
+  min-width: 136px;
+  padding: 0 16px;
+  background: #0d1512;
+  border: 1px solid #0d1512;
+  color: #e8f5f2;
+}
+.cxn-hero-mark.cxn-hero-mk svg {
+  display: block;
+  width: 104px;
+  height: auto;
+}
+:root[data-theme='dark'] .entp-hero .cxn-hero-mark.cxn-hero-mk {
+  border-color: #23302a;
+}
+
+/* The row mark at 22 px is the glyph alone: at that size the wordmark's lettering
+   is 6 px tall and unreadable, and its 95 px width does not fit a row. */
+.mk-tile {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--r-xs);
+  border: 1px solid color-mix(in oklab, #00bb79 34%, var(--border));
+  background: color-mix(in oklab, #00bb79 14%, var(--bg));
+}
+
+/* ── the report card on Overview: one control and four facts ─────────── */
+.cfg {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 14px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--border);
+}
+.cfg-row {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  background: var(--bg);
+}
+.cfg-row > .lb {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* One select in a card full of static rows: it is a button, because what it opens
+   is a dialog, and a `<select>` cannot show a Drive folder's id under its name. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease;
+}
+.field:hover {
+  border-color: var(--muted);
+}
+.field:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+}
+.field .val {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field .tail {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.field .chev {
+  flex: none;
+  color: var(--muted);
+}
+.field-static {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+.field-static > span:first-child,
+.field-static > code:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field-static .tail {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.cfg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+/* What the last `Test folder` saw, in the card's own voice: four numbers and the
+   seconds they took. A test that failed prints Google's sentence instead. */
+.cfg-test {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.cfg-test > .k {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cfg-test p {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.cfg-test[data-tone='bad'] {
+  border-color: color-mix(in oklab, var(--danger) 30%, var(--border));
+  background: var(--danger-soft);
+}
+
+/* ── the folder picker ───────────────────────────────────────────────────
+   A listbox, not a `<select>`: every option carries the folder's id under its
+   name, and the footer states the scope the grant actually holds. */
+.modal.picker {
+  width: min(560px, 94vw);
+  max-height: min(82vh, 640px);
+}
+.pick-h {
+  padding-bottom: 0;
+}
+.pick-sub {
+  max-width: 52ch !important;
+  line-height: 1.5;
+}
+.pick-search {
+  margin-top: 14px;
+}
+.pick-search input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+}
+.pick-search input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.pick-body {
+  padding-top: 12px;
+}
+.pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pick-list:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.pick-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.pick-row .nm {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+  color: var(--ink);
+}
+/* The id is what gets stored, so it is printed rather than hidden in a title: two
+   folders can share a name and only this tells them apart. */
+.pick-row .id {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.pick-row .tail {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pick-row:hover {
+  background: var(--surface);
+}
+.pick-row[aria-selected='true'] {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.pick-row[aria-selected='true'] .nm {
+  font-weight: 600;
+}
+.pick-row .in-use {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+}
+.pick-skel {
+  list-style: none;
+  padding: 9px 10px;
+}
+.pick-empty {
+  padding: 10px 2px 4px;
+}
+.pick-empty > b {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.pick-empty p {
+  margin: 5px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.pick-empty .btn {
+  margin-top: 10px;
+}
+.pick-empty[data-tone='bad'] {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--border));
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+}
+.pick-f {
+  align-items: center;
+  justify-content: flex-start;
+}
+.pick-f .spacer {
+  flex: 1;
+}
+.pick-f .scope {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+/* ── the report body ─────────────────────────────────────────────────────
+   Six tiles, one table, three rail cards. The table is the only new shape: money
+   is a column that must stay put when a product name wraps, so it is 114 px wide
+   and `tabular-nums`, and it is right-aligned because that is how a column of
+   currency is read. */
+.dsh-prod-tbl thead th.money,
+.dsh-tbl td.money {
+  width: 114px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* A zero is still an answer, so it is muted rather than hidden. */
+.dsh-tbl td.money[data-zero='1'] {
+  color: var(--muted);
+}
+.dsh-tbl thead th.shr,
+.dsh-tbl td.shr {
+  width: 104px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.prod {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.prod .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+  color: var(--ink);
+}
+.prod .sub {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.prod .sub b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+/* The share bar is a `div` behind a percentage, not a chart: two elements, no
+   library, and it reads the same at any width. */
+.sharebar {
+  display: inline-block;
+  width: 46px;
+  height: 4px;
+  margin-right: 8px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.sharebar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--ink-2) 55%, var(--bg));
+  border-radius: var(--r-xs);
+}
+/* Twelve bars in the rail: one column per month, the bar's height the money. */
+.dsh-months {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 3px;
+  align-items: end;
+  height: 62px;
+}
+.dsh-months li {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+}
+.dsh-months .bar {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 46px;
+}
+.dsh-months .bar i {
+  width: 100%;
+  min-height: 2px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--ink-2) 45%, var(--bg));
+}
+.dsh-months .ml {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+}
+.dsh-card .ell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-card .muted {
+  color: var(--muted);
+}
+.dsh-sheets {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 640 and below: the product table states its own columns, the way the pull
+   request table already does. */
+@container cxn (max-width: 640px) {
+  .cfg-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+  .dsh-months .ml {
+    display: none;
+  }
+  /* In the card layout the money column stops being a column: the label comes
+     from `data-l` and the number reads left-aligned under it, so a 114 px track
+     would only push the value off the row. */
+  .dsh-tbl td.money,
+  .dsh-tbl td.shr {
+    width: auto;
+    text-align: left;
+  }
+  /* An 88-character product name is a real name, not an error: two lines, then
+     an ellipsis, and the full string stays in `title`. */
+  .prod .nm {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .prod .sub {
+    white-space: normal;
   }
 }
 

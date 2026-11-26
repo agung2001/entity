@@ -72,6 +72,28 @@ const showOrcaIcon = computed(() => !failed.value)
     decoding="async"
   />
 
+  <!-- Lynk.id is a wordmark and a glyph, and only the glyph survives at 22 px: the
+       lettering is `#E8F5F2` (near-white), so on `--bg` it disappears entirely — 174
+       px of a 2280 px drawing differ. So the row shows the glyph alone, cropped by
+       its own box, on `.mk-tile`'s 14 % brand wash; the wordmark is used once, on the
+       hero's `#0d1512` plate, where the lettering is the point. -->
+  <svg
+    v-else-if="name === 'lynk'"
+    class="int-mark-svg int-mark-brand int-mark-lynk"
+    :width="size"
+    :height="(size * 17) / 12.65"
+    viewBox="50.6 7 12.65 17"
+    aria-hidden="true"
+  >
+    <title>Lynk.id</title>
+    <path
+      fill="#00bb79"
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+      d="M56.9181 8.26221C59.8583 8.26221 62.2414 10.4467 62.2414 13.1407V22.2254C62.2414 23.2056 61.3741 23.9999 60.3051 23.9999H53.5312C52.4616 23.9999 51.5949 23.2056 51.5949 22.2254V13.1407C51.5949 10.4467 53.978 8.26221 56.9181 8.26221Z"
+    />
+  </svg>
+
   <svg
     v-else-if="name === 'youtrack'"
     class="int-mark-svg int-mark-brand"

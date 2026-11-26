@@ -142,4 +142,4 @@ function forget(connector) {
   return statusOf(name)
 }
 
-module.exports = { CONFIG, FILE, SCHEMA, read, statusOf, save, tokenFor, forget }
+module.exports = { CONFIG, FILE, SCHEMA, read, statusOf, test, save, tokenFor, forget }
