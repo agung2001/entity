@@ -27,6 +27,13 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+/* The YouTube Studio dashboard reads the same kinds of things from a different
+   grant: an account roster and one window of numbers. Same file-cached, one-read
+   shape, no token ever leaves the main process. */
+const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
+/* The YouTrack dashboard reads the same shape from an MCP endpoint instead of an
+   OAuth grant: one probe, two paginated searches, no token ever leaves the main
+   process. */
 const youtrackDashboard = require('./youtrack-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
@@ -367,6 +374,11 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The YouTube Studio dashboard. Read-only Google calls, no write scope used,
+       and the analytics/revenue/comment scopes are separate grants — a refusal is
+       a `null` field with the missing scope named, never a `0`. */
+    'youtube.roster': () => youtubeStudioDashboard.roster(),
+    'youtube.dashboard': (args) => youtubeStudioDashboard.dashboard(args),
     /* The YouTrack connector's dashboard, read over the MCP endpoint the same
        workspace declares: `probe` answers whether the tab can open at all, and
        `dashboard` is the two paginated reads the pane's numbers come from. Both
