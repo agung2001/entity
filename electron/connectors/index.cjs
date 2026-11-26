@@ -1,18 +1,18 @@
 /**
- * The account-bearing connector registry: one entry per mention head.
+ * The account-bearing connector facade: what `mention-ref.cjs` and the token verbs
+ * ask about a resolver kind.
  *
- * This is the seam between the mention grammar (in `mention-ref.cjs`) and the five
- * connectors that answer from an account (in the files beside this one). The
- * grammar owns *how a mention is written*; these own *what an answer is*.
+ * **The map lives in `registry.cjs`.** This file used to hold it twice — a 12-case
+ * `switch` that mapped a head to a module, and a `SUFFIX` table that mapped the same
+ * head to `resolve<Name>`. Two hand-kept maps of the same fact is how a connector
+ * came to resolve in the composer and not in a turn.
  *
- * **Loaded lazily, on first use.** `mention-ref.cjs` is required by `rpc.cjs`, so
- * it loads at app start in every workspace, and `youtube-studio.cjs` alone is 778
- * lines of analytics shaping that most turns never touch. A `require` inside each
- * getter means a Gmail mention never parses the Studio module — and a mention that
- * arrives in a turn is the one moment the cost is unavoidable, because the answer
- * cannot be produced without it.
+ * What stays here is the *shape* of the question: a module exports
+ * `{ resolve, preview }`, and a module's optional extras (`verify`, `ROW_CEILING`,
+ * the Studio vocabulary) are read off it by name. Whether a head has any of them is
+ * the module's business, not this file's.
  *
- * A connector module exports `{ resolve, preview }`:
+ * A connector module exports:
  *
  *   resolve(segment, options)   the rows the turn gets; throws to report a refusal
  *   preview(fields, options)    rows for the composer's menu; must never throw
@@ -22,90 +22,17 @@
  * they were written in different files they disagreed three times, and every time
  * the symptom was an empty menu for a valid mention.
  */
-const cache = new Map()
+const registry = require('./registry.cjs')
 
-/** `require` once per head, then hand back the same module. */
-function load(head) {
-  if (cache.has(head)) return cache.get(head)
-  let mod = null
-  switch (head) {
-    case 'gmail':
-      mod = require('./gmail.cjs')
-      break
-    case 'drive':
-      mod = require('./drive.cjs')
-      break
-    case 'calendar':
-      mod = require('./calendar.cjs')
-      break
-    case 'youtube':
-      mod = require('./youtube.cjs')
-      break
-    case 'youtube-studio':
-      mod = require('./youtube-studio.cjs')
-      break
-    case 'x':
-      mod = require('./x.cjs')
-      break
-    case 'clockify':
-      mod = require('./clockify.cjs')
-      break
-    case 'habitify':
-      mod = require('./habitify.cjs')
-      break
-    case 'fitbit':
-      mod = require('./fitbit.cjs')
-      break
-    case 'opendesign':
-      mod = require('./opendesign.cjs')
-      break
-    default:
-      mod = null
-  }
-  cache.set(head, mod)
-  return mod
-}
-
-/** Every head this registry answers, in the order a person would try them. */
-const HEADS = [
-  'gmail',
-  'drive',
-  'calendar',
-  'youtube',
-  'youtube-studio',
-  'x',
-  'clockify',
-  'habitify',
-  'fitbit',
-  'opendesign',
-]
+/** Every head this facade answers, in the order a person would try them. */
+const HEADS = registry.KINDS
 
 const has = (head) => HEADS.includes(String(head))
 
-/** The resolver for a head, or null.
- *
- * Each module exports `resolve<Name>` (`resolveGmail`, `resolveX`…) so its file
- * reads as the thing it is; this is the one place that maps a head to that name.
- * `resolve` is accepted too, for a module that prefers the generic name. */
-function resolverFor(head) {
-  const mod = load(head)
-  if (!mod) return null
-  return mod.resolve || mod[`resolve${SUFFIX[head] || ''}`] || null
-}
+const load = (head) => registry.mentionModule(head)
 
-/** `gmail` → `Gmail`, `youtube-studio` → `YoutubeStudio`, `x` → `X`. */
-const SUFFIX = {
-  gmail: 'Gmail',
-  drive: 'Drive',
-  calendar: 'Calendar',
-  youtube: 'Youtube',
-  'youtube-studio': 'YoutubeStudio',
-  x: 'X',
-  clockify: 'Clockify',
-  habitify: 'Habitify',
-  fitbit: 'Fitbit',
-  opendesign: 'Opendesign',
-}
+/** The resolver for a head, or null. */
+const resolverFor = (head) => registry.resolverFor(head)
 
 /** A head whose answer is a report, not a list, sets its own row ceiling. */
 function rowCeiling(head, fallback) {
@@ -118,21 +45,23 @@ function previewFor(head) {
   return load(head)?.preview || null
 }
 
-/** The save-time check a `credential: 'token'` head ships, or null. */
+/** The save-time check a `credential: 'token'` connector ships, or null.
+ *
+ * It lives on the connector's *descriptor* (`connectors/<id>/connector.cjs`), not on
+ * the mention module: a check is about the credential, and the descriptor is where a
+ * connector's credential is described. */
 function verifyFor(head) {
-  return load(head)?.verify || null
+  return registry.verifyFor(head)
 }
 
 /** The vocabulary a head reads, for the composer's completion list. */
 function wordsFor(head) {
-  const mod = load(head)
-  return mod?.YT_STUDIO_WORDS || []
+  return load(head)?.YT_STUDIO_WORDS || []
 }
 
 /** The channels a studio account manages, for the composer's channel segment. */
 function channelsFor(head) {
-  const mod = load(head)
-  return mod?.ytChannelChoices || null
+  return load(head)?.ytChannelChoices || null
 }
 
 /** Is this word one of a head's readers (`summary`, `traffic`…)? */

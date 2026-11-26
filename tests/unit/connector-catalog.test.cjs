@@ -14,9 +14,20 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..', '..')
 const catalog = require('../../electron/connector-catalog.cjs')
 const mentionRef = require('../../electron/mention-ref.cjs')
+const registry = require('../../electron/connectors/registry.cjs')
 
 test('every resolver a connector documents is one the parser actually answers', () => {
-  const source = fs.readFileSync(path.join(ROOT, 'electron', 'mention-ref.cjs'), 'utf8')
+  /* The head a person types is declared in the connector registry — the one file
+     that names a connector's row id, its resolver kind and its mention head. The
+     parser derives its accepted heads from there, so this asserts the declaration
+     and the behaviour together: a head that only exists by derivation is a head
+     nobody can review. */
+  /* A connector is a folder now: its descriptor (`connectors/<id>/connector.cjs`)
+     declares the row id, the resolver kind and the mention head together. */
+  const descriptorOf = (id) => fs.readFileSync(path.join(ROOT, 'electron', 'connectors', id, 'connector.cjs'), 'utf8')
+  const mentionSource = fs.readFileSync(path.join(ROOT, 'electron', 'mention-ref.cjs'), 'utf8')
+  const heads = registry.accountHeads()
+  const rowOf = new Map(registry.ENTRIES.map((entry) => [entry.resolver, entry.id]).filter(([kind]) => kind))
   for (const [id, entry] of Object.entries(catalog.CATALOG)) {
     const resolver = entry.work?.resolver
     if (!resolver) continue
@@ -34,7 +45,24 @@ test('every resolver a connector documents is one the parser actually answers', 
       resolver,
       `@${head}: parses as "${parsed.kind}", not "${resolver}" — the page and the parser disagree`,
     )
-    assert.match(source, new RegExp(`'${head}'|"${head}"`), `${head} is not mentioned in mention-ref`)
+    /* A head that reads an account is declared in the connector registry, and the
+       declaration names the resolver kind it maps to. A head that reads something
+       other than an account (Orca's project list) is declared by the parser itself,
+       because there is no connector module to own it. */
+    if (Object.prototype.hasOwnProperty.call(heads, head)) {
+      assert.equal(heads[head], resolver, `the registry maps ${head} to "${heads[head]}", not "${resolver}"`)
+      assert.match(
+        descriptorOf(rowOf.get(resolver)),
+        new RegExp(`mention: '${head}'`),
+        `${head} is not declared in ${rowOf.get(resolver)}/connector.cjs`,
+      )
+    } else {
+      assert.match(
+        mentionSource,
+        new RegExp(`'${head}'|"${head}"`),
+        `${head} is not mentioned in mention-ref`,
+      )
+    }
   }
 })
 

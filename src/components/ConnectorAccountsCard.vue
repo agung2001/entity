@@ -20,7 +20,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { ago, hub, toast } from '@/stores/hub'
-import { googleCalendar, readAccounts as readCalendarAccounts } from '@/composables/googleCalendar'
+import { accountColumn } from '@/connectors/accountColumns'
 import {
   clearOauthClient,
   connectAccount,
@@ -409,22 +409,13 @@ const accountsFact = computed(() => {
     : `${total} · ${usable} usable`
 })
 
-/* ── the calendars column ──────────────────────────────────────────
-   Only Google Calendar has one, and it is the *gate's evidence*: the Dashboard tab
-   is enabled by a grant, and this column is how many calendars that grant actually
-   answered on the last read. `null` is "nothing read yet" and prints `—`; `0` would
-   claim a read that never happened. The other four connectors keep four tracks, so
-   their card is byte-identical to what shipped. */
-const showCalendars = computed(() => props.connector === 'google-calendar')
-const calendarsOf = (account) => {
-  const row = googleCalendar.accounts.find(
-    (entry) => String(entry.localpart || '') === String(account?.localpart || ''),
-  )
-  const count = row?.calendars
-  if (!Number.isFinite(Number(count))) return '—'
-  const n = Number(count)
-  return `${n} ${n === 1 ? 'calendar' : 'calendars'}`
-}
+/* ── the extra column ──────────────────────────────────────────────
+   Some connectors have one more fact worth a column — Google Calendar counts the
+   calendars its grant answered, which is the same fact its tab is gated on. The card
+   is shared, so it does not name that connector: `connectors/accountColumns.js` holds
+   one entry per connector that has a column, and the rest draw none. */
+const column = computed(() => accountColumn(props.connector))
+const showColumn = computed(() => Boolean(column.value))
 
 /* The page's Definition card shows this, so the two cannot disagree about the
    same connector.
@@ -443,7 +434,7 @@ onMounted(async () => {
     readTiers(),
     /* The Calendars column is answered by the connector's own read, and asking here
        is what keeps the column and the Dashboard tab's gate the same fact. */
-    showCalendars.value ? readCalendarAccounts().catch(() => {}) : null,
+    column.value ? column.value.read() : null,
   ])
   emit('changed', accounts.value)
 })
@@ -614,11 +605,11 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-else class="acct" :class="{ 'has-cals': showCalendars }" role="table" aria-label="Connected accounts">
+      <div v-else class="acct" :class="{ 'has-cals': showColumn }" role="table" aria-label="Connected accounts">
         <div class="acct-cols" role="row">
           <span role="columnheader">Account</span>
           <span role="columnheader" data-col="scopes">Scopes</span>
-          <span v-if="showCalendars" role="columnheader">Calendars</span>
+          <span v-if="showColumn" role="columnheader">{{ column.label }}</span>
           <span role="columnheader">Status</span>
           <span role="columnheader">Action</span>
         </div>
@@ -633,7 +624,7 @@ onMounted(async () => {
             </span>
           </span>
           <span class="acct-scopes" role="cell"><span class="acct-skel acct-skel-line acct-skel-scope"></span></span>
-          <span v-if="showCalendars" class="acct-cals" role="cell"><span class="acct-skel acct-skel-line acct-skel-scope"></span></span>
+          <span v-if="showColumn" class="acct-cals" role="cell"><span class="acct-skel acct-skel-line acct-skel-scope"></span></span>
           <span class="ct-status" role="cell"></span>
           <span class="ct-act" role="cell"></span>
         </div>
@@ -659,7 +650,7 @@ onMounted(async () => {
               :class="{ miss: cell.miss }"
             >{{ cell.text }}</span>
           </span>
-          <span v-if="showCalendars" class="acct-cals" role="cell">{{ calendarsOf(account) }}</span>
+          <span v-if="showColumn" class="acct-cals" role="cell">{{ column.value(account) }}</span>
           <span class="ct-status" role="cell" :data-s="accountTone(account)">
             <span class="ct-s1">
               <span class="dot" aria-hidden="true"></span>

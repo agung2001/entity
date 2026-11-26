@@ -738,7 +738,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | A bound `grid-template-columns` wins over the mobile container query | Apply the template only in the band that uses it (`null` below 460) | `tests/e2e/full/24-machines-fleet.spec.js` |
 | Two glyphs on one row say the same thing | The station's tile already draws a machine; a server icon beside the name is the second one | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's bottom border touches the table's top border | Two hairlines a pixel apart read as one thick rule: the field wants a gap *below*, even when it wants none above | `tests/e2e/full/24-machines-fleet.spec.js` |
-| A dashboard re-reads on every visit, or its `cached 15 min` label outlives the constant | One read a day into `<ENTITY_HOME>/github-dashboard.json`, refreshed only by the explicit verb or the expiry, and the label reads `cacheTtlMs` from the payload instead of typing the number | `electron/github-dashboard.cjs`, `ConnectorDashboard.vue` (see *A dashboard caches for a day, in a file*) |
+| A dashboard re-reads on every visit, or its `cached 15 min` label outlives the constant | One read a day into `<ENTITY_HOME>/github-dashboard.json`, refreshed only by the explicit verb or the expiry, and the label reads `cacheTtlMs` from the payload instead of typing the number | `electron/connectors/github/dashboard.cjs`, `connectors/github/GithubDashboard.vue` (see *A dashboard caches for a day, in a file*) |
 | A right-aligned column has a left-aligned header | Align the desk's label to the cell's own `justify-content`, or it reads as a different column | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's glyph reads as glued to the first letter | `.wsl-search` is a 32px box around a 20px input; give the input `height: 100%` and the field the app's other field's gap (9px) | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A host name is plain text while a tiny arrow beside it goes somewhere | The name is the link, the row is not: the alias carries the route, the arrow is its shortcut, the address is text | `npm test` (`ui-contract`) |
@@ -1091,6 +1091,16 @@ own top edge, the same 56px sticky pane of frosted glass as `.cp-head` — the
 same tint, the same `blur(16px) saturate(1.8)`, the same hairline. The page
 scrolls *beneath* it, which is what proves it is glass.
 
+**A back button has two shapes, and a size rule names the one it means.** The bar's
+back control is either a bare chevron (`Entities` index: a 30 px square, 44 px on a
+phone) or a glyph with its label (`Connectors`, `MCP`, `Entities`, `Skills`). A
+page-scoped `width: 30px` written for the first shape silently squeezed the second:
+flex gave up the 12 px glyph to fit the label, so four pages rendered their label
+with no arrow at all — a zero-width `<svg>` is invisible but still in the DOM, which
+is why it read as "missing icon". `entities-page.css` now sizes `.back-icon`, the
+marker the bare button carries, and `tests/unit/ui-contract.test.cjs` fails if the
+square is keyed on `.back` again or if a labelled back button loses its glyph.
+
 **This is the app's navigation standard, not a detail-page detail.** Every page
 that draws its own *sticky* bar — `.entp-bar` on the entity and MCP pages,
 `.ash-bar` on the artifact shelf — is the same 56px surface at the same x, and
@@ -1362,7 +1372,7 @@ build` prints the chunk list — the entry chunk should not grow without a reaso
 A dashboard is a handful of requests against somebody else's rate limit, and its
 numbers move over days, not seconds. So the default for **any** dashboard in this
 app is: **one read a day, stored on disk, refreshed only when someone asks.**
-`electron/github-dashboard.cjs` is the reference implementation.
+`electron/connectors/github/dashboard.cjs` is the reference implementation.
 
 - **The cache is a file, not a variable.** `<ENTITY_HOME>/github-dashboard.json`
   (falling back to `~/.entity/`) holds `{ schema, key, at, value }`: the payload
@@ -1394,7 +1404,7 @@ app is: **one read a day, stored on disk, refreshed only when someone asks.**
 
 ### A read-only dashboard still spends somebody's budget
 
-Fitbit's dashboard (`electron/fitbit-dashboard.cjs`) is the second implementation,
+Fitbit's dashboard (`electron/connectors/fitbit/dashboard.cjs`) is the second implementation,
 and it adds the rules a limit *per hour* needs — the file cache above is a day's
 worth and does not help a person flipping between yesterday and Tuesday.
 
@@ -1428,6 +1438,186 @@ worth and does not help a person flipping between yesterday and Tuesday.
   day tomorrow; `today` is the absence of the parameter, `yesterday` is a word (it
   must still mean yesterday next week), and a value the app did not define is
   dropped on load rather than sent to the service.
+
+### A week's shape is a union of intervals, and a column per local day
+
+Google Calendar's dashboard (`electron/connectors/google-calendar/dashboard.cjs`) is the third, and
+it adds the rules a *grid* needs. The reference diagnosis is One's calendar plugin;
+the rules here are the ones that were wrong on the first attempt.
+
+- **Busy minutes are a union of intervals, computed once.** Two invitations for the
+  same hour are one hour of somebody's day. `unionMinutes()` is the only arithmetic
+  for busy, per-kind and the meeting share — a per-event `sum` beside it lets the
+  KPI say 23 h while the legend above it adds to 31 h.
+- **A seven-day window is not seven columns.** It starts at the current minute, so
+  it lands on eight local days and its last column stops mid-day. A grid that hard
+  codes seven draws 23 of the 28 events while the totals count all of them; the
+  track count comes from the columns (`--dcols`) and the partial column says so.
+- **Columns are local days, never UTC ones.** A UTC day boundary is wrong for seven
+  hours of every WIB day, and an event at 08:00 local would file itself under the
+  previous column.
+- **A chip is a legend, not a filter.** "Meetings · 16 h 30 · 52 %" names what the
+  week was made of and has no press state; the calendar chips that *do* filter are
+  a separate row, and when one is pressed the page says in one sentence which
+  figures are whole-grant and which follow the chip.
+- **Every bar, block and row carries the word, not only the colour** — `meeting` /
+  `focus` / `personal` plus a tinted edge, so kind survives a colour-blind reader.
+- **A kind never divides by a union it does not own.** The kind budget's percentage
+  is against the minutes the chips name, so the row adds to 100 %; the meeting
+  share is against busy minutes and says so in its own hint.
+
+### One page, one connector, one folder
+
+A connector is **a folder on each side of the bridge**, and everything about it lives
+in that folder:
+
+```
+electron/connectors/<id>/      src/connectors/<id>/
+  connector.cjs  descriptor      <Name>Dashboard.vue   the tab's body
+  mention.cjs    resolve/preview use<Name>.js          the renderer's read state
+  dashboard.cjs  the read        <Name>Card.vue        its Overview card(s)
+```
+
+`electron/connectors/registry.cjs` lists those folders and derives the mention map,
+the account heads and the call table from them; `connector-catalog.cjs` assembles its
+connector half from the same descriptors, so a `work` block is written where the code
+is. `src/connectors/dashboards.js` is the renderer's table of the same connectors
+(hint, gate, answer, read), and `src/connectors/ConnectorDashboardPane.vue` maps a
+kind to its body.
+
+- **Adding a connector is creating a folder, not editing four tables.** The row id,
+  the resolver kind and the mention head were three hand-kept maps in three files;
+  they are now one descriptor, and a test (`tests/unit/connector-registry.test.cjs`)
+  reads it. A descriptor also carries `dashboard { call, mode, kind }`, so the tab, its
+  call and the renderer body cannot drift apart.
+- **The page asks "may this tab open?"; it does not know the answer.**
+  `src/connectors/dashboards.js` holds one entry per shipped dashboard —
+  `dashboardKind()`, `dashboardHint()`, `gateFor()`, `answerGate()`, `readPane()`,
+  and `paneShown()` for the two whose lock gates their render. Adding a dashboard is
+  one entry there plus one pane body, not a seventh `if` in the page. It used to be
+  seven: six copies of "which account list locks this tab" and six watchers that each
+  re-checked one of them.
+- **The body is one component, not a chain in the template.**
+  `src/connectors/ConnectorDashboardPane.vue` maps `kind` to its body and wears the
+  page's `$attrs` (`id`, `role`, `aria-labelledby`) so a body cannot name itself a
+  different pane. A body that swapped its own id would make the strip's
+  `aria-controls` per-connector.
+- **A shared card names no connector.** `ConnectorAccountsCard` is drawn by every
+  account-bearing connector, so its per-connector extras come from a table
+  (`src/connectors/accountColumns.js`): today only Google Calendar has a column, and
+  the card asks `accountColumn(id)` instead of testing the id itself. A new column is
+  one entry there, not an `if` in shared UI.
+- **Connector state lives in that connector's composable.** Clockify's key and the
+  workspace it reads are `src/connectors/clockify/useClockify.js` and draw in
+  `src/connectors/clockify/WorkspaceCard.vue`; Lynk.id's folder and the three verbs
+  beside it are `src/connectors/lynk/useReportCard.js` and
+  `src/connectors/lynk/ReportCard.vue`; GitHub, calendar, studio, Habitify, Fitbit and
+  YouTrack keep theirs the same way. The page imports state, it never owns it — a
+  `ref` on the page is one a child can only change by emit, which is the shape that
+  produced the bug below.
+- **One read envelope, not eight.** `src/connectors/parts/readClock.js` owns
+  `ttlWords()`, `cachedUntil()` and `cacheNote()` — and **imports nothing**, so
+  `tests/unit/read-clock.test.cjs` pins the rule instead of trusting eight reviewers.
+  `parts/readStamp.js` adds the line that also prints *when* something was read, which
+  needs `ago()`. The contract test fails a dashboard that types a unit (`'1 day'`) or
+  formats a duration by itself.
+- **The stylesheet stays one file, and that is a decision.** `styles/connector-page.css`
+  is shared material: seven connectors draw the same `.dsh-*` band, KPI row and table,
+  and splitting the file per folder would make every shared rule one that four folders
+  could change without seeing each other. A connector's *own* rules live in a
+  delimited block under its heading comment, which is the compromise the layout makes
+  deliberately.
+- **A gate has three states, not two.** Unread answers *not locked*, so a deep link is
+  never refused before the read that would allow it lands. A gate that defaults to
+  locked flashes a refusal at every reload.
+- **A table lookup that can miss is answered before it is dereferenced.** The table's
+  entries are `DASHBOARDS[kind]`, and `kind` is empty on every connector page with no
+  tab (Tailscale, an MCP row, a custom connector). `DASHBOARDS[kind]?.gate(entry)`
+  therefore yields `undefined`, and reading `.why` off it crashed every one of those
+  pages. `src/connectors/gate.js` owns the shape (`UNREAD`, `OPEN_GATE`, `toGate()`)
+  and is import-free so `tests/unit/connector-gate.test.cjs` can hold all three
+  answers plus the `undefined` case. **Optional chaining is not a guard** — it moves
+  the crash one line later.
+- **A gate is answered again, not once.** The accounts card emits `changed` after a
+  sign-in, a reauthorize or a removal, and the page re-asks with `force: true`, then
+  re-reads the open pane. Answering it only on mount is a bug that has been paid for
+  once: authentication succeeded, and the tab stayed locked until an F5. Nothing in
+  this app may require a reload to show a grant that already landed.
+- **A lock is made of one state, and the write updates that state.** Lynk.id's lock
+  reads `lynkConfig.folderId` in the store; its settings card used to write through
+  the read layer instead, so a folder picked on the page left the lock pointing at
+  the folder that was there before and the tab stayed shut until a reload. One write
+  now updates the state the lock is made of, then mirrors it into the read layer.
+  Same failure, second time: *the thing you changed and the thing that is read must
+  be the same object.*
+- **The transition, not the value, closes a tab.** One watcher on `gate.locked`
+  replaced the six per-connector ones: locked closes the open pane, unlocked
+  re-reads it. Both directions are the same sentence — "the answer on screen is not
+  the one this tab would produce now".
+- **A locked tab is not a place.** A deep link into a locked dashboard is normalised
+  to Overview, so the address and the pane in the document cannot disagree, and
+  `aria-controls` always names a pane that exists.
+
+### A 1 px label can add 900 px of page
+
+`.sr-only` is `position: absolute; width: 1px`. Put it inside a table — as a
+`<caption class="sr-only">` or a hidden cell label — and it has **no positioned
+ancestor**, so its containing block is the initial one: it escapes the scroll box
+that clips its table and its layout position extends the *document's* scrollable
+area. Measured on the Clockify dashboard: three captions put the document at
+1822 px in a 900 px window, so the page grew a second (browser) scrollbar and
+~900 px of blank space under the content — while every dashboard without a caption
+was fine.
+
+- **The scroll box is the containing block.** `.dsh-tblscroll` carries
+  `position: relative` for exactly this reason: the caption is then contained by the
+  box it belongs to and clipped by the box's own `overflow`. The rule looks like
+  decoration and is not; `tests/unit/connector-registry.test.cjs` fails if it is
+  removed or if a dashboard gains an `sr-only` element without a positioned box
+  around its table.
+- **Two scrollbars is a bug, not a preference.** The app has exactly one page
+  scroller (`.main-scroll`); anything that makes `document.scrollHeight` exceed the
+  window is an element that escaped a clip. Check it by measuring, not by eye.
+- **The two columns must end together.** `.dsh` is `align-items: start`, so the
+  shorter column simply stops — and a rail that ends 269 px above the main column
+  reads as a hole. Content order is the fix, not `stretch`: on the Clockify tab the
+  week summary is the lead card of the wide column (it is the paragraph the rest of
+  the page repeats) and the individual card is a rail card (one subject, three
+  facts). Under 900 px the rail is two up, and its **last card spans both columns**,
+  because the last rail card is the footnote and a footnote paired with a two-line
+  card leaves a hole as tall as the footnote — 594 px on that tab.
+
+### A connector is one row in one registry, not a name in seven maps
+
+A connector has **three names**, and every mistake in this area has been one of them
+drifting from another: the **row id** (`google-calendar` — the roster, the address),
+the **resolver kind** (`calendar` — `connectorOfKind`, the module basename) and the
+**mention head** (`gcal` — what a person actually types).
+
+`electron/connectors/registry.cjs` declares all three once, per connector, and
+`index.cjs`, `rpc.cjs` and `mention-ref.cjs` derive from it. Before it, the same
+connector was mapped by a 12-case `switch`, a `SUFFIX` table, an `ACCOUNT_KIND` map
+and a block of the call table — four hand-kept copies, which is how `@gcal:` came to
+be a special case in three of them.
+
+- **A connector's calls live beside the connector.** `calls` is `name → handler` in
+  its registry entry, and `rpc.cjs` spreads `connectorRegistry.calls()` into the table
+  without naming a module path. A call the renderer asks for is a call the main
+  process has, because both come from one declaration.
+- **Nothing here loads at startup.** Every `require` sits inside a function, so a
+  dashboard a person never opens is never parsed. The seven dashboard modules are
+  about five thousand lines; `rpc.cjs` used to require them at boot.
+- **The registry is data, so a test can read it.**
+  `tests/unit/connector-registry.test.cjs` asserts unique ids, kinds and heads; every
+  head resolves to a module; `calls()` equals what the entries declare; `rpc.cjs`
+  requires no connector module; every dashboard kind has a pane body and a table
+  entry; and a catalog row that advertises a resolver is the row the registry names.
+  That test replaces the fifteen-file folklore a person used to hold in their head.
+- **Main answers facts; the renderer answers words.** The lock's *state* is read in
+  the main process (a token exists, a grant holds a scope); the sentence a person
+  reads is in the renderer's connector entry, so a wording change is not a
+  main-process release. Entity is where the copy lives, because a dashboard is a
+  screen and `electron/` has no screens.
 
 ## Voice mode opens a microphone
 

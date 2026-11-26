@@ -1055,3 +1055,38 @@ test('a session a stopped turn filed is still reachable from the transcript', ()
   )
   assert.match(sysBranch, /<DelegationCard\b/, 'the card itself is missing from the sys branch')
 })
+
+test('a back button keeps its glyph whether or not it carries a label', () => {
+  /* Measured, not assumed: `.view.detail-view > .entp-bar .back { width: 30px }` was
+     written for the Entities index's bare chevron, and it also matched the four pages
+     whose back button has a label. The flex item that gave way was the 12px glyph, so
+     `Connectors`, `MCP`, `Entities` and `Skills` each rendered their label with an
+     `svg` 0px wide — a button that looks like it is missing its icon. */
+  const css = fs.readFileSync(path.join(SRC, 'styles', 'entities-page.css'), 'utf8')
+  assert.doesNotMatch(
+    css,
+    /\.entp-bar \.back \{/,
+    'the square back button is keyed on `.back` again — a labelled button loses its glyph',
+  )
+  assert.match(css, /\.entp-bar \.back-icon \{/, 'the bare chevron needs its square')
+
+  const views = fs.readdirSync(path.join(SRC, 'views'))
+  const labelled = []
+  for (const name of views) {
+    if (!name.endsWith('.vue')) continue
+    const text = fs.readFileSync(path.join(SRC, 'views', name), 'utf8')
+    if (!/class="back\b/.test(text)) continue
+    /* The button's own text, outside the `<svg>`: the label a person reads. */
+    const body = text.slice(text.search(/class="back\b/))
+    const close = body.search(/<\/(button|router-link)>/)
+    const inner = body.slice(0, close < 0 ? 400 : close)
+    const withoutSvg = inner.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, ' ').trim()
+    if (/\.back-icon\b/.test(inner)) {
+      assert.equal(withoutSvg, '', `${name}: a .back-icon button must not carry a label`)
+      continue
+    }
+    labelled.push(name)
+    assert.match(inner, /<svg\b/, `${name}'s back button has a label but no glyph`)
+  }
+  assert.ok(labelled.length >= 4, 'the labelled back buttons are the ones this rule is for')
+})

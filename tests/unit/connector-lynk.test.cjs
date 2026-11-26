@@ -12,7 +12,7 @@ const path = require('node:path')
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'lynk-dash-'))
 process.env.ENTITY_HOME = HOME
-const lynk = require('../../electron/lynk-dashboard.cjs')
+const lynk = require('../../electron/connectors/lynk/dashboard.cjs')
 
 const FOLDER = '1AbCdEfGhIjKlMnOpQrStUvWxYz'
 const SUFFIX = ' - Transactions'

@@ -10,8 +10,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const report = require('../../src/lib/youtrackReport.js').default
-const { num, tiles } = require('../../src/lib/youtrackReport.js')
+const report = require('../../src/connectors/youtrack/report.js').default
+const { num, tiles } = require('../../src/connectors/youtrack/report.js')
 
 const NOW = Date.parse('2026-11-25T09:00:00Z')
 const at = (minusDays) => new Date(NOW - minusDays * 86_400_000).toISOString().slice(0, 10) + ' 09:00:00'

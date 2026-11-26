@@ -9,45 +9,25 @@ import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
-import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
-import GoogleCalendarDashboard from '@/components/GoogleCalendarDashboard.vue'
-import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
-import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.vue'
-import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
-import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
-import ConnectorHabitifyDashboard from '@/components/ConnectorHabitifyDashboard.vue'
-import ConnectorFitbitDashboard from '@/components/ConnectorFitbitDashboard.vue'
+import ConnectorGithubAccounts from '@/connectors/github/AccountsCard.vue'
 import { call } from '@/composables/localBridge'
-import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
-import {
-  canRead as calendarCanRead,
-  googleCalendar,
-  readAccounts as readCalendarAccounts,
-  readDashboard as readCalendarDashboard,
-} from '@/composables/googleCalendar'
-import {
-  adoptLynkConfig,
-  dropLynkAnswer,
-  forgetFolder as forgetLynkFolder,
-  lynk,
-  readDashboard as readLynkDashboard,
-  readFolders as readLynkFolders,
-  saveFolder as saveLynkFolder,
-  testFolder as testLynkFolder,
-} from '@/composables/lynkDashboard'
-import {
-  habitify,
-  connected as habitifyConnected,
-  readAccounts as readHabitifyAccounts,
-  readDashboard as readHabitifyDashboard,
-} from '@/composables/habitifyDashboard'
-import {
-  readDashboard as readStudioDashboard,
-  readRoster,
-  studio,
-  studioUsable,
-} from '@/composables/youtubeStudioDashboard'
+import { github } from '@/connectors/github/useGithub'
+import { dropLynkAnswer } from '@/connectors/lynk/useLynk'
+import { openFolderPicker } from '@/connectors/lynk/useReportCard'
+import { afterKeySaved, tokenScope } from '@/connectors/clockify/useClockify'
+import { habitify, readDashboard as readHabitifyDashboard } from '@/connectors/habitify/useHabitify'
+import ClockifyWorkspaceCard from '@/connectors/clockify/WorkspaceCard.vue'
+import ConnectorDashboardPane from '@/connectors/ConnectorDashboardPane.vue'
+import LynkReportCard from '@/connectors/lynk/ReportCard.vue'
 import TailscalePanel from '@/components/TailscalePanel.vue'
+import {
+  answerGate,
+  dashboardHint as hintFor,
+  dashboardKind,
+  gateFor,
+  paneShown,
+  readPane,
+} from '@/connectors/dashboards'
 import {
   connectors,
   installConnector,
@@ -152,11 +132,24 @@ const ghBinary = computed(() => {
    the page needs from it — the aggregate fact for the Definition rail. */
 const accountsCard = ref(null)
 const accountsFact = ref('no account connected')
-const onAccountsChanged = () => {
+/**
+ * A sign-in, a reauthorize or a removal landed on the accounts card.
+ *
+ * The card holds no dashboard state, so this is the one place that knows an
+ * account list changed — and every gate on this page is made of an account list.
+ * Re-reading it **here**, with `force`, is the fix for the bug where a completed
+ * authentication left the page unchanged until a manual reload: the gate used to
+ * be answered once on mount, so a card that signed somebody in afterwards changed
+ * a lock nobody recomputed. The tab now lifts under the strip in place, and a
+ * Dashboard that is already open is asked for again because its answer is one the
+ * new account produces differently.
+ */
+const onAccountsChanged = async () => {
   accountsFact.value = accountsCard.value?.accountsFact() || 'no account connected'
-  /* The Dashboard tab's gate is the account list, so a sign-in or a removal has to
-     reach the strip too: the card just changed the fact the lock is computed from. */
-  if (dashKind.value === 'habitify') readHabitifyAccounts().catch(() => {})
+  const kind = dashKind.value
+  if (!kind) return
+  await answerGate(kind, { id: id.value, force: true })
+  if (tab.value === 'dashboard' && !gate.value.locked) await readPane(kind, { day: day.value, force: true })
 }
 
 /* The provider a connector authenticates against, from the provider table in main
@@ -293,13 +286,12 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the connectors this app ships a dashboard for: GitHub
-   (`builtIn === 'github'`), Google Calendar (`builtIn === 'google-calendar'`),
-   YouTube Studio (`builtIn === 'youtube-studio'`), Clockify (`builtIn ===
-   'clockify'`) and Habitify (`builtIn === 'habitify'`). A tab that led to another
-   connector's half-built dashboard would be a promise nobody kept, so every other
-   row — including a custom `cli` row, or a custom row that borrowed one of those
-   names — gets no tab at all rather than a disabled one.
+   The strip exists only for the connectors this app ships a dashboard for, and the
+   list of them is `dashboardKind()` in `connectors/dashboards` — not a sentence
+   here that has to be kept in step with it. A tab that led to another connector's
+   half-built dashboard would be a promise nobody kept, so every other row — including
+   a custom `cli` row, or a custom row that borrowed a shipped name — gets no tab at
+   all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -308,31 +300,10 @@ const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Only a row the catalog shipped has a `work` block to gate on. A custom `cli`
-   row that happens to be called github — or youtube-studio — is not one of them. */
-const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
-const calendarRow = computed(
-  () => connectors.rows.find((entry) => entry.builtIn === 'google-calendar') || null,
-)
-const studioRow = computed(
-  () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
-)
-/* Which dashboard this page is, if any. Named rather than boolean because the three
-   have different locks, different reads and different pane bodies. Lynk.id ships no
-   `work.samples`, so the row itself is the test that it has a report to draw. */
-const dashKind = computed(() => {
-  const builtIn = String(installedRow.value?.builtIn || '')
-  if (builtIn === 'github' && githubRow.value?.work) return 'github'
-  if (builtIn === 'google-calendar' && calendarRow.value?.work) return 'calendar'
-  if (builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
-  if (builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
-  /* Habitify's reader lives in this app, so its own `work` block is the whole
-     gate — there is no roster to look up beside the row. */
-  if (builtIn === 'habitify' && installedRow.value?.work) return 'habitify'
-  if (builtIn === 'fitbit' && installedRow.value?.work) return 'fitbit'
-  if (builtIn === 'lynk') return 'lynk'
-  return ''
-})
+/* Which dashboard this page is, if any — asked in one place, `connectors/dashboards`,
+   because the strip, the gate and the pane body have to agree about it and three
+   copies of that answer is three ways to disagree. */
+const dashKind = computed(() => dashboardKind(installedRow.value, connectors.rows))
 /* Which shipped rows have a second tab. One list — `dashKind` — because the strip,
    the gate and the body must agree about it: a row that shipped a report but is not
    named there would draw a Dashboard it cannot fill. */
@@ -349,26 +320,10 @@ const fitbitDay = computed(() => {
   const raw = String(route.query.day || '')
   return raw === 'yesterday' || DAY.test(raw) ? raw : ''
 })
-/* What the tab offers, in the connector's own words: GitHub's board is 90 days,
-   the channel board is the 28 the window chips start on, Clockify's week is a week,
-   Habitify's is one day and the week around it, and the Lynk.id report is whatever
-   the store sold in the folder it reads. */
-const dashboardHint = computed(() => {
-  if (dashKind.value === 'calendar') return 'What is next, and where the gaps are'
-  if (dashKind.value === 'studio') return 'What moved in the last 28 days'
-  if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
-  if (dashKind.value === 'habitify') return 'What a day was scheduled with, and the week around it'
-  if (dashKind.value === 'fitbit') return 'One day in steps, sleep and heart rate'
-  if (dashKind.value === 'lynk') return 'What the store sold, read from a Drive folder'
-  return 'What moved in the last 90 days'
-})
+/* What the tab offers, in the connector's own words — the hint is the dashboard's
+   own copy too, so it travels with the rest of that connector's knowledge. */
+const dashboardHint = computed(() => hintFor(dashKind.value))
 
-/* Clockify needs two things this machine and this workspace answer separately: the
-   API key (`connector.token.status`) and the workspace id on the connector's own
-   fields. Both are read once per page, and the two sentences are fixed copy — a
-   computed reason would drift from the state it describes. */
-const clockify = ref({ configured: false, workspaceId: '' })
-const clockifyLoaded = ref(false)
 /* What the token store answered for a `credential: 'token'` row: whether a key is on
    this machine and the four characters that say which one. Its own read because the
    card that replaces the key needs it whether or not that row has a dashboard. */
@@ -385,288 +340,41 @@ async function readStoredKey() {
   }
 }
 
-async function readClockifyState() {
-  if (dashKind.value !== 'clockify') return
-  try {
-    const fields = await call('connector.fields', { workspace: hub.workspace, id: 'clockify' })
-    clockify.value = {
-      configured: storedKey.value.configured,
-      workspaceId: String(fields?.workspaceId || ''),
-    }
-  } catch {
-    /* A failed read leaves the workspace at its default, so the tab stays locked
-       and says what is missing — the state that sends a person to the card that
-       can fix it. The key half stands: the token store answered separately. */
-    clockify.value = { configured: storedKey.value.configured, workspaceId: '' }
-  } finally {
-    clockifyLoaded.value = true
-  }
-}
+/* Clockify's key and workspace, the calendar's account list, GitHub's `gh` logins,
+   the channel roster, Habitify's consent, Fitbit's roster and Lynk.id's folder: every
+   gate this page can meet lives in `connectors/dashboards`, beside the read that
+   answers it. The page asks one question — "may this tab open?" — and holds none of
+   the answers, which is what stopped it growing a fourth `if` per connector. */
 
-/* The workspaces this key can read, for the Overview card's one control. Read only
-   when a key exists — the call is itself a read that key makes, so a person without
-   one gets the sentence instead of an error about a list they cannot have. */
-const spaces = ref([])
-const spacesLoaded = ref(false)
-const spacesError = ref('')
-async function readSpaces() {
-  if (dashKind.value !== 'clockify' || !storedKey.value.configured) return
-  try {
-    const list = await call('connector.workspaces', { workspace: hub.workspace })
-    spaces.value = Array.isArray(list) ? list : []
-    spacesError.value = ''
-  } catch (problem) {
-    spaces.value = []
-    spacesError.value = String(problem?.message || problem)
-  } finally {
-    spacesLoaded.value = true
-  }
-}
-/* Choosing a workspace is the one thing on this page that changes *what the
-   dashboard reads*, so it writes the field and re-reads the gate: the lock lifts
-   under the strip without a reload. */
-async function pickSpace(space) {
-  if (busy.value || space.id === clockify.value.workspaceId) return
-  busy.value = 'space'
-  spacesError.value = ''
-  try {
-    await call('connector.setFields', {
-      workspace: hub.workspace,
-      id: 'clockify',
-      /* The member map is per workspace — Clockify's user ids are — so a switch
-         clears it rather than carrying names that now point at nobody. */
-      fields: { workspaceId: space.id, members: {} },
-    })
-    await readClockifyState()
-  } catch (problem) {
-    spacesError.value = String(problem?.message || problem)
-  } finally {
-    busy.value = ''
-  }
-}
-
-/* The calendar locks, in the order a person meets them. Nothing is pressed here:
-   the gate is answered by the account store, which the accounts card below already
-   reads, so the lock exists before the tab is. Three states, and they are three
-   different sentences because they are three different fixes. */
-const calendarLock = computed(() => {
-  if (!googleCalendar.loaded) return null
-  if (googleCalendar.apiOff) {
-    return {
-      before: "Dashboard needs the Calendar API enabled on Entity's OAuth client.",
-      title: 'Needs the Calendar API enabled in the Google Cloud project',
-    }
-  }
-  const rows = googleCalendar.accounts
-  if (!rows.length) {
-    return {
-      before: 'Dashboard needs a connected Google account. Overview has the only Connect button on this page.',
-      title: 'Needs a connected Google account',
-    }
-  }
-  if (!rows.some(calendarCanRead)) {
-    return {
-      before: 'Dashboard needs ',
-      code: 'calendar.readonly',
-      after: ". This account's grant does not include it.",
-      title: 'Needs the calendar.readonly scope',
-    }
-  }
-  return null
-})
-/* The GitHub locks, in the order a person meets them: no binary, then no login.
-   Both sentences are fixed copy — a computed reason would drift from the state it
-   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
-const githubLock = computed(() => {
-  if (!github.loaded) return null
-  if (!github.binary?.found) {
-    return {
-      before: 'Dashboard needs the ',
-      code: 'gh',
-      after: " binary. It is not on this machine's PATH.",
-      title: 'Needs the gh binary on this machine',
-    }
-  }
-  if (!github.logins.length) {
-    return {
-      before: 'Dashboard needs a signed-in ',
-      code: 'gh',
-      after: ' account. ',
-      code2: 'gh auth status',
-      after2: ' found none on this machine.',
-      title: 'Needs a signed-in gh account on this machine',
-    }
-  }
-  return null
-})
-
-/* The channel locks, in the same order: nothing signed in, then a row that signed
-   in and got no channel back. **A grant without analytics is not a lock** — the
-   Data API still lists the videos, so that tab opens and prints dashes; locking it
-   would hide the half a person came for. */
-const studioLock = computed(() => {
-  if (!studio.loaded) return null
-  if (!studio.accounts.length) {
-    return {
-      before: 'Dashboard needs a signed-in channel owner. No YouTube Studio account on this machine is answering — ',
-      code: 'youtube.readonly',
-      after: ' is what separates an account that can list videos from one that can measure them.',
-      title: 'Needs a signed-in channel owner',
-    }
-  }
-  if (!studioUsable()) {
-    /* The account that answered and had nothing to show, named: `studio.accounts`
-       is the roster Google answered for, not an id this page invented. */
-    const who = studio.accounts.find((entry) => !entry.error) || studio.accounts[0]
-    return {
-      before: 'Dashboard needs a channel this account manages. ',
-      code: String(who.email || who.localpart),
-      after: ' signed in, but Google returned no channel for it — a personal account that owns none is refused, not saved.',
-      title: 'Needs a channel this account manages',
-    }
-  }
-  return null
-})
-
-/* The Lynk.id locks, in the order Lynk.id meets them: a grant, a grant that was
-   revoked, then a folder to read. An account that exists but is not `connected` is
-   not "no account" — it is the refusal, and the fix is a reauthorize rather than a
-   fresh consent. The third lock is the only one on this page that opens a control
-   instead of pointing at Overview, which is why `opens` is part of the answer. */
-function lynkGate(entry) {
-  if (!lynkConfig.loaded) return { locked: false, why: null, opens: 'overview' }
-  const accounts = Array.isArray(entry?.accounts) ? entry.accounts : []
-  if (!accounts.length) {
-    return {
-      locked: true,
-      opens: 'overview',
-      why: {
-        before: 'Dashboard needs a Google account — ',
-        code: 'drive.readonly',
-        after: '',
-        title: 'Needs a Google account on this machine',
-      },
-    }
-  }
-  if (!accounts.some((account) => account.status === 'connected')) {
-    return {
-      locked: true,
-      opens: 'overview',
-      why: {
-        before: 'Google refused the grant — reauthorize on Overview',
-        code: '',
-        after: '',
-        title: 'The Google grant was refused',
-      },
-    }
-  }
-  if (!lynkConfig.folderId) {
-    return {
-      locked: true,
-      opens: 'picker',
-      why: {
-        before: 'Dashboard needs a Drive folder — pick one on Overview',
-        code: '',
-        after: '',
-        title: 'Needs a Drive folder',
-      },
-    }
-  }
-  return { locked: false, why: null, opens: 'overview' }
-}
-
-/* One shape for every lock, whichever way it was written: `locked` decides whether
-   the tab is a place, `why` is the sentence under the strip, and `opens` says which
-   control answers it. */
-function gated(why) {
-  return why
-    ? { locked: true, why, opens: 'overview' }
-    : { locked: false, why: null, opens: 'overview' }
-}
-/* The week locks, in the order a person meets them: no key, then no workspace id.
-   Both sentences are fixed copy for the same reason the two above are. */
-const clockifyLock = computed(() => {
-  if (!clockifyLoaded.value) return null
-  if (!clockify.value.configured) {
-    return {
-      before: 'Connect Clockify first — the tab needs a verified key.',
-      title: 'Needs a Clockify API key on this machine',
-    }
-  }
-  if (!clockify.value.workspaceId) {
-    return {
-      before: 'Pick a workspace on Overview — every read happens inside one.',
-      title: 'Needs a Clockify workspace chosen for this workspace',
-    }
-  }
-  return null
-})
-/* Habitify's one lock: no account whose grant this machine holds. It is read from
-   the account card's own call rather than re-derived here, and the sentence is
-   fixed copy for the same reason the three above are. */
-const habitifyLock = computed(() => {
-  if (!habitify.loaded) return null
-  if (!habitifyConnected()) {
-    return {
-      before: 'Dashboard needs a signed-in ',
-      code: 'Habitify',
-      after: ' account on this machine. Connect one above.',
-      title: 'Needs a signed-in Habitify account on this machine',
-    }
-  }
-  return null
-})
-/* Fitbit's one lock: no account whose grant this machine holds. The roster is the
-   accounts card's own list rather than a read of this page's own, and `loaded` is
-   part of the answer: a roster that has not arrived yet would lock every Fitbit
-   page, which is how a deep link used to lose its address. */
-const fitbitLock = computed(() => {
-  if (!connectors.loaded) return null
-  const accounts = Array.isArray(installedRow.value?.accounts) ? installedRow.value.accounts : []
-  if (accounts.some((account) => account.status === 'connected')) return null
-  return {
-    before: 'Dashboard needs a signed-in Fitbit account — the accounts card above connects one.',
-    title: 'Needs a signed-in Fitbit account',
-  }
-})
-/* One shape for every lock, whichever way it was written: `dashKind` picks the
-   lock, and `opens` stays the folder lock's own answer — the one lock on this page
-   whose fix is a control here rather than a card on Overview. */
-const gate = computed(() => {
-  if (dashKind.value === 'github') return gated(githubLock.value)
-  if (dashKind.value === 'calendar') return gated(calendarLock.value)
-  if (dashKind.value === 'studio') return gated(studioLock.value)
-  if (dashKind.value === 'clockify') return gated(clockifyLock.value)
-  if (dashKind.value === 'habitify') return gated(habitifyLock.value)
-  if (dashKind.value === 'fitbit') return gated(fitbitLock.value)
-  if (dashKind.value === 'lynk') return lynkGate(installedRow.value)
-  return { locked: false, why: null, opens: 'overview' }
-})
+/* One shape for every lock, whichever way it was written: the dashboard's own
+   module picks it, and `opens` stays the folder lock's own answer — the one lock on
+   this page whose fix is a control here rather than a card on Overview. */
+const gate = computed(() => gateFor(dashKind.value, installedRow.value))
 const lock = computed(() => (gate.value.locked ? gate.value.why : null))
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
    focus, because the reason under the strip is the thing to read and a
    `disabled` attribute would make it unreachable by keyboard. */
 const canOpen = (name) => name === 'overview' || !gate.value.locked
+/* Whether the Dashboard tab's body is in the document at all — asked of the
+   dashboard's own module, because *which* connector gates its render is that
+   connector's rule, not the router's. */
+const dashboardShown = computed(() =>
+  paneShown(dashKind.value, { tab: tab.value, locked: Boolean(lock.value) }),
+)
 /* Which pane the Dashboard tab actually controls, and it is not always its own.
    The two bodies whose lock is part of their `v-if` — Fitbit's and Lynk.id's — fall
    through to the Overview pane while locked, so `aria-controls` names the id that is
-   in the document rather than the one the tab would have drawn. */
-const dashboardPane = computed(() =>
-  tab.value === 'dashboard' && !(lock.value && (dashKind.value === 'fitbit' || dashKind.value === 'lynk'))
-    ? 'cxn-pane-dashboard'
-    : 'cxn-pane-overview',
-)
-
-/* The picker is the folder lock's own answer, so it lives beside the gate rather
-   than inside the tab body: activating the lock is what opens it. */
-const picker = ref(false)
+   in the document rather than the one the tab would have drawn. Derived from the
+   same boolean the body is mounted on, so the two cannot disagree. */
+const dashboardPane = computed(() => (dashboardShown.value ? 'cxn-pane-dashboard' : 'cxn-pane-overview'))
 
 function select(name) {
   if (name === 'dashboard' && gate.value.locked) {
     /* Activating a locked tab does not switch it. A tab waiting for a folder is
-       the one case with an action behind it, so it opens the picker; the other
-       two focus the sentence that says where to fix it. */
-    if (gate.value.opens === 'picker') picker.value = true
+       the one case with an action behind it, so it opens the picker where that
+       connector's card lives; the others focus the sentence that says where to
+       fix it. */
+    if (gate.value.opens === 'picker') openFolderPicker()
     else document.getElementById('cxn-tab-why')?.focus?.()
     return
   }
@@ -748,74 +456,27 @@ function onTabKey(event) {
   document.getElementById(`cxn-tab-${next}`)?.focus?.()
 }
 
-async function openDashboard() {
-  /* Fitbit draws itself: its pane reads its own day on mount, so the gate here is
-     the row's own account list and there is nothing on this page to ask for. A
-     locked deep link keeps its address — the pane is absent, and the sentence under
-     the strip is the answer the person followed the link for. */
-  if (dashKind.value === 'fitbit') return
-  /* The calendar's gate is the account store, so the read that answers it is the
-     same one the accounts card makes — no extra request, and no read at all while
-     the tab that would spend it is not the one on screen. */
-  if (dashKind.value === 'calendar') {
-    if (!googleCalendar.loaded) await readCalendarAccounts()
-    if (tab.value === 'dashboard' && !lock.value && !googleCalendar.readAt) await readCalendarDashboard()
-    return
-  }
-  /* The gate for each dashboard is answered by its own read, so only the one this
-     page's connector needs is run. */
-  if (dashKind.value === 'lynk') {
-    await loadLynkConfig({ id: id.value })
-    adoptLynkConfig(lynkConfig)
-    /* A locked tab is not a place, and `select()` already refuses one — a deep
-       link has to reach the same conclusion, or `?tab=dashboard` would land on a
-       pane that has nothing it may read. */
-    if (tab.value === 'dashboard' && gate.value.locked) select('overview')
-    else if (tab.value === 'dashboard') await readIfNeeded()
-    return
-  }
-  if (dashKind.value === 'studio') {
-    if (!studio.loaded) await readRoster()
-    if (tab.value === 'dashboard' && lock.value) select('overview')
-    else if (tab.value === 'dashboard' && !studio.readAt) await readStudioDashboard()
-    return
-  }
-  /* Clockify draws itself: its band reads its own state on mount, so the gate is
-     the only thing this page has to answer before it can. */
-  if (dashKind.value === 'clockify') {
-    await readClockifyState()
-    await readSpaces()
-    return
-  }
-  /* Habitify's gate is the account list, which is a file read — cheaper than `gh
-     auth status` and the only thing that can answer whether the tab may open. */
-  if (dashKind.value === 'habitify') {
-    if (!habitify.loaded) await readHabitifyAccounts()
-    if (tab.value === 'dashboard' && !lock.value) await readHabitifyDashboard({ day: day.value })
-    return
-  }
-  await readLogins()
-  if (tab.value === 'dashboard' && !lock.value) await readDashboard()
-}
-/*
- * Whether the tab already holds an answer for the folder it is now pointed at.
+/**
+ * Answer this dashboard's gate, and read its pane if that is the tab on screen.
  *
- * This is the difference between "the numbers are on screen" and "the tab was
- * opened once". The read used to be guarded by `!lynk.readAt`, which is only ever
- * set by a successful read — so a refusal, a quota, or a folder picked a moment
- * later left the guard answering "already read" and the page stayed wrong until it
- * was reloaded. The folder the answer came from is the fact that makes the read
- * unnecessary, and a folder change is now what triggers the next one.
+ * Two reads, not seven: the gate comes from the dashboard's own module and the
+ * numbers from the pane that draws them (`readPane`). Both are asked for by *kind*,
+ * so a new connector is a row in one table rather than a branch here — and the same
+ * two calls are what the accounts card runs after a sign-in, which is why a
+ * completed authentication no longer needs a reload to show its dashboard.
  */
-function needsLynkRead() {
-  if (lynk.reading) return false
-  if (!lynk.readAt) return true
-  return Boolean(lynk.readFolderId) && lynk.readFolderId !== lynk.folderId
-}
-
-async function readIfNeeded({ force = false } = {}) {
-  if (!force && !needsLynkRead()) return
-  await readLynkDashboard({ force })
+async function openDashboard() {
+  const kind = dashKind.value
+  if (!kind) return
+  await answerGate(kind, { id: id.value })
+  /* A locked tab is not a place, and `select()` already refuses one — a deep link
+     has to reach the same conclusion, or `?tab=dashboard` would land on a pane that
+     has nothing it may read. */
+  if (tab.value === 'dashboard' && gate.value.locked) {
+    select('overview')
+    return
+  }
+  if (tab.value === 'dashboard') await readPane(kind, { day: day.value })
 }
 
 onMounted(async () => {
@@ -830,216 +491,72 @@ onMounted(async () => {
      CLI, open a key file or read a keyring for a tab that cannot exist. */
   if (dashboardTab.value) await openDashboard()
 })
-/* A deep link straight to the tab: the strip rendered before the gate answered, so
-   it resolves late and the read has to wait for it rather than run against a lock
-   it does not yet know about. */
+/* A deep link straight to the tab, a tab click, or a connector installed on this
+   page crossing the tab into existence: the strip rendered before the gate answered,
+   so the read has to wait for it rather than run against a lock it does not know
+   about yet. One watcher, because `openDashboard` is the whole of "answer the gate,
+   then read the pane". */
 watch(
-  () => [tab.value, Boolean(gate.value.locked), dashboardTab.value, installedRow.value?.builtIn],
-  async ([name, locked, hasTab, builtIn]) => {
-    if (!hasTab) return
-    if (builtIn === 'google-calendar') {
-      /* The calendar keeps the `locked` the watcher was handed rather than
-         re-reading it: its gate is the account store, and that read has already
-         answered by the time the tab can be deep-linked. */
-      if (!googleCalendar.loaded) await readCalendarAccounts()
-      if (name === 'dashboard' && !locked && !googleCalendar.readAt) await readCalendarDashboard()
-      return
-    }
-    if (builtIn === 'lynk') {
-      if (!lynkConfig.loaded) {
-        await loadLynkConfig({ id: id.value })
-        adoptLynkConfig(lynkConfig)
-      }
-      if (name === 'dashboard' && !locked) await readIfNeeded()
-      return
-    }
-    if (builtIn === 'youtube-studio') {
-      if (!studio.loaded) await readRoster()
-      /* Re-read the gate: the roster answered inside this run, so the value the
-         watcher was handed is the one from before the read. */
-      if (name === 'dashboard' && lock.value) select('overview')
-      else if (name === 'dashboard' && !studio.readAt) await readStudioDashboard()
-      return
-    }
-    if (dashKind.value === 'clockify') {
-      if (!clockifyLoaded.value) await readClockifyState()
-      /* A connector installed on this page crosses the tab into existence, so the
-         gate and the workspace list are read here rather than only on mount: the
-         card would otherwise wait on a list nobody asked for. */
-      if (storedKey.value.configured && !spacesLoaded.value) await readSpaces()
-      return
-    }
-    if (dashKind.value === 'habitify') {
-      if (!habitify.loaded) await readHabitifyAccounts()
-      if (name === 'dashboard' && !locked && !habitify.readAt) await readHabitifyDashboard({ day: day.value })
-      return
-    }
-    if (dashKind.value === 'fitbit') return
-    if (!github.loaded) await readLogins()
-    if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
+  () => [tab.value, dashKind.value, dashboardTab.value],
+  async () => {
+    if (!dashKind.value) return
+    await openDashboard()
   },
 )
 /* A day in the address that this renderer has not read yet — a link followed, or a
    reload — is read here rather than left showing the day before it. */
 watch(day, (next) => {
   if (dashKind.value !== 'habitify' || tab.value !== 'dashboard' || lock.value) return
-  if (next && next !== habitify.day) readHabitifyDashboard({ day: next }).catch(() => {})
+  if (next && next !== habitify.day) readPane('habitify', { day: next }).catch(() => {})
 })
-/* Re-checking the CLI, or signing an account out from the card, changes the gate
-   under the strip, so the strip follows: a tab whose reason just became true
-   cannot stay open on a page with nothing to draw. */
-watch(
-  () => github.logins.length,
-  (count) => {
-    if (!count && tab.value === 'dashboard' && dashKind.value === 'github') select('overview')
-  },
-)
-/* The same for a Google account connected or signed out from the accounts card:
-   the calendar's gate is that list, so it can go either way while the tab is open. */
-watch(
-  () => googleCalendar.accounts.length,
-  (count) => {
-    if (!count && tab.value === 'dashboard' && dashKind.value === 'calendar') select('overview')
-  },
-)
-/* The same for a Habitify consent granted or revoked on the accounts card: an
-   account that arrived unlocks the tab, and one that went away must not leave the
-   pane open. */
-watch(
-  () => habitify.accounts.filter((entry) => entry.hasToken).length,
-  (count) => {
-    if (!count && tab.value === 'dashboard' && dashKind.value === 'habitify') select('overview')
-  },
-)
 /*
- * The Lynk.id gate has two inputs the strip cannot read on its own: whether a
- * grant is still `connected` (the accounts card writes it) and whether a folder
- * was picked (the card below writes it). Either one can lock or unlock the tab, so
- * both are watched, and a tab that is open only while nothing is stored goes back
- * to Overview rather than staying on a body it can no longer fill.
+ * The gate itself, watched once instead of six times.
+ *
+ * Every one of the old watchers was a variation on the same sentence: a grant,
+ * a key, a roster or a folder changed, so the tab must close if it just became
+ * locked and re-ask if it just became open. They differed only in which field of
+ * which connector they watched — which is exactly the per-connector knowledge that
+ * now lives in `connectors/dashboards`. `gate` is the one value all of them
+ * derive, so it is the one value worth watching, and a seventh connector gets this
+ * for free.
+ *
+ * Only a transition counts: an unread state answers "not locked", so a page whose
+ * gate has not arrived cannot close a deep link before its accounts answer.
  */
 watch(
-  () => [lynkConfig.folderId, lynkConfig.loaded, installedRow.value?.accounts],
-  async () => {
-    if (installedRow.value?.builtIn !== 'lynk') return
-    if (gate.value.locked && tab.value === 'dashboard') {
+  () => gate.value.locked,
+  async (locked, was) => {
+    if (was === undefined || locked === was) return
+    if (tab.value !== 'dashboard') return
+    if (locked) {
       select('overview')
       return
     }
-    /* The gate just unlocked under an open tab — a grant was reauthorized, or a
-       folder was picked. Both mean the answer on screen is not the one this tab
-       would produce now, so it is asked for again here instead of on the next
-       page load. */
-    if (tab.value === 'dashboard' && !gate.value.locked) await readIfNeeded({ force: true })
+    /* The gate just opened under an open tab: a sign-in, a reauthorize or a folder
+       picked means the numbers on screen are not the ones this tab would read now,
+       so they are asked for again instead of waiting for the next page load. */
+    await readPane(dashKind.value, { day: day.value, force: true })
   },
-  { deep: true },
 )
-/* The folder whose rows were read is no longer the folder being read, so the
-   numbers on screen belong to somebody else's folder. Dropping the answer is what
-   turns that into a skeleton and a real read; leaving `readAt` alone is what left
-   the previous folder's revenue under the new folder's name. */
+/*
+ * The folder whose rows were read is no longer the folder being read, so the
+ * numbers on screen belong to somebody else's folder. Dropping the answer is what
+ * turns that into a skeleton and a real read; leaving `readAt` alone is what left
+ * the previous folder's revenue under the new folder's name.
+ */
 watch(
   () => [lynkConfig.folderId, lynkConfig.sheetSuffix],
   ([nextFolder, nextSuffix], [wasFolder, wasSuffix]) => {
     if (nextFolder === wasFolder && nextSuffix === wasSuffix) return
     if (installedRow.value?.builtIn !== 'lynk') return
     dropLynkAnswer()
-    if (tab.value === 'dashboard' && !gate.value.locked) readIfNeeded()
-  },
-)
-/* Fitbit's gate is the row's own account list, and the card above can sign the
-   last account out under an open tab. Only an open → locked change closes it: a
-   roster that has not loaded yet reads as signed-out, and closing on that would
-   send a deep link to the overview before its accounts could arrive. */
-const fitbitGate = computed(() =>
-  dashKind.value === 'fitbit' && connectors.loaded ? Boolean(fitbitLock.value) : null,
-)
-watch(fitbitGate, (locked, was) => {
-  if (was !== false || !locked) return
-  if (tab.value === 'dashboard') select('overview')
-})
-/* The same for a consent granted or revoked on the accounts card: a channel that
-   arrived unlocks the tab, and one that went away must not leave the pane open. */
-watch(
-  () => [studio.accounts.length, studioUsable()],
-  () => {
-    if (dashKind.value !== 'studio') return
-    if (tab.value === 'dashboard' && lock.value) select('overview')
+    if (tab.value === 'dashboard' && !gate.value.locked) readPane('lynk')
   },
 )
 
 const back = () => {
   hub.rail.connectors = true
   router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'connectors' } })
-}
-
-/* ── the Lynk.id report card ─────────────────────────────────────────────
-
-   One card, one control: which Drive folder the report is read from. Everything
-   else on it is a fact printed beside that control — the tab suffix, the currency,
-   the zone — because a number without its unit is a number somebody will
-   misread.
-
-   `Test folder` is its own call, not the page's `runTest`: a probe answers a
-   status line, and this answers how many spreadsheets were found and how many of
-   them had anything to read. `Re-read now` is `force`, and `Forget folder` writes
-   an empty id, which locks the tab again. */
-const isLynk = computed(() => installedRow.value?.builtIn === 'lynk')
-const folderTail = computed(() => {
-  const total = lynk.test?.sheets ?? lynk.sheets.total
-  return total ? `${total} ${total === 1 ? 'sheet' : 'sheets'}` : 'not read yet'
-})
-const testLine = computed(() => {
-  const answer = lynk.test
-  if (!answer) return ''
-  const seconds = (Number(answer.ms || 0) / 1000).toFixed(1)
-  return `${answer.sheets} ${answer.sheets === 1 ? 'spreadsheet' : 'spreadsheets'} · ${answer.withTab} with a ${lynkConfig.sheetSuffix.trim()} tab · ${answer.rows} ${answer.rows === 1 ? 'row' : 'rows'} · read in ${seconds} s`
-})
-
-async function onFolderPicked(folder) {
-  picker.value = false
-  try {
-    await saveLynkFolder(folder)
-    adoptLynkConfig(lynkConfig)
-    lynk.test = null
-    notice.value = `Reading ${folder.name}…`
-    await readLynkDashboard({ force: true })
-    notice.value = `${folder.name} is the folder this report reads.`
-  } catch (problem) {
-    error.value = String(problem?.message || problem)
-  }
-}
-
-async function runFolderTest() {
-  error.value = ''
-  notice.value = ''
-  try {
-    await testLynkFolder()
-    if (lynk.testError) throw new Error(lynk.testError)
-  } catch (problem) {
-    error.value = String(problem?.message || problem)
-  }
-}
-
-async function reReadNow() {
-  error.value = ''
-  try {
-    await readLynkDashboard({ force: true })
-    notice.value = lynk.error ? lynk.error : `Read ${lynk.sheets.withTab} spreadsheets again.`
-  } catch (problem) {
-    error.value = String(problem?.message || problem)
-  }
-}
-
-async function dropFolder() {
-  try {
-    await forgetLynkFolder()
-    adoptLynkConfig({ folderId: '', folderName: '' })
-    lynk.test = null
-    notice.value = 'The folder is forgotten; the Dashboard is locked until you pick one.'
-  } catch (problem) {
-    error.value = String(problem?.message || problem)
-  }
 }
 
 async function runTest() {
@@ -1055,7 +572,7 @@ async function runTest() {
       const answer = await call('connector.token.test', {
         connector: id.value,
         token: draft.value.token,
-        workspaceId: clockify.value.workspaceId || undefined,
+        ...tokenScope(id.value),
       })
       notice.value = answer?.detail || 'The service accepted this key.'
       facts.value = []
@@ -1104,12 +621,14 @@ async function saveKey() {
     await call('connector.token.save', {
       connector: id.value,
       token: draft.value.token,
-      workspaceId: clockify.value.workspaceId || undefined,
+      ...tokenScope(id.value),
     })
     draft.value = { ...draft.value, token: '' }
     await readStoredKey()
-    await readClockifyState()
-    await readSpaces()
+    /* A key is half of a gate for the one connector that has a second half, so the
+       connector re-reads its own state here: the workspace it reads, and the list the
+       Overview card draws. */
+    await afterKeySaved()
     notice.value = 'Key saved on this machine — it is written 0600 and never leaves it.'
   } catch (problem) {
     error.value = String(problem?.message || problem)
@@ -1394,64 +913,25 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         </nav>
 
         <!-- One dashboard, one id: the strip's `aria-controls` names the pane, and a
-             pane that swapped its own name per connector would be six tabs. Every
-             dashboard is a link in this one chain — a standalone `v-if` beside it
-             would let the Overview pane render underneath the dashboard.
+             pane that swapped its own name per connector would be six tabs. The body
+             is one component (`connectors/ConnectorDashboardPane.vue`) because *which*
+             connector a dashboard is, is that connector's business; the page passes
+             the pane's id and the day, and nothing else.
              A locked Dashboard never renders its body: the gate's sentence under the
              strip is the whole answer, and a body that could not fill itself would
-             draw six zeroes nobody earned. Lynk.id is the one body that also owns a
-             lock whose fix is a control on this page, so its pane waits for the
-             folder the picker writes. -->
-        <ConnectorClockifyDashboard
-          v-if="dashKind === 'clockify' && tab === 'dashboard'"
+             draw six zeroes nobody earned. `dashboardShown` is that decision, in one
+             place, because `aria-controls` has to name the pane that is actually in
+             the document. -->
+        <ConnectorDashboardPane
+          v-if="dashboardShown"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
-          @overview="select('overview')"
-          @changed="readClockifyState"
-        />
-        <ConnectorDashboard
-          v-else-if="tab === 'dashboard' && (dashKind === 'github' || (dashKind === 'lynk' && !gate.locked))"
-          :row="installedRow"
-          id="cxn-pane-dashboard"
-          role="tabpanel"
-          aria-labelledby="cxn-tab-dashboard"
-        />
-        <GoogleCalendarDashboard
-          v-else-if="dashKind === 'calendar' && tab === 'dashboard'"
-          id="cxn-pane-dashboard"
-          role="tabpanel"
-          aria-labelledby="cxn-tab-dashboard"
-        />
-        <ConnectorStudioDashboard
-          v-else-if="dashKind === 'studio' && tab === 'dashboard'"
-          id="cxn-pane-dashboard"
-          role="tabpanel"
-          aria-labelledby="cxn-tab-dashboard"
-          @overview="select('overview')"
-        />
-        <ConnectorHabitifyDashboard
-          v-else-if="dashKind === 'habitify' && tab === 'dashboard'"
-          id="cxn-pane-dashboard"
-          role="tabpanel"
-          aria-labelledby="cxn-tab-dashboard"
+          :kind="dashKind"
           :day="day"
+          :fitbit-day="fitbitDay"
+          @overview="select('overview')"
           @select-day="selectDay"
-        />
-
-        <!-- Fitbit's tab is one day and one table, and it is read-only: the copy on
-             the page is the connector's own, and no control here writes to the
-             account. The gate is part of the render, not just of the click: a
-             mounted dashboard reads on mount, so a locked tab would spend an
-             account's budget it has no grant for and paint a day it does not have.
-             Locked, the chain falls through to Overview, which is what
-             `dashboardPane` points at. -->
-        <ConnectorFitbitDashboard
-          v-else-if="dashKind === 'fitbit' && tab === 'dashboard' && !lock"
-          id="cxn-pane-dashboard"
-          role="tabpanel"
-          aria-labelledby="cxn-tab-dashboard"
-          :day="fitbitDay"
           @pick="pickFitbitDay"
         />
 
@@ -1506,75 +986,12 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </p>
           </section>
 
-          <!-- The Lynk.id report's one setting. It sits above the accounts card
-               because the folder is the thing a person came to change; the grant is
-               already done by the time they get here. -->
-          <section v-if="isLynk && !notInstalled" class="cxn-card cxn-report">
-            <h2>{{ row.label }} report</h2>
-            <p class="cxn-about-lead">
-              One spreadsheet per product, and this folder's <code class="mono">{{ lynkConfig.sheetSuffix }}</code>
-              tab is the one read. Change the folder here and the Dashboard follows it —
-              no reload, and no second setting anywhere else.
-            </p>
-            <div class="cfg">
-              <div class="cfg-row">
-                <span class="lb">Drive folder</span>
-                <button
-                  type="button"
-                  class="field"
-                  data-role="select"
-                  :aria-label="lynkConfig.folderName ? `Drive folder: ${lynkConfig.folderName}` : 'Choose a Drive folder'"
-                  @click="picker = true"
-                >
-                  <span class="val">{{ lynkConfig.folderName || (lynkConfig.folderId ? lynkConfig.folderId : 'Pick a folder…') }}</span>
-                  <span class="tail">{{ folderTail }}</span>
-                  <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-                </button>
-              </div>
-              <div class="cfg-row">
-                <span class="lb">Sheet suffix</span>
-                <div class="field-static">
-                  <code class="mono">{{ lynkConfig.sheetSuffix }}</code>
-                  <span class="tail">tab name</span>
-                </div>
-              </div>
-              <div class="cfg-row">
-                <span class="lb">Currency</span>
-                <div class="field-static">
-                  <span>IDR · Indonesian rupiah</span>
-                  <span class="tail">no conversion</span>
-                </div>
-              </div>
-              <div class="cfg-row">
-                <span class="lb">Time zone</span>
-                <div class="field-static">
-                  <span>{{ lynkConfig.timezone }}</span>
-                  <span class="tail">for every date</span>
-                </div>
-              </div>
-            </div>
-            <div class="cfg-actions">
-              <button class="btn btn-primary btn-sm" type="button" :disabled="!lynkConfig.folderId || lynk.testing" @click="runFolderTest">
-                {{ lynk.testing ? 'Reading…' : 'Test folder' }}
-              </button>
-              <button class="btn btn-sm" type="button" :disabled="!lynkConfig.folderId || lynk.reading" @click="reReadNow">
-                {{ lynk.reading ? 'Reading…' : 'Re-read now' }}
-              </button>
-              <button class="btn btn-ghost btn-sm" type="button" :disabled="!lynkConfig.folderId" @click="dropFolder">
-                Forget folder
-              </button>
-            </div>
-            <!-- What the last test actually saw. The numbers are the read's own, so
-                 "70 spreadsheets" here and "70 sheets" on the tab cannot disagree. -->
-            <div v-if="testLine" class="cfg-test">
-              <span class="k">read in {{ (Number(lynk.test?.ms || 0) / 1000).toFixed(1) }} s</span>
-              <p>{{ testLine }}</p>
-            </div>
-            <div v-else-if="lynk.testError" class="cfg-test" data-tone="bad">
-              <span class="k">not read</span>
-              <p>{{ lynk.testError }}</p>
-            </div>
-          </section>
+          <!-- Lynk.id's one setting, in Lynk.id's own component: the folder the
+               report reads and the three verbs beside it belong to that connector,
+               not to the router. It sits above the accounts card because the folder
+               is the thing a person came to change; the grant is already done by the
+               time they get here. -->
+          <LynkReportCard v-if="isLynk && !notInstalled" :label="row.label" />
 
           <!-- The accounts card: one row per connected account, on the connector's
                own page. A component of its own because every account-bearing
@@ -1781,54 +1198,10 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </div>
           </section>
 
-          <!-- The one action the dashboard has. The list is `GET /v1/workspaces`,
-               which is itself a read the key makes, so without a key the card says
-               so instead of offering a list it cannot have. A failure stays in this
-               card: this card is the thing that failed. -->
-          <section v-if="dashKind === 'clockify'" class="cxn-card">
-            <div class="cxn-card-head">
-              <h2>Workspace</h2>
-              <span class="spacer"></span>
-              <span class="n">{{ clockify.workspaceId ? 'chosen' : 'not chosen' }}</span>
-            </div>
-            <p class="cxn-note">
-              Every read happens inside one Clockify workspace — its reports, its people
-              and its projects. Choosing one here is what unlocks the dashboard tab.
-            </p>
-            <p v-if="!storedKey.configured" class="cxn-note">
-              Paste a key first: the list of workspaces is one of the reads that key makes.
-            </p>
-            <template v-else>
-              <div
-                v-if="spaces.length"
-                class="seg ck-seg"
-                role="group"
-                aria-label="Which Clockify workspace to read"
-              >
-                <button
-                  v-for="space in spaces"
-                  :key="space.id"
-                  type="button"
-                  :title="space.name"
-                  :aria-pressed="space.id === clockify.workspaceId"
-                  :aria-busy="busy === 'space' ? 'true' : undefined"
-                  :disabled="Boolean(busy)"
-                  @click="pickSpace(space)"
-                ><span class="nm">{{ space.name }}</span></button>
-              </div>
-              <p v-else-if="!spacesLoaded && !spacesError" class="cxn-note">
-                Reading the workspaces this key can see…
-              </p>
-              <p v-else-if="!spacesError" class="cxn-note">
-                This key can read no workspace. Its owner needs to be a member of one.
-              </p>
-              <p class="cxn-note">
-                The reports are read inside the chosen workspace only; the key itself
-                never leaves this machine.
-              </p>
-            </template>
-            <div v-if="spacesError" class="cxn-error" role="alert">{{ spacesError }}</div>
-          </section>
+          <!-- Clockify's one control, in Clockify's own component: the key on this
+               machine, the workspaces it can see and which one this workspace reads
+               are that connector's business, not the page's. -->
+          <ClockifyWorkspaceCard v-if="dashKind === 'clockify'" />
 
           <section v-if="notInstalled && !isTailscale" class="cxn-card">
             <h2>Install</h2>
@@ -1873,15 +1246,5 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         </div>
       </div>
     </template>
-
-    <!-- The folder lock's answer: one dialog, one job. It lives outside the tab
-         body because the lock is what opens it, and a lock with its own modal is
-         the shortest path from "what is it waiting for" to a folder. -->
-    <DriveFolderPicker
-      v-if="picker"
-      :folder-id="lynkConfig.folderId"
-      @close="picker = false"
-      @pick="onFolderPicked"
-    />
   </div>
 </template>

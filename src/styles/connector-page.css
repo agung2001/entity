@@ -1140,8 +1140,19 @@
   border-bottom: 1px solid var(--border);
 }
 /* One bounded scroll box with the head stuck to it, reachable by keyboard so the
-   rows below the fold are not pointer-only. */
+   rows below the fold are not pointer-only.
+
+   `position: relative` is load-bearing, not decoration. A table's `<caption
+   class="sr-only">` is `position: absolute` with `width: 1px` — and a caption has no
+   positioned ancestor inside a table, so without this the containing block is the
+   *initial* one and the 1 px caption sits at its layout position **outside** this
+   box's clip. On the Clockify tab that put the last caption at 1822 px in a 900 px
+   document: the app grew a second (browser) scrollbar and ~900 px of blank space
+   under the page, while every dashboard without a caption was fine. With this line
+   the caption is contained by the box it belongs to and clipped by the box's own
+   `overflow`. */
 .dsh-tblscroll {
+  position: relative;
   max-height: min(60vh, 520px);
   overflow: auto;
 }
@@ -1213,8 +1224,20 @@ table.dsh-tbl {
 .dsh-pr .who {
   color: var(--muted);
 }
+/* The row's three links: the repository (to the pull request), its author (to the
+   profile) and the title (to the pull request too). The title takes the two-line
+   clip; the two in the small line above stay inline and inherit its ink. */
+.dsh-pr .repo a {
+  color: inherit;
+  text-decoration: none;
+}
+.dsh-pr .repo a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 /* Two lines, then a clip — with the whole title on the anchor's `title`. */
-.dsh-pr a {
+.dsh-pr .ttl {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1225,9 +1248,134 @@ table.dsh-tbl {
   text-decoration: none;
   overflow-wrap: anywhere;
 }
+.dsh-pr .ttl:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A flex title row is not a `-webkit-box`, so the clamp above would collapse it:
+   the `yt-rowmain` anchor is display:flex and its text child carries the clamp. */
+.dsh-pr a.yt-rowmain {
+  display: flex;
+  -webkit-line-clamp: none;
+  overflow: visible;
+}
 .dsh-pr a:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+/* The three Studio jumps under a video's title. They take the clamp back off the
+   `.dsh-pr a` rule above: a one-word link is not a two-line title, and the box
+   would otherwise force a line-height it does not need. */
+.dsh-pr .yt-rowlinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.15;
+}
+.dsh-pr .yt-rowlinks a {
+  display: inline;
+  color: var(--muted);
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+}
+.dsh-pr .yt-rowlinks a:hover {
+  color: var(--ink-2);
+}
+/* The title row carries its thumbnail: a video list is read by shape first, and a
+   Studio row without one is the one thing a reader checks a screenshot against. */
+.dsh-pr .yt-rowmain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dsh-pr .yt-rowmain > span {
+  min-width: 0;
+  /* The clamp moves to the text, because the anchor is now a flex row and
+     `-webkit-line-clamp` only bites a `-webkit-box`. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dsh-pr .yt-thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 32px;
+  border-radius: var(--r-2xs);
+  object-fit: cover;
+  background: var(--surface-2, var(--border));
+}
+/* A Short badge, on the type ladder's micro step. `--r-2xs` is the same corner a
+   thumbnail uses, so the two shapes read as one family. */
+.dsh-pr .yt-tag {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 1px 4px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2, var(--border));
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* Repositories with activity: a name, four counts, a date. The name is the row's
+   link and each count is a link to its own search, so the row has six stops and a
+   keyboard reaches all of them. `.dsh-pr .repo`'s ellipsis rule is not reused
+   here: this name is in a single-line cell with room beside it. */
+.dsh-repo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.dsh-repo a {
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  color: var(--ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-repo a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dsh-repo .pv {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 0 3px;
+  flex: none;
+}
+/* A count is a link, so it takes the count's ink and not the page's link colour:
+   four blue numbers a row would read as the loudest thing on the page. */
+.dsh-tbl-repos thead th.num,
+.dsh-tbl-repos td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-tbl-repos td.num a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.dsh-tbl-repos td.num a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dsh-tbl-repos tbody tr {
+  height: 44px;
 }
 /* A habit is a name and nothing else: no repository, no author, no link. One line,
    ellipsised rather than clamped, because the row's whole job is naming the habit and
@@ -1303,6 +1451,117 @@ table.dsh-tbl {
   color: var(--muted);
   white-space: nowrap;
 }
+/* ── the habit × week grid ───────────────────────────────────────────────
+   Seven narrow columns and three numbers. The day heads keep the table's mono micro
+   caps and carry the date under them, because `Mon` alone cannot say which Monday. */
+.dsh-grid thead th.dy,
+.dsh-grid td.dy {
+  width: 62px;
+  text-align: center;
+}
+.dsh-grid thead th.dy .dt {
+  display: block;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.dsh-grid tbody tr {
+  height: 46px;
+}
+/* A cell says its word in micro caps and the measurement under it. The tone colours
+   the word and nothing else: an unread day and a rest day are both dashes, and a dash
+   that looked like a miss is the one wrong reading this table could give. */
+.dsh-grid td.dy > span {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.dsh-grid td.dy > span + span {
+  margin-top: 1px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.dsh-grid td.dy[data-tone='dash'] > span,
+.dsh-grid td.dy[data-tone='mute'] > span:first-child {
+  color: var(--muted);
+}
+.dsh-grid td.dy[data-tone='dash'] > span {
+  opacity: 0.55;
+}
+.dsh-grid td.dy[data-tone='ok'] > span:first-child {
+  color: var(--ok);
+}
+.dsh-grid td.dy[data-tone='bad'] > span:first-child {
+  color: var(--danger);
+}
+
+/* ── walking the weeks, and the one way out ────────────────────────────── */
+.dsh-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+/* An anchor wearing `.btn` would otherwise keep the underline its parent link set. */
+.dsh-out {
+  text-decoration: none;
+}
+/* The one day that is still running, in the rail's week list. */
+.dsh-repos li[data-open='1'] .nm {
+  color: var(--ink-2);
+}
+
+/* Four week figures, four columns. Two empty cells in the six-column default would
+   read as two numbers that failed to land, and at the fold below they stack 2×2
+   rather than 3 + a hole. */
+.dsh-kpis.dsh-wkfigs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@container cxn (max-width: 899.99px) {
+  .dsh-kpis.dsh-wkfigs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The habit × week grid is the one table on this tab that stays a table on a phone:
+   the seven days are the whole point, and the shared fold strips the head and stacks
+   the cells into seven unlabelled words. Here the head stays and the box scrolls
+   sideways instead — the same reading, one gesture away. */
+@container cxn (max-width: 559.99px) {
+  .dsh-tbl.dsh-grid {
+    display: table;
+    min-width: 560px;
+  }
+  .dsh-tbl.dsh-grid thead {
+    display: table-header-group;
+  }
+  /* The row structure has to be restored with the same words the fold unmade it
+     with: `table-cell` on `tbody` or `tr` destroys the row group and the rows, so the
+     table measures 2233px wide with 452px rows and only some of the seven days
+     readable. `tbody` is a row group, `tr` is a row, and only `td` is a cell. */
+  .dsh-tbl.dsh-grid tbody {
+    display: table-row-group;
+  }
+  .dsh-tbl.dsh-grid tr {
+    display: table-row;
+  }
+  .dsh-tbl.dsh-grid tbody td {
+    display: table-cell;
+  }
+  .dsh-tbl.dsh-grid tbody tr {
+    height: 46px;
+    padding: 0;
+  }
+  .dsh-tbl.dsh-grid tbody td {
+    padding: 6px 8px;
+  }
+}
+
 /* Zeros are an answer: the empty row states who has nothing, then offers the one
    place that can change it. */
 .emptyrow td {
@@ -1348,6 +1607,18 @@ table.dsh-tbl {
   margin: 0;
   padding: 9px 14px 11px;
   border-top: 1px solid var(--border);
+}
+/* A login whose numbers this token cannot read. One line, under the table it
+   would have filled, in the muted ink a footnote takes — the tiles above already
+   print `—`, so this says why rather than repeating it. */
+.dsh-unread {
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--ink-2);
 }
 .dsh-foot a {
   color: var(--ink-2);
@@ -1996,6 +2267,14 @@ table.dsh-tbl {
     gap: 14px;
     align-items: start;
   }
+  /* The rail's last card is its footnote — provenance, a budget note, a caveat —
+     and footnotes are long. Paired with a two-line card, pairing it leaves a hole
+     as tall as the footnote: on the Clockify tab the coverage card sat beside a
+     594 px ledger in a 98 px box. Full width, it is shorter and the hole is gone;
+     `align-items: start` keeps a short card short instead of stretching it. */
+  .dsh-rail > :last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @container cxn (max-width: 640px) {
@@ -2103,6 +2382,18 @@ table.dsh-tbl {
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
+  }
+  /* Four counts and a date would be five stacked lines per repository. They stay on
+     one wrapping line instead, each with its label, and the name keeps the line
+     above it — the same shape the PR row folds into. */
+  .dsh-tbl-repos td.num,
+  .dsh-tbl-repos td.upd {
+    display: inline-block;
+    margin-top: 6px;
+    text-align: left;
+  }
+  .dsh-tbl-repos td.num + td.num {
+    margin-left: 12px;
   }
   /* Five columns do not fit. Identity, state and one literal 44px target stay;
      host and scopes drop from the head in the same rule so no label sits over
@@ -2408,6 +2699,104 @@ table.dsh-tbl {
 .ck-tbl tfoot td b {
   font-family: var(--font);
   font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* A row that goes somewhere: the name carries the anchor, so the whole word is the
+   target and the row keeps its one line. `dsh-pr a`'s grammar, at table size. */
+.ck-name a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+.ck-name a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ck-name a:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-2xs);
+}
+
+/* ── the project × member matrix ─────────────────────────────────────────
+   One column per person, so the table has to survive a roster: it scrolls on the
+   x axis inside the card instead of stacking into a grid the way `.ck-tbl` does at
+   a narrow measure. The project name is the frozen column — at six people the
+   hours are off screen, and a row of numbers with no name is a row you cannot
+   read. */
+.ck-mx-tbl {
+  min-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.ck-mx-tbl thead th,
+.ck-mx-tbl tbody td,
+.ck-mx-tbl tfoot td {
+  padding: 8px 12px;
+  height: 40px;
+  white-space: nowrap;
+}
+.ck-mx-tbl thead th.num,
+.ck-mx-tbl tbody td.num,
+.ck-mx-tbl tfoot td.num {
+  min-width: 84px;
+}
+.ck-mx-tbl tbody td.c-nm,
+.ck-mx-tbl thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+.ck-mx-tbl thead th:first-child {
+  z-index: 2;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.ck-mx-tbl tbody td.c-nm {
+  border-right: 1px solid var(--border);
+}
+.ck-mx-tbl tfoot td:first-child {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.ck-mx-tbl tfoot td.num {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.ck-mx-tbl tbody td.num {
+  color: var(--ink-2);
+}
+/* A zero in the matrix is an answer (this project's member list did not include
+   them), so it prints `0h 00m` — just one step quieter than a figure with time. */
+.ck-mx-tbl tbody td.num.zero {
+  color: var(--muted);
+}
+.ck-mx-tbl tfoot td.num b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+.ck-mx .dsh-tblscroll {
+  max-height: min(56vh, 460px);
+}
+
+/* One's summary is a paragraph, not a table: in the rail it reads as the sentence
+   somebody repeats in standup, and the `<b>` values are the figures they repeat. */
+.ck-lead-p {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  line-height: 1.6;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.ck-lead-p b {
   font-weight: 600;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
@@ -3125,6 +3514,47 @@ table.dsh-tbl {
 .dsh-projs li.dsh-none {
   display: block;
   padding-top: 0;
+}
+
+/* ── the issue list: id, title, project — the title is the link ──────── */
+/* The id is a key and the project a trailing note, so both size to their text and
+   the title is the one cell that gives way; it is the only stretchy column, which
+   is also why the row keeps one height. */
+.dsh-issues li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+}
+.dsh-issues li > * {
+  min-width: 0;
+}
+.dsh-issues .id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dsh-issues .pj {
+  max-width: 84px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A list with nothing in it is one line, not a three-column row of blanks. */
+.dsh-issues li.dsh-none {
+  display: block;
+}
+/* The page-wide `a` reset drops the underline, so a linked name or title reads as
+   the text it replaced until it is reached for — this is the one cue that it is
+   not text, since colour is never the only signal. */
+.dsh-issues a.ell:hover,
+.dsh-projs a.nm:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* ── the reads card: what this pane may call, and where the token is ──── */
@@ -3929,6 +4359,295 @@ table.dsh-tbl {
    says the budget is spent — and then it is full and red, never empty. */
 .dsh-meter[data-tone='bad'] i {
   background: var(--danger);
+}
+
+/* ── the week's shape ─────────────────────────────────────────────────
+   One's four figures reuse the six-tile grid with four columns, so the band above
+   the tiles and the tiles themselves are one grammar. The kind budget is a row of
+   chips that are not pressable: they are a legend, and a legend that looks like a
+   filter would be a control that does nothing. */
+.dsh-shape {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.dsh-shape .dsh-kpi {
+  cursor: default;
+}
+.dsh-shape .dsh-kpi:hover {
+  background: var(--bg);
+}
+.dsh-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 16px;
+}
+/* The scope note: the band above prints whole-grant numbers, so when a chip is
+   pressed a reader needs one sentence saying which of the two claims is filtered.
+   It sits directly under the band it qualifies, not in a tooltip. */
+.dsh-scope {
+  margin: -6px 0 16px;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.dsh-kind {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.dsh-kind[data-kind='meeting'] {
+  border-color: color-mix(in oklab, var(--accent-ink) 30%, var(--border));
+}
+
+/* ── the week grid: seven columns, all-day above timed ────────────────
+   The grid is the one shape a flat table cannot draw: a column per day makes `which
+   day is full` a glance rather than four date comparisons. It folds to two columns
+   and then one, because seven columns on a phone is a column of two letters. */
+.dsh-weekcard {
+  margin-bottom: 14px;
+}
+/* A seven-day window that starts at the current minute lands on eight calendar days,
+   so the track count is set from the columns rather than hard-coded — one row, never
+   a stranded eighth column on a line of its own. */
+.dsh-week {
+  display: grid;
+  grid-template-columns: repeat(var(--dcols, 7), minmax(0, 1fr));
+  gap: 6px;
+}
+.dsh-week-empty {
+  padding: 20px 4px 22px;
+  text-align: center;
+}
+.dsh-week-empty > b {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+.dsh-week-empty > span {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.dsh-daycol {
+  min-width: 0;
+  padding: 7px 7px 8px;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+/* Today's column is still filling, and it says so: a full-looking column for the
+   day a person is in the middle of is the one number that would be read wrong. */
+.dsh-daycol[data-open='1'] {
+  border-color: color-mix(in oklab, var(--accent-ink) 34%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg));
+}
+.dsh-daycol .dh {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dsh-daycol .dh b {
+  font-weight: 500;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-daycol .dh span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: none;
+}
+.dsh-daycol .open {
+  margin: 2px 0 0;
+  font-size: var(--fs-micro);
+  color: var(--accent-ink);
+}
+/* A partial last column is not the reader's day — it just stops where the window
+   does — so it says so quietly rather than borrowing today's accent. */
+.dsh-daycol:not([data-open='1']) .open {
+  color: var(--muted);
+}
+.dsh-daycol ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* An all-day event is dated, not timed: a strip of its own above the clock, so it
+   never suggests it starts at the top of the day. */
+.dsh-daycol .allday li {
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--border) 45%, transparent);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-daycol li[data-kind] {
+  min-width: 0;
+  padding: 2px 4px 3px;
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  background: color-mix(in oklab, var(--border) 22%, transparent);
+}
+/* The kind is a tint on the edge and a word on the row, never a colour alone: a
+   person who cannot separate the hues still reads `meeting` under the title. */
+.dsh-daycol li[data-kind='meeting'] {
+  border-left-color: var(--accent-ink);
+}
+.dsh-daycol li[data-kind='focus'] {
+  border-left-color: var(--ok);
+}
+.dsh-daycol li[data-kind='personal'] {
+  border-left-color: var(--border-strong);
+}
+.dsh-daycol .tm {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.dsh-daycol .tm em {
+  font-style: normal;
+  margin-left: 4px;
+  color: var(--accent-ink);
+}
+.dsh-daycol .tm em.ov {
+  color: var(--danger);
+}
+.dsh-daycol a,
+.dsh-daycol .none {
+  display: block;
+  font-size: var(--fs-meta);
+  line-height: 1.25;
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-daycol a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dsh-daycol .none {
+  color: var(--ink-2);
+}
+.dsh-daycol .meta {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--muted);
+}
+.dsh-daycol .dsh-none {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.dsh-weekcard .dsh-foot {
+  margin-top: 10px;
+}
+
+/* ── the readings: One's findings, one line each ─────────────────────
+   A left edge carries the tone, the label and the value share a line, and the hint
+   sits under them: the rail is 306 px, so a card per reading would be a scroll. */
+.dsh-readings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dsh-readings li {
+  padding: 6px 8px 7px;
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+}
+.dsh-readings li[data-tone='ok'] {
+  border-left-color: var(--ok);
+}
+.dsh-readings li[data-tone='warn'] {
+  border-left-color: var(--accent-ink);
+}
+.dsh-readings li[data-tone='bad'] {
+  border-left-color: var(--danger);
+}
+.dsh-readings .rl {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-secondary);
+  font-weight: 500;
+  color: var(--ink);
+}
+.dsh-readings .rl b {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+  flex: none;
+}
+.dsh-readings p {
+  margin: 2px 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* The grid folds before the rail does: four columns of cells at 900 px would be an
+   ellipsis each, so the week becomes two rows of days and then one column. The
+   four figures fold first — a 2 × 2 block of them reads better than four narrow
+   cells — and they fold here, in this layer, because the base rule above is later
+   in the file than the six-tile band's own folds. */
+@container cxn (max-width: 1080px) {
+  .dsh-week {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container cxn (max-width: 899.99px) {
+  .dsh-shape {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container cxn (max-width: 700px) {
+  .dsh-week {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container cxn (max-width: 470px) {
+  .dsh-shape,
+  .dsh-week {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── the roster's fifth column: how many calendars the grant answered ──────
