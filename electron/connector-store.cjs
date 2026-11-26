@@ -703,8 +703,30 @@ function setTier({ workspace, id, tier } = {}) {
  * to the workspace the report is about, so they travel with it under `fields` on the
  * connector's own index row. Nothing in here is a credential, which is why it is a
  * plain read and a plain write with no vault involved.
+ *
+ * Lynk.id is the second, and it is the same shape one folder deep: which Drive folder
+ * the report is read from, what the tab under each product spreadsheet is called, and
+ * nothing else. A folder id is not a secret either, but it is emphatically not a
+ * constant — one workspace's folder must never serve another's numbers, so it is
+ * stored here and folded into the report's cache key.
  */
-const FIELD_LIMITS = { workspaceId: 60, timezone: 60 }
+const FIELD_LIMITS = {
+  workspaceId: 60,
+  timezone: 60,
+  /* Drive ids are base64url-ish: letters, digits, `-` and `_`, no spaces. */
+  folderId: 120,
+  folderName: 120,
+  sheetSuffix: 40,
+}
+
+/** The default tab name under a Lynk.id product spreadsheet. */
+const DEFAULT_SHEET_SUFFIX = ' - Transactions'
+
+/** A Drive folder id, or '' — the shape check `folderId` fields are saved under. */
+const folderIdOf = (value) => {
+  const id = text(value, FIELD_LIMITS.folderId)
+  return /^[A-Za-z0-9_-]+$/.test(id) ? id : ''
+}
 
 function fieldsOf({ workspace, id } = {}) {
   const record = workspaces.open(workspace)
@@ -723,6 +745,14 @@ function fieldsOf({ workspace, id } = {}) {
     workspaceId: text(raw.workspaceId, FIELD_LIMITS.workspaceId),
     timezone: text(raw.timezone, FIELD_LIMITS.timezone),
     members,
+    /* A folder id that is not shaped like one is dropped here rather than refused:
+       `fieldsOf` answers a page, and a page that cannot read its own folder should
+       say “no folder”, not fail to render. `setFields` is where a bad one is an
+       error, because that is the moment a person can still fix it. */
+    folderId: folderIdOf(raw.folderId),
+    folderName: text(raw.folderName, FIELD_LIMITS.folderName),
+    sheetSuffix:
+      raw.sheetSuffix === undefined ? DEFAULT_SHEET_SUFFIX : text(raw.sheetSuffix, FIELD_LIMITS.sheetSuffix),
   }
 }
 
@@ -761,6 +791,20 @@ function setFields({ workspace, id, fields } = {}) {
       }
     }
     next.members = members
+  }
+  /* A folder id is refused when it is present and wrong — a silently truncated one
+     would leave a row that looks configured and reads nothing. An empty string is how
+     a page forgets the folder, so it is allowed through. */
+  if (incoming.folderId !== undefined) {
+    const folderId = text(incoming.folderId, FIELD_LIMITS.folderId)
+    if (folderId && !/^[A-Za-z0-9_-]+$/.test(folderId)) {
+      throw new Error('A Drive folder id is letters, digits, “-” and “_” only, so it was not saved.')
+    }
+    next.folderId = folderId
+  }
+  if (incoming.folderName !== undefined) next.folderName = text(incoming.folderName, FIELD_LIMITS.folderName)
+  if (incoming.sheetSuffix !== undefined) {
+    next.sheetSuffix = text(incoming.sheetSuffix, FIELD_LIMITS.sheetSuffix)
   }
   index.rows = { ...index.rows, [name]: { ...index.rows[name], fields: { ...fieldsOf({ workspace, id: name }), ...next } } }
   writeIndex(record, index)

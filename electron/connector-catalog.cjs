@@ -458,6 +458,46 @@ const CATALOG = {
     },
   },
 
+  /* ── a report made of a Drive folder, with no mention behind it ──────────
+     Lynk.id ships no resolver on purpose. It is a **report**, not a lookup: the
+     answer is one table computed from up to a hundred spreadsheets, and its only
+     setting — which folder they live in — belongs to the workspace, not to a line
+     typed in the composer. So this entry carries `work` with no `mention` and no
+     `resolver`: the page draws its config card and no syntax, `mentionOf()` returns
+     '', and the composer never offers `@lynk:` for something nothing answers.
+
+     `provider: 'google'` is implicit (it is the default in `oauth-providers`), but
+     the grant is not the Drive connector's: `drive.readonly` reaches the whole
+     Drive, which `drive.file` cannot, so it is declared in its own tier in
+     `oauth-scopes.cjs`. */
+  lynk: {
+    label: 'Lynk.id',
+    kind: 'rest',
+    oauth: true,
+    website: 'https://lynk.id',
+    summary:
+      'What the store sold, read from the Google Sheets in one Drive folder — one spreadsheet per product, one ` - Transactions` tab each.',
+    verify: null,
+    work: {
+      resolves:
+        'the store\u2019s sales, walked out of the spreadsheets in the Drive folder this workspace picked',
+      returns:
+        'revenue, orders, buyers and a product table, for a chosen window, plus the month-by-month series',
+      needs: 'a signed-in Google account with drive.readonly, and one Drive folder full of Lynk.id spreadsheets',
+      page: 'connectors.json',
+      how: [
+        'The folder is the only setting. It lives on this workspace\u2019s connector row, so two workspaces may point at two different folders and neither report is a constant in the code.',
+        'One spreadsheet per product, and the rows are read from the tab named by the suffix \u2014 ` - Transactions` unless this workspace changed it.',
+        'A spreadsheet without that tab is counted in the folder and not read: a product that never sold is a fact, not a zero.',
+        'Free rows stay in the table with `Rp 0`, because a product that took 238 orders and no money is a real result. Free orders are counted as orders, never as revenue.',
+        'Revenue is the sheet\u2019s own price column, summed in rupiah. Nothing is converted and no currency is guessed.',
+        '`drive.readonly` is what lets the folder be listed and its children opened. A grant without it refuses the read rather than answering an empty table.',
+        'The answer is cached on this machine for six hours; re-reading is a button, not a side effect of visiting the tab.',
+      ],
+      samples: [],
+    },
+  },
+
   x: {
     label: 'X',
     kind: 'rest',
