@@ -27,6 +27,10 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+/* The YouTube Studio dashboard reads the same kinds of things from a different
+   grant: an account roster and one window of numbers. Same file-cached, one-read
+   shape, no token ever leaves the main process. */
+const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -366,6 +370,11 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The YouTube Studio dashboard. Read-only Google calls, no write scope used,
+       and the analytics/revenue/comment scopes are separate grants — a refusal is
+       a `null` field with the missing scope named, never a `0`. */
+    'youtube.roster': () => youtubeStudioDashboard.roster(),
+    'youtube.dashboard': (args) => youtubeStudioDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

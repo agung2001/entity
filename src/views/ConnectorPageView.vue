@@ -11,7 +11,14 @@ import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
+import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  readDashboard as readStudioDashboard,
+  readRoster,
+  studio,
+  studioUsable,
+} from '@/composables/youtubeStudioDashboard'
 import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
@@ -249,10 +256,11 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the GitHub connector this app ships (`builtIn ===
-   'github'`): a tab that led to another connector's half-built dashboard would be
-   a promise nobody kept, so every other row — including a custom `cli` row — gets
-   no tab at all rather than a disabled one.
+   The strip exists only for the two connectors this app ships a dashboard for:
+   GitHub (`builtIn === 'github'`) and YouTube Studio (`builtIn ===
+   'youtube-studio'`). A tab that led to another connector's half-built dashboard
+   would be a promise nobody kept, so every other row — including a custom `cli`
+   row — gets no tab at all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -261,18 +269,31 @@ const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Only GitHub has a second tab, and only the row the catalog shipped has a `work`
-   block to gate on. A custom `cli` row that happens to be called github is not it. */
+/* Only a row the catalog shipped has a `work` block to gate on. A custom `cli`
+   row that happens to be called github — or youtube-studio — is not one of them. */
 const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
-const dashboardTab = computed(
-  () => Boolean(githubRow.value?.work) && installedRow.value?.builtIn === 'github',
+const studioRow = computed(
+  () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
+)
+/* Which dashboard this page is, if any. Named rather than boolean because the two
+   have different locks, different reads and different pane bodies. */
+const dashKind = computed(() => {
+  if (installedRow.value?.builtIn === 'github' && githubRow.value?.work) return 'github'
+  if (installedRow.value?.builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
+  return ''
+})
+const dashboardTab = computed(() => Boolean(dashKind.value))
+/* What the tab offers, in the connector's own words: GitHub's board is 90 days,
+   the channel board is the 28 the window chips start on. */
+const dashboardHint = computed(() =>
+  dashKind.value === 'studio' ? 'What moved in the last 28 days' : 'What moved in the last 90 days',
 )
 
-/* The two locks, in the order a person meets them: no binary, then no login. Both
-   sentences are fixed copy — a computed reason would drift from the state it
+/* The GitHub locks, in the order a person meets them: no binary, then no login.
+   Both sentences are fixed copy — a computed reason would drift from the state it
    describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
-const lock = computed(() => {
-  if (!dashboardTab.value || !github.loaded) return null
+const githubLock = computed(() => {
+  if (!github.loaded) return null
   if (!github.binary?.found) {
     return {
       before: 'Dashboard needs the ',
@@ -291,6 +312,39 @@ const lock = computed(() => {
       title: 'Needs a signed-in gh account on this machine',
     }
   }
+  return null
+})
+
+/* The channel locks, in the same order: nothing signed in, then a row that signed
+   in and got no channel back. **A grant without analytics is not a lock** — the
+   Data API still lists the videos, so that tab opens and prints dashes; locking it
+   would hide the half a person came for. */
+const studioLock = computed(() => {
+  if (!studio.loaded) return null
+  if (!studio.accounts.length) {
+    return {
+      before: 'Dashboard needs a signed-in channel owner. No YouTube Studio account on this machine is answering — ',
+      code: 'youtube.readonly',
+      after: ' is what separates an account that can list videos from one that can measure them.',
+      title: 'Needs a signed-in channel owner',
+    }
+  }
+  if (!studioUsable()) {
+    /* The account that answered and had nothing to show, named: `studio.accounts`
+       is the roster Google answered for, not an id this page invented. */
+    const who = studio.accounts.find((entry) => !entry.error) || studio.accounts[0]
+    return {
+      before: 'Dashboard needs a channel this account manages. ',
+      code: String(who.email || who.localpart),
+      after: ' signed in, but Google returned no channel for it — a personal account that owns none is refused, not saved.',
+      title: 'Needs a channel this account manages',
+    }
+  }
+  return null
+})
+const lock = computed(() => {
+  if (dashKind.value === 'github') return githubLock.value
+  if (dashKind.value === 'studio') return studioLock.value
   return null
 })
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
@@ -331,6 +385,17 @@ function onTabKey(event) {
 }
 
 async function openDashboard() {
+  /* The gate for each dashboard is answered by its own read, so only the one this
+     page's connector needs is run. */
+  if (dashKind.value === 'studio') {
+    if (!studio.loaded) await readRoster()
+    /* A locked tab is not a place, and `select()` already refuses one — a deep
+       link has to reach the same conclusion, or `?tab=dashboard` would land on a
+       pane that has nothing it may read. */
+    if (tab.value === 'dashboard' && lock.value) select('overview')
+    else if (tab.value === 'dashboard' && !studio.readAt) await readStudioDashboard()
+    return
+  }
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
@@ -349,6 +414,14 @@ watch(
   () => [tab.value, Boolean(lock.value), dashboardTab.value],
   async ([name, locked, hasTab]) => {
     if (!hasTab) return
+    if (dashKind.value === 'studio') {
+      if (!studio.loaded) await readRoster()
+      /* Re-read the gate: the roster answered inside this run, so the value the
+         watcher was handed is the one from before the read. */
+      if (name === 'dashboard' && lock.value) select('overview')
+      else if (name === 'dashboard' && !studio.readAt) await readStudioDashboard()
+      return
+    }
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
@@ -359,6 +432,15 @@ watch(
   () => github.logins.length,
   (count) => {
     if (!count && tab.value === 'dashboard') select('overview')
+  },
+)
+/* The same for a consent granted or revoked on the accounts card: a channel that
+   arrived unlocks the tab, and one that went away must not leave the pane open. */
+watch(
+  () => [studio.accounts.length, studioUsable()],
+  () => {
+    if (dashKind.value !== 'studio') return
+    if (tab.value === 'dashboard' && lock.value) select('overview')
   },
 )
 
@@ -637,7 +719,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
-            :title="lock ? lock.title : 'What moved in the last 90 days'"
+            :title="lock ? lock.title : dashboardHint"
             @click="select('dashboard')"
           >
             <svg
@@ -666,10 +748,17 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         </nav>
 
         <ConnectorDashboard
-          v-if="dashboardTab && tab === 'dashboard'"
+          v-if="dashKind === 'github' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
+        />
+        <ConnectorStudioDashboard
+          v-else-if="dashKind === 'studio' && tab === 'dashboard'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          @overview="select('overview')"
         />
 
         <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
