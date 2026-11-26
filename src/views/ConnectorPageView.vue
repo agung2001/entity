@@ -12,8 +12,15 @@ import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
 import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
+import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
 import { call } from '@/composables/localBridge'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  readDashboard as readStudioDashboard,
+  readRoster,
+  studio,
+  studioUsable,
+} from '@/composables/youtubeStudioDashboard'
 import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
@@ -255,12 +262,12 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   A strip exists only for a connector this app ships a dashboard for, and only
-   when the shipped catalog entry carries the `work` block that says what the tab
-   reads: GitHub and Clockify. A tab that led to another connector's half-built
-   dashboard would be a promise nobody kept, so every other row — including a
-   custom row that borrowed one of those names — gets no tab at all rather than a
-   disabled one.
+   The strip exists only for the connectors this app ships a dashboard for: GitHub
+   (`builtIn === 'github'`), YouTube Studio (`builtIn === 'youtube-studio'`) and
+   Clockify (`builtIn === 'clockify'`). A tab that led to another connector's
+   half-built dashboard would be a promise nobody kept, so every other row —
+   including a custom `cli` row, or a custom row that borrowed one of those names
+   — gets no tab at all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -269,20 +276,28 @@ const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Which dashboard this page has, decided by the row's own shipped id. A custom row
-   can take any id, so the id alone is not enough: the catalog entry's `work` block
-   is what says a dashboard exists, and the installed row has to be that same
-   entry. It is read off the installed row because `available` stops listing an
-   entry the moment it is installed — the one place `work` is missing is a page
-   reached before installing, which has no tab anyway. */
-const DASHBOARDS = { github: 'GitHub', clockify: 'Clockify' }
-const dashboardKind = computed(() => {
-  const installed = installedRow.value
-  const shipped = installed?.builtIn
-  if (!shipped || !DASHBOARDS[shipped] || !installed.work) return ''
-  return shipped
+/* Only a row the catalog shipped has a `work` block to gate on. A custom `cli`
+   row that happens to be called github — or youtube-studio — is not one of them. */
+const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
+const studioRow = computed(
+  () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
+)
+/* Which dashboard this page is, if any. Named rather than boolean because the three
+   have different locks, different reads and different pane bodies. */
+const dashKind = computed(() => {
+  if (installedRow.value?.builtIn === 'github' && githubRow.value?.work) return 'github'
+  if (installedRow.value?.builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
+  if (installedRow.value?.builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
+  return ''
 })
-const dashboardTab = computed(() => Boolean(dashboardKind.value))
+const dashboardTab = computed(() => Boolean(dashKind.value))
+/* What the tab offers, in the connector's own words: GitHub's board is 90 days,
+   the channel board is the 28 the window chips start on, Clockify's week is a week. */
+const dashboardHint = computed(() => {
+  if (dashKind.value === 'studio') return 'What moved in the last 28 days'
+  if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
+  return 'What moved in the last 90 days'
+})
 
 /* Clockify needs two things this machine and this workspace answer separately: the
    API key (`connector.token.status`) and the workspace id on the connector's own
@@ -305,8 +320,9 @@ async function readStoredKey() {
     storedKey.value = { configured: false, hint: '' }
   }
 }
+
 async function readClockifyState() {
-  if (!dashboardKind.value || dashboardKind.value !== 'clockify') return
+  if (dashKind.value !== 'clockify') return
   try {
     const fields = await call('connector.fields', { workspace: hub.workspace, id: 'clockify' })
     clockify.value = {
@@ -330,7 +346,7 @@ const spaces = ref([])
 const spacesLoaded = ref(false)
 const spacesError = ref('')
 async function readSpaces() {
-  if (dashboardKind.value !== 'clockify' || !storedKey.value.configured) return
+  if (dashKind.value !== 'clockify' || !storedKey.value.configured) return
   try {
     const list = await call('connector.workspaces', { workspace: hub.workspace })
     spaces.value = Array.isArray(list) ? list : []
@@ -365,62 +381,84 @@ async function pickSpace(space) {
   }
 }
 
-/* The locks, in the order a person meets them: `gh` has no binary then no login;
-   Clockify has no key then no workspace id. Both sentences are fixed copy, and
-   `code`/`after` are split so the mono mention reads as one token. */
-const lock = computed(() => {
-  if (dashboardKind.value === 'github') {
-    if (!github.loaded) return null
-    if (!github.binary?.found) {
-      return {
-        before: 'Dashboard needs the ',
-        code: 'gh',
-        after: " binary. It is not on this machine's PATH.",
-        title: 'Needs the gh binary on this machine',
-      }
+/* The GitHub locks, in the order a person meets them: no binary, then no login.
+   Both sentences are fixed copy — a computed reason would drift from the state it
+   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
+const githubLock = computed(() => {
+  if (!github.loaded) return null
+  if (!github.binary?.found) {
+    return {
+      before: 'Dashboard needs the ',
+      code: 'gh',
+      after: " binary. It is not on this machine's PATH.",
+      title: 'Needs the gh binary on this machine',
     }
-    if (!github.logins.length) {
-      return {
-        before: 'Dashboard needs a signed-in ',
-        code: 'gh',
-        after: ' account. ',
-        code2: 'gh auth status',
-        after2: ' found none on this machine.',
-        title: 'Needs a signed-in gh account on this machine',
-      }
-    }
-    return null
   }
-  if (dashboardKind.value === 'clockify') {
-    if (!clockifyLoaded.value) return null
-    if (!clockify.value.configured) {
-      return {
-        before: 'Connect Clockify first — the tab needs a verified key.',
-        code: '',
-        after: '',
-        title: 'Needs a Clockify API key on this machine',
-      }
+  if (!github.logins.length) {
+    return {
+      before: 'Dashboard needs a signed-in ',
+      code: 'gh',
+      after: ' account. ',
+      code2: 'gh auth status',
+      after2: ' found none on this machine.',
+      title: 'Needs a signed-in gh account on this machine',
     }
-    if (!clockify.value.workspaceId) {
-      return {
-        before: 'Pick a workspace on Overview — every read happens inside one.',
-        code: '',
-        after: '',
-        title: 'Needs a Clockify workspace chosen for this workspace',
-      }
-    }
-    return null
   }
   return null
 })
 
-/* What the tab is about, for the one place the copy names it. A locked tab's
-   `title` is its reason; an open one's is what it draws. */
-const dashboardTip = computed(() =>
-  dashboardKind.value === 'clockify'
-    ? 'Where the team’s week went, read from Clockify'
-    : 'What moved in the last 90 days',
-)
+/* The channel locks, in the same order: nothing signed in, then a row that signed
+   in and got no channel back. **A grant without analytics is not a lock** — the
+   Data API still lists the videos, so that tab opens and prints dashes; locking it
+   would hide the half a person came for. */
+const studioLock = computed(() => {
+  if (!studio.loaded) return null
+  if (!studio.accounts.length) {
+    return {
+      before: 'Dashboard needs a signed-in channel owner. No YouTube Studio account on this machine is answering — ',
+      code: 'youtube.readonly',
+      after: ' is what separates an account that can list videos from one that can measure them.',
+      title: 'Needs a signed-in channel owner',
+    }
+  }
+  if (!studioUsable()) {
+    /* The account that answered and had nothing to show, named: `studio.accounts`
+       is the roster Google answered for, not an id this page invented. */
+    const who = studio.accounts.find((entry) => !entry.error) || studio.accounts[0]
+    return {
+      before: 'Dashboard needs a channel this account manages. ',
+      code: String(who.email || who.localpart),
+      after: ' signed in, but Google returned no channel for it — a personal account that owns none is refused, not saved.',
+      title: 'Needs a channel this account manages',
+    }
+  }
+  return null
+})
+
+/* The week locks, in the order a person meets them: no key, then no workspace id.
+   Both sentences are fixed copy for the same reason the two above are. */
+const clockifyLock = computed(() => {
+  if (!clockifyLoaded.value) return null
+  if (!clockify.value.configured) {
+    return {
+      before: 'Connect Clockify first — the tab needs a verified key.',
+      title: 'Needs a Clockify API key on this machine',
+    }
+  }
+  if (!clockify.value.workspaceId) {
+    return {
+      before: 'Pick a workspace on Overview — every read happens inside one.',
+      title: 'Needs a Clockify workspace chosen for this workspace',
+    }
+  }
+  return null
+})
+const lock = computed(() => {
+  if (dashKind.value === 'github') return githubLock.value
+  if (dashKind.value === 'studio') return studioLock.value
+  if (dashKind.value === 'clockify') return clockifyLock.value
+  return null
+})
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
    focus, because the reason under the strip is the thing to read and a
    `disabled` attribute would make it unreachable by keyboard. */
@@ -459,15 +497,26 @@ function onTabKey(event) {
 }
 
 async function openDashboard() {
-  if (dashboardKind.value === 'github') {
-    await readLogins()
-    if (tab.value === 'dashboard' && !lock.value) await readDashboard()
+  /* The gate for each dashboard is answered by its own read, so only the one this
+     page's connector needs is run. */
+  if (dashKind.value === 'studio') {
+    if (!studio.loaded) await readRoster()
+    /* A locked tab is not a place, and `select()` already refuses one — a deep
+       link has to reach the same conclusion, or `?tab=dashboard` would land on a
+       pane that has nothing it may read. */
+    if (tab.value === 'dashboard' && lock.value) select('overview')
+    else if (tab.value === 'dashboard' && !studio.readAt) await readStudioDashboard()
     return
   }
   /* Clockify draws itself: its band reads its own state on mount, so the gate is
      the only thing this page has to answer before it can. */
-  await readClockifyState()
-  await readSpaces()
+  if (dashKind.value === 'clockify') {
+    await readClockifyState()
+    await readSpaces()
+    return
+  }
+  await readLogins()
+  if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
 onMounted(async () => {
   normalizeTab()
@@ -488,7 +537,15 @@ watch(
   () => [tab.value, Boolean(lock.value), dashboardTab.value],
   async ([name, locked, hasTab]) => {
     if (!hasTab) return
-    if (dashboardKind.value === 'clockify') {
+    if (dashKind.value === 'studio') {
+      if (!studio.loaded) await readRoster()
+      /* Re-read the gate: the roster answered inside this run, so the value the
+         watcher was handed is the one from before the read. */
+      if (name === 'dashboard' && lock.value) select('overview')
+      else if (name === 'dashboard' && !studio.readAt) await readStudioDashboard()
+      return
+    }
+    if (dashKind.value === 'clockify') {
       if (!clockifyLoaded.value) await readClockifyState()
       /* A connector installed on this page crosses the tab into existence, so the
          gate and the workspace list are read here rather than only on mount: the
@@ -505,7 +562,16 @@ watch(
 watch(
   () => github.logins.length,
   (count) => {
-    if (!count && tab.value === 'dashboard' && dashboardKind.value === 'github') select('overview')
+    if (!count && tab.value === 'dashboard' && dashKind.value === 'github') select('overview')
+  },
+)
+/* The same for a consent granted or revoked on the accounts card: a channel that
+   arrived unlocks the tab, and one that went away must not leave the pane open. */
+watch(
+  () => [studio.accounts.length, studioUsable()],
+  () => {
+    if (dashKind.value !== 'studio') return
+    if (tab.value === 'dashboard' && lock.value) select('overview')
   },
 )
 
@@ -826,7 +892,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
-            :title="lock ? lock.title : dashboardTip"
+            :title="lock ? lock.title : dashboardHint"
             @click="select('dashboard')"
           >
             <svg
@@ -857,7 +923,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         <!-- Two dashboards, one id: the strip's `aria-controls` names the pane, and
              a pane that swapped its own name per connector would be two tabs. -->
         <ConnectorClockifyDashboard
-          v-if="dashboardTab && tab === 'dashboard' && dashboardKind === 'clockify'"
+          v-if="dashboardTab && tab === 'dashboard' && dashKind === 'clockify'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
@@ -865,10 +931,17 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           @changed="readClockifyState"
         />
         <ConnectorDashboard
-          v-else-if="dashboardTab && tab === 'dashboard'"
+          v-if="dashKind === 'github' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
+        />
+        <ConnectorStudioDashboard
+          v-else-if="dashKind === 'studio' && tab === 'dashboard'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          @overview="select('overview')"
         />
 
         <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
@@ -1100,7 +1173,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                which is itself a read the key makes, so without a key the card says
                so instead of offering a list it cannot have. A failure stays in this
                card: this card is the thing that failed. -->
-          <section v-if="dashboardKind === 'clockify'" class="cxn-card">
+          <section v-if="dashKind === 'clockify'" class="cxn-card">
             <div class="cxn-card-head">
               <h2>Workspace</h2>
               <span class="spacer"></span>

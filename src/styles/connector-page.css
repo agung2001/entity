@@ -1336,6 +1336,271 @@ table.dsh-tbl {
   height: 58px;
 }
 
+/* ── the YouTube Studio dashboard: one channel, one window, one line ──────
+   Same band, same tiles, same table as the GitHub tab — the shape is the app's,
+   not a connector's. What is named here is only what a channel needs and a
+   repository does not: a daily chart, a share with a denominator, and a window
+   that ends two days before today. */
+
+/* The band's own sentence, printed once under the tiles. It is the page's most
+   load-bearing line of prose, so it is body text with the two dates in ink, not
+   a footnote in a smaller size. */
+.dsh-note {
+  margin: 0 0 16px;
+  max-width: 74ch;
+  font-size: var(--fs-secondary);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dsh-note b {
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* Inside a card the note is the card's caption and pays the card's padding, not
+   the page's margin. */
+.dsh-note-in {
+  margin: -1px 0 10px;
+}
+
+/* One pixel of air between the channel chips and the window chips: two groups on
+   one line need a divider, or `main` reads as a window size. */
+.dsh-sep {
+  width: 1px;
+  height: 16px;
+  align-self: center;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* The second line of a tile: the delta in ink and what it is measured against in
+   muted. One line, ellipsis, because six tiles across cannot all wrap. */
+.dsh-kpi .d {
+  display: block;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsh-kpi .d b {
+  font-weight: 500;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.dsh-kpi .d em {
+  font-style: normal;
+}
+/* A dash is not a number. Dropping the whole tile to muted splits the band into
+   what the grant answered and what it did not, which is the only reading that
+   stays honest when three of six tiles are `—`. */
+.dsh-kpi[data-unread='1'] .v,
+.dsh-kpi[data-unread='1'] .d b {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Two moving parts in the main column — three cards and the note above them — so
+   the gap is stated once instead of on each card. */
+.dsh-main > * + * {
+  margin-top: 14px;
+}
+
+/* ── the chart ──────────────────────────────────────────────────────────
+   Four elements on a 640×120 grid: the baseline, the filled band, the line, the
+   peak. No canvas and no library, because the series is one polyline and the axis
+   is three labels — both of which already scale with `viewBox`. */
+.yt-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.yt-chart .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.yt-chart .area {
+  fill: color-mix(in oklab, var(--hero) 26%, transparent);
+}
+.yt-chart .line {
+  fill: none;
+  stroke: color-mix(in oklab, var(--hero) 45%, var(--ink-2));
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* A hole, not a highlight: the band under the peak is already the hero colour, so
+   a solid dot would disappear into the thing it is marking. */
+.yt-chart .dot {
+  fill: var(--bg);
+  stroke: color-mix(in oklab, var(--hero) 45%, var(--ink-2));
+  stroke-width: 1.5;
+}
+
+/* Three labels for three facts: where the window starts, the highest day, where
+   it ends. The peak is the only one that is decoration, so it is the one the
+   narrow window drops. */
+.yt-axis {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.yt-axis .pk {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-2);
+}
+
+/* ── the traffic rail ───────────────────────────────────────────────────
+   A share needs a denominator, so the number beside the bar and the width of the
+   bar are the same number: `38.4%` over a 38.4%-wide fill. */
+.yt-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yt-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 0 8px;
+  padding: 4px 0;
+  font-size: var(--fs-secondary);
+}
+.yt-bars .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.yt-bars .pc {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The track spans both columns under its own label, so a 306px rail does not
+   spend half its measure on a label and a bar sitting side by side. */
+.yt-bars .bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.yt-bars .bar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--hero) 55%, var(--ink-2));
+  transition: width 0.16s ease;
+}
+/* The tail of a breakdown (`Other`, `Direct or unknown`) is the residual no named
+   source claimed. Dimmed rather than coloured like a source that was measured. */
+.yt-bars .bar i[data-dim='1'] {
+  background: var(--border-strong);
+}
+
+/* A number column is right-aligned and tabular, and so is its head — six rows of
+   digits under one left-aligned word do not line up. */
+.dsh-tbl thead th.num,
+.dsh-tbl td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.dsh-tbl td.num {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+/* The comments table names its video in a cell rather than a lead column, so it
+   clamps to two lines the way `.dsh-pr a` does and keeps the full title in its
+   `title`. */
+.dsh-tbl td.vd a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-tbl td.vd a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A comment names its author in mono micro caps above the text, the way a table
+   row names its id above its title. */
+.dsh-cmt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-cmt .who {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.15;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsh-cmt a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-secondary);
+  line-height: 1.28;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-cmt a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* An act that moves the page rather than leaving it: the affordance of a link,
+   the reach of a button. Used inside a cell and inside a foot, which is why it is
+   not a `.btn`. */
+.dsh-linkbtn {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.dsh-linkbtn:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+.dsh-foot .dsh-linkbtn {
+  margin-top: 0;
+  font-size: inherit;
+}
+
 /* ── the accounts card, the `cli` variant ─────────────────────────────────
    The OAuth card above (`acct-*`) is four tracks with a two-line status; this is
    five, because a token the app cannot revoke has to say which host and which
@@ -1532,6 +1797,11 @@ table.dsh-tbl {
     white-space: normal;
   }
   .dsh-when .sep {
+    display: none;
+  }
+  /* Two axis labels fit a phone; three collide. The peak survives in the chart's
+     `aria-label` and in its dot, so nothing is lost that was not decorative. */
+  .yt-axis .pk {
     display: none;
   }
   /* The head's four labels cannot survive a 320px measure, so the table stops
@@ -2105,7 +2375,7 @@ table.dsh-tbl {
   border-top: 1px solid var(--border);
 }
 
-/* ── the breakpoints ────────────────────────────────────────────────────
+/* ── the breakpoints this week needs ────────────────────────────────────
    Same ladder as the GitHub tab, plus the three boxes only this frame has. The
    tile grid, the rail and the `.dsh` column are already handled above by rules
    the two tabs share, so only the additions are repeated here. */
@@ -2285,4 +2555,481 @@ table.dsh-tbl {
   .ck-fill {
     transition: none;
   }
+}
+
+/* ══ the YouTrack pack: the two report bands, the flow, the project bars ══
+   Everything above is the GitHub pack, unchanged. Everything below is what the
+   second dashboard adds on top of it — named against classes that pack never
+   used, so neither pane can inherit the other's shape. Every colour is a token
+   or a `color-mix` of tokens: `--ok-ink` is quoted from `tokens.css:89`/`:117`
+   and not declared here, because plain `--ok` is 4.02:1 on white and the done
+   column is 12 px text.
+
+   The four bar fills are mixed from the **ink** tokens, not the fill tokens:
+   `--accent` at 44% is 1.22:1 on white — a bar nobody can see. `--accent-ink` and
+   `--ok-ink` are the same hue at text weight and clear 3:1 in both themes. */
+
+/* A report's own heading, between its tiles and its table. It is not a card head:
+   it names a band, so it sits on the page, not in a frame. */
+.dsh-sect {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 22px 0 11px;
+}
+.dsh-sect:first-of-type {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.dsh-band > .dsh-sect {
+  margin-bottom: 11px;
+}
+.dsh-band > .dsh-sect + .dsh-kpis {
+  margin-bottom: 18px;
+}
+.dsh-main > .dsh-sect {
+  margin-top: 26px;
+}
+.dsh-sect h2 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h5);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  color: var(--ink);
+}
+.dsh-sect .why {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.dsh-sect .why b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.dsh-sect .spacer {
+  flex: 1;
+}
+/* The jump is a link on the page, not inside a banner, so it needs the whole look
+   the `.dsh-wait`-scoped rule never gave it. */
+.dsh-sect .dsh-jump {
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.dsh-sect .dsh-jump:hover,
+.dsh-sect .dsh-jump:focus-visible {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+/* The second band's tiles sit on the table above them, so they lose the band's
+   bottom margin and take the section's top one. */
+.dsh-main > .dsh-kpis {
+  margin: 0;
+}
+
+/* ── the team table: numbers are a column, not prose ─────────────────── */
+.dsh-tbl-team thead th.num,
+.dsh-tbl-team td.num {
+  text-align: right;
+}
+.dsh-tbl-team td.num {
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.dsh-tbl-team td.num b {
+  color: var(--ink);
+  font-weight: 500;
+}
+/* The two columns whose value needs a token's own colour rather than ink: a
+   stalled count is the thing the tab exists to surface, and a done count is the
+   one column that is good news. */
+.dsh-tbl-team td.num.stalled {
+  color: var(--danger);
+}
+.dsh-tbl-team td.num.oldest {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+.dsh-tbl-team td.num.done {
+  color: var(--ok-ink);
+}
+
+/* A monogram, a name, a login, and a share bar under them. The bar is the only
+   place colour speaks on this row, and the number beside it says the same thing
+   in words — `aria-hidden` on the bar, the count in the cell. */
+.dsh-nm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.dsh-nm .t {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-nm b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A 26-character login is the longest the tracker holds, so the cell clips rather
+   than wrapping the row open; the full value stays in the `title`. */
+.dsh-nm .lg {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 26ch;
+}
+.dsh-mm {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  align-self: center;
+}
+.dsh-share {
+  display: block;
+  height: 2px;
+  margin-top: 5px;
+  max-width: 190px;
+  background: var(--surface-2);
+  border-radius: var(--r-2xs);
+  overflow: hidden;
+}
+.dsh-share i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--ink-2) 62%, var(--surface-2));
+}
+/* The percentage under a count, small enough to be a gloss rather than a second
+   number competing with the one above it. */
+.dsh-pc {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+/* ── the flow: 7 days, two bars each, no library ─────────────────────── */
+.dsh-flow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  height: 92px;
+  padding: 2px 0 0;
+}
+.dsh-flow-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+}
+/* `align-items: flex-end` is what makes the two bars grow from the baseline: the
+   `height` on each `i` is a share of the shared peak, so the tallest column in
+   either series touches the top and every other column is read against it. */
+.dsh-flow-col .bars {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  min-height: 0;
+}
+.dsh-flow-col .bars i {
+  display: block;
+  width: 45%;
+  border-radius: var(--r-2xs) var(--r-2xs) 0 0;
+  min-height: 2px;
+}
+.dsh-flow-col .bars i[data-k='created'],
+.dsh-legend i[data-k='created'] {
+  background: color-mix(in oklab, var(--accent-ink) 70%, var(--surface-2));
+}
+.dsh-flow-col .bars i[data-k='resolved'],
+.dsh-legend i[data-k='resolved'] {
+  background: color-mix(in oklab, var(--ok-ink) 88%, var(--surface-2));
+}
+.dsh-flow-col .lb {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+}
+.dsh-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dsh-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dsh-legend i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-2xs);
+}
+.dsh-legend .spacer {
+  flex: 1;
+}
+
+/* ── projects: a name, a bar, a count ───────────────────────────────── */
+.dsh-projs li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+/* A short name is a key (`AC`, `AFAB`), so it keeps the mono face and the row
+   keeps one height whatever the word is. */
+.dsh-projs .nm {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-projs .when {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-pbar {
+  display: block;
+  height: 4px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.dsh-pbar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--accent-ink) 70%, var(--surface-2));
+}
+/* Ranked against the largest row, so the first row is the one that reads as
+   "full" — a bar scaled to the total would make every row a stub. */
+.dsh-projs li:first-child .dsh-pbar i {
+  background: color-mix(in oklab, var(--accent-ink) 92%, var(--surface-2));
+}
+
+/* A chart with nothing in it is one line, not seven empty bars. Scoped to the
+   flow card by its heading: `.dsh-none` is shared with the GitHub pack's rail,
+   and a rule for one card must not reach into another's frame. */
+[aria-labelledby='dsh-flow-head'] > .dsh-none {
+  margin: 0;
+  align-self: center;
+  grid-column: 1 / -1;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* The same sentence is one `<li>` inside the project list, where every row is
+   `name | bar | count`: an empty list has no bar to draw, so the line spans it. */
+.dsh-projs li.dsh-none {
+  display: block;
+  padding-top: 0;
+}
+
+/* ── the reads card: what this pane may call, and where the token is ──── */
+.reads .reads-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  line-height: 1.55;
+}
+.reads .tokcard {
+  margin-top: 11px;
+}
+/* Three facts about one credential: what it is, which file, which header. A
+   sign-in form here would be a second place for a token to live, and a wrong one
+   — so the card prints the two names a person has to open and nothing else. */
+.tokcard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+.tokcard .k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tokcard code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tokcard .n {
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── the responsive pass, `@container cxn` like the rest of this file ──
+   These follow the measure the page is given, never the window's. */
+@container cxn (max-width: 899.99px) {
+  .dsh-sect {
+    margin: 18px 0 10px;
+  }
+}
+
+@container cxn (max-width: 640px) {
+  .dsh-sect h2 {
+    font-size: var(--fs-h6);
+  }
+  .dsh-sect .why {
+    width: 100%;
+  }
+  .dsh-sect .spacer,
+  .dsh-sect .dsh-jump {
+    display: none;
+  }
+  /* `In prog.` and `Discussed` are the two columns a narrow measure can drop
+     without losing the answer — and they drop from head and row together, so no
+     label sits over the wrong column. */
+  .dsh-tbl-team thead th:nth-child(3),
+  .dsh-tbl-team td:nth-child(3),
+  .dsh-tbl-team thead th:nth-child(4),
+  .dsh-tbl-team td:nth-child(4) {
+    display: none;
+  }
+  .dsh-nm .lg {
+    display: none;
+  }
+  .dsh-projs li {
+    grid-template-columns: 56px minmax(0, 1fr) 30px;
+  }
+}
+
+@container cxn (max-width: 559.99px) {
+  .dsh-tbl-team thead {
+    display: none;
+  }
+  .dsh-tbl-team,
+  .dsh-tbl-team tbody,
+  .dsh-tbl-team tr,
+  .dsh-tbl-team td {
+    display: block;
+  }
+  .dsh-tbl-team tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 0;
+    height: auto;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dsh-tbl-team tbody td {
+    padding: 0;
+    border: 0;
+    height: auto;
+  }
+  .dsh-tbl-team tbody td.who {
+    flex: 0 0 100%;
+    margin-bottom: 2px;
+  }
+  .dsh-tbl-team tbody td.num {
+    text-align: left;
+    flex: 0 0 auto;
+    margin-right: 12px;
+  }
+  .dsh-tbl-team tbody td.num:last-child {
+    margin-right: 0;
+  }
+  /* The two dropped columns come back as labelled facts: at this width a stacked
+     row has the room, and "in progress 14" is shorter than two columns' worth of
+     head. */
+  .dsh-tbl-team thead th:nth-child(3),
+  .dsh-tbl-team td:nth-child(3),
+  .dsh-tbl-team thead th:nth-child(4),
+  .dsh-tbl-team td:nth-child(4) {
+    display: block;
+  }
+  /* The label a screen reader hears too: "open 13", not a bare 13 under a head
+     that is no longer on screen. */
+  .dsh-tbl-team tbody td.num::before {
+    content: attr(data-l) ' ';
+    font-family: var(--mono);
+    font-size: var(--fs-micro);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .dsh-tbl-team td.num b {
+    font-size: var(--fs-secondary);
+  }
+  .dsh-pc {
+    display: none;
+  }
+  .dsh-share {
+    max-width: none;
+  }
+  .dsh-flow {
+    height: 78px;
+  }
+  .dsh-legend {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+/* ── the strip on an `mcp` page ────────────────────────────────────────────
+   `ConnectorPageView` puts its strip inside `.cxn-page` and lets the strip's own
+   `margin-bottom` do the spacing before the body. An `mcp` page has no `.cxn-page`
+   of its own, so this pack adds one directly above `.entp-grid` — and that grid
+   carries a `margin-top` for the page it was written for, where nothing sits
+   above it. Both margins present would be a 52 px gap under the tabs; the strip's
+   is the one that describes the distance between a strip and its panel. */
+.cxn-page + .entp-grid {
+  margin-top: 0;
 }
