@@ -114,6 +114,7 @@ const liveDelegations = computed(() => {
     kind: 'entity',
     name: row.name,
     row: row.row,
+    rowUrl: row.rowUrl,
     job: row.job,
     share: row.share,
     status: row.status,
@@ -810,8 +811,8 @@ function traceSummary(message) {
       <DelegationHold
         v-if="live.hold"
         :plan="live.hold"
-        @run="emit('delegate', 'run')"
-        @cancel="emit('delegate', 'cancel')"
+        @run="emit('delegate', { action: 'run', ...$event })"
+        @cancel="emit('delegate', { action: 'cancel' })"
       />
       <!-- A fan-out is the turn: its rows are painted here, queued then
            running then answered, so minutes of work never read as a hang. -->

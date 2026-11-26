@@ -33,6 +33,21 @@ const jobText = computed(() => {
 
 defineEmits(['open-thread', 'retry'])
 
+/* The row names an issue on the tracker the read found it in, and that read
+   recorded the URL: the card is the other way to the issue, so it links. Only
+   http(s) — the shell opens the browser and nothing else. */
+const rowHref = computed(() => {
+  const url = String(props.mention.rowUrl || '')
+  return /^https?:\/\//i.test(url) ? url : ''
+})
+const rowHost = computed(() => {
+  try {
+    return new URL(rowHref.value).host || ''
+  } catch {
+    return ''
+  }
+})
+
 /* A failure outlives the turn that recorded it: the session it left behind may
    have been retried since. The stored mention is what happened then; the row is
    what is true now, and the card is the glance. */
@@ -219,7 +234,15 @@ function statusText() {
         </span>
       </div>
       <p v-if="mention.job" class="msg-delegation-job">
-        <span v-if="jobRow" class="row">{{ jobRow }}</span><span
+        <a
+          v-if="jobRow && rowHref"
+          class="row"
+          :href="rowHref"
+          target="_blank"
+          rel="noreferrer noopener"
+          :title="`Open this issue on ${rowHost || 'its source'}`"
+          >{{ jobRow }}<span class="row-go" aria-hidden="true"> ↗</span></a
+        ><span v-else-if="jobRow" class="row">{{ jobRow }}</span><span
           v-if="jobText"
           class="text"
           >{{ jobText }}</span
