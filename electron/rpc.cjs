@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const habitifyDashboard = require('./habitify-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -366,6 +367,11 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The Habitify connector's dashboard: which accounts this machine holds and
+       what one day was scheduled. Read-only on both calls — the only upstream tool
+       either one can reach is `list-habits-by-date`. */
+    'habitify.accounts': () => habitifyDashboard.accounts(),
+    'habitify.dashboard': (args) => habitifyDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

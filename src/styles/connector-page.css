@@ -723,6 +723,85 @@
   flex-wrap: wrap;
   min-width: 0;
 }
+/* The chips and the day picker are one control: the chips are this week, the picker
+   is any other day. Grouped so the row wraps as a unit rather than leaving the
+   picker stranded on a second line by itself. */
+.dsh-day {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.dsh-picker {
+  position: relative;
+}
+.dsh-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    color 0.14s ease;
+}
+.dsh-pick:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.dsh-pick:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+}
+/* A native date input, dropped under its button: the calendar is the browser's, so
+   there is no grid to author and no dependency to add. Anchored on its right edge,
+   because the picker sits at the end of the row and a layer that grew rightwards
+   would hang off the sheet. Only a border and the page's own background — it is a
+   small control, not a card, so it does not get a shadow. */
+.dsh-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.dsh-pop .lbl {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dsh-pop input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  color: var(--ink);
+}
+.dsh-pop input:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 1px;
+}
 .dsh-chip {
   display: inline-flex;
   align-items: center;
@@ -1124,6 +1203,32 @@ table.dsh-tbl {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* A habit is a name and nothing else: no repository, no author, no link. One line,
+   ellipsised rather than clamped, because the row's whole job is naming the habit and
+   a wrapped name would move every other cell off the 58px rhythm. */
+.dsh-hab {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-hab .nm {
+  font-size: var(--fs-secondary);
+  line-height: 1.28;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A rest day is present, not absent: the name stays in the list to show the habit
+   exists and was scheduled, and only the ink steps back so it does not compete with
+   the rows that were answered. */
+.dsh-tbl tbody tr[data-s='skipped'] .dsh-hab .nm {
+  color: var(--muted);
+}
+/* The row's own state is `data-s` on the `<tr>`, not a second copy in a class: the
+   status pill below says the word, and the attribute is what a reader — a style, or
+   a test — can reach without parsing it. */
 /* `skill.css` already draws `.st` — a 5px dot and mono micro caps. Only the box
    and the tone are this table's, so only those are named again: the pill keeps the
    shared dot geometry and gains an edge. */
@@ -1191,6 +1296,16 @@ table.dsh-tbl {
   margin-top: 10px;
   font-size: var(--fs-secondary);
   color: var(--ink-2);
+}
+/* The day that could be read has nothing, so the row answers the question that
+   raises: where the schedule resumes. The sentence takes the body ink rather than
+   the muted note, and the verb is the one thing in the row there is to press. */
+.emptyrow td > .nx {
+  color: var(--ink-2);
+}
+.emptyrow td > .nx-go {
+  display: inline-flex;
+  margin-top: 12px;
 }
 .dsh-foot {
   margin: 9px 0 0;
@@ -1513,6 +1628,10 @@ table.dsh-tbl {
     gap: 8px;
   }
   .dsh-chip {
+    height: 26px;
+    font-size: var(--fs-label);
+  }
+  .dsh-pick {
     height: 26px;
     font-size: var(--fs-label);
   }

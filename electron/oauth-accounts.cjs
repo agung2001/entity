@@ -275,11 +275,11 @@ function finish(result) {
   job.resolve(result)
 }
 
-const DENIED =
-  'Nothing was saved. Google answered access_denied — the consent screen was closed, or this client is not on the account\'s allowed list.'
+const denied = (label) =>
+  `Nothing was saved. ${label} answered access_denied — the consent screen was closed, or this client is not on the account's allowed list.`
 const STATE_MISMATCH =
   'Nothing was saved. The consent answer did not match the request that opened it, so it was ignored.'
-const NO_CODE = 'Nothing was saved. Google answered without an authorization code.'
+const noCode = (label) => `Nothing was saved. ${label} answered without an authorization code.`
 
 /** Exchange the code, read the profile, file the account. */
 async function complete(job, code) {
@@ -308,14 +308,18 @@ async function complete(job, code) {
   const token = await tokenResponse.json().catch(() => ({}))
   if (!tokenResponse.ok) {
     const said = text(token?.error_description || token?.error || `HTTP ${tokenResponse.status}`, 200)
-    return { ok: false, code: 'token_exchange_failed', message: `Nothing was saved. Google answered ${said}.` }
+    /* The provider that was actually talked to, not Google: this line is the only
+       place a failed exchange explains itself, and naming the wrong service sends
+       whoever reads it to the wrong dashboard. */
+    const who = secrets.labelOf(provider)
+    return { ok: false, code: 'token_exchange_failed', message: `Nothing was saved. ${who} answered ${said}.` }
   }
   if (!token?.refresh_token) {
     return {
       ok: false,
       code: 'no_refresh_token',
       message:
-        `Nothing was saved. ${secrets.labelOf(provider)} returned no refresh token — ${config.label} asked for offline access; remove this app from the account's granted access and try again.`,
+        `Nothing was saved. ${secrets.labelOf(provider)} answered without a refresh token, so this account could not be read after an hour. Try connecting again — if it keeps happening, remove ${config.label} from the account's granted apps first.`,
     }
   }
 
@@ -341,19 +345,39 @@ async function complete(job, code) {
     return {
       ok: false,
       code: 'no_identity',
-      message: 'Nothing was saved. Google answered, but the account had no address to name the row by.',
+      message: `Nothing was saved. ${secrets.labelOf(provider)} answered, but the account had no address to name the row by.`,
     }
   }
 
   /* Google answers with the granted scopes as full URLs, so the comparison is
      made on the wire form and both results are stored in the display form — the
      card prints what a person recognises, and `not granted` names the same thing
-     the re-consent asks for. */
+     the re-consent asks for.
+     `offline_access` is a means, not an end: what it buys is the refresh token, and a
+     server that mints one has honoured it whether or not the id comes back in
+     `scope`. Habitify is that server — its grant returns a refresh token and a scope
+     of just `openid profile email`. Reading the echo alone calls a working account
+     unusable and sends the person to re-consent for a scope they already hold. */
   const grantedWire = String(token.scope || '')
     .split(/\s+/)
     .filter(Boolean)
-  const missing = wireScopes(connector, tier).filter((scope) => !grantedWire.includes(scope))
-  const granted = grantedWire.map(displayOf)
+  const carried = (scope) =>
+    grantedWire.includes(scope) ||
+    /* Only when the request actually named it: a Google grant minting a refresh token
+       through `access_type=offline` never asked for `offline_access`, and crediting it
+       would invent a scope the person was never shown. */
+    (scope === 'offline_access' &&
+      Boolean(token.refresh_token) &&
+      wireScopes(connector, tier).includes('offline_access'))
+  const missing = wireScopes(connector, tier).filter((scope) => !carried(scope))
+  /* A scope honoured but not echoed is still part of the grant, so it is named in
+     the stored list: the card already says "the grant holds this", and a row whose
+     `scopes` omitted it while a refresh token sat beside it would read as a
+     contradiction to every consumer that checks the list. */
+  const granted = [
+    ...grantedWire,
+    ...(carried('offline_access') && !grantedWire.includes('offline_access') ? ['offline_access'] : []),
+  ].map(displayOf)
 
   const localpart = text(email.split('@')[0], 80)
   const now = new Date().toISOString()
@@ -526,7 +550,12 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
   const answer = await new Promise((resolve) => {
     job.resolve = resolve
     job.timer = setTimeout(
-      () => finish({ ok: false, code: 'timeout', message: 'Google did not answer. Nothing was saved.' }),
+      () =>
+        finish({
+          ok: false,
+          code: 'timeout',
+          message: `${secrets.labelOf(provider)} did not answer. Nothing was saved.`,
+        }),
       CONSENT_TIMEOUT_MS,
     )
 
@@ -550,12 +579,19 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
 
       /* The browser has been answered; settle the call. */
       if (wrongState) return finish({ ok: false, code: 'state', message: STATE_MISMATCH })
-      const denied = url.searchParams.get('error')
-      if (denied) {
-        return finish({ ok: false, code: denied, message: denied === 'access_denied' ? DENIED : `Nothing was saved. Google answered ${denied}.` })
+      const deniedError = url.searchParams.get('error')
+      if (deniedError) {
+        /* Named per provider: these three sentences are the only place a rejected
+           consent explains itself, and every provider reaches them. */
+        const who = secrets.labelOf(provider)
+        return finish({
+          ok: false,
+          code: deniedError,
+          message: deniedError === 'access_denied' ? denied(who) : `Nothing was saved. ${who} answered ${deniedError}.`,
+        })
       }
       const code = url.searchParams.get('code')
-      if (!code) return finish({ ok: false, code: 'no_code', message: NO_CODE })
+      if (!code) return finish({ ok: false, code: 'no_code', message: noCode(secrets.labelOf(provider)) })
       try {
         finish(await complete(job, code))
       } catch (problem) {
@@ -613,6 +649,12 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
             message: `${config.label} did not issue a client id, so no consent screen was opened. Nothing was saved.`,
           })
         }
+        /* The minted client is the one the consent screen will name, so the job has
+           to carry it too: `complete()` reads `job.providerClient`, and a client
+           captured before this await is the *previous* registration — the token
+           request would then present an id the code was never issued to, which the
+           authorization server answers `invalid_grant`. */
+        job.providerClient = live
       }
 
       const authorize = new URL(config.authorize)
@@ -770,10 +812,26 @@ function storeAccessToken(connector, localpart, answer) {
 /** Every account of a connector that has a token here, usable by a resolver. */
 function connectedAccounts(connector) {
   const rows = list()[String(connector)] || []
-  return rows.map((row) => ({
-    ...row,
-    hasToken: Boolean(secrets.tokenFor({ connector, localpart: row.localpart })?.refreshToken),
-  }))
+  /* Only a connector that asks for `offline_access` can honour it by minting a
+     refresh token, so the correction below is limited to one that does: adding the
+     scope to a connector whose grant never requested it would invent access. */
+  const asksOffline = wireScopes(connector, 'read').includes('offline_access')
+  return rows.map((row) => {
+    const hasToken = Boolean(secrets.tokenFor({ connector, localpart: row.localpart })?.refreshToken)
+    /* A row written before a server's scope echo was understood still carries
+       `offline_access` in `missing`, and a refresh token beside it is the proof
+       that the scope was honoured. Correcting it on the way out keeps an existing
+       grant usable instead of asking for a re-consent that would add nothing. */
+    const honoured = asksOffline && hasToken
+    const missing = honoured ? row.missing.filter((scope) => scope !== 'offline_access') : row.missing
+    return {
+      ...row,
+      missing,
+      scopes:
+        honoured && !row.scopes.includes('offline_access') ? [...row.scopes, 'offline_access'] : row.scopes,
+      hasToken,
+    }
+  })
 }
 
 /**

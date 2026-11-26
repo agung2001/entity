@@ -12,6 +12,13 @@ import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  habitify,
+  connected as habitifyConnected,
+  readAccounts as readHabitifyAccounts,
+  readDashboard as readHabitifyDashboard,
+} from '@/composables/habitifyDashboard'
+import ConnectorHabitifyDashboard from '@/components/ConnectorHabitifyDashboard.vue'
 import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
@@ -113,6 +120,9 @@ const accountsCard = ref(null)
 const accountsFact = ref('no account connected')
 const onAccountsChanged = () => {
   accountsFact.value = accountsCard.value?.accountsFact() || 'no account connected'
+  /* The Dashboard tab's gate is the account list, so a sign-in or a removal has to
+     reach the strip too: the card just changed the fact the lock is computed from. */
+  if (dashboardTab.value && isHabitify.value) readHabitifyAccounts().catch(() => {})
 }
 
 /* The provider a connector authenticates against, from the provider table in main
@@ -249,10 +259,12 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the GitHub connector this app ships (`builtIn ===
-   'github'`): a tab that led to another connector's half-built dashboard would be
-   a promise nobody kept, so every other row — including a custom `cli` row — gets
-   no tab at all rather than a disabled one.
+   The strip exists only for a built-in connector this app ships *and* has a reader
+   for (`DASHBOARDS`): a tab that led to another connector's half-built dashboard
+   would be a promise nobody kept, so every other row — including a custom `cli` row
+   that took a shipped connector's name — gets no tab at all rather than a disabled
+   one. The catalog's `work` block is the other half of the gate: a connector with no
+   documented surface has nothing to draw a tab about.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -261,18 +273,42 @@ const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Only GitHub has a second tab, and only the row the catalog shipped has a `work`
-   block to gate on. A custom `cli` row that happens to be called github is not it. */
-const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
+/* Only a row the catalog shipped has a `work` block to gate on, and only a connector
+   this app has a reader for gets the tab: the block says what the mention answers,
+   but the tab also needs something to read it with — `gh` for GitHub, the account
+   this machine signed in for Habitify. A pitch for something this workspace has not
+   installed has nothing to read. */
+const DASHBOARDS = ['github', 'habitify']
 const dashboardTab = computed(
-  () => Boolean(githubRow.value?.work) && installedRow.value?.builtIn === 'github',
+  () => Boolean(installedRow.value?.work) && DASHBOARDS.includes(installedRow.value?.builtIn),
 )
+const isHabitify = computed(() => installedRow.value?.builtIn === 'habitify')
+/* The day is part of the address for the same reason the tab is: `?tab=dashboard&day=`
+   is a place a person can send somebody. Anything that is not a civil date is not a
+   day, so it falls back to the main process's "today" rather than being forwarded. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const day = computed(() => (DAY.test(String(route.query.day || '')) ? String(route.query.day) : ''))
 
-/* The two locks, in the order a person meets them: no binary, then no login. Both
-   sentences are fixed copy — a computed reason would drift from the state it
-   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
+/* The locks, in the order a person meets them. GitHub's two are its own binary and
+   its own login; Habitify's is the account whose grant this machine holds, and it is
+   read from the account card's own call rather than re-derived here. Every sentence
+   is fixed copy — a computed reason would drift from the state it describes — and
+   `code`/`after` are split so the one name worth a mono font stays mono. */
 const lock = computed(() => {
-  if (!dashboardTab.value || !github.loaded) return null
+  if (!dashboardTab.value) return null
+  if (isHabitify.value) {
+    if (!habitify.loaded) return null
+    if (!habitifyConnected()) {
+      return {
+        before: 'Dashboard needs a signed-in ',
+        code: 'Habitify',
+        after: ' account on this machine. Connect one above.',
+        title: 'Needs a signed-in Habitify account on this machine',
+      }
+    }
+    return null
+  }
+  if (!github.loaded) return null
   if (!github.binary?.found) {
     return {
       before: 'Dashboard needs the ',
@@ -293,6 +329,11 @@ const lock = computed(() => {
   }
   return null
 })
+/* What the tab is about, per connector: one sentence, since the strip's own label is
+   the same two tabs on both pages. */
+const dashboardHint = computed(() =>
+  isHabitify.value ? 'What a day was scheduled with, and the week around it' : 'What moved in the last 90 days',
+)
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
    focus, because the reason under the strip is the thing to read and a
    `disabled` attribute would make it unreachable by keyboard. */
@@ -301,11 +342,26 @@ const canOpen = (name) => name === 'overview' || !lock.value
 function select(name) {
   if (!canOpen(name)) return
   const query = { ...route.query }
-  if (name === 'overview') delete query.tab
-  else query.tab = name
+  if (name === 'overview') {
+    delete query.tab
+    /* The day belongs to the tab: a bare Overview address is the whole place, and
+       leaving `?day=` on it would keep a parameter nothing on screen reads. */
+    delete query.day
+  } else query.tab = name
   /* `replace`, not `push`: switching a tab is not a step in a history a person
      wants to walk back through one press at a time. */
   router.replace({ query })
+}
+/* A day picked in the tab is a different address, and the tab's own read follows it:
+   the address is what the read is keyed on, so going through it keeps a reload and a
+   shared link asking for the same day rather than whichever one was read last. */
+function selectDay({ day: wanted = '', force = false } = {}) {
+  const query = { ...route.query, tab: 'dashboard' }
+  if (DAY.test(String(wanted))) query.day = wanted
+  else delete query.day
+  router.replace({ query }).catch(() => {})
+  /* `force` is Refresh: the same day, asked again, past the day-long cache. */
+  if (force || wanted !== habitify.day) readHabitifyDashboard({ day: wanted, force }).catch(() => {})
 }
 /* The address spells the default out as little as possible: a bare address and
    `?tab=overview` are the same place, and a value nobody defined is not a place at
@@ -331,6 +387,13 @@ function onTabKey(event) {
 }
 
 async function openDashboard() {
+  /* Habitify's gate is the account list, which is a file read — cheaper than `gh
+     auth status` and the only thing that can answer whether the tab may open. */
+  if (isHabitify.value) {
+    if (!habitify.loaded) await readHabitifyAccounts()
+    if (tab.value === 'dashboard' && !lock.value) await readHabitifyDashboard({ day: day.value })
+    return
+  }
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
@@ -338,27 +401,45 @@ onMounted(async () => {
   normalizeTab()
   await load()
   probeConnectors().catch(() => {})
-  /* The gate is answered by `gh`, so it is asked once the row is known: reading
-     it on every connector's page would run the CLI for a tab that cannot exist. */
+  /* The gate is answered by the connector itself, so it is asked once the row is
+     known: reading it on every connector's page would run `gh`, or read a credential,
+     for a tab that cannot exist. */
   if (dashboardTab.value) await openDashboard()
 })
-/* A deep link straight to the tab: the strip rendered before `gh` answered, so the
-   gate resolves late and the read has to wait for it rather than run against a
-   lock it does not yet know about. */
+/* A deep link straight to the tab: the strip rendered before the gate answered, so
+   the read has to wait for the gate rather than run against a lock it does not yet
+   know about. */
 watch(
   () => [tab.value, Boolean(lock.value), dashboardTab.value],
   async ([name, locked, hasTab]) => {
     if (!hasTab) return
+    if (isHabitify.value) {
+      if (!habitify.loaded) await readHabitifyAccounts()
+      if (name === 'dashboard' && !locked && !habitify.readAt) await readHabitifyDashboard({ day: day.value })
+      return
+    }
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
 )
-/* Re-checking the CLI from the accounts card changes the gate under the strip, so
-   the strip follows. */
+/* A day in the address that this renderer has not read yet — a link followed, or a
+   reload — is read here rather than left showing the day before it. */
+watch(day, (next) => {
+  if (!dashboardTab.value || !isHabitify.value || tab.value !== 'dashboard' || lock.value) return
+  if (next && next !== habitify.day) readHabitifyDashboard({ day: next }).catch(() => {})
+})
+/* Re-checking the connector from the accounts card changes the gate under the strip,
+   so the strip follows: no account while the tab is open goes back to Overview. */
 watch(
   () => github.logins.length,
   (count) => {
-    if (!count && tab.value === 'dashboard') select('overview')
+    if (!count && tab.value === 'dashboard' && !isHabitify.value) select('overview')
+  },
+)
+watch(
+  () => habitify.accounts.filter((entry) => entry.hasToken).length,
+  (count) => {
+    if (!count && tab.value === 'dashboard' && isHabitify.value) select('overview')
   },
 )
 
@@ -637,7 +718,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
-            :title="lock ? lock.title : 'What moved in the last 90 days'"
+            :title="lock ? lock.title : dashboardHint"
             @click="select('dashboard')"
           >
             <svg
@@ -666,10 +747,19 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         </nav>
 
         <ConnectorDashboard
-          v-if="dashboardTab && tab === 'dashboard'"
+          v-if="dashboardTab && tab === 'dashboard' && !isHabitify"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
+        />
+
+        <ConnectorHabitifyDashboard
+          v-else-if="isHabitify && tab === 'dashboard'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          :day="day"
+          @select-day="selectDay"
         />
 
         <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
