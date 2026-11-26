@@ -542,6 +542,27 @@ function parseMention(raw) {
      `:` does not scope it. */
   if (head === 'github') return { kind: 'github', query: whole, local }
 
+  /* `@fitbit:[<reader>:]<date>` — the shape Habitify's day has, with a reader word in
+     front instead of a habit name. There is no account segment for the same reason:
+     one account per install, so a mention naming one could never be right on another.
+
+     The reader word is checked against a closed list, because it sits where a date
+     otherwise would: `@fitbit:today` is a day, `@fitbit:sleep:today` is the sleep
+     count of that day, and `@fitbit:sleep` is a reader whose date is left out — which
+     means today. A first word that is neither a reader nor a date becomes the date,
+     and the resolver refuses it with the rule it broke. */
+  if (head === 'fitbit') {
+    const readers = new Set(['steps', 'sleep', 'heart', 'devices'])
+    /* The reader takes the first word whether or not a date follows it: `@fitbit:
+       sleep` with nothing after the colon is today's sleep, and the empty query is
+       what says "the current day" — a bare `today` here would be one more word the
+       grammar had to know. */
+    if (readers.has(word.toLowerCase())) {
+      return { kind: 'fitbit', target: word.toLowerCase(), query: tail, local }
+    }
+    return { kind: 'fitbit', target: '', query: whole, local }
+  }
+
   /* ── the account-bearing four: the account segment LEADS ─────────────────
      These connectors are multi-account by design, so the account is part of the
      address: `@gmail:work:from:stripe` is "the work mailbox, Gmail's from:
@@ -596,6 +617,9 @@ function tokenOf(segment) {
   }
   if (segment.kind === 'habitify') {
     return `${at}habitify:${segment.target ? `${segment.target}:` : ''}${segment.query}`
+  }
+  if (segment.kind === 'fitbit') {
+    return `${at}fitbit:${segment.target ? `${segment.target}:` : ''}${segment.query}`
   }
   if (segment.kind === 'clockify') {
     return `${at}clockify:${segment.target}${segment.week ? `:${segment.week}` : ''}`
@@ -1403,6 +1427,23 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     }
   }
 
+  if (kind === 'fitbit') {
+    /* One field: the reader word, then the date. The suggestions come from the
+       resolver, so the menu offers only what a send would resolve — and it never
+       spends an API call to fill itself. */
+    const preview = connectorRegistry.previewFor('fitbit')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, { limit: offset + limit + 1 })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
   if (kind === 'clockify') {
     /* One field: the project or member login being typed. The preview comes from
        the resolver itself, so the menu offers only what a send would resolve. */
@@ -1988,6 +2029,19 @@ async function resolveOne(ctx, segment) {
       })
       segment.mention = { kind: 'habitify', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no habit`)
+      return
+    }
+
+    if (segment.kind === 'fitbit') {
+      /* One account per install, so there is no account segment and no fan-out: the
+         registry dispatches the resolver like the rest. Five calls, whatever the
+         reader word — the reader narrows the answer, not the read. */
+      const resolve = connectorRegistry.resolverFor('fitbit')
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling('fitbit', MAX_PER_SOURCE),
+      })
+      segment.mention = { kind: 'fitbit', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no day`)
       return
     }
 

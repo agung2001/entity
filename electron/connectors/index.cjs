@@ -50,6 +50,9 @@ function load(head) {
     case 'habitify':
       mod = require('./habitify.cjs')
       break
+    case 'fitbit':
+      mod = require('./fitbit.cjs')
+      break
     case 'opendesign':
       mod = require('./opendesign.cjs')
       break
@@ -69,6 +72,7 @@ const HEADS = [
   'x',
   'clockify',
   'habitify',
+  'fitbit',
   'opendesign',
 ]
 
@@ -94,6 +98,7 @@ const SUFFIX = {
   x: 'X',
   clockify: 'Clockify',
   habitify: 'Habitify',
+  fitbit: 'Fitbit',
   opendesign: 'Opendesign',
 }
 

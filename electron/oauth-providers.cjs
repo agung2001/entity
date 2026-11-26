@@ -130,6 +130,42 @@ const PROVIDERS = {
     dynamicClient: true,
     scopes: ['openid', 'profile', 'email', 'offline_access'],
   },
+
+  /* Fitbit is a classic OAuth 2.0 deployment with one twist worth stating: **it has
+     no address to name an account by.** The identity read is its profile endpoint,
+     which answers an `encodedId` (the short id in a fitbit.com/user/<id> URL) and a
+     full name, so the row is named `<encodedId>@fitbit` — the same shape X uses for
+     a handle, and the same thing the mention scope would take.
+
+     Public client: PKCE with no secret (`secretRequired: false`), which Fitbit
+     accepts for an app registered as a personal one. The callback is pinned because
+     Fitbit matches the registered URL exactly — the card prints this literal one for
+     a person to paste into `dev.fitbit.com/apps`.
+
+     **Eight scopes, no more.** Fitbit refuses a grant that asks for more than eight
+     at once, so `baseScope` plus a tier stays far under it; adding a ninth here is a
+     rejected consent, not a wider read. */
+  fitbit: {
+    label: 'Fitbit',
+    authorize: 'https://www.fitbit.com/oauth2/authorize',
+    token: 'https://api.fitbit.com/oauth2/token',
+    profile: 'https://api.fitbit.com/1/user/-/profile.json',
+    baseScope: 'activity sleep heartrate profile',
+    params: {},
+    /* `{ user: { encodedId, fullName, timezone, offsetFromUTCMillis } }` — no
+       mailbox anywhere in it, so the encoded id is what names the row. */
+    profileOf: (body) => {
+      const user = body?.user || {}
+      return { email: user.encodedId ? `${user.encodedId}@fitbit` : '', name: user.fullName || '' }
+    },
+    consoleUrl: 'https://dev.fitbit.com/apps',
+    clientHint:
+      'Create a personal app and register the callback URL shown below. A public client needs the id, not a secret.',
+    secretRequired: false,
+    clientAuth: 'pkce',
+    pkce: 'S256',
+    fixedPort: 8790,
+  },
 }
 
 /**

@@ -802,6 +802,19 @@
 .dsh-when .sep {
   opacity: 0.6;
 }
+/* Re-read while a read is in flight: the verb says it is busy, but it stays a
+   button. `aria-disabled`, never `disabled` — a disabled button leaves the tab
+   order, so the person who tabbed to it would find nothing to press and nothing to
+   hear. The border is untouched: this is a state, not a different button, and the
+   press itself is a no-op in the handler. */
+.dsh-band .btn[aria-disabled='true'],
+.dsh-band .btn[aria-disabled='true']:hover {
+  color: var(--muted);
+  background: var(--bg);
+  border-color: var(--border-strong);
+  cursor: default;
+  transform: none;
+}
 
 /* ── the six tiles ────────────────────────────────────────────────────── */
 .dsh-kpis {
@@ -1008,7 +1021,11 @@
   gap: 9px;
   margin-bottom: 9px;
 }
-.dsh-card h3 {
+/* The Fitbit cards name their head with an `h2` — they sit in the tab pane, not
+   inside a page-heading section — so the two levels share one rule rather than
+   drifting apart. */
+.dsh-card h3,
+.dsh-card .hd h2 {
   margin: 0;
   font-family: var(--font);
   font-size: var(--fs-h6);
@@ -1128,7 +1145,8 @@ table.dsh-tbl {
    and the tone are this table's, so only those are named again: the pill keeps the
    shared dot geometry and gains an edge. */
 .dsh-tbl .st,
-.acc .st {
+.acc .st,
+.fbk-week .st {
   height: 20px;
   padding: 0 7px;
   border: 1px solid var(--border);
@@ -1138,18 +1156,22 @@ table.dsh-tbl {
   white-space: nowrap;
 }
 .dsh-tbl .st[data-tone='ok'] i,
-.acc .st[data-tone='ok'] i {
+.acc .st[data-tone='ok'] i,
+.fbk-week .st[data-tone='ok'] i {
   background: var(--ok);
 }
-.dsh-tbl .st[data-tone='warn'] i {
+.dsh-tbl .st[data-tone='warn'] i,
+.fbk-week .st[data-tone='warn'] i {
   background: var(--accent-ink);
 }
 .dsh-tbl .st[data-tone='bad'] i,
-.acc .st[data-tone='bad'] i {
+.acc .st[data-tone='bad'] i,
+.fbk-week .st[data-tone='bad'] i {
   background: var(--danger);
 }
 .dsh-tbl .st[data-tone='bad'],
-.acc .st[data-tone='bad'] {
+.acc .st[data-tone='bad'],
+.fbk-week .st[data-tone='bad'] {
   color: var(--danger);
 }
 .dsh-tbl td.ck {
@@ -1210,6 +1232,106 @@ table.dsh-tbl {
   color: var(--ink);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── the Fitbit day: six counts, then twenty-four hours ──────────────────
+   The band, the chips, the tiles, the table and the rail are the GitHub
+   dashboard's own boxes — this connector adds the widths its own shapes need and
+   nothing else. */
+/* Seven columns for six tiles: the steps tile takes two of them, so the row is
+   exactly full. Eight units in six columns would wrap one tile onto a line of its
+   own and leave a hole in the border grid. */
+.fbk-kpis {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.fbk-steps {
+  grid-column: span 2;
+}
+/* The date field, revealed by the third chip rather than always taking a line:
+   most visits to this tab are today or yesterday. */
+.dsh-pickfield {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -6px 0 14px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.dsh-pickfield label {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dsh-pickfield input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+}
+.dsh-pickfield input:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 1px;
+}
+/* The hour, then its two numbers, then the band it fell in. The hour keeps the
+   mono face so twenty-four of them line up down the column. */
+.dsh-tbl td.fbk-hour {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.dsh-tbl th.fbk-num,
+.dsh-tbl td.fbk-num {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The hour's fill and its literal minutes side by side: the bar is the shape the
+   eye compares, the number is the one that can be checked. A wrapper inside the
+   cell, never the cell itself — a `td` told to be a flex box stops being a
+   column. */
+.fbk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fbk-bar .dsh-meter {
+  width: 96px;
+  margin-top: 0;
+  flex: none;
+}
+.fbk-amt {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Seven days in a 306px rail: two letters each, one line, no scroll. */
+.fbk-week {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+/* Before midnight is information, not a warning: the accent edge the shared band
+   carries would read as something to act on. */
+.dsh-wait[data-tone='calm'] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+.dsh-wait[data-tone='calm'] .k {
+  color: var(--muted);
 }
 
 /* ── the rail ─────────────────────────────────────────────────────────── */
@@ -1474,6 +1596,11 @@ table.dsh-tbl {
   .dsh-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  /* Six tiles over three columns is two exact rows: the wide steps tile gives its
+     second column back, because here it would leave a hole instead of filling one. */
+  .fbk-steps {
+    grid-column: span 1;
+  }
   .dsh-rail {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1508,6 +1635,9 @@ table.dsh-tbl {
 @container cxn (max-width: 559.99px) {
   .dsh-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fbk-bar .dsh-meter {
+    width: 64px;
   }
   .dsh-bar {
     gap: 8px;
@@ -1548,6 +1678,15 @@ table.dsh-tbl {
   }
   .dsh-tbl td.stc {
     margin-top: 6px;
+  }
+  /* The columns are rows now, so a right-aligned number would sit against its own
+     label's left edge. */
+  .dsh-tbl th.fbk-num,
+  .dsh-tbl td.fbk-num {
+    text-align: left;
+  }
+  .fbk-bar {
+    margin-top: 4px;
   }
   .dsh-tbl td.ck,
   .dsh-tbl td.upd {

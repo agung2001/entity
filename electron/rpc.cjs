@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const fitbitDashboard = require('./fitbit-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -366,6 +367,11 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The Fitbit connector's dashboard: six counts and the hour-by-hour heart trace
+       for one day. **Read-only** — every call is a GET, and nothing on the page can
+       log anything. No token is ever read: the module refreshes one on this machine
+       and keeps it there. */
+    'fitbit.dashboard': (args) => fitbitDashboard.readDay(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

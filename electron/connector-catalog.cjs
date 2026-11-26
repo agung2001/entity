@@ -418,6 +418,44 @@ const CATALOG = {
     },
   },
 
+  /* ── one day, drawn ─────────────────────────────────────────────────────
+     Fitbit is `rest` + `oauth` like Habitify, and one account per install — but its
+     page carries a second tab, `?tab=dashboard`, because a day of steps is a picture
+     before it is a sentence. The tab reads through `electron/fitbit-dashboard.cjs`;
+     this entry says what the mention means and what a read costs, which is the only
+     number a person needs to know before pressing it. */
+  fitbit: {
+    label: 'Fitbit',
+    kind: 'rest',
+    oauth: true,
+    provider: 'fitbit',
+    website: 'https://www.fitbit.com',
+    summary: 'A day’s steps, distance, active minutes, sleep, resting heart rate and devices.',
+    verify: null,
+    work: {
+      mention: '@fitbit:',
+      resolves: 'one day of counts from the signed-in account',
+      syntax: '@fitbit:[steps|sleep|heart|devices:]<date|today|yesterday>',
+      examples: ['@fitbit:today', '@fitbit:sleep:yesterday'],
+      returns: 'the day’s steps and goal, distance, active minutes, last night’s sleep, resting heart rate and the devices that synced, with the hour-by-hour heart trace where the scope allows',
+      resolver: 'fitbit',
+      needs: 'a signed-in Fitbit account on this machine',
+      page: '',
+      how: [
+        'The date is `today`, `yesterday` or `YYYY-MM-DD`, read in the account’s own timezone — nothing is guessed, so a malformed date is an error rather than today.',
+        'A reader word before the colon (`steps`, `sleep`, `heart`, `devices`) narrows the answer to that one count; leave it out and the whole day comes back.',
+        '**Read-only.** Every call this app makes is a GET: nothing logs activity, food, water or sleep, and no control on the page implies one.',
+        'Five requests read a day: activity, sleep, the day’s heart summary, the minute-by-minute heart trace, and the device list. Fitbit allows 150 calls an hour per account, so this app counts its own calls and says when the hour resets rather than spending a 429.',
+        'The device list and the account’s timezone sit in an hourly cache, so a second day in the same hour costs four calls rather than five — and a day already read costs none.',
+        'The access token is refreshed on this machine and never shown to a page; the account is named by its encoded id, never by an address.',
+      ],
+      samples: [
+        { code: '@fitbit:today', then: 'the day so far, count by count' },
+        { code: '@fitbit:sleep:yesterday', then: 'last night’s minutes asleep and the score' },
+      ],
+    },
+  },
+
   /* ── a paste-once credential ─────────────────────────────────────────────
      `credential: 'token'` is the other way a `rest` row authenticates: one opaque
      API key, pasted once, that never refreshes. There is no consent screen and no
@@ -536,7 +574,7 @@ const CATALOG = {
 const RESOLVERS = new Set([
   'orca', 'github', 'youtrack', 'maka',
   'gmail', 'drive', 'youtube', 'youtube-studio', 'x',
-  'clockify', 'habitify', 'opendesign',
+  'clockify', 'habitify', 'fitbit', 'opendesign',
   'artifact', 'thread',
 ])
 

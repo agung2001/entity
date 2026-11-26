@@ -10,6 +10,7 @@ import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
+import ConnectorFitbitDashboard from '@/components/ConnectorFitbitDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
 import TailscalePanel from '@/components/TailscalePanel.vue'
@@ -249,30 +250,59 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the GitHub connector this app ships (`builtIn ===
-   'github'`): a tab that led to another connector's half-built dashboard would be
-   a promise nobody kept, so every other row — including a custom `cli` row — gets
-   no tab at all rather than a disabled one.
+   The strip exists for the connectors this app ships a dashboard for — GitHub and
+   Fitbit, and only those. A tab that led to another connector's half-built
+   dashboard would be a promise nobody kept, so every other row, including a custom
+   `cli` or `rest` row, gets no tab at all rather than a disabled one.
 
-   The two tabs live in the address: `?tab=dashboard` is a place a person can
-   bookmark, and the bare address / `?tab=overview` drops the parameter rather than
-   spelling the default out. `SkillsView` set the precedent for the guard. */
+   The tabs live in the address: `?tab=dashboard` is a place a person can bookmark,
+   and `&day=…` carries which day the Fitbit tab is on, so the same link opens the
+   same day tomorrow. The bare address / `?tab=overview` drops the parameter rather
+   than spelling the default out. `SkillsView` set the precedent for the guard. */
 const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Only GitHub has a second tab, and only the row the catalog shipped has a `work`
-   block to gate on. A custom `cli` row that happens to be called github is not it. */
-const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
-const dashboardTab = computed(
-  () => Boolean(githubRow.value?.work) && installedRow.value?.builtIn === 'github',
-)
+/* The day the Fitbit tab reads: nothing (today), `yesterday`, or a literal date.
+   The renderer never resolves "today" against its own clock — the account's zone
+   is on the main process, so the word travels and the answer comes back dated. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const dayQuery = computed(() => {
+  const raw = String(route.query.day || '')
+  return raw === 'yesterday' || DAY.test(raw) ? raw : ''
+})
+/* Which shipped row owns the second tab, and its promise. Only the catalog's own
+   row counts: a custom row that happens to be called fitbit picks its own verbs. */
+const DASHBOARDS = {
+  github: 'What moved in the last 90 days',
+  fitbit: 'One day in steps, sleep and heart rate',
+}
+const dashboardOf = computed(() => {
+  const builtIn = installedRow.value?.builtIn
+  if (!builtIn || !DASHBOARDS[builtIn]) return null
+  const owner = connectors.rows.find((entry) => entry.builtIn === builtIn) || null
+  return owner?.work ? { builtIn, title: DASHBOARDS[builtIn], row: owner } : null
+})
+const dashboardTab = computed(() => Boolean(dashboardOf.value))
 
-/* The two locks, in the order a person meets them: no binary, then no login. Both
-   sentences are fixed copy — a computed reason would drift from the state it
-   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
+/* Why the Dashboard is closed, in words, or `null` when it is open. The two
+   connectors are gated on different facts and each is answered by the thing that
+   owns it: GitHub by the `gh` on this machine (no binary, then no login), Fitbit by
+   the account this app holds a grant for. Every sentence is fixed copy — a computed
+   reason would drift from the state it describes — and `code`/`after` are split so
+   the `gh` mentions stay mono. */
 const lock = computed(() => {
-  if (!dashboardTab.value || !github.loaded) return null
+  const which = dashboardOf.value
+  if (!which) return null
+  if (which.builtIn === 'fitbit') {
+    const accounts = Array.isArray(which.row.accounts) ? which.row.accounts : []
+    if (accounts.some((account) => account.status === 'connected')) return null
+    return {
+      before: 'Dashboard needs a signed-in Fitbit account — the accounts card above connects one.',
+      title: 'Needs a signed-in Fitbit account',
+    }
+  }
+  if (!github.loaded) return null
   if (!github.binary?.found) {
     return {
       before: 'Dashboard needs the ',
@@ -297,12 +327,29 @@ const lock = computed(() => {
    focus, because the reason under the strip is the thing to read and a
    `disabled` attribute would make it unreachable by keyboard. */
 const canOpen = (name) => name === 'overview' || !lock.value
+/* Which pane the Dashboard tab actually controls, and it is not always its own.
+   A locked Fitbit tab has no pane to show — its numbers belong to an account that
+   is not signed in, so it must not read and must not paint — and the chain under
+   the strip falls through to the overview. `aria-controls` says so rather than
+   pointing at an id that is not in the document. GitHub's locked tab keeps its
+   pane, so only the Fitbit branch is asked here. */
+const dashboardPane = computed(() =>
+  tab.value === 'dashboard' && !(lock.value && dashboardOf.value?.builtIn === 'fitbit')
+    ? 'cxn-pane-dashboard'
+    : 'cxn-pane-overview',
+)
 
 function select(name) {
   if (!canOpen(name)) return
   const query = { ...route.query }
-  if (name === 'overview') delete query.tab
-  else query.tab = name
+  if (name === 'overview') {
+    delete query.tab
+    /* The day belongs to the dashboard: on the overview it names a page that is
+       not on screen, so it leaves with the tab. */
+    delete query.day
+  } else {
+    query.tab = name
+  }
   /* `replace`, not `push`: switching a tab is not a step in a history a person
      wants to walk back through one press at a time. */
   router.replace({ query })
@@ -313,9 +360,29 @@ function select(name) {
    carries a stray `tab` pays for the rewrite, so `?tab=dashboard` never touches
    the address it was given. */
 function normalizeTab() {
-  if (route.query.tab === undefined || String(route.query.tab) === 'dashboard') return
   const query = { ...route.query }
-  delete query.tab
+  let touched = false
+  if (query.tab !== undefined && String(query.tab) !== 'dashboard') {
+    delete query.tab
+    touched = true
+  }
+  /* `day` is only a place when it is a day *and* the dashboard is the tab: any
+     other value is dropped rather than carried into a read that would refuse it. */
+  if (query.day !== undefined && (dayQuery.value === '' || query.tab !== 'dashboard')) {
+    delete query.day
+    touched = true
+  }
+  if (touched) router.replace({ query }).catch(() => {})
+}
+/* A day chip or the date field asks for a day; the address answers, and the tab
+   reads it. `today` is the absence of the parameter, because that is where a
+   bookmark should land tomorrow. */
+function setDay(value) {
+  const next = String(value || '')
+  const query = { ...route.query, tab: 'dashboard' }
+  if (next === '' || next === 'today') delete query.day
+  else if (next === 'yesterday' || DAY.test(next)) query.day = next
+  else return
   router.replace({ query }).catch(() => {})
 }
 /* Roving tabindex, the pattern `SkillsView`'s strip already uses: one stop for the
@@ -331,6 +398,10 @@ function onTabKey(event) {
 }
 
 async function openDashboard() {
+  /* Only GitHub's gate needs asking: `gh` has to be run to know whether it holds a
+     login. Fitbit's gate is the row's own account list, which the page already has,
+     and its read hangs off the tab component's mount. */
+  if (dashboardOf.value?.builtIn !== 'github') return
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
@@ -348,7 +419,7 @@ onMounted(async () => {
 watch(
   () => [tab.value, Boolean(lock.value), dashboardTab.value],
   async ([name, locked, hasTab]) => {
-    if (!hasTab) return
+    if (!hasTab || dashboardOf.value?.builtIn !== 'github') return
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
@@ -361,6 +432,22 @@ watch(
     if (!count && tab.value === 'dashboard') select('overview')
   },
 )
+/* A sign-out under the strip closes the tab it opened: the numbers on it belong to
+   the account that just left, and a locked tab cannot keep them on screen.
+
+   Two conditions, both paid for by a bookmark that lost its address. `null` means
+   *not loaded yet* — while the roster is still empty no row carries an account, so
+   every Fitbit row reads as signed-out and the tab would be sent to the overview
+   before the accounts could arrive. And only an open → locked **change** closes it:
+   a link that arrives already locked keeps its `?tab=dashboard&day=…` and says why
+   the pane is shut, which is the thing the person followed the link to find out. */
+const fitbitGate = computed(() =>
+  dashboardOf.value?.builtIn === 'fitbit' && connectors.loaded ? lock.value?.title || '' : null,
+)
+watch(fitbitGate, (reason, was) => {
+  if (was !== '' || !reason) return
+  if (tab.value === 'dashboard') select('overview')
+})
 
 const back = () => {
   hub.rail.connectors = true
@@ -633,11 +720,11 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             role="tab"
             :aria-selected="tab === 'dashboard'"
             :tabindex="tab === 'dashboard' || lock ? 0 : -1"
-            aria-controls="cxn-pane-dashboard"
+            :aria-controls="dashboardPane"
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
-            :title="lock ? lock.title : 'What moved in the last 90 days'"
+            :title="lock ? lock.title : dashboardOf.title"
             @click="select('dashboard')"
           >
             <svg
@@ -659,20 +746,41 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                as the tab is locked, which is the only way it can be read by
                somebody who never hovers. -->
           <p v-if="lock" id="cxn-tab-why" class="tab-why">
-            {{ lock.before }}<code class="mono">{{ lock.code }}</code>{{ lock.after }}<template
+            {{ lock.before }}<template v-if="lock.code"><code class="mono">{{ lock.code }}</code>{{ lock.after }}</template><template
               v-if="lock.code2"
             ><code class="mono">{{ lock.code2 }}</code>{{ lock.after2 }}</template>
           </p>
         </nav>
 
         <ConnectorDashboard
-          v-if="dashboardTab && tab === 'dashboard'"
+          v-if="dashboardOf?.builtIn === 'github' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
         />
 
-        <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
+        <!-- Fitbit's tab is one day and one table, and it is read-only: the copy
+             on the page is the connector's own, and no control here writes to the
+             account. The gate is part of the render, not just the click: a locked
+             tab must not read (a read is a request against an account nobody signed
+             in) and must not paint a day it has no account for. Locked, the chain
+             falls through to the overview, which is what `dashboardPane` points at. -->
+        <ConnectorFitbitDashboard
+          v-else-if="dashboardOf?.builtIn === 'fitbit' && tab === 'dashboard' && !lock"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          :day="dayQuery"
+          @pick="setDay"
+        />
+
+        <div
+          v-else
+          id="cxn-pane-overview"
+          class="cxn-split"
+          role="tabpanel"
+          :aria-labelledby="tab === 'dashboard' ? 'cxn-tab-dashboard' : dashboardTab ? 'cxn-tab-overview' : undefined"
+        >
           <div class="cxn-main">
           <!-- What this connector is, in the app's own words. Shown for an entry
                this workspace has not installed: the pitch is the page, and a page
