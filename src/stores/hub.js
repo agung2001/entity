@@ -1418,17 +1418,28 @@ export async function cancelChat() {
  * Answer a held plan: `run` starts the runs, `cancel` starts nothing. The block
  * goes the moment it is answered — a Run that stays on screen reads as "nothing
  * happened" while the first harness warms up, and the rows take over from there.
+ *
+ * `answer` is a string (`'run'`/`'cancel'`) or the form's own payload. A run
+ * carries the revision — count, band instruction, per-card rows — on the one
+ * call that answers the hold, so the words on screen are the words that start.
  */
-export async function decideDelegation(action = 'run') {
+export async function decideDelegation(answer = 'run') {
   const thread = activeThread()
   if (!thread) return null
-  const wanted = action === 'cancel' ? 'cancel' : 'run'
+  const wanted = answer === 'cancel' || answer?.action === 'cancel' ? 'cancel' : 'run'
+  const revision = {}
+  if (answer && typeof answer === 'object') {
+    if (answer.count !== undefined) revision.count = answer.count
+    if (answer.instruction !== undefined) revision.instruction = answer.instruction
+    if (answer.rows !== undefined) revision.rows = answer.rows
+  }
   setHeldRuns(thread.id, 0)
   try {
     return await call('chat.delegate', {
       workspace: hub.workspace,
       id: thread.id,
       action: wanted,
+      ...revision,
     })
   } catch (error) {
     hub.chat.error = error?.message || 'The plan could not be answered.'

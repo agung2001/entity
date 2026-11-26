@@ -154,6 +154,15 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'enter'],
       },
       {
+        id: 'run-delegation',
+        /* One combo on both surfaces: the plan is the only thing on screen, and
+           the chip has to read the same in the app and in a browser tab. */
+        label: 'Run the delegation plan',
+        desc: 'Start the held plan with the count and the words on screen. Refuses while a card is empty.',
+        desktop: ['alt', 'shift', 'R'],
+        browser: ['alt', 'shift', 'R'],
+      },
+      {
         id: 'terminal',
         label: 'Terminal',
         desc: 'Open a shell beside the conversation — on this machine, or on the thread’s host.',

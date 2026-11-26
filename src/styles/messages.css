@@ -436,6 +436,18 @@
   color: var(--accent-ink);
   font-weight: 600;
 }
+/* A row that has a source is the way to it: one line, the app's own glyph for
+   "leaves the window", underlined on hover so the line reads as a link before
+   the pointer gets there. */
+.msg-delegation-job a.row:hover,
+.msg-delegation-job a.row:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg-delegation-job .row-go {
+  font-size: 0.9em;
+  opacity: 0.65;
+}
 .msg-delegation-job .text {
   display: block;
 }
@@ -518,6 +530,277 @@
 @media (prefers-reduced-motion: reduce) {
   .hold {
     transition: none;
+  }
+}
+/* ── The plan is a form ───────────────────────────────────────────
+   The band is the shared instruction, the stepper is the count, and each card
+   owns one job. Every field rests on `--field-edge`, not `--border-strong`:
+   a control's boundary is the one thing a token keeps at usable contrast. */
+.plan-band {
+  margin: 0 0 9px;
+}
+.plan-band-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-bottom: 5px;
+}
+/* The band's label. `lbl` is scoped per surface in this sheet, so the plan
+   brings its own: mono, micro, uppercase, muted — the grammar the mock draws. */
+.plan-band-head .lbl,
+.plan-count .lbl {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.plan-band-head .plan-note {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.plan-field {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 54px;
+  transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+.plan-field:hover {
+  border-color: var(--ink);
+}
+.plan-field:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.plan-field[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.plan-hint {
+  margin: 4px 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.plan-hint b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.plan-count {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 1px 8px;
+  border-top: 1px solid var(--border);
+}
+.plan-count .lbl {
+  margin-right: -2px;
+}
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  overflow: hidden;
+}
+.step-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: var(--bg);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  line-height: 1;
+  transition: background 140ms ease-out, color 140ms ease-out;
+}
+.step-btn:hover:not([disabled]) {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.step-btn:active:not([disabled]) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.step-btn[disabled] {
+  color: var(--border-strong);
+  cursor: not-allowed;
+}
+.step-n {
+  min-width: 26px;
+  padding: 0 4px;
+  text-align: center;
+  border-inline: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  font-weight: 600;
+  color: var(--ink);
+}
+.plan-count-note {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.plan-count-note b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.plan-count-note [data-short] {
+  display: none;
+}
+.plan-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.plan-link:hover {
+  color: var(--ink);
+}
+
+/* The card is the field: one editable job per row, in the card's own body, so
+   "which run am I fixing" is answered by the card you are typing in. */
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+  min-width: 0;
+}
+.plan-chip {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  border: 1px solid color-mix(in oklab, var(--accent-ink) 40%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+.plan-job {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 40px;
+  transition: background 140ms ease-out, border-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+.plan-job:hover {
+  background: var(--surface);
+  border-color: var(--field-edge);
+}
+.plan-job:focus {
+  outline: none;
+  background: var(--bg);
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.plan-job[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+/* Enhance is a quiet pill on the card, not a second primary: it changes words,
+   it does not start anything. */
+.plan-enh {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+}
+.plan-enh:hover {
+  border-color: color-mix(in oklab, var(--accent-ink) 45%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.plan-enh svg {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+.plan-err {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 5px 0 0;
+  font-size: var(--fs-micro);
+  color: var(--danger);
+}
+/* The foot's summary slot carries the error instead of the count, never both. */
+.hold-summary[data-error='1'] {
+  color: var(--danger);
+}
+@media (max-width: 480px) {
+  .plan-band-head .plan-note {
+    display: none;
+  }
+  .plan-enh {
+    padding: 5px 9px;
+    font-size: var(--fs-meta);
+  }
+  .plan-count-note [data-long] {
+    display: none;
+  }
+  .plan-count-note [data-short] {
+    display: inline;
+  }
+  .step-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .step-n {
+    min-width: 30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-field,
+  .plan-job,
+  .plan-enh,
+  .step-btn {
+    transition-duration: 0.001ms;
   }
 }
 /* The cards carry the presence, so the bubble stops doubling as a frame. */

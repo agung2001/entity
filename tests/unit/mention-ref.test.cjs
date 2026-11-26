@@ -1029,6 +1029,46 @@ test('a cancelled plan starts nothing and says which plan it was', async () => {
   assert.equal(ran, 0, 'Cancel means nothing started')
 })
 
+/* The held plan is a form: Run carries the count and the words that were on
+   screen. The engine applies them once, before any run starts — a trimmed plan
+   starts fewer runs, and every run receives its own card's text, not the
+   sentence the message was sent with. */
+test('Run starts the words and the count the card showed', async () => {
+  const record = workspace()
+  const asked = []
+  const out = await mention.rewrite(record, '@py-agent fix the failing test', {
+    hold: async () => ({ action: 'run', count: 1, rows: ['the card said this'] }),
+    deps: deps({
+      runEntity: async (_record, entity, job) => {
+        asked.push({ name: entity.name, job })
+        return { ok: true, answer: `${entity.name} handled "${job}"`, error: '' }
+      },
+    }),
+  })
+  assert.equal(asked.length, 1)
+  assert.match(asked[0].job, /the card said this/)
+  assert.doesNotMatch(asked[0].job, /fix the failing test/)
+  assert.match(out.text, /the card said this/)
+  assert.equal(out.mentions[0].job, 'the card said this')
+
+  /* `spawn 2` held with one card starts one run, and says `1/1` rather than
+     keeping the `1/2` the trim made untrue. */
+  const kept = []
+  const trimmed = await mention.rewrite(record, 'spawn 2 @py-agent x', {
+    hold: async () => ({ action: 'run', count: 1, rows: ['only one'] }),
+    deps: deps({
+      runEntity: async (_record, entity, job) => {
+        kept.push({ name: entity.name, job })
+        return { ok: true, answer: `${entity.name} handled "${job}"`, error: '' }
+      },
+    }),
+  })
+  assert.equal(kept.length, 1, 'a trimmed plan starts exactly the runs it kept')
+  assert.match(kept[0].job, /only one/)
+  assert.equal(trimmed.mentions.length, 1)
+  assert.equal(trimmed.mentions[0].share, undefined, 'one run is not a share of two')
+})
+
 test('an expired plan says so, and a refused message never reaches the gate', async () => {
   const record = workspace()
   let opened = false
