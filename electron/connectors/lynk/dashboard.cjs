@@ -41,55 +41,40 @@ const os = require('node:os')
 const path = require('node:path')
 const oauthAccounts = require('../../oauth-accounts.cjs')
 const { accessToken, get } = require('../_shared.cjs')
+const local = require('./local.cjs')
+const xlsx = require('./xlsx.cjs')
 
 const CONNECTOR = 'lynk'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 const SHEET_MIME = 'application/vnd.google-apps.spreadsheet'
 const DRIVE = 'https://www.googleapis.com/drive/v3/files'
-const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets'
 
 /* Six hours: a day's sales do not move fast enough to justify re-reading seventy
    spreadsheets on every visit, and `Re-read now` is one button away. */
 const CACHE_MS = 6 * 60 * 60_000
-const CACHE_SCHEMA = 1
+/* 2: a product's label is its file name with the tab suffix stripped. An answer stored
+   by schema 1 carries `Kreasi AI - Transactions` in the table, so it is re-read. */
+const CACHE_SCHEMA = 2
 const ROOT = process.env.ENTITY_HOME
   ? path.resolve(process.env.ENTITY_HOME)
   : path.join(os.homedir(), '.entity')
 const CACHE_FILE = path.join(ROOT, 'lynk-dashboard.json')
 
-/* How many spreadsheets are opened at once, and how fast new requests may start.
-   The ceiling is Google's own: a Sheets read quota of 300 a minute per user means
-   five a second, and one spreadsheet is a metadata read plus a values read. A
-   small folder is read instantly — the first `PACE_BURST` requests are unpaced —
-   and a large one settles at ~4 a second, which is under the limit with room for
-   the person's other tabs. Slow and complete beats fast and refused. */
-const CONCURRENCY = 4
-const PACE_BURST = 24
-const PACE_MS = 240
+/* **One request per spreadsheet, not two, and no pace to protect.** The Sheets API
+   answers 60 reads a minute for one person, and a folder of seventy products is 140
+   reads — the limit this tab kept hitting. The workbook now comes down through Drive's
+   export endpoint (one request, a quota a hundred times larger) and is parsed here, so
+   the pacing that used to keep the Sheets quota breathing is gone with it. */
 const QUOTA_RETRY_MS = 5_000
 /* `Quota exceeded for quota metric 'Read requests'`, `429`, `RESOURCE_EXHAUSTED`:
    all the same answer — wait, do not reauthorize, and do not print a zero. */
 const QUOTA = /quota|rate limit|429|resource_exhausted|too many requests/i
 
-let pacedStarts = 0
-let nextStartAt = 0
-
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** Hold the next request until the pace allows it. */
-async function pace() {
-  pacedStarts += 1
-  if (pacedStarts <= PACE_BURST) return
-  const now = Date.now()
-  const at = Math.max(now, nextStartAt)
-  nextStartAt = at + PACE_MS
-  if (at > now) await wait(at - now)
-}
-
-/** One paced GET. A quota answer is waited out once, then reported. */
+/** One GET, with the folder listing's quota — the only Sheets-era request left. */
 async function read(url, token) {
   for (let attempt = 0; ; attempt += 1) {
-    await pace()
     try {
       return await get(url, token, CONNECTOR)
     } catch (error) {
@@ -259,20 +244,19 @@ async function sheetsIn(folderId, token) {
   return files
 }
 
-/* ── reading one spreadsheet ──────────────────────────────────────────── */
-
-/** The tab whose name ends with the workspace's suffix, or none. */
-function tabOf(sheet, suffix) {
-  const titles = (sheet.sheets || []).map((entry) => String(entry?.properties?.title || ''))
-  const ending = String(suffix || '')
-  const hit = titles.find((title) => ending && title.endsWith(ending))
-  return hit || ''
-}
-
-const quoted = (title) => `'${String(title).replace(/'/g, "''")}'`
-
 /** A header cell holding a date. */
 const isDateHead = (head) => /tanggal|date|waktu|time|created|dibuat/i.test(head)
+/** Whether a first row names both a date and a price: the shape this reader needs,
+    and what decides which tab in a workbook is the transactions one. */
+function headerOf(values) {
+  const header = (values?.[0] || []).map((cell) => String(cell ?? '').trim())
+  return { date: header.findIndex(isDateHead), money: header.findIndex(isMoneyHead) }
+}
+const readableHeader = (values) => {
+  const at = headerOf(values)
+  return at.date >= 0 && at.money >= 0
+}
+
 /** A header cell holding the money a person paid. */
 const isMoneyHead = (head) => /^total|grand|amount|jumlah|harga|price|nominal|revenue|gross|dibayar/i.test(head)
 /** A header cell holding who bought it. */
@@ -288,7 +272,11 @@ const DEAD_WORDS = /cancel|batal|expire|kadaluarsa|refund|gagal|fail|pending|unp
  * Sheets already serialises a date cell to a locale string, so all four shapes
  * arrive from the same tab depending on how the person typed it.
  */
-function dayOf(value) {
+function dayOf(value, date1904 = false) {
+  /* A downloaded workbook stores a date as a serial, not as the string Sheets renders.
+     The serial is turned into a civil day here, so one column reads the same whether
+     it arrived through the API or through the copy on disk. */
+  if (typeof value === 'number') return xlsx.serialDay(value, date1904)
   const text = String(value || '').trim()
   if (!text) return ''
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(text)
@@ -345,7 +333,7 @@ function moneyOf(value) {
  * Returns `null` when a column the totals depend on cannot be found: a sheet with
  * no price column is not a sheet that sold nothing.
  */
-function rowsOf(values, product) {
+function rowsOf(values, product, date1904 = false) {
   if (!Array.isArray(values) || !values.length) return { rows: [], reason: 'header and no rows' }
   const header = (values[0] || []).map((cell) => String(cell ?? '').trim())
   const at = {
@@ -358,7 +346,7 @@ function rowsOf(values, product) {
   const rows = []
   for (let index = 1; index < values.length; index += 1) {
     const cells = values[index] || []
-    const day = dayOf(cells[at.date])
+    const day = dayOf(cells[at.date], date1904)
     const amount = moneyOf(cells[at.money])
     if (!day || amount === null) continue
     const state = at.state >= 0 ? String(cells[at.state] ?? '') : ''
@@ -370,44 +358,28 @@ function rowsOf(values, product) {
   return { rows, reason: '' }
 }
 
-async function readSheet(file, suffix, token) {
-  const meta = await read(
-    `${SHEETS}/${encodeURIComponent(file.id)}?fields=properties.title,sheets.properties.title`,
-    token,
-  )
-  const tab = tabOf(meta, suffix)
-  if (!tab) {
-    progress.read += 1
-    return { file, tab: '', rows: [], reason: 'no tab' }
-  }
-  const range = `${quoted(tab)}!A1:Z${MAX_ROWS + 1}`
-  const body = await read(
-    `${SHEETS}/${encodeURIComponent(file.id)}/values/${encodeURIComponent(range)}?majorDimension=ROWS`,
-    token,
-  )
+/**
+ * One spreadsheet, read from the copy on this machine.
+ *
+ * `local.read` answers the tab and its raw cells (with the workbook's own date
+ * system); the column semantics stay here, where the header names are. A workbook
+ * with no ` - Transactions` tab is `no tab`; one whose header lost its date or price
+ * column is `unreadable` — the same two answers the API path gave.
+ */
+function readSheet(file, suffix, folderId) {
   progress.read += 1
-  const parsed = rowsOf(body.values || [], String(meta?.properties?.title || file.name))
-  if (!parsed) return { file, tab, rows: [], reason: 'unreadable' }
-  return { file, tab, rows: parsed.rows, reason: parsed.rows.length ? '' : parsed.reason }
-}
-
-/** Open `items` with at most CONCURRENCY in flight, preserving order. */
-async function pool(items, worker) {
-  const out = new Array(items.length)
-  let next = 0
-  const run = async () => {
-    while (next < items.length) {
-      const index = next
-      next += 1
-      try {
-        out[index] = await worker(items[index], index)
-      } catch (error) {
-        out[index] = { error }
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, run))
-  return out
+  const answer = local.read(file, { folderId, suffix, usable: readableHeader })
+  if (!answer.tab) return { file, tab: '', rows: [], reason: answer.reason || 'no tab' }
+  /* The label is the product, not the tab: this folder's files are named
+     `<product> - Transactions` too, and a table whose first column repeats the tab's
+     own suffix reads like a bug. The suffix is the workspace's, so it is stripped with
+     that setting rather than a typed `- Transactions`. */
+  const raw = String(file.name || file.id)
+  const ending = String(suffix || '')
+  const label = (ending && raw.endsWith(ending) ? raw.slice(0, -ending.length) : raw).trim() || raw
+  const parsed = rowsOf(answer.rows || [], label, answer.date1904)
+  if (!parsed) return { file, tab: answer.tab, rows: [], reason: 'unreadable' }
+  return { file, tab: answer.tab, rows: parsed.rows, reason: parsed.rows.length ? '' : parsed.reason }
 }
 
 /* ── the cache ────────────────────────────────────────────────────────── */
@@ -435,12 +407,21 @@ function writeCache(key, value) {
 }
 
 /** The folder (or the suffix) changed, so the stored answer belongs to nobody. */
+/**
+ * Forget the stored answer **and the copied workbooks**.
+ *
+ * This is the verb behind `Forget folder` and behind switching folders: the copies are
+ * keyed by folder id, so leaving them behind would spend disk on a folder nothing
+ * reads. `Refresh` does not come through here — it keeps the folder and asks for its
+ * bytes again (`local.ensure({ force: true })`).
+ */
 function forgetCache() {
   try {
     fs.rmSync(CACHE_FILE, { force: true })
   } catch {
     /* already gone */
   }
+  local.forget()
 }
 
 /** What a cached answer is worth, in the words the Report card prints. */
@@ -471,14 +452,22 @@ async function testFolder({ folderId, suffix } = {}) {
     progress.phase = ''
     throw refusal(error)
   }
-  progress.phase = 'reading'
+  progress.phase = 'downloading'
   progress.total = files.length
-  const opened = await pool(files, (file) => readSheet(file, suffix, token))
+  const copied = await local.ensure(files, {
+    folderId,
+    token,
+    onEach: (done) => {
+      progress.read = done
+    },
+  })
+  progress.phase = 'reading'
+  progress.read = 0
+  const opened = files.map((file) => readSheet(file, suffix, folderId))
   progress.phase = ''
   let withTab = 0
   let rows = 0
   for (const entry of opened) {
-    if (!entry || entry.error) continue
     if (entry.tab) withTab += 1
     rows += entry.rows.length
   }
@@ -487,6 +476,9 @@ async function testFolder({ folderId, suffix } = {}) {
     withTab,
     rows,
     empty: Math.max(0, files.length - withTab),
+    downloaded: copied.downloaded,
+    reused: copied.reused,
+    failed: copied.failed.length,
     ms: Date.now() - started,
     folderId,
   }
@@ -537,19 +529,29 @@ async function dashboard({ workspace = '', id = 'lynk', folderId = '', suffix = 
     progress.phase = ''
     throw refusal(error)
   }
-  progress.phase = 'reading'
+  /* One request per spreadsheet that is new or changed, then everything comes off
+     this machine's disk. `force` — the Refresh button — throws the copies away first,
+     which is the only path that spends a download per file on purpose. */
+  progress.phase = 'downloading'
   progress.total = files.length
-  const opened = await pool(files, (file) => readSheet(file, suffix, token))
+  progress.read = 0
+  const copied = await local.ensure(files, {
+    folderId,
+    token,
+    force,
+    onEach: (done) => {
+      progress.read = done
+    },
+  })
+  progress.phase = 'reading'
+  progress.read = 0
+  const opened = files.map((file) => readSheet(file, suffix, folderId))
   progress.phase = ''
 
   const rows = []
-  const sheets = { total: files.length, withTab: 0, empty: 0, unreadable: 0 }
+  const sheets = { total: files.length, withTab: 0, empty: 0, unreadable: 0, failed: copied.failed.length }
   const products = []
   for (const entry of opened) {
-    if (!entry || entry.error) {
-      if (entry?.error) throw refusal(entry.error)
-      continue
-    }
     if (!entry.tab) {
       sheets.empty += 1
       continue
@@ -559,10 +561,23 @@ async function dashboard({ workspace = '', id = 'lynk', folderId = '', suffix = 
     for (const row of entry.rows) rows.push(row)
     products.push({ name: entry.file.name, id: entry.file.id })
   }
+  /* A file that could not be copied is not a silent zero: it is named in the answer,
+     and the page says which one, exactly as an unreadable sheet did. */
+  const failed = copied.failed.map((entry) => `${entry.name}: ${String(entry.error?.message || entry.error)}`)
+  /* Every file failing is not a dashboard with no sales: it is a token, a folder or a
+     network that did not work, and the page has a sentence and a button for that. */
+  if (files.length && copied.failed.length === files.length) throw refusal(copied.failed[0].error)
 
   const value = { sheets, rows, products, ms: Date.now() - started, folderId, suffix }
   writeCache(key, value)
-  return { ...shapeOf(value, days), cached: false, reads: files.length, readAt: new Date().toISOString() }
+  return {
+    ...shapeOf(value, days),
+    cached: false,
+    reads: files.length,
+    downloads: { pulled: copied.downloaded, reused: copied.reused },
+    failed,
+    readAt: new Date().toISOString(),
+  }
 }
 
 /**

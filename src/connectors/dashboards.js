@@ -290,6 +290,12 @@ const DASHBOARDS = {
        is why it names `opens`. */
     gate(entry) {
       if (!lynkConfig.loaded) return UNREAD
+      /* **Two lists answer this gate, and both must have answered.** The folder comes
+         from `lynkConfig`; the accounts come from the connector row, and a row that has
+         not arrived yet has no accounts — which read as "needs a Google account" and
+         normalised a `?tab=dashboard` deep link to Overview before the roster landed.
+         `connectors.loaded` is the same guard Fitbit's gate already had. */
+      if (!connectors.loaded) return UNREAD
       const accounts = Array.isArray(entry?.accounts) ? entry.accounts : []
       if (!accounts.length) {
         return {

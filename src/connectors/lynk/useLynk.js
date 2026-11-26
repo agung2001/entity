@@ -44,12 +44,17 @@ export const lynk = reactive({
   cached: false,
   reads: 0,
   cacheTtlMs: 0,
+  /* `{ pulled, reused }` from the read: how many workbooks came down this time and how
+     many were already on this machine. `null` until something was read. */
+  downloads: null,
   totals: { revenue: 0, orders: 0, aov: 0, paid: 0 },
   products: [],
   months: [],
   buyers: { total: 0, twice: 0, active: 0, drifting: 0, lapsed: 0 },
   repeatPct: 0,
-  sheets: { total: 0, withTab: 0, empty: 0, unreadable: 0 },
+  /* `failed` is a copy that could not be downloaded — a different fact from a tab
+     with no readable header, and the page says which one happened. */
+  sheets: { total: 0, withTab: 0, empty: 0, unreadable: 0, failed: 0 },
   readMs: 0,
   loading: false,
   reading: false,
@@ -103,12 +108,13 @@ function adopt(answer) {
   lynk.cached = answer?.cached === true
   lynk.reads = Number(answer?.reads || 0)
   lynk.cacheTtlMs = Number(answer?.cacheTtlMs || 0)
+  lynk.downloads = answer?.downloads || null
   lynk.totals = answer?.totals || { revenue: 0, orders: 0, aov: 0, paid: 0 }
   lynk.products = Array.isArray(answer?.products) ? answer.products : []
   lynk.months = Array.isArray(answer?.months) ? answer.months : []
   lynk.buyers = answer?.buyers || { total: 0, twice: 0, active: 0, drifting: 0, lapsed: 0 }
   lynk.repeatPct = Number(answer?.repeatPct || 0)
-  lynk.sheets = answer?.sheets || { total: 0, withTab: 0, empty: 0, unreadable: 0 }
+  lynk.sheets = answer?.sheets || { total: 0, withTab: 0, empty: 0, unreadable: 0, failed: 0 }
   lynk.readMs = Number(answer?.readMs || 0)
   lynk.readFolderId = String(answer?.folderId || '')
   lynk.triedFolderId = lynk.readFolderId

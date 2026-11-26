@@ -1527,6 +1527,12 @@ kind to its body.
   could change without seeing each other. A connector's *own* rules live in a
   delimited block under its heading comment, which is the compromise the layout makes
   deliberately.
+- **A gate made of two lists waits for both.** Lynk.id's lock is the folder *and* the
+  accounts, and the accounts live on the connector row. A deep link that arrived before
+  the roster did read an empty account list as "needs a Google account" and normalised
+  `?tab=dashboard` to Overview — silently, because by the time anyone looked the gate was
+  open again. `connectors.loaded` is now part of that gate's answer, exactly as it is for
+  Fitbit's.
 - **A gate has three states, not two.** Unread answers *not locked*, so a deep link is
   never refused before the read that would allow it lands. A gate that defaults to
   locked flashes a refusal at every reload.
@@ -1586,6 +1592,45 @@ was fine.
   facts). Under 900 px the rail is two up, and its **last card spans both columns**,
   because the last rail card is the footnote and a footnote paired with a two-line
   card leaves a hole as tall as the footnote — 594 px on that tab.
+
+### A folder of spreadsheets is copied, not queried
+
+The Lynk.id dashboard reads a Drive folder of **seventy** spreadsheets. It used to read
+them through the Sheets API — two requests each, one for the tabs and one for the values
+— against a quota of **60 reads a minute for one person**. 140 reads for one dashboard
+means the tab either crawled under a self-imposed pace or answered `429
+RESOURCE_EXHAUSTED`, and `Refresh` asked for all of them again. The numbers below are
+measured on the real folder, not estimated.
+
+- **One request per file, against a quota that does not run out.** Drive's export
+  endpoint hands over the whole workbook (`…/files/<id>/export?mimeType=…sheet`), and
+  `electron/connectors/lynk/xlsx.cjs` reads it here. No dependency: an `.xlsx` is a ZIP
+  of XML, so `node:zlib` inflates it and three parts are parsed — the workbook, its
+  relationships, and one worksheet with the shared-string table.
+- **The copy is a file, and it is the cache.** `<ENTITY_HOME>/lynk-sheets/<folder>/<file>.xlsx`
+  plus `index.json` of the `modifiedTime` each copy was taken at. A second visit reads
+  the folder listing (one request), sees nothing changed and opens the local files:
+  measured **485 ms and zero per-file requests**, against 18 s and 140 reads before.
+  A file that changed in Drive is the only one downloaded again.
+- **`Refresh` is the only path that empties the copies.** `dashboard({ force })` throws
+  the folder's copies away and takes them all again (measured: 11 s, 70 exports) — a
+  person pressing it is saying "I do not believe what is on disk". `Forget folder` is
+  the other question: it deletes the whole tree, because the folder id is the key.
+  They are not the same button and must not become one.
+- **The export renames tabs.** Excel's rules are applied to sheet names: 31 characters,
+  and `:` becomes a space. So `Viral Hook Architect - Transactions` arrives as
+  `Viral Hook Architect - Transact`, and `ClipMotive: AI-Powered …` loses the colon *and*
+  the suffix. A tab is therefore matched by name **and**, when the name was cut, by its
+  header — a date column beside a price column. Name-only matching read 11 of the 18
+  tabs; name-then-header read all 18.
+- **A serial's integer part is the day.** A `Tanggal` cell holds 46286.95 — the 21st at
+  22:53 — so the day is `floor`, never `round`: rounding files the sale on the 22nd and
+  the report disagrees with the sheet it came from. With that, the local path produced
+  the API path's numbers exactly: 73 orders, Rp 3.038.000, 17 products, 12 months.
+- **A file that cannot be copied is a sentence, not a zero.** It is counted apart from
+  an unreadable header (`sheets.failed`), named in the payload, and the page says
+  "Refresh takes them again". If *every* file fails, the read throws — an empty folder
+  and a dead token are not the same answer.
 
 ### A connector is one row in one registry, not a name in seven maps
 

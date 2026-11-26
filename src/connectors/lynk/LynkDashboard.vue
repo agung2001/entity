@@ -137,7 +137,10 @@ const skel = computed(() => lynk.loading || (!lynk.readAt && lynk.reading))
 
 /* A sheet the read could not use is neither revenue nor a zero: it is named. */
 const missing = computed(() => lynk.sheets.unreadable || 0)
-const partial = computed(() => lynk.sheets.empty > 0 || missing.value > 0)
+/* A spreadsheet that could not be downloaded is counted apart from one whose header
+   is unreadable: the same table is short either way, and the fix is not the same. */
+const uncopied = computed(() => lynk.sheets.failed || 0)
+const partial = computed(() => lynk.sheets.empty > 0 || missing.value > 0 || uncopied.value > 0)
 const partialLine = computed(() => {
   const total = lynk.sheets.total
   if (!total) return ''
@@ -145,6 +148,11 @@ const partialLine = computed(() => {
   if (lynk.sheets.empty) {
     parts.push(
       `${num(lynk.sheets.empty)} of ${num(total)} spreadsheets ${lynk.sheets.empty === 1 ? 'is' : 'are'} empty.`,
+    )
+  }
+  if (uncopied.value) {
+    parts.push(
+      `${num(uncopied.value)} of ${num(total)} could not be downloaded, so ${uncopied.value === 1 ? 'it is' : 'they are'} missing from this read. Refresh takes them again.`,
     )
   }
   if (missing.value) {
@@ -510,9 +518,27 @@ function reauthorize() {
             <dt>read</dt>
             <dd>{{ lynk.readAt ? ago(lynk.readAt) : '—' }}</dd>
           </dl>
+          <!-- What the read actually did. It used to say "0 spreadsheets touched" on a
+               cached answer, which is true of the network and a lie about the folder:
+               the copies are on this machine and the numbers come from them. -->
           <p class="dsh-foot">
-            {{ lynk.cached ? 'A stored answer, six hours old at most.' : 'Read from Drive just now.' }}
-            <b>{{ lynk.reads || 0 }}</b> {{ lynk.reads === 1 ? 'spreadsheet' : 'spreadsheets' }} touched.
+            <template v-if="lynk.cached">
+              A stored answer, six hours old at most, from
+              <b>{{ num(lynk.sheets.total) }}</b> {{ lynk.sheets.total === 1 ? 'spreadsheet' : 'spreadsheets' }} on this machine.
+            </template>
+            <template v-else-if="lynk.downloads?.pulled && lynk.downloads.pulled >= lynk.sheets.total">
+              Downloaded all <b>{{ num(lynk.sheets.total) }}</b>
+              {{ lynk.sheets.total === 1 ? 'spreadsheet' : 'spreadsheets' }} from Drive.
+            </template>
+            <template v-else-if="lynk.downloads?.pulled">
+              Downloaded <b>{{ num(lynk.downloads.pulled) }}</b> of
+              <b>{{ num(lynk.sheets.total) }}</b> {{ lynk.sheets.total === 1 ? 'spreadsheet' : 'spreadsheets' }} from Drive;
+              the rest were already here.
+            </template>
+            <template v-else>
+              Read from <b>{{ num(lynk.sheets.total) }}</b>
+              {{ lynk.sheets.total === 1 ? 'spreadsheet' : 'spreadsheets' }} already on this machine.
+            </template>
           </p>
         </section>
 
