@@ -211,6 +211,15 @@
 .cxn-work-wrap {
   white-space: normal;
 }
+/* The stored-key sentence is prose, and `.cxn-facts dd` clips one line: a fact you
+   have to hover to read is not a fact. The card's own gap does not apply here, so
+   the line keeps its own before the fields. */
+.cxn-key-state {
+  margin: 0 0 12px;
+}
+.cxn-key-state dd {
+  white-space: normal;
+}
 .cxn-work-eg {
   display: flex;
   flex-wrap: wrap;
@@ -1607,6 +1616,673 @@ table.dsh-tbl {
   .dsh-chip,
   .dsh-kpi,
   .dsh-meter i {
+    transition: none;
+  }
+}
+
+/* ── the Clockify dashboard: the `.dsh-*` band, plus what only this week
+      needs ─────────────────────────────────────────────────────────────────
+   The band, the tiles and the two tables are the GitHub dashboard's primitives,
+   untouched: `.dsh-bar` already stacks, `.dsh-when` already pushes itself right,
+   and `.dsh-tbl` is the 58 px roster. Below are only the boxes the Clockify frame
+   draws that the GitHub one does not — a leading label, a provenance tag, the
+   workspace segment, the week stepper, the share bar, the signed delta, the
+   individual card and the call ledger.
+
+   Every one of them is scoped to `.ck-` so a change here cannot move the GitHub
+   tab, and every breakpoint is a query on `cxn` (the page column) rather than on
+   the window, because the same window shows a full dashboard in a wide workspace
+   and this folded one in a narrow sheet. */
+
+/* `.dsh-bar` is a row: the GitHub band fits on one line. This band has two — a
+   choice then a provenance — so it states the column rather than inheriting the
+   row and wrapping the second line beside the first. */
+.ck-lines {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+}
+/* Each line is one row: the workspace is a choice and the read is an instrument, so
+   a line that wraps puts the stepper under the segment and reads as a second,
+   unrelated control. `min-width:0` lets the segment shrink rather than the line. */
+.ck-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ck-lead {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ck-src {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ck-src code {
+  color: var(--ink-2);
+}
+.ck-src[data-tone='bad'] {
+  color: var(--danger);
+  white-space: normal;
+}
+/* `new` marks the one call this tab adds. It is a claim about what existed before,
+   so it is a label and never a colour: the accent tint is the frame's, nothing more. */
+.ck-new {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: var(--r-2xs);
+  padding: 1px 4px;
+  margin-left: 4px;
+}
+
+/* A workspace name is long and the segment holds two or three of them: the track
+   may shrink, the name ends in an ellipsis, and the row's height never moves. */
+.ck-seg {
+  max-width: 100%;
+  overflow: hidden;
+}
+.ck-seg button {
+  min-width: 0;
+}
+.ck-seg button .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 132px;
+}
+/* The member count is the map's coverage, not a badge: mono so it lines up with
+   the `mapped / total` in the tiles. */
+.ck-seg button .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  padding-left: 4px;
+}
+
+/* ── the week stepper ────────────────────────────────────────────────────
+   Two quiet buttons around a printed range. The range is the label and the buttons
+   are the instrument, so 26 px holds it; next week is disabled because a week with
+   no end yet reads as a bug. */
+.ck-wk {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ck-wkbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  /* `background` and `color` only: a width or height transition would relayout the
+     band on every press. */
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.ck-wkbtn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.ck-wkbtn:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 1px;
+}
+.ck-wkbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ck-wktext {
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+/* ── the share bar ───────────────────────────────────────────────────────
+   7 px, one fill, no animation on the width: the numbers land with the row. */
+.ck-bar {
+  position: relative;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.ck-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  /* The inset ring is what keeps an accent fill from bleeding into the track's
+     own edge on a light surface. */
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-ink) 38%, transparent);
+}
+/* A person with no entries gets the empty track and no fill: a 2 % stub reads as
+   "a little", which is the one thing it is not. */
+.ck-bar.mut > i,
+.ck-bar.mut {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.ck-none {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+
+/* A signed change: `up` and `dn` are the two directions, and `flat` is a week that
+   did not move — printed as an em dash rather than `+0h 00m`. `--ok-ink`/`--danger`
+   are the ink half of the pair: raw `--ok` is 3.78:1 as text on a light surface. */
+.ck-delta {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.ck-delta.up {
+  color: var(--ok-ink);
+}
+.ck-delta.dn {
+  color: var(--danger);
+}
+.dsh-kpi .q .ck-delta {
+  margin-right: 4px;
+}
+/* The denominator in `5 / 6` and `4 / 7`: the same figure, one step quieter, so the
+  eye reads the numerator first. */
+.ck-sub {
+  font-size: 0.62em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+/* ── the names ───────────────────────────────────────────────────────────
+   The pick is text, not a button: six visible buttons in a column of names turns a
+   roster into a toolbar. Padding plus a negative margin grows a 27 px target into
+   the 34 px row without opening it. */
+.ck-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ck-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-login {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-pick {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 0;
+  margin: -4px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.14s ease;
+}
+.ck-pick:hover {
+  border-bottom-color: var(--border-strong);
+}
+.ck-pick[aria-pressed='true'] {
+  color: var(--ink);
+  font-weight: 500;
+  border-bottom-color: var(--ink);
+}
+.ck-pick:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-2xs);
+}
+.ck-tbl tfoot td {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ck-tbl tfoot td b {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the individual card ─────────────────────────────────────────────────
+   One subject, three facts: who, how much, and what changed. `.plist` is already
+   the command palette's own scroll list in `surfaces.css`, so this list is named
+   for itself rather than borrowing a dialog's class. */
+.ck-me .hd {
+  padding: 12px 14px 9px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+.ck-me-head {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 14px;
+}
+.ck-av {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-ink) 26%, transparent);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.ck-me-who {
+  min-width: 0;
+}
+.ck-me-who b {
+  display: block;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-me-who span {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.ck-me-tot {
+  text-align: right;
+}
+.ck-me-tot b {
+  display: block;
+  font-family: var(--font);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.ck-me-tot span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.ck-me-cols {
+  border-top: 1px solid var(--border);
+}
+.ck-me-cols > div {
+  padding: 12px 14px 14px;
+  min-width: 0;
+}
+.ck-me-cols h4 {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ck-me-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* Name and hours on one line, the bar on the next: the bar is the proportion of a
+   person's week, so it needs the full measure rather than the 54 px a third column
+   would leave it. */
+.ck-me-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 3px 0;
+}
+.ck-me-list .nm {
+  font-size: var(--fs-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ck-me-list .hr {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.ck-me-list .ck-bar {
+  grid-column: 1 / -1;
+  height: 5px;
+}
+.ck-me-empty {
+  padding: 0 14px 14px;
+}
+
+/* ── the week chart ──────────────────────────────────────────────────────
+   Seven columns on an ended baseline. A zero day keeps a 3 % floor: a bar of no
+   height reads as a day the payload did not answer for. */
+.ck-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+  padding: 14px 14px 10px;
+  align-items: end;
+}
+.ck-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.ck-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  height: 74px;
+}
+.ck-fill {
+  display: block;
+  min-height: 2px;
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-ink) 38%, transparent);
+  transition: height 0.16s ease;
+}
+.ck-fill.zero {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.ck-hr {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.ck-dl {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── the call ledger ─────────────────────────────────────────────────────
+   The four requests, with the filter that makes them different from each other:
+   without `groups:` four identical rows would read as one row printed four times. */
+.ck-io-rows {
+  display: grid;
+  gap: 1px;
+}
+.ck-io .r {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 14px;
+  font-size: var(--fs-secondary);
+}
+.ck-io .r .k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 2px;
+}
+.ck-io .r .v {
+  min-width: 0;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ck-io .r .v code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink);
+}
+.ck-io .r .v .g {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ck-io .dsh-foot {
+  padding: 10px 14px 12px;
+  margin: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ── the breakpoints ────────────────────────────────────────────────────
+   Same ladder as the GitHub tab, plus the three boxes only this frame has. The
+   tile grid, the rail and the `.dsh` column are already handled above by rules
+   the two tabs share, so only the additions are repeated here. */
+
+@container cxn (max-width: 899.99px) {
+  /* The rail goes 2-up under the cards, so the ledger's 58 px key column has half
+     the measure it had: it folds above its value instead of shrinking. */
+  .ck-io .r {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    padding: 7px 12px;
+  }
+  .ck-io .r .k {
+    padding-top: 0;
+  }
+}
+
+@container cxn (max-width: 659.99px) {
+  /* The two tables have stacked here; the individual card follows, and its total
+     moves under the name rather than squeezing the name to an ellipsis. */
+  .ck-me-head {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+  .ck-av {
+    width: 34px;
+    height: 34px;
+    font-size: var(--fs-meta);
+  }
+  .ck-me-tot {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    text-align: left;
+  }
+  .ck-me-tot b {
+    font-size: var(--fs-h5);
+  }
+  .ck-me-tot span {
+    margin-top: 0;
+  }
+  .ck-week {
+    gap: 3px;
+    padding: 12px 10px 8px;
+  }
+  .ck-col {
+    height: 56px;
+  }
+}
+
+@container cxn (max-width: 559.99px) {
+  /* At a finger width the name is the only way to change the card below, so it
+     pays for a 44 px box; the negative margin grows the target into the row's own
+     padding instead of opening it. */
+  .ck-pick {
+    min-height: 44px;
+    padding: 12px 0;
+    margin: -12px 0;
+  }
+  /* A 44 px inline-block inside an 18 px line box left one row taller than the
+     next; a fixed-height flex row holds every name on the same box. */
+  .ck-name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    line-height: 20px;
+  }
+  /* The table stops being a table here: with `table-layout: fixed` a block `tbody`
+     is still forced into the declared columns, which clips every name. Name and
+     hours on one row, the bar under both — nothing dropped, nothing clipped. */
+  .ck-tbl colgroup,
+  .ck-tbl thead {
+    display: none;
+  }
+  .ck-tbl,
+  .ck-tbl tbody,
+  .ck-tbl tfoot,
+  .ck-tbl tr,
+  .ck-tbl td {
+    display: block;
+  }
+  .ck-tbl tr.skrow td {
+    height: auto;
+  }
+  .ck-tbl tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'nm hr'
+      'bar bar';
+    gap: 6px 10px;
+    height: auto;
+    padding: 9px 12px;
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  }
+  .ck-tbl tbody td {
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  .ck-tbl td.c-nm {
+    grid-area: nm;
+  }
+  .ck-tbl td.c-bar {
+    grid-area: bar;
+  }
+  .ck-tbl td.c-hr {
+    grid-area: hr;
+    text-align: right;
+  }
+  /* `-2h 30m` beside `32h 10m` reads as one figure split in two, and a third row
+     per member doubles the roster for a column the frame drops at this width too
+     (`hide-sm` on the same cell). The week's own change is still printed in the
+     first tile and in the footer, so nothing is lost — only repeated closer. */
+  .ck-tbl td.c-dv {
+    display: none;
+  }
+  /* The footer is one sentence: the numbers it totals are already printed above
+     every row, so only the sentence stays and the per-column totals fold away. */
+  .ck-tbl tfoot tr {
+    display: block;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .ck-tbl tfoot td {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    white-space: normal;
+  }
+  .ck-tbl tfoot td.c-bar,
+  .ck-tbl tfoot td.c-hr,
+  .ck-tbl tfoot td.c-dv {
+    display: none;
+  }
+  .ck-tbl .emptyrow td {
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+  }
+  /* 44 px of target: 36 px button inside a 4 px tray. Only the narrow view pays. */
+  .ck-seg {
+    width: 100%;
+  }
+  .ck-seg button {
+    flex: 1 1 auto;
+    justify-content: center;
+    height: 36px;
+  }
+  .ck-lead,
+  .ck-src {
+    display: none;
+  }
+  /* The stepper is the only way to change the read, so it pays for a 44 px box
+     like every other control at this width; the printed range stays put so the
+     row grows once, not twice. */
+  .ck-wkbtn {
+    width: 44px;
+    height: 44px;
+  }
+  .ck-wk {
+    gap: 4px;
+  }
+  .ck-day .ck-hr {
+    font-size: var(--fs-micro);
+    letter-spacing: -0.02em;
+  }
+}
+
+/* The shimmer is already gone (`dsh-skel`, above, is shared). What is left is this
+   tab's own two: the stepper's hover and the week's bars growing to their value.
+   Both are decoration; the printed figure beside each bar is the answer. */
+@media (prefers-reduced-motion: reduce) {
+  .ck-wkbtn,
+  .ck-pick,
+  .ck-fill {
     transition: none;
   }
 }

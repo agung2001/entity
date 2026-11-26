@@ -366,6 +366,14 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* Clockify's dashboard reads, lazy like the token verbs: the connector module
+       is only parsed on the page that needs it. `workspaces` answers the Overview
+       selector, `dashboard` the tab — both read-only, both keep the key in this
+       process, and neither takes one as an argument. */
+    'connector.workspaces': ({ workspace } = {}) =>
+      require('./connectors/clockify.cjs').workspaces(workspaces.open(workspace)),
+    'connector.dashboard': ({ workspace, ...rest } = {}) =>
+      require('./connectors/clockify.cjs').dashboard(workspaces.open(workspace), rest),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above
