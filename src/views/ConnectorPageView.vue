@@ -12,6 +12,7 @@ import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
 import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
+import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
 import {
   adoptLynkConfig,
@@ -23,6 +24,12 @@ import {
   saveFolder as saveLynkFolder,
   testFolder as testLynkFolder,
 } from '@/composables/lynkDashboard'
+import {
+  readDashboard as readStudioDashboard,
+  readRoster,
+  studio,
+  studioUsable,
+} from '@/composables/youtubeStudioDashboard'
 import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
@@ -262,10 +269,11 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the GitHub connector this app ships (`builtIn ===
-   'github'`): a tab that led to another connector's half-built dashboard would be
-   a promise nobody kept, so every other row — including a custom `cli` row — gets
-   no tab at all rather than a disabled one.
+   The strip exists only for the two connectors this app ships a dashboard for:
+   GitHub (`builtIn === 'github'`) and YouTube Studio (`builtIn ===
+   'youtube-studio'`). A tab that led to another connector's half-built dashboard
+   would be a promise nobody kept, so every other row — including a custom `cli`
+   row — gets no tab at all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -274,113 +282,150 @@ const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Which shipped rows have a second tab. One list, because the strip, the gate and
-   the body must agree about it — a row that shipped a report but is not named here
-   would draw a Dashboard it cannot fill. */
-const DASHBOARD_ROWS = new Set(['github', 'lynk'])
-const dashboardTab = computed(
-  () => Boolean(installedRow.value) && DASHBOARD_ROWS.has(String(installedRow.value?.builtIn || '')),
+/* Only a row the catalog shipped has a `work` block to gate on. A custom `cli`
+   row that happens to be called github — or youtube-studio — is not one of them. */
+const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
+const studioRow = computed(
+  () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
 )
+/* Which dashboard this page is, if any. Named rather than boolean because the three
+   have different locks, different reads and different pane bodies. Lynk.id ships no
+   `work.samples`, so the row itself is the test that it has a report to draw. */
+const dashKind = computed(() => {
+  const builtIn = String(installedRow.value?.builtIn || '')
+  if (builtIn === 'github' && githubRow.value?.work) return 'github'
+  if (builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
+  if (builtIn === 'lynk') return 'lynk'
+  return ''
+})
+/* Which shipped rows have a second tab. One list — `dashKind` — because the strip,
+   the gate and the body must agree about it: a row that shipped a report but is not
+   named there would draw a Dashboard it cannot fill. */
+const dashboardTab = computed(() => Boolean(dashKind.value))
+/* What the tab offers, in the connector's own words: GitHub's board is 90 days,
+   the channel board is the 28 the window chips start on, and the Lynk.id report is
+   whatever the store sold in the folder it reads. */
+const dashboardHint = computed(() => {
+  if (dashKind.value === 'studio') return 'What moved in the last 28 days'
+  if (dashKind.value === 'lynk') return 'What the store sold, read from a Drive folder'
+  return 'What moved in the last 90 days'
+})
 
-/*
- * The gate, in one place, for every row that has a second tab.
- *
- * It answers two things and nothing else: **is the tab locked**, and **what is it
- * waiting for**. `opens` is the difference a person feels — a missing grant is
- * fixed on Overview, where the accounts card is, and a missing folder opens the
- * picker right here, because that is the one thing the lock is asking for.
- *
- * The sentences are fixed copy, not composed from state: the words under a lock
- * are the only thing a person reads before deciding what to do about it, and a
- * sentence assembled from a status word drifts the moment the status changes.
- * `code`/`after` are split only so a mono token stays mono.
- */
-function dashboardGate(entry) {
-  const builtIn = String(entry?.builtIn || '')
-
-  if (builtIn === 'github') {
-    /* Nothing is known until `gh` has answered, and a lock invented before then
-       would flash over a tab that is fine. */
-    if (!github.loaded) return { locked: false, why: null, opens: 'overview' }
-    if (!github.binary?.found) {
-      return {
-        locked: true,
-        opens: 'overview',
-        why: {
-          before: 'Dashboard needs the ',
-          code: 'gh',
-          after: " binary. It is not on this machine's PATH.",
-          title: 'Needs the gh binary on this machine',
-        },
-      }
+/* The GitHub locks, in the order a person meets them: no binary, then no login.
+   Both sentences are fixed copy — a computed reason would drift from the state it
+   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
+const githubLock = computed(() => {
+  if (!github.loaded) return null
+  if (!github.binary?.found) {
+    return {
+      before: 'Dashboard needs the ',
+      code: 'gh',
+      after: " binary. It is not on this machine's PATH.",
+      title: 'Needs the gh binary on this machine',
     }
-    if (!github.logins.length) {
-      return {
-        locked: true,
-        opens: 'overview',
-        why: {
-          before: 'Dashboard needs a signed-in ',
-          code: 'gh',
-          after: ' account. ',
-          code2: 'gh auth status',
-          after2: ' found none on this machine.',
-          title: 'Needs a signed-in gh account on this machine',
-        },
-      }
-    }
-    return { locked: false, why: null, opens: 'overview' }
   }
-
-  if (builtIn === 'lynk') {
-    if (!lynkConfig.loaded) return { locked: false, why: null, opens: 'overview' }
-    const accounts = Array.isArray(entry.accounts) ? entry.accounts : []
-    /* Three locks, in the order Lynk.id meets them: a grant, a grant that was
-       revoked, then a folder to read. An account that exists but is not
-       `connected` is not "no account" — it is the refusal, and the fix is a
-       reauthorize rather than a fresh consent. */
-    if (!accounts.length) {
-      return {
-        locked: true,
-        opens: 'overview',
-        why: {
-          before: 'Dashboard needs a Google account — ',
-          code: 'drive.readonly',
-          after: '',
-          title: 'Needs a Google account on this machine',
-        },
-      }
+  if (!github.logins.length) {
+    return {
+      before: 'Dashboard needs a signed-in ',
+      code: 'gh',
+      after: ' account. ',
+      code2: 'gh auth status',
+      after2: ' found none on this machine.',
+      title: 'Needs a signed-in gh account on this machine',
     }
-    if (!accounts.some((account) => account.status === 'connected')) {
-      return {
-        locked: true,
-        opens: 'overview',
-        why: {
-          before: 'Google refused the grant — reauthorize on Overview',
-          code: '',
-          after: '',
-          title: 'The Google grant was refused',
-        },
-      }
-    }
-    if (!lynkConfig.folderId) {
-      return {
-        locked: true,
-        opens: 'picker',
-        why: {
-          before: 'Dashboard needs a Drive folder — pick one on Overview',
-          code: '',
-          after: '',
-          title: 'Needs a Drive folder',
-        },
-      }
-    }
-    return { locked: false, why: null, opens: 'overview' }
   }
+  return null
+})
 
+/* The channel locks, in the same order: nothing signed in, then a row that signed
+   in and got no channel back. **A grant without analytics is not a lock** — the
+   Data API still lists the videos, so that tab opens and prints dashes; locking it
+   would hide the half a person came for. */
+const studioLock = computed(() => {
+  if (!studio.loaded) return null
+  if (!studio.accounts.length) {
+    return {
+      before: 'Dashboard needs a signed-in channel owner. No YouTube Studio account on this machine is answering — ',
+      code: 'youtube.readonly',
+      after: ' is what separates an account that can list videos from one that can measure them.',
+      title: 'Needs a signed-in channel owner',
+    }
+  }
+  if (!studioUsable()) {
+    /* The account that answered and had nothing to show, named: `studio.accounts`
+       is the roster Google answered for, not an id this page invented. */
+    const who = studio.accounts.find((entry) => !entry.error) || studio.accounts[0]
+    return {
+      before: 'Dashboard needs a channel this account manages. ',
+      code: String(who.email || who.localpart),
+      after: ' signed in, but Google returned no channel for it — a personal account that owns none is refused, not saved.',
+      title: 'Needs a channel this account manages',
+    }
+  }
+  return null
+})
+
+/* The Lynk.id locks, in the order Lynk.id meets them: a grant, a grant that was
+   revoked, then a folder to read. An account that exists but is not `connected` is
+   not "no account" — it is the refusal, and the fix is a reauthorize rather than a
+   fresh consent. The third lock is the only one on this page that opens a control
+   instead of pointing at Overview, which is why `opens` is part of the answer. */
+function lynkGate(entry) {
+  if (!lynkConfig.loaded) return { locked: false, why: null, opens: 'overview' }
+  const accounts = Array.isArray(entry?.accounts) ? entry.accounts : []
+  if (!accounts.length) {
+    return {
+      locked: true,
+      opens: 'overview',
+      why: {
+        before: 'Dashboard needs a Google account — ',
+        code: 'drive.readonly',
+        after: '',
+        title: 'Needs a Google account on this machine',
+      },
+    }
+  }
+  if (!accounts.some((account) => account.status === 'connected')) {
+    return {
+      locked: true,
+      opens: 'overview',
+      why: {
+        before: 'Google refused the grant — reauthorize on Overview',
+        code: '',
+        after: '',
+        title: 'The Google grant was refused',
+      },
+    }
+  }
+  if (!lynkConfig.folderId) {
+    return {
+      locked: true,
+      opens: 'picker',
+      why: {
+        before: 'Dashboard needs a Drive folder — pick one on Overview',
+        code: '',
+        after: '',
+        title: 'Needs a Drive folder',
+      },
+    }
+  }
   return { locked: false, why: null, opens: 'overview' }
 }
 
-const gate = computed(() => dashboardGate(installedRow.value))
+/* One shape for every lock, whichever way it was written: `locked` decides whether
+   the tab is a place, `why` is the sentence under the strip, and `opens` says which
+   control answers it. */
+function gated(why) {
+  return why
+    ? { locked: true, why, opens: 'overview' }
+    : { locked: false, why: null, opens: 'overview' }
+}
+const gate = computed(() => {
+  if (dashKind.value === 'github') return gated(githubLock.value)
+  if (dashKind.value === 'studio') return gated(studioLock.value)
+  if (dashKind.value === 'lynk') return lynkGate(installedRow.value)
+  return { locked: false, why: null, opens: 'overview' }
+})
 const lock = computed(() => (gate.value.locked ? gate.value.why : null))
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
    focus, because the reason under the strip is the thing to read and a
@@ -431,10 +476,22 @@ function onTabKey(event) {
 }
 
 async function openDashboard() {
-  if (installedRow.value?.builtIn === 'lynk') {
+  /* The gate for each dashboard is answered by its own read, so only the one this
+     page's connector needs is run. */
+  if (dashKind.value === 'lynk') {
     await loadLynkConfig({ id: id.value })
     adoptLynkConfig(lynkConfig)
-    if (tab.value === 'dashboard' && !gate.value.locked) await readIfNeeded()
+    /* A locked tab is not a place, and `select()` already refuses one — a deep
+       link has to reach the same conclusion, or `?tab=dashboard` would land on a
+       pane that has nothing it may read. */
+    if (tab.value === 'dashboard' && gate.value.locked) select('overview')
+    else if (tab.value === 'dashboard') await readIfNeeded()
+    return
+  }
+  if (dashKind.value === 'studio') {
+    if (!studio.loaded) await readRoster()
+    if (tab.value === 'dashboard' && lock.value) select('overview')
+    else if (tab.value === 'dashboard' && !studio.readAt) await readStudioDashboard()
     return
   }
   await readLogins()
@@ -482,6 +539,14 @@ watch(
         adoptLynkConfig(lynkConfig)
       }
       if (name === 'dashboard' && !locked) await readIfNeeded()
+      return
+    }
+    if (builtIn === 'youtube-studio') {
+      if (!studio.loaded) await readRoster()
+      /* Re-read the gate: the roster answered inside this run, so the value the
+         watcher was handed is the one from before the read. */
+      if (name === 'dashboard' && lock.value) select('overview')
+      else if (name === 'dashboard' && !studio.readAt) await readStudioDashboard()
       return
     }
     if (!github.loaded) await readLogins()
@@ -532,6 +597,15 @@ watch(
     if (installedRow.value?.builtIn !== 'lynk') return
     dropLynkAnswer()
     if (tab.value === 'dashboard' && !gate.value.locked) readIfNeeded()
+  },
+)
+/* The same for a consent granted or revoked on the accounts card: a channel that
+   arrived unlocks the tab, and one that went away must not leave the pane open. */
+watch(
+  () => [studio.accounts.length, studioUsable()],
+  () => {
+    if (dashKind.value !== 'studio') return
+    if (tab.value === 'dashboard' && lock.value) select('overview')
   },
 )
 
@@ -890,7 +964,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
-            :title="lock ? lock.title : installedRow?.builtIn === 'lynk' ? 'What the store sold, read from a Drive folder' : 'What moved in the last 90 days'"
+            :title="lock ? lock.title : dashboardHint"
             @click="select('dashboard')"
           >
             <svg
@@ -922,11 +996,18 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
              strip is the whole answer, and a body that could not fill itself would
              draw six zeroes nobody earned. -->
         <ConnectorDashboard
-          v-if="dashboardTab && tab === 'dashboard' && !gate.locked"
+          v-if="dashboardTab && tab === 'dashboard' && !gate.locked && dashKind !== 'studio'"
           :row="installedRow"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
+        />
+        <ConnectorStudioDashboard
+          v-else-if="dashKind === 'studio' && tab === 'dashboard'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          @overview="select('overview')"
         />
 
         <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
