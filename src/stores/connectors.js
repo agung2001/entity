@@ -314,6 +314,10 @@ export const lynkConfig = reactive({
   folderId: '',
   folderName: '',
   sheetSuffix: ' - Transactions',
+  /* Where this workspace's marketplace document lives. Empty is the default and a
+     real answer: the report then carries no landing links, and nothing in this
+     repository names a domain that belongs to one store. */
+  marketplaceUrl: '',
   currency: 'IDR',
   timezone: 'Asia/Jakarta',
   loaded: false,
@@ -325,6 +329,7 @@ function adoptLynk(fields) {
   lynkConfig.folderId = String(fields?.folderId || '')
   lynkConfig.folderName = String(fields?.folderName || '')
   lynkConfig.sheetSuffix = String(fields?.sheetSuffix || ' - Transactions')
+  lynkConfig.marketplaceUrl = String(fields?.marketplaceUrl || '')
   lynkConfig.currency = String(fields?.currency || 'IDR')
   lynkConfig.timezone = String(fields?.timezone || 'Asia/Jakarta')
   return lynkConfig
