@@ -1327,6 +1327,271 @@ table.dsh-tbl {
   height: 58px;
 }
 
+/* ── the YouTube Studio dashboard: one channel, one window, one line ──────
+   Same band, same tiles, same table as the GitHub tab — the shape is the app's,
+   not a connector's. What is named here is only what a channel needs and a
+   repository does not: a daily chart, a share with a denominator, and a window
+   that ends two days before today. */
+
+/* The band's own sentence, printed once under the tiles. It is the page's most
+   load-bearing line of prose, so it is body text with the two dates in ink, not
+   a footnote in a smaller size. */
+.dsh-note {
+  margin: 0 0 16px;
+  max-width: 74ch;
+  font-size: var(--fs-secondary);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dsh-note b {
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* Inside a card the note is the card's caption and pays the card's padding, not
+   the page's margin. */
+.dsh-note-in {
+  margin: -1px 0 10px;
+}
+
+/* One pixel of air between the channel chips and the window chips: two groups on
+   one line need a divider, or `main` reads as a window size. */
+.dsh-sep {
+  width: 1px;
+  height: 16px;
+  align-self: center;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* The second line of a tile: the delta in ink and what it is measured against in
+   muted. One line, ellipsis, because six tiles across cannot all wrap. */
+.dsh-kpi .d {
+  display: block;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsh-kpi .d b {
+  font-weight: 500;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.dsh-kpi .d em {
+  font-style: normal;
+}
+/* A dash is not a number. Dropping the whole tile to muted splits the band into
+   what the grant answered and what it did not, which is the only reading that
+   stays honest when three of six tiles are `—`. */
+.dsh-kpi[data-unread='1'] .v,
+.dsh-kpi[data-unread='1'] .d b {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Two moving parts in the main column — three cards and the note above them — so
+   the gap is stated once instead of on each card. */
+.dsh-main > * + * {
+  margin-top: 14px;
+}
+
+/* ── the chart ──────────────────────────────────────────────────────────
+   Four elements on a 640×120 grid: the baseline, the filled band, the line, the
+   peak. No canvas and no library, because the series is one polyline and the axis
+   is three labels — both of which already scale with `viewBox`. */
+.yt-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.yt-chart .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.yt-chart .area {
+  fill: color-mix(in oklab, var(--hero) 26%, transparent);
+}
+.yt-chart .line {
+  fill: none;
+  stroke: color-mix(in oklab, var(--hero) 45%, var(--ink-2));
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* A hole, not a highlight: the band under the peak is already the hero colour, so
+   a solid dot would disappear into the thing it is marking. */
+.yt-chart .dot {
+  fill: var(--bg);
+  stroke: color-mix(in oklab, var(--hero) 45%, var(--ink-2));
+  stroke-width: 1.5;
+}
+
+/* Three labels for three facts: where the window starts, the highest day, where
+   it ends. The peak is the only one that is decoration, so it is the one the
+   narrow window drops. */
+.yt-axis {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.yt-axis .pk {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-2);
+}
+
+/* ── the traffic rail ───────────────────────────────────────────────────
+   A share needs a denominator, so the number beside the bar and the width of the
+   bar are the same number: `38.4%` over a 38.4%-wide fill. */
+.yt-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yt-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 0 8px;
+  padding: 4px 0;
+  font-size: var(--fs-secondary);
+}
+.yt-bars .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.yt-bars .pc {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The track spans both columns under its own label, so a 306px rail does not
+   spend half its measure on a label and a bar sitting side by side. */
+.yt-bars .bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.yt-bars .bar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--hero) 55%, var(--ink-2));
+  transition: width 0.16s ease;
+}
+/* The tail of a breakdown (`Other`, `Direct or unknown`) is the residual no named
+   source claimed. Dimmed rather than coloured like a source that was measured. */
+.yt-bars .bar i[data-dim='1'] {
+  background: var(--border-strong);
+}
+
+/* A number column is right-aligned and tabular, and so is its head — six rows of
+   digits under one left-aligned word do not line up. */
+.dsh-tbl thead th.num,
+.dsh-tbl td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.dsh-tbl td.num {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+/* The comments table names its video in a cell rather than a lead column, so it
+   clamps to two lines the way `.dsh-pr a` does and keeps the full title in its
+   `title`. */
+.dsh-tbl td.vd a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-tbl td.vd a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A comment names its author in mono micro caps above the text, the way a table
+   row names its id above its title. */
+.dsh-cmt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dsh-cmt .who {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.15;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsh-cmt a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-secondary);
+  line-height: 1.28;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dsh-cmt a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* An act that moves the page rather than leaving it: the affordance of a link,
+   the reach of a button. Used inside a cell and inside a foot, which is why it is
+   not a `.btn`. */
+.dsh-linkbtn {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.dsh-linkbtn:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+.dsh-foot .dsh-linkbtn {
+  margin-top: 0;
+  font-size: inherit;
+}
+
 /* ── the accounts card, the `cli` variant ─────────────────────────────────
    The OAuth card above (`acct-*`) is four tracks with a two-line status; this is
    five, because a token the app cannot revoke has to say which host and which
@@ -1523,6 +1788,11 @@ table.dsh-tbl {
     white-space: normal;
   }
   .dsh-when .sep {
+    display: none;
+  }
+  /* Two axis labels fit a phone; three collide. The peak survives in the chart's
+     `aria-label` and in its dot, so nothing is lost that was not decorative. */
+  .yt-axis .pk {
     display: none;
   }
   /* The head's four labels cannot survive a 320px measure, so the table stops
