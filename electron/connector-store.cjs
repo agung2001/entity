@@ -331,6 +331,11 @@ function list({ workspace } = {}) {
       summary: catalog.entryOf(id)?.summary || '',
       work: catalog.workOf(id),
       website: catalog.websiteOf(id),
+      /* Where this row's credential lives, in the same word the catalog uses —
+         `token` for a paste-once API key. Without it an *installed* row and the
+         catalog row it came from disagreed about which verbs the page offers:
+         the row that can actually save a key was the one that could not name it. */
+      credential: catalog.entryOf(id)?.credential || '',
       /* A declared self-report is what makes it answerable at all. */
       binary: entry.binary || '',
       verify: entry.verify || null,

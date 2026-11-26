@@ -374,6 +374,14 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* Clockify's dashboard reads, lazy like the token verbs: the connector module
+       is only parsed on the page that needs it. `workspaces` answers the Overview
+       selector, `dashboard` the tab — both read-only, both keep the key in this
+       process, and neither takes one as an argument. */
+    'connector.workspaces': ({ workspace } = {}) =>
+      require('./connectors/clockify.cjs').workspaces(workspaces.open(workspace)),
+    'connector.dashboard': ({ workspace, ...rest } = {}) =>
+      require('./connectors/clockify.cjs').dashboard(workspaces.open(workspace), rest),
     /* The YouTube Studio dashboard. Read-only Google calls, no write scope used,
        and the analytics/revenue/comment scopes are separate grants — a refusal is
        a `null` field with the missing scope named, never a `0`. */

@@ -10,8 +10,10 @@ import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
+import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
+import { call } from '@/composables/localBridge'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
 import {
   readDashboard as readStudioDashboard,
@@ -89,6 +91,10 @@ const isCli = computed(() => row.value?.kind === 'cli')
 /* An account-bearing connector: a `rest` row whose credential is one refresh
    token per account, on this machine. It is the only kind with an Accounts card. */
 const isOAuth = computed(() => row.value?.kind === 'rest' && row.value?.oauth === true)
+/* A connector whose whole credential is one pasted API key: the endpoint lives in
+   the connector's own `verify()`, so the page asks for the key and nothing else.
+   The card heading follows, or it would sell an "endpoint" field it does not show. */
+const isTokenKey = computed(() => row.value?.credential === 'token')
 /* The fourth kind has no credential to ask for and no mention to resolve, so every
    card on the generic page would say something untrue about it: a pitch selling an
    install, a sign-in that lives in the CLI, a mention the composer does not offer.
@@ -256,11 +262,12 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the two connectors this app ships a dashboard for:
-   GitHub (`builtIn === 'github'`) and YouTube Studio (`builtIn ===
-   'youtube-studio'`). A tab that led to another connector's half-built dashboard
-   would be a promise nobody kept, so every other row — including a custom `cli`
-   row — gets no tab at all rather than a disabled one.
+   The strip exists only for the connectors this app ships a dashboard for: GitHub
+   (`builtIn === 'github'`), YouTube Studio (`builtIn === 'youtube-studio'`) and
+   Clockify (`builtIn === 'clockify'`). A tab that led to another connector's
+   half-built dashboard would be a promise nobody kept, so every other row —
+   including a custom `cli` row, or a custom row that borrowed one of those names
+   — gets no tab at all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -275,19 +282,104 @@ const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn =
 const studioRow = computed(
   () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
 )
-/* Which dashboard this page is, if any. Named rather than boolean because the two
+/* Which dashboard this page is, if any. Named rather than boolean because the three
    have different locks, different reads and different pane bodies. */
 const dashKind = computed(() => {
   if (installedRow.value?.builtIn === 'github' && githubRow.value?.work) return 'github'
   if (installedRow.value?.builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
+  if (installedRow.value?.builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
   return ''
 })
 const dashboardTab = computed(() => Boolean(dashKind.value))
 /* What the tab offers, in the connector's own words: GitHub's board is 90 days,
-   the channel board is the 28 the window chips start on. */
-const dashboardHint = computed(() =>
-  dashKind.value === 'studio' ? 'What moved in the last 28 days' : 'What moved in the last 90 days',
-)
+   the channel board is the 28 the window chips start on, Clockify's week is a week. */
+const dashboardHint = computed(() => {
+  if (dashKind.value === 'studio') return 'What moved in the last 28 days'
+  if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
+  return 'What moved in the last 90 days'
+})
+
+/* Clockify needs two things this machine and this workspace answer separately: the
+   API key (`connector.token.status`) and the workspace id on the connector's own
+   fields. Both are read once per page, and the two sentences are fixed copy — a
+   computed reason would drift from the state it describes. */
+const clockify = ref({ configured: false, workspaceId: '' })
+const clockifyLoaded = ref(false)
+/* What the token store answered for a `credential: 'token'` row: whether a key is on
+   this machine and the four characters that say which one. Its own read because the
+   card that replaces the key needs it whether or not that row has a dashboard. */
+const storedKey = ref({ configured: false, hint: '' })
+async function readStoredKey() {
+  if (row.value?.credential !== 'token') return
+  try {
+    const answer = await call('connector.token.status', { connector: id.value })
+    storedKey.value = { configured: Boolean(answer?.configured), hint: String(answer?.hint || '') }
+  } catch {
+    /* Unreadable reads as no key: the card then offers the field instead of
+       claiming a key it could not confirm. */
+    storedKey.value = { configured: false, hint: '' }
+  }
+}
+
+async function readClockifyState() {
+  if (dashKind.value !== 'clockify') return
+  try {
+    const fields = await call('connector.fields', { workspace: hub.workspace, id: 'clockify' })
+    clockify.value = {
+      configured: storedKey.value.configured,
+      workspaceId: String(fields?.workspaceId || ''),
+    }
+  } catch {
+    /* A failed read leaves the workspace at its default, so the tab stays locked
+       and says what is missing — the state that sends a person to the card that
+       can fix it. The key half stands: the token store answered separately. */
+    clockify.value = { configured: storedKey.value.configured, workspaceId: '' }
+  } finally {
+    clockifyLoaded.value = true
+  }
+}
+
+/* The workspaces this key can read, for the Overview card's one control. Read only
+   when a key exists — the call is itself a read that key makes, so a person without
+   one gets the sentence instead of an error about a list they cannot have. */
+const spaces = ref([])
+const spacesLoaded = ref(false)
+const spacesError = ref('')
+async function readSpaces() {
+  if (dashKind.value !== 'clockify' || !storedKey.value.configured) return
+  try {
+    const list = await call('connector.workspaces', { workspace: hub.workspace })
+    spaces.value = Array.isArray(list) ? list : []
+    spacesError.value = ''
+  } catch (problem) {
+    spaces.value = []
+    spacesError.value = String(problem?.message || problem)
+  } finally {
+    spacesLoaded.value = true
+  }
+}
+/* Choosing a workspace is the one thing on this page that changes *what the
+   dashboard reads*, so it writes the field and re-reads the gate: the lock lifts
+   under the strip without a reload. */
+async function pickSpace(space) {
+  if (busy.value || space.id === clockify.value.workspaceId) return
+  busy.value = 'space'
+  spacesError.value = ''
+  try {
+    await call('connector.setFields', {
+      workspace: hub.workspace,
+      id: 'clockify',
+      /* The member map is per workspace — Clockify's user ids are — so a switch
+         clears it rather than carrying names that now point at nobody. */
+      fields: { workspaceId: space.id, members: {} },
+    })
+    await readClockifyState()
+  } catch (problem) {
+    spacesError.value = String(problem?.message || problem)
+  } finally {
+    busy.value = ''
+  }
+}
 
 /* The GitHub locks, in the order a person meets them: no binary, then no login.
    Both sentences are fixed copy — a computed reason would drift from the state it
@@ -342,9 +434,29 @@ const studioLock = computed(() => {
   }
   return null
 })
+
+/* The week locks, in the order a person meets them: no key, then no workspace id.
+   Both sentences are fixed copy for the same reason the two above are. */
+const clockifyLock = computed(() => {
+  if (!clockifyLoaded.value) return null
+  if (!clockify.value.configured) {
+    return {
+      before: 'Connect Clockify first — the tab needs a verified key.',
+      title: 'Needs a Clockify API key on this machine',
+    }
+  }
+  if (!clockify.value.workspaceId) {
+    return {
+      before: 'Pick a workspace on Overview — every read happens inside one.',
+      title: 'Needs a Clockify workspace chosen for this workspace',
+    }
+  }
+  return null
+})
 const lock = computed(() => {
   if (dashKind.value === 'github') return githubLock.value
   if (dashKind.value === 'studio') return studioLock.value
+  if (dashKind.value === 'clockify') return clockifyLock.value
   return null
 })
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
@@ -396,6 +508,13 @@ async function openDashboard() {
     else if (tab.value === 'dashboard' && !studio.readAt) await readStudioDashboard()
     return
   }
+  /* Clockify draws itself: its band reads its own state on mount, so the gate is
+     the only thing this page has to answer before it can. */
+  if (dashKind.value === 'clockify') {
+    await readClockifyState()
+    await readSpaces()
+    return
+  }
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
@@ -403,8 +522,12 @@ onMounted(async () => {
   normalizeTab()
   await load()
   probeConnectors().catch(() => {})
-  /* The gate is answered by `gh`, so it is asked once the row is known: reading
-     it on every connector's page would run the CLI for a tab that cannot exist. */
+  /* The stored key comes first: it is half of the gate under the strip and the
+     whole of the sentence on the card that can replace it. */
+  await readStoredKey()
+  /* The gate is answered by `gh` / the token store, so it is asked once the row is
+     known: reading it on every connector's page would run a CLI or open a key file
+     for a tab that cannot exist. */
   if (dashboardTab.value) await openDashboard()
 })
 /* A deep link straight to the tab: the strip rendered before `gh` answered, so the
@@ -422,6 +545,14 @@ watch(
       else if (name === 'dashboard' && !studio.readAt) await readStudioDashboard()
       return
     }
+    if (dashKind.value === 'clockify') {
+      if (!clockifyLoaded.value) await readClockifyState()
+      /* A connector installed on this page crosses the tab into existence, so the
+         gate and the workspace list are read here rather than only on mount: the
+         card would otherwise wait on a list nobody asked for. */
+      if (storedKey.value.configured && !spacesLoaded.value) await readSpaces()
+      return
+    }
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
@@ -431,7 +562,7 @@ watch(
 watch(
   () => github.logins.length,
   (count) => {
-    if (!count && tab.value === 'dashboard') select('overview')
+    if (!count && tab.value === 'dashboard' && dashKind.value === 'github') select('overview')
   },
 )
 /* The same for a consent granted or revoked on the accounts card: a channel that
@@ -455,6 +586,20 @@ async function runTest() {
   error.value = ''
   notice.value = ''
   try {
+    /* A paste-once key has its own check, and it is the connector's: `verify()` is
+       the only code that knows which call proves this service's key, and the
+       generic path would write to a store this row does not use. */
+    if (row.value.credential === 'token') {
+      const answer = await call('connector.token.test', {
+        connector: id.value,
+        token: draft.value.token,
+        workspaceId: clockify.value.workspaceId || undefined,
+      })
+      notice.value = answer?.detail || 'The service accepted this key.'
+      facts.value = []
+      await readStoredKey()
+      return
+    }
     const answer = await testConnector({
       kind: row.value.kind,
       id: id.value,
@@ -476,11 +621,39 @@ async function runTest() {
 }
 
 async function later() {
-  /* nothing to save yet beyond the definition the roster already holds: a token
-     write is Batch C's `.secrets.json`, and promising it here would be a lie */
+  /* A `credential: 'token'` row has a real write behind Save, so it goes to the
+     token verbs. Every other row has only its definition, which the roster already
+     holds — promising more here would be a lie. */
+  if (row.value?.credential === 'token') return saveKey()
   notice.value = isCli.value
     ? 'Nothing to save: this row uses the binary on PATH and the CLI keeps its own sign-in.'
     : 'Token storage lands with the connector catalog; the definition itself is already saved.'
+}
+
+/* Verify, then write — the order is the main process's (`connector.token.save`
+   checks upstream first), so a key that failed never reaches the `0600` file, and
+   the field is cleared only after it did. */
+async function saveKey() {
+  if (!row.value || busy.value) return
+  busy.value = 'save'
+  error.value = ''
+  notice.value = ''
+  try {
+    await call('connector.token.save', {
+      connector: id.value,
+      token: draft.value.token,
+      workspaceId: clockify.value.workspaceId || undefined,
+    })
+    draft.value = { ...draft.value, token: '' }
+    await readStoredKey()
+    await readClockifyState()
+    await readSpaces()
+    notice.value = 'Key saved on this machine — it is written 0600 and never leaves it.'
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  } finally {
+    busy.value = ''
+  }
 }
 
 /**
@@ -741,12 +914,22 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                as the tab is locked, which is the only way it can be read by
                somebody who never hovers. -->
           <p v-if="lock" id="cxn-tab-why" class="tab-why">
-            {{ lock.before }}<code class="mono">{{ lock.code }}</code>{{ lock.after }}<template
+            {{ lock.before }}<template v-if="lock.code"><code class="mono">{{ lock.code }}</code>{{ lock.after }}</template><template
               v-if="lock.code2"
             ><code class="mono">{{ lock.code2 }}</code>{{ lock.after2 }}</template>
           </p>
         </nav>
 
+        <!-- Two dashboards, one id: the strip's `aria-controls` names the pane, and
+             a pane that swapped its own name per connector would be two tabs. -->
+        <ConnectorClockifyDashboard
+          v-if="dashboardTab && tab === 'dashboard' && dashKind === 'clockify'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          @overview="select('overview')"
+          @changed="readClockifyState"
+        />
         <ConnectorDashboard
           v-if="dashKind === 'github' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
@@ -909,7 +1092,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           </section>
 
           <section v-else-if="!isTailscale && !isOAuth && (!notInstalled || isCli)" class="cxn-card">
-            <h2>{{ isCli ? 'Sign-in' : 'Endpoint and token' }}</h2>
+            <h2>{{ isCli ? 'Sign-in' : isTokenKey ? 'API key' : 'Endpoint and token' }}</h2>
             <template v-if="isCli">
               <p class="cxn-note">
                 This row's credential belongs to the CLI's own store on this machine. Signing in
@@ -928,8 +1111,26 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
               </button>
             </template>
             <template v-else>
+              <!-- What is already on this machine. A `credential: 'token'` row's key
+                   is replaced by pasting into the field below, and four characters
+                   are what says which key is in place without printing it. -->
+              <dl v-if="row.credential === 'token'" class="cxn-facts cxn-key-state">
+                <dt>key</dt>
+                <dd>
+                  <template v-if="storedKey.configured">
+                    <code class="mono">{{ storedKey.hint }}</code> — stored 0600 on this
+                    machine; pasting another replaces it
+                  </template>
+                  <template v-else>none on this machine yet</template>
+                </dd>
+              </dl>
               <div class="cxn-fields">
-                <label>
+                <!-- A paste-once key has no base URL to ask for: the connector's own
+                     `verify()` holds the endpoint, and the token verbs
+                     (`connector.token.test` / `.save`) never read this field. It used
+                     to render for Clockify seeded with `statusDetail`, which is a
+                     sentence — visible garbage in a box that says `https://…`. -->
+                <label v-if="!isTokenKey">
                   base URL
                   <input v-model="draft.host" type="text" placeholder="https://…" autocomplete="off" spellcheck="false" />
                 </label>
@@ -966,6 +1167,55 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                 </ul>
               </div>
             </div>
+          </section>
+
+          <!-- The one action the dashboard has. The list is `GET /v1/workspaces`,
+               which is itself a read the key makes, so without a key the card says
+               so instead of offering a list it cannot have. A failure stays in this
+               card: this card is the thing that failed. -->
+          <section v-if="dashKind === 'clockify'" class="cxn-card">
+            <div class="cxn-card-head">
+              <h2>Workspace</h2>
+              <span class="spacer"></span>
+              <span class="n">{{ clockify.workspaceId ? 'chosen' : 'not chosen' }}</span>
+            </div>
+            <p class="cxn-note">
+              Every read happens inside one Clockify workspace — its reports, its people
+              and its projects. Choosing one here is what unlocks the dashboard tab.
+            </p>
+            <p v-if="!storedKey.configured" class="cxn-note">
+              Paste a key first: the list of workspaces is one of the reads that key makes.
+            </p>
+            <template v-else>
+              <div
+                v-if="spaces.length"
+                class="seg ck-seg"
+                role="group"
+                aria-label="Which Clockify workspace to read"
+              >
+                <button
+                  v-for="space in spaces"
+                  :key="space.id"
+                  type="button"
+                  :title="space.name"
+                  :aria-pressed="space.id === clockify.workspaceId"
+                  :aria-busy="busy === 'space' ? 'true' : undefined"
+                  :disabled="Boolean(busy)"
+                  @click="pickSpace(space)"
+                ><span class="nm">{{ space.name }}</span></button>
+              </div>
+              <p v-else-if="!spacesLoaded && !spacesError" class="cxn-note">
+                Reading the workspaces this key can see…
+              </p>
+              <p v-else-if="!spacesError" class="cxn-note">
+                This key can read no workspace. Its owner needs to be a member of one.
+              </p>
+              <p class="cxn-note">
+                The reports are read inside the chosen workspace only; the key itself
+                never leaves this machine.
+              </p>
+            </template>
+            <div v-if="spacesError" class="cxn-error" role="alert">{{ spacesError }}</div>
           </section>
 
           <section v-if="notInstalled && !isTailscale" class="cxn-card">
