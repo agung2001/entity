@@ -36,6 +36,10 @@ const youtubeStudioDashboard = require('./youtube-studio-dashboard.cjs')
    OAuth grant: one probe, two paginated searches, no token ever leaves the main
    process. */
 const youtrackDashboard = require('./youtrack-dashboard.cjs')
+/* Habitify's dashboard reads one day and its week over the MCP session the
+   connector already opens: no token ever leaves the main process, and the only
+   upstream tool either call can reach is `list-habits-by-date`. */
+const habitifyDashboard = require('./habitify-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -411,6 +415,14 @@ function createRpc({
        seventy-spreadsheet folder can say `Reading 34 of 70` instead of nothing at
        all. It reads no folder and spends no request. */
     'connector.lynkProgress': () => lynkDashboard.progressOf(),
+    /* Clockify's dashboard reads, lazy like the token verbs: the connector module
+       is only parsed on the page that needs it. `workspaces` answers the Overview
+       selector, `dashboard` the tab — both read-only, both keep the key in this
+       process, and neither takes one as an argument. */
+    'connector.workspaces': ({ workspace } = {}) =>
+      require('./connectors/clockify.cjs').workspaces(workspaces.open(workspace)),
+    'connector.dashboard': ({ workspace, ...rest } = {}) =>
+      require('./connectors/clockify.cjs').dashboard(workspaces.open(workspace), rest),
     /* The YouTube Studio dashboard. Read-only Google calls, no write scope used,
        and the analytics/revenue/comment scopes are separate grants — a refusal is
        a `null` field with the missing scope named, never a `0`. */
@@ -423,6 +435,11 @@ function createRpc({
        returns the `Authorization` value it sends. */
     'youtrack.probe': (args) => youtrackDashboard.probe(args),
     'youtrack.dashboard': (args) => youtrackDashboard.dashboard(args),
+    /* The Habitify connector's dashboard: which accounts this machine holds and
+       what one day was scheduled. Read-only on both calls — the only upstream tool
+       either one can reach is `list-habits-by-date`. */
+    'habitify.accounts': () => habitifyDashboard.accounts(),
+    'habitify.dashboard': (args) => habitifyDashboard.dashboard(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

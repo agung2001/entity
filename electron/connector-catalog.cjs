@@ -394,12 +394,15 @@ const CATALOG = {
     website: 'https://habitify.me',
     summary: 'The habits a day was scheduled, and whether they were done.',
     verify: null,
+    /* The dashboard tab gates on this block, the same way the `opendesign` entry's
+       does: `page` is empty because a `rest` row binds through a consent, not an
+       `mcp.json`, and `documented` already leaves a non-MCP kind with no page. */
     work: {
       mention: '@habitify:',
-      resolves: 'one day of habits, or one habit on that day',
+      resolves: 'a day, and optionally one habit within that day',
       syntax: '@habitify:[<habit>:]<date|today|yesterday>',
       examples: ['@habitify:today', '@habitify:Meditate:yesterday'],
-      returns: 'the habits scheduled that day with their status, and the provider’s own sentence about the day',
+      returns: 'the habit name, its status word and the day each row was scheduled on',
       resolver: 'habitify',
       needs: 'a signed-in Habitify account on this machine',
       page: '',
@@ -407,9 +410,8 @@ const CATALOG = {
         'The date is `today`, `yesterday` or `YYYY-MM-DD` — nothing is guessed, so a malformed date is an error rather than today.',
         'A habit name before the colon narrows the day to that habit; an exact name wins, a single prefix match is accepted, and two prefix matches are refused instead of picking one.',
         'The day comes back as it was scheduled: `completed`, `skipped`, `failed`, or `none` for a habit that was due and not logged.',
-        '**Read-only.** The only tool this app calls is `list-habits-by-date`; completing, skipping or logging a habit is never wired, so a turn cannot change what your week looks like.',
-        'The read goes through Habitify’s MCP server with the account’s own access token, which is refreshed on this machine and never shown to a page.',
-        'The account is named by its localpart on the card; no address appears in these rows.',
+        '**Read-only.** The only tool this app calls is `list-habits-by-date`; nothing here writes to Habitify, so completing, skipping or logging a habit cannot happen from a turn or from the Dashboard.',
+        'The read goes through Habitify’s MCP server with the account’s own access token, refreshed on this machine and named by its localpart — no address appears in these rows.',
       ],
       samples: [
         { code: '@habitify:today', then: 'every habit scheduled today, with its status' },
