@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const calendarDashboard = require('./calendar-dashboard.cjs')
 const lynkDashboard = require('./lynk-dashboard.cjs')
 /* The YouTube Studio dashboard reads the same kinds of things from a different
    grant: an account roster and one window of numbers. Same file-cached, one-read
@@ -393,6 +394,12 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* Google Calendar's dashboard: six counts and a week of events, read per
+       account from the grant the accounts card already holds. The `accounts` read is
+       the tab strip's gate — it answers before the tab is pressed, so a person sees
+       the lock without clicking through to it. */
+    'calendar.dashboard': (args) => calendarDashboard.dashboard(args),
+    'calendar.accounts': () => calendarDashboard.accounts(),
     /* The Lynk.id dashboard, read from the Drive folder this workspace picked. The
        folder and the tab suffix are never constants here: they are read off the
        connector row on every call, so two workspaces may point at two folders and

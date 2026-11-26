@@ -10,6 +10,7 @@ import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
+import GoogleCalendarDashboard from '@/components/GoogleCalendarDashboard.vue'
 import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
 import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
@@ -17,6 +18,12 @@ import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
 import ConnectorHabitifyDashboard from '@/components/ConnectorHabitifyDashboard.vue'
 import { call } from '@/composables/localBridge'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  canRead as calendarCanRead,
+  googleCalendar,
+  readAccounts as readCalendarAccounts,
+  readDashboard as readCalendarDashboard,
+} from '@/composables/googleCalendar'
 import {
   adoptLynkConfig,
   dropLynkAnswer,
@@ -286,11 +293,12 @@ async function load() {
 
 /* ── the tabs ────────────────────────────────────────────────────────
    The strip exists only for the connectors this app ships a dashboard for: GitHub
-   (`builtIn === 'github'`), YouTube Studio (`builtIn === 'youtube-studio'`),
-   Clockify (`builtIn === 'clockify'`) and Habitify (`builtIn === 'habitify'`). A tab
-   that led to another connector's half-built dashboard would be a promise nobody
-   kept, so every other row — including a custom `cli` row, or a custom row that
-   borrowed one of those names — gets no tab at all rather than a disabled one.
+   (`builtIn === 'github'`), Google Calendar (`builtIn === 'google-calendar'`),
+   YouTube Studio (`builtIn === 'youtube-studio'`), Clockify (`builtIn ===
+   'clockify'`) and Habitify (`builtIn === 'habitify'`). A tab that led to another
+   connector's half-built dashboard would be a promise nobody kept, so every other
+   row — including a custom `cli` row, or a custom row that borrowed one of those
+   names — gets no tab at all rather than a disabled one.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -302,6 +310,9 @@ const tab = computed(() =>
 /* Only a row the catalog shipped has a `work` block to gate on. A custom `cli`
    row that happens to be called github — or youtube-studio — is not one of them. */
 const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
+const calendarRow = computed(
+  () => connectors.rows.find((entry) => entry.builtIn === 'google-calendar') || null,
+)
 const studioRow = computed(
   () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
 )
@@ -311,6 +322,7 @@ const studioRow = computed(
 const dashKind = computed(() => {
   const builtIn = String(installedRow.value?.builtIn || '')
   if (builtIn === 'github' && githubRow.value?.work) return 'github'
+  if (builtIn === 'google-calendar' && calendarRow.value?.work) return 'calendar'
   if (builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
   if (builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
   /* Habitify's reader lives in this app, so its own `work` block is the whole
@@ -333,6 +345,7 @@ const day = computed(() => (DAY.test(String(route.query.day || '')) ? String(rou
    Habitify's is one day and the week around it, and the Lynk.id report is whatever
    the store sold in the folder it reads. */
 const dashboardHint = computed(() => {
+  if (dashKind.value === 'calendar') return 'What is next, and where the gaps are'
   if (dashKind.value === 'studio') return 'What moved in the last 28 days'
   if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
   if (dashKind.value === 'habitify') return 'What a day was scheduled with, and the week around it'
@@ -422,6 +435,35 @@ async function pickSpace(space) {
   }
 }
 
+/* The calendar locks, in the order a person meets them. Nothing is pressed here:
+   the gate is answered by the account store, which the accounts card below already
+   reads, so the lock exists before the tab is. Three states, and they are three
+   different sentences because they are three different fixes. */
+const calendarLock = computed(() => {
+  if (!googleCalendar.loaded) return null
+  if (googleCalendar.apiOff) {
+    return {
+      before: "Dashboard needs the Calendar API enabled on Entity's OAuth client.",
+      title: 'Needs the Calendar API enabled in the Google Cloud project',
+    }
+  }
+  const rows = googleCalendar.accounts
+  if (!rows.length) {
+    return {
+      before: 'Dashboard needs a connected Google account. Overview has the only Connect button on this page.',
+      title: 'Needs a connected Google account',
+    }
+  }
+  if (!rows.some(calendarCanRead)) {
+    return {
+      before: 'Dashboard needs ',
+      code: 'calendar.readonly',
+      after: ". This account's grant does not include it.",
+      title: 'Needs the calendar.readonly scope',
+    }
+  }
+  return null
+})
 /* The GitHub locks, in the order a person meets them: no binary, then no login.
    Both sentences are fixed copy — a computed reason would drift from the state it
    describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
@@ -569,6 +611,7 @@ const habitifyLock = computed(() => {
    whose fix is a control here rather than a card on Overview. */
 const gate = computed(() => {
   if (dashKind.value === 'github') return gated(githubLock.value)
+  if (dashKind.value === 'calendar') return gated(calendarLock.value)
   if (dashKind.value === 'studio') return gated(studioLock.value)
   if (dashKind.value === 'clockify') return gated(clockifyLock.value)
   if (dashKind.value === 'habitify') return gated(habitifyLock.value)
@@ -636,10 +679,30 @@ function onTabKey(event) {
   if (delta === undefined) return
   event.preventDefault()
   const next = TABS[(TABS.indexOf(tab.value) + delta + TABS.length) % TABS.length]
-  if (canOpen(next)) select(next)
+  /* A locked tab still takes the arrow: one press has to reach the reason line, and
+     a strip where the arrow key silently stops at the first button reads as broken.
+     Focus only — no `select()`, so the address does not change and nothing reads
+     until the person presses Enter on it. */
+  if (!canOpen(next)) {
+    document.getElementById(`cxn-tab-${next}`)?.focus?.()
+    return
+  }
+  select(next)
+  /* The strip is a roving tabindex: the selected tab is the one stop. Moving the
+     selection without moving focus would leave it on a button that has just become
+     `-1`, so the next Tab would skip the strip entirely. */
+  document.getElementById(`cxn-tab-${next}`)?.focus?.()
 }
 
 async function openDashboard() {
+  /* The calendar's gate is the account store, so the read that answers it is the
+     same one the accounts card makes — no extra request, and no read at all while
+     the tab that would spend it is not the one on screen. */
+  if (dashKind.value === 'calendar') {
+    if (!googleCalendar.loaded) await readCalendarAccounts()
+    if (tab.value === 'dashboard' && !lock.value && !googleCalendar.readAt) await readCalendarDashboard()
+    return
+  }
   /* The gate for each dashboard is answered by its own read, so only the one this
      page's connector needs is run. */
   if (dashKind.value === 'lynk') {
@@ -703,18 +766,26 @@ onMounted(async () => {
   /* The stored key comes first: it is half of the gate under the strip and the
      whole of the sentence on the card that can replace it. */
   await readStoredKey()
-  /* The gate is answered by `gh` / the token store, so it is asked once the row is
-     known: reading it on every connector's page would run a CLI or open a key file
-     for a tab that cannot exist. */
+  /* The gate is answered by `gh`, the token store or the account store, so it is
+     asked once the row is known: reading it on every connector's page would run a
+     CLI, open a key file or read a keyring for a tab that cannot exist. */
   if (dashboardTab.value) await openDashboard()
 })
-/* A deep link straight to the tab: the strip rendered before `gh` answered, so the
-   gate resolves late and the read has to wait for it rather than run against a
-   lock it does not yet know about. */
+/* A deep link straight to the tab: the strip rendered before the gate answered, so
+   it resolves late and the read has to wait for it rather than run against a lock
+   it does not yet know about. */
 watch(
   () => [tab.value, Boolean(gate.value.locked), dashboardTab.value, installedRow.value?.builtIn],
   async ([name, locked, hasTab, builtIn]) => {
     if (!hasTab) return
+    if (builtIn === 'google-calendar') {
+      /* The calendar keeps the `locked` the watcher was handed rather than
+         re-reading it: its gate is the account store, and that read has already
+         answered by the time the tab can be deep-linked. */
+      if (!googleCalendar.loaded) await readCalendarAccounts()
+      if (name === 'dashboard' && !locked && !googleCalendar.readAt) await readCalendarDashboard()
+      return
+    }
     if (builtIn === 'lynk') {
       if (!lynkConfig.loaded) {
         await loadLynkConfig({ id: id.value })
@@ -754,12 +825,21 @@ watch(day, (next) => {
   if (dashKind.value !== 'habitify' || tab.value !== 'dashboard' || lock.value) return
   if (next && next !== habitify.day) readHabitifyDashboard({ day: next }).catch(() => {})
 })
-/* Re-checking the CLI from the accounts card changes the gate under the strip, so
-   the strip follows. */
+/* Re-checking the CLI, or signing an account out from the card, changes the gate
+   under the strip, so the strip follows: a tab whose reason just became true
+   cannot stay open on a page with nothing to draw. */
 watch(
   () => github.logins.length,
   (count) => {
     if (!count && tab.value === 'dashboard' && dashKind.value === 'github') select('overview')
+  },
+)
+/* The same for a Google account connected or signed out from the accounts card:
+   the calendar's gate is that list, so it can go either way while the tab is open. */
+watch(
+  () => googleCalendar.accounts.length,
+  (count) => {
+    if (!count && tab.value === 'dashboard' && dashKind.value === 'calendar') select('overview')
   },
 )
 /* The same for a Habitify consent granted or revoked on the accounts card: an
@@ -1243,7 +1323,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         </nav>
 
         <!-- One dashboard, one id: the strip's `aria-controls` names the pane, and a
-             pane that swapped its own name per connector would be five tabs. Every
+             pane that swapped its own name per connector would be six tabs. Every
              dashboard is a link in this one chain — a standalone `v-if` beside it
              would let the Overview pane render underneath the dashboard.
              A locked Dashboard never renders its body: the gate's sentence under the
@@ -1262,6 +1342,12 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         <ConnectorDashboard
           v-else-if="tab === 'dashboard' && (dashKind === 'github' || (dashKind === 'lynk' && !gate.locked))"
           :row="installedRow"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+        />
+        <GoogleCalendarDashboard
+          v-else-if="dashKind === 'calendar' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"

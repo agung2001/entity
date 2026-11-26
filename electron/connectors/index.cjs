@@ -35,6 +35,9 @@ function load(head) {
     case 'drive':
       mod = require('./drive.cjs')
       break
+    case 'calendar':
+      mod = require('./calendar.cjs')
+      break
     case 'youtube':
       mod = require('./youtube.cjs')
       break
@@ -64,6 +67,7 @@ function load(head) {
 const HEADS = [
   'gmail',
   'drive',
+  'calendar',
   'youtube',
   'youtube-studio',
   'x',
@@ -89,6 +93,7 @@ function resolverFor(head) {
 const SUFFIX = {
   gmail: 'Gmail',
   drive: 'Drive',
+  calendar: 'Calendar',
   youtube: 'Youtube',
   'youtube-studio': 'YoutubeStudio',
   x: 'X',

@@ -181,6 +181,27 @@ const showOrcaIcon = computed(() => !failed.value)
     <path fill="#ffba00" d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" />
   </svg>
 
+  <!-- Google's own 200×200 calendar glyph: seven paths, and the only colour in
+       the hero the app does not own. The brand hexes are Google's, printed here
+       rather than in `tokens.css`, because they are not this app's palette. -->
+  <svg
+    v-else-if="name === 'google-calendar'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 0 200 200"
+    aria-hidden="true"
+  >
+    <title>Google Calendar</title>
+    <path fill="#fff" d="M152.63 47.37H47.37v105.26h105.26z" />
+    <path fill="#ea4335" d="M152.63 200l47.37-47.37h-47.37z" />
+    <path fill="#fbbc04" d="M200 47.37h-47.37v105.26H200z" />
+    <path fill="#34a853" d="M152.63 152.63H47.37V200h105.26z" />
+    <path fill="#188038" d="M0 152.63v28.42A19 19 0 0 0 18.95 200h28.42v-47.37z" />
+    <path fill="#1967d2" d="M200 47.37V18.95A18.95 18.95 0 0 0 181.05 0h-28.42v47.37z" />
+    <path fill="#4285f4" d="M152.63 0H18.95A18.95 18.95 0 0 0 0 18.95v133.68h47.37V47.37h105.26z" />
+  </svg>
+
   <svg
     v-else-if="name === 'youtube'"
     class="int-mark-svg int-mark-brand"
