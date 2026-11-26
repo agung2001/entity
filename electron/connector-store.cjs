@@ -722,10 +722,31 @@ const FIELD_LIMITS = {
   folderId: 120,
   folderName: 120,
   sheetSuffix: 40,
+  /* The marketplace document the landing links and the sheet-name check are read
+     from. A URL, so long enough for one and short enough not to be a body. */
+  marketplaceUrl: 300,
 }
 
 /** The default tab name under a Lynk.id product spreadsheet. */
 const DEFAULT_SHEET_SUFFIX = ' - Transactions'
+
+/**
+ * A marketplace document URL, or ''.
+ *
+ * `https` only, because the links built from it are `https`: an `http` document would
+ * yield `http` product URLs that this app then refuses, so it is caught here where a
+ * person can read the sentence instead of on every row of the table.
+ */
+function marketplaceUrlOf(value) {
+  const raw = text(value, FIELD_LIMITS.marketplaceUrl)
+  if (!raw) return ''
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' ? url.toString() : ''
+  } catch {
+    return ''
+  }
+}
 
 /** A Drive folder id, or '' — the shape check `folderId` fields are saved under. */
 const folderIdOf = (value) => {
@@ -758,6 +779,11 @@ function fieldsOf({ workspace, id } = {}) {
     folderName: text(raw.folderName, FIELD_LIMITS.folderName),
     sheetSuffix:
       raw.sheetSuffix === undefined ? DEFAULT_SHEET_SUFFIX : text(raw.sheetSuffix, FIELD_LIMITS.sheetSuffix),
+    /* Empty is the default and it is meaningful: this workspace has not said where
+       its marketplace is, so the report carries no landing links. A stored value
+       that no longer parses is dropped for the same reason a bad folder id is —
+       `fieldsOf` answers a page, and `setFields` is where a bad one is an error. */
+    marketplaceUrl: marketplaceUrlOf(raw.marketplaceUrl),
   }
 }
 
@@ -810,6 +836,19 @@ function setFields({ workspace, id, fields } = {}) {
   if (incoming.folderName !== undefined) next.folderName = text(incoming.folderName, FIELD_LIMITS.folderName)
   if (incoming.sheetSuffix !== undefined) {
     next.sheetSuffix = text(incoming.sheetSuffix, FIELD_LIMITS.sheetSuffix)
+  }
+  /* Refused when it is present and not an `https` URL: a saved value that cannot
+     yield a link is worse than an empty one, because the page would look configured.
+     An empty string is how a page turns the links off, so it is allowed through. */
+  if (incoming.marketplaceUrl !== undefined) {
+    const raw = text(incoming.marketplaceUrl, FIELD_LIMITS.marketplaceUrl)
+    if (raw && !/^https:\/\/\S+$/i.test(raw)) {
+      throw new Error('A marketplace URL starts with “https://”, so it was not saved.')
+    }
+    if (raw && !marketplaceUrlOf(raw)) {
+      throw new Error(`“${raw}” is not a URL, so it was not saved.`)
+    }
+    next.marketplaceUrl = raw
   }
   index.rows = { ...index.rows, [name]: { ...index.rows[name], fields: { ...fieldsOf({ workspace, id: name }), ...next } } }
   writeIndex(record, index)

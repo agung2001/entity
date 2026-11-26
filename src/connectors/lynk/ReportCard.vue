@@ -1,4 +1,5 @@
 <script setup>
+import { onMounted, ref, watch } from 'vue'
 import DriveFolderPicker from '@/connectors/lynk/FolderPicker.vue'
 import { lynk } from '@/connectors/lynk/useLynk'
 import {
@@ -9,10 +10,11 @@ import {
   openFolderPicker,
   reReadReport,
   reportCard,
+  saveMarketplaceUrl,
   testLine,
   testReport,
 } from '@/connectors/lynk/useReportCard'
-import { lynkConfig } from '@/stores/connectors'
+import { lynkConfig, loadLynkConfig } from '@/stores/connectors'
 
 /**
  * Lynk.id's one setting: which Drive folder the report is read from.
@@ -32,6 +34,29 @@ defineProps({
   /** The connector's own name, so the heading is the row's, not a second literal. */
   label: { type: String, default: 'Lynk.id' },
 })
+
+/* The card reads its own settings.
+   
+   `lynkConfig` is filled by the Dashboard tab's gate, not by the page — so a person
+   who lands on Overview and never opens the Dashboard saw this card's defaults: an
+   empty folder where a chosen one was stored, and an empty marketplace over a row
+   that has a URL. Reading it here is idempotent (`loaded` guards the second call)
+   and it is the only way this card can be right on the tab it lives on. */
+onMounted(() => {
+  if (!lynkConfig.loaded) loadLynkConfig().catch(() => null)
+})
+
+/* The field is edited locally and written on commit, not on every keystroke: a
+   half-typed URL is not a setting, and a save per character would re-read the
+   folder's links seventy times. */
+const draftUrl = ref(lynkConfig.marketplaceUrl)
+const saveUrl = () => saveMarketplaceUrl(draftUrl.value)
+/* The store is written by this card and adopted elsewhere; a value that arrives
+   from a save (or a refused one) is the one the field must show. */
+watch(
+  () => lynkConfig.marketplaceUrl,
+  (next) => (draftUrl.value = next),
+)
 </script>
 
 <template>
@@ -41,6 +66,14 @@ defineProps({
       One spreadsheet per product, and this folder's <code class="mono">{{ lynkConfig.sheetSuffix }}</code>
       tab is the one read. Change the folder here and the Dashboard follows it —
       no reload, and no second setting anywhere else.
+    </p>
+    <p class="cxn-about-lead">
+      The <b>marketplace</b> is this workspace's own document — a JSON list of
+      <code class="mono">{ title, url }</code> per product. It is what the dashboard
+      matches a spreadsheet's name against to put a landing link on a row, and what
+      it checks a sheet's name against. Leave it empty and no landing link is drawn;
+      nothing here names a domain for you, because this app is public and the store
+      that reads it is yours.
     </p>
     <div class="cfg">
       <div class="cfg-row">
@@ -63,6 +96,22 @@ defineProps({
           <code class="mono">{{ lynkConfig.sheetSuffix }}</code>
           <span class="tail">tab name</span>
         </div>
+      </div>
+      <div class="cfg-row">
+        <span class="lb">Marketplace</span>
+        <label class="field-input">
+          <input
+            v-model="draftUrl"
+            aria-label="Marketplace document URL"
+            type="text"
+            placeholder="https://your-store.example.test/marketplace.json"
+            autocomplete="off"
+            spellcheck="false"
+            inputmode="url"
+            @change="saveUrl"
+            @keydown.enter.prevent="saveUrl"
+          />
+        </label>
       </div>
       <div class="cfg-row">
         <span class="lb">Currency</span>

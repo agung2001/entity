@@ -22,18 +22,41 @@ fs.writeFileSync(
   JSON.stringify({
     /* The store's own schema: a hand-written answer has to be one the reader accepts,
        and bumping this number is what retires an answer written before a change. */
-    schema: 2,
-    key: `ws|lynk|${FOLDER}|${SUFFIX}`,
+    schema: 3,
+    /* `workspace|id|folder|suffix|marketplaceUrl` — the marketplace is part of the
+       key because it decides what landing link every row carries. Empty is the
+       default: this fixture's store has configured no marketplace document. */
+    key: `ws|lynk|${FOLDER}|${SUFFIX}|`,
     at: Date.now(),
     value: {
-      sheets: { total: 2, withTab: 2, empty: 0, unreadable: 0, failed: 0 },
       ms: 4200,
       folderId: FOLDER,
       suffix: SUFFIX,
-      products: [{ name: 'Sticker Pack', id: 's1' }, { name: 'Free Sampler', id: 's2' }],
-      rows: [
-        { p: 'Sticker Pack', d: '2026-03-02', a: 75_000, b: 'ada@example.test' },
-        { p: 'Free Sampler', d: '2026-03-03', a: 0, b: 'blake@example.test' },
+      failed: 0,
+      links: { ok: true, at: '2026-03-04T00:00:00.000Z', urls: {} },
+      files: [{ id: 's1', name: 'Sticker Pack' }, { id: 's2', name: 'Free Sampler' }],
+      /* One reading per spreadsheet, exactly the shape `readSheet()` writes: the
+         report is derived from these, so a fixture that skips the long row shape is
+         not testing the report. */
+      readings: [
+        {
+          id: 's1',
+          name: 'Sticker Pack',
+          tab: 'Sticker Pack - Transactions',
+          reason: '',
+          rows: [
+            { day: '2026-03-02', total: 75_000, qty: 1, title: 'Sticker Pack', variant: 'A3', status: 'SUCCESS', buyer: 'ada@example.test', name: 'Ada', list: 75_000, voucher: 0, fees: { affiliate: 0, notif: 0, convenience: 0 }, ref: 'REF-1' },
+          ],
+        },
+        {
+          id: 's2',
+          name: 'Free Sampler',
+          tab: 'Free Sampler - Transactions',
+          reason: '',
+          rows: [
+            { day: '2026-03-03', total: 0, qty: 1, title: 'Free Sampler', variant: '', status: 'SUCCESS', buyer: 'blake@example.test', name: '', list: 0, voucher: 0, fees: { affiliate: 0, notif: 0, convenience: 0 }, ref: null },
+          ],
+        },
       ],
     },
   }),
@@ -51,9 +74,15 @@ test('a free row is an order worth Rp 0, and the folder is the cache key', async
   assert.equal(free.orders, 1)
   assert.equal(free.freeOrders, 1)
 
-  /* Another folder is another question, and so is another tab suffix: neither may
-     be served this answer, so both go looking for a token and find no account. */
+  /* Another folder is another question, so is another tab suffix, and so is another
+     marketplace document — every row's landing link is resolved against it. None of
+     the three may be served this answer, so all three go looking for a token and
+     find no account. */
   const miss = /needs a Google account/
   await assert.rejects(lynk.dashboard({ workspace: 'ws', folderId: 'otherFolderId', suffix: SUFFIX }), miss)
   await assert.rejects(lynk.dashboard({ workspace: 'ws', folderId: FOLDER, suffix: ' - Sales' }), miss)
+  await assert.rejects(
+    lynk.dashboard({ workspace: 'ws', folderId: FOLDER, suffix: SUFFIX, marketplaceUrl: 'https://shop.example.test/m.json' }),
+    miss,
+  )
 })

@@ -109,6 +109,39 @@ export async function reReadReport() {
   }
 }
 
+/**
+ * Point the report at this workspace's marketplace document — or at nothing.
+ *
+ * The links beside a product and the sheet-name check are both read from that
+ * document, so this is the setting rather than a constant in the code: this app is
+ * public, and the store that reads it is one person's. Changing it invalidates the
+ * answer, because every row's landing link is resolved against it — the cache key
+ * carries the URL for exactly that reason.
+ *
+ * An empty value is a real one: it turns the landing links off, which is what a
+ * store with no marketplace document wants, and it is the default.
+ */
+export async function saveMarketplaceUrl(value, { id = 'lynk' } = {}) {
+  reportCard.error = ''
+  reportCard.notice = ''
+  const wanted = String(value ?? '').trim()
+  if (wanted === String(lynkConfig.marketplaceUrl || '')) return true
+  try {
+    await saveLynkConfig({ marketplaceUrl: wanted }, { id })
+    adoptLynkConfig(lynkConfig)
+    /* The rows on screen carry links resolved against the previous document. */
+    dropLynkAnswer()
+    lynk.test = null
+    reportCard.notice = wanted
+      ? 'The marketplace is saved; re-read for the landing links.'
+      : 'Landing links are off: no marketplace document is configured.'
+    return true
+  } catch (problem) {
+    reportCard.error = String(problem?.message || problem)
+    return false
+  }
+}
+
 /** Forget the folder, so the tab locks again and Overview offers the picker. */
 export async function forgetReport({ id = 'lynk' } = {}) {
   if (!(await point(id, { id: '', name: '' }))) return
