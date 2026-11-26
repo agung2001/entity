@@ -1174,6 +1174,87 @@ test('a cut-off job asks the classifier instead of running on a preposition', as
   assert.equal(out.mentions.filter((row) => row.kind === 'entity')[0].status, 'ok')
 })
 
+test('a typed plan keeps its job past the `@` its words contain', async () => {
+  /* The message that shipped broken: a person wrote `for project @orca:entity ,
+     I want you to spawn @coder for each connector below … one app : @orca:One`,
+     the classifier read the four connectors correctly, and the rendered sentence
+     then lost both the project and the task. `parse` cut each run's job at the
+     next `@` ("For project") and `resolveOrca` threw `@orca:entity, is not a
+     project Orca knows` — a read, so it threw *before* the hold card could be
+     drawn and the turn rolled back to an empty transcript.
+
+     A plan's job is the person's prose, not mention syntax: it is never re-read
+     as one. `@orca:entity,` also names the project `entity`, the comma being the
+     sentence's own punctuation. */
+  const record = workspace()
+  const jobs = []
+  const thoughts = []
+  const out = await mention.rewrite(
+    record,
+    'for project @orca:entity , I want you to spawn @py-agent for each connector below\n' +
+      'one app : @orca:One\n' +
+      '## Connectors\n- github\n- fitbit',
+    {
+      intent: async () => ({
+        mode: 'typed',
+        spawn: true,
+        rows: ['github', 'fitbit'],
+        entity: 'py-agent',
+        job:
+          'For project @orca:entity, make each row complete. one app : @orca:One',
+      }),
+      hold: async () => ({ action: 'run' }),
+      onProgress: (event) => thoughts.push(event),
+      deps: deps({
+        orcaRepos: async () => [
+          { displayName: 'entity', path: path.join(ORCA_ROOT, 'entity') },
+          { displayName: 'One', path: ORCA_ONE },
+        ],
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(jobs.length, 2, 'one run per connector')
+  for (const [index, job] of jobs.entries()) {
+    /* the row reaches the run through its share note, then the whole
+       instruction, unfiltered by the `@` it contains */
+    assert.match(job, /^For project @orca:entity, make each row complete\./)
+    assert.match(job, /one app : @orca:One/, 'the job kept the `@` it wrote')
+    assert.match(
+      job,
+      new RegExp(`your row is "(?:github|fitbit)"`),
+      `run ${index + 1} was not told its connector`,
+    )
+  }
+  /* and the `@orca:` words in the job are prose: they resolve nothing */
+  assert.equal(thoughts.at(-1).rows.length, 2)
+  assert.equal(out.mentions.filter((row) => row.kind === 'orca').length, 0)
+})
+
+test('a namespaced name keeps the sentence’s punctuation out of the project', async () => {
+  /* `@orca:entity,` is the project `entity`. Reading the comma as part of the
+     name threw `@orca:entity, is not a project Orca knows` — a message that
+     reads perfectly, refused by punctuation. `resolveOrca` matches the name, so
+     the strip has to live where the name is read. */
+  assert.equal(mention.parseMention('@orca:entity, do it').project, 'entity')
+  assert.equal(mention.parseMention('@orca:entity,').project, 'entity')
+  assert.equal(mention.parseMention('@orca:One:src/App.vue').file, 'src/App.vue')
+  assert.equal(mention.parseMention('@youtrack:ENTITY:ENTITY-37, fix it').query, 'ENTITY-37, fix it')
+})
+
+test('a bracket row list holds rows, not mentions', async () => {
+  /* `spawn per [@scope/pkg, b] @coder …` names a package and a row. The `@` is
+     inside the list, which `openingProse` already reads as rows; `parse` has to
+     agree, or the run is refused as `@scope/pkg is not an entity`. */
+  const { segments } = mention.parse('spawn per [\n@scope/pkg\nb\n] @py-agent do it')
+  assert.deepEqual(segments.map((s) => s.kind), ['entity'])
+  assert.equal(segments[0].name, 'py-agent')
+  assert.equal(segments[0].job, 'do it')
+})
+
 test('a readable job never costs a classifier call', async () => {
   const record = workspace()
   let asked = 0

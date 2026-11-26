@@ -336,12 +336,46 @@ function resolveSkillInJob(record, text) {
   return skillRef.rewrite(record, job, { machine: skillRef.LOCAL_MACHINE, dir: '' }).text
 }
 
-function parse(text) {
+/**
+ * Every mention in `text`, in order.
+ *
+ * `literalAt` is where a sentence stops being mention syntax. A classified
+ * message arrives as `spawn per […] @coder <the person's words>`, and those
+ * words are a *job*: they may legitimately name a repo (`one app: @orca:One`)
+ * or contain anything else an `@` can mean in prose. Re-reading them as mention
+ * syntax cut every run's job at the next `@` and resolved a reference the plan
+ * never made — `@coder For project @orca:entity, …` handed the coder "For
+ * project" and threw `@orca:entity, is not a project Orca knows` on the rest.
+ * Parallels a rule this grammar already had for a *delegated* job (one ends at
+ * the next `@`); the plan is the case where that rule has to stop.
+ *
+ * The row list is the same kind of data: `spawn per [@scope/pkg, b] @coder …`
+ * names a package, not an entity, and `openingProse` already treats a bracketed
+ * `@` as a row. So a `@` inside the list `SPAWN_ROWS` reads is a row too, and the
+ * entity after the `]` is still a mention. The span is exactly the one that regex
+ * matches — not any bracket anywhere, or a stray `[` in ordinary prose would
+ * swallow the mentions after it.
+ */
+function parse(text, { literalAt = Infinity } = {}) {
   const source = String(text || '')
+  /* where each `spawn per [ … ]` list starts and ends, so a row's `@` is data */
+  const lists = []
+  const rowList = new RegExp(SPAWN_ROWS.source, 'gi')
+  let rowMatch
+  while ((rowMatch = rowList.exec(source))) {
+    const open = rowMatch.index + rowMatch[0].indexOf('[')
+    lists.push([open, open + 1 + rowMatch[1].length])
+  }
+  const inList = (at) => lists.some(([open, close]) => at > open && at < close)
   const starts = []
   MENTION_AT.lastIndex = 0
   let match
-  while ((match = MENTION_AT.exec(source))) starts.push(match.index + match[1].length)
+  while ((match = MENTION_AT.exec(source))) {
+    const at = match.index + match[1].length
+    if (at >= literalAt) break
+    if (inList(at)) continue
+    starts.push(at)
+  }
 
   const segments = []
   for (let i = 0; i < starts.length; i += 1) {
@@ -391,8 +425,14 @@ function parseMention(raw) {
   const body2 = String(rest || '').replace(/^\s+/, '')
   /* the first token, or the first token *before* the colon when the colon
      touches it (`@youtrack:AC:login bug` → AC) */
-  const word = body2.split(/[\s:]+/)[0] || ''
-  const after = body2.slice(word.length)
+  const token = body2.split(/[\s:]+/)[0] || ''
+  /* "For project @orca:entity, make sure …" names the project `entity`. The
+     comma is the sentence's: a project called `entity,` is how a message that
+     reads perfectly became "@orca:entity, is not a project Orca knows". Same
+     rule the plain entity name already follows, kept on the *name* so `after`
+     still starts where the punctuation does. */
+  const word = token.replace(/[.,;!?)\]]+$/, '')
+  const after = body2.slice(token.length)
   const structured = after.startsWith(':')
   const tail = structured ? after.slice(1).trim() : ''
   /* everything after the head, word included, and everything after the word */
@@ -2323,9 +2363,16 @@ async function delegatePlan(record, source, plan) {
   const sentence = planSentence(plan)
   if (!sentence) return null
   const prologue = String(source || '').match(SKILL_PROLOGUE)
+  const lead = prologue ? `${prologue[0].trim()}\n\n` : ''
+  const whole = `${lead}${sentence}`
+  /* `planSentence` always puts the job last, so the run's instruction begins at
+     the tail of the sentence being rendered. Everything from there is the
+     person's words, not mention syntax — see `parse`'s `literalAt`. */
+  const job = String(plan.job || '').trim()
   return {
-    source: prologue ? `${prologue[0].trim()}\n\n${sentence}` : sentence,
+    source: whole,
     carriedSkill: prologue ? prologue[0].trim() : '',
+    literalAt: whole.length - job.length,
   }
 }
 
@@ -2360,6 +2407,9 @@ async function rewrite(
   /* A `/workspace:` that led the message moves onto every run it produces:
      `skill-ref` resolved it for the message, and a fan-out routes each run. */
   let carriedSkill = ''
+  /* Where a classified plan's job starts; `Infinity` for a message a person
+     typed, whose every `@` is mention syntax. */
+  let literalAt = Infinity
   /* The grammar first, for free — but only when it is the whole story. A message
      opening with a prefix it reads exactly is never second-guessed: the person's
      own count is a better answer than anything a model could return.
@@ -2395,10 +2445,11 @@ async function rewrite(
     if (delegated) {
       source = delegated.source
       carriedSkill = delegated.carriedSkill
+      literalAt = delegated.literalAt ?? Infinity
     }
   }
   const spawn = spawnPrefix(source)
-  const parsed = parse(source)
+  const parsed = parse(source, { literalAt })
   if (!parsed.segments.length) return { text: source, mentions: [] }
   if (spawn?.kind === 'repeat' && spawn.count > MAX_SPAWN_RUNS) {
     throw new Error(
