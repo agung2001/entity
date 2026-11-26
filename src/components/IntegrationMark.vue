@@ -21,6 +21,10 @@ import habitifyMark from '@/assets/connectors/habitify.png'
  * GitHub mono mark), inlined so the page keeps zero external assets beyond the
  * one Orca icon. GitHub's mark is `currentColor`, so the row can mute it;
  * YouTrack's is a fixed brand palette, so muting is opacity.
+ *
+ * Fitbit is inlined for the same reason and is the only mark drawn from its
+ * initials rather than its wordmark: the shipped logo is a diamond of dots, which
+ * is a dozen circles and no image asset at all.
  */
 defineProps({
   name: { type: String, default: '' },
@@ -125,6 +129,32 @@ const showOrcaIcon = computed(() => !failed.value)
       fill="#fff"
       d="M63.992 175.87h58.374v10.56H63.992zm21.317-63.952L58.414 69.682h17.93L93.08 97.773l16.935-28.09h17.492l-26.896 42.036v27.892H85.27v-27.693zm65.746-28.09h-21.318V69.681h57.776v14.145h-21.118v55.585h-15.34z"
     />
+  </svg>
+
+  <svg
+    v-else-if="name === 'fitbit'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <title>Fitbit</title>
+    <g fill="#00B0B9">
+      <circle cx="12" cy="3" r="1.7" />
+      <circle cx="8" cy="7" r="1.7" />
+      <circle cx="12" cy="7" r="1.7" />
+      <circle cx="16" cy="7" r="1.7" />
+      <circle cx="4" cy="11" r="1.7" />
+      <circle cx="8" cy="11" r="1.7" />
+      <circle cx="12" cy="11" r="1.7" />
+      <circle cx="16" cy="11" r="1.7" />
+      <circle cx="20" cy="11" r="1.7" />
+      <circle cx="8" cy="15" r="1.7" />
+      <circle cx="12" cy="15" r="1.7" />
+      <circle cx="16" cy="15" r="1.7" />
+      <circle cx="12" cy="19" r="1.7" />
+    </g>
   </svg>
 
   <svg

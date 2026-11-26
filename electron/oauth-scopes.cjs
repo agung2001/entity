@@ -216,6 +216,44 @@ const SCOPE_CATALOG = {
     ],
   },
 
+  /* Fitbit's scopes are short words on the wire and short words on screen, so
+     `wire` and `display` match — but both are written out anyway, because the rule
+     that keeps them apart is what stops a Google-style URL being sent here.
+
+     `read` is the whole feature: activity, sleep, heart rate and profile (the
+     profile read is what names the account and supplies its timezone). `full` adds
+     `weight`, which nothing in this app reads — it is the rung X's own table has,
+     and leaving it out made "full" a ladder with one step. Fitbit caps a single
+     grant at eight scopes; every tier here is well under it. */
+  fitbit: {
+    tiers: [
+      {
+        id: 'read',
+        label: 'Read a day',
+        detail: 'Steps, distance, active minutes, sleep, heart rate and the device list. Cannot log or change anything.',
+        scopes: [
+          { wire: 'activity', display: 'activity' },
+          { wire: 'sleep', display: 'sleep' },
+          { wire: 'heartrate', display: 'heartrate' },
+          { wire: 'profile', display: 'profile' },
+        ],
+      },
+      {
+        id: 'full',
+        label: 'Read a day and your weight',
+        detail:
+          'The same read, plus body weight and body-fat logs. Nothing here writes: no step, meal, water or sleep is ever recorded.',
+        scopes: [
+          { wire: 'activity', display: 'activity' },
+          { wire: 'weight', display: 'weight' },
+          { wire: 'sleep', display: 'sleep' },
+          { wire: 'heartrate', display: 'heartrate' },
+          { wire: 'profile', display: 'profile' },
+        ],
+      },
+    ],
+  },
+
   x: {
     tiers: [
       {

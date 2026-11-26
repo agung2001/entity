@@ -1389,6 +1389,43 @@ app is: **one read a day, stored on disk, refreshed only when someone asks.**
   wrapped; a read-only home means the next visit asks the service again instead of
   failing the page.
 
+### A read-only dashboard still spends somebody's budget
+
+Fitbit's dashboard (`electron/fitbit-dashboard.cjs`) is the second implementation,
+and it adds the rules a limit *per hour* needs — the file cache above is a day's
+worth and does not help a person flipping between yesterday and Tuesday.
+
+- **Count the calls, and refuse before spending.** Every request is charged
+  *before* its answer is judged, including a `429` and a `500`: those were calls.
+  A day costs five, so an hour with four left is an hour that cannot answer, and
+  the app says so without touching the network.
+- **The reset time is quoted, never computed.** A `429` carries
+  `fitbit-rate-limit-reset`; that number is the one on screen. Deriving a minute
+  from our own clock would send someone back to a wall that is still there.
+- **The timezone comes from the account, not the machine.** `user.timezone` is read
+  with the device list, once an hour, and every day boundary is computed in it. A
+  profile with no zone falls back to UTC and the page says so (`noTimezone`) — the
+  OS zone is never a stand-in for somebody's account.
+- **A `null` is not a zero.** A grant without the heart-rate scope answers `403` on
+  two of the five reads; the day is still real, so the numbers are `—` with the
+  reason beside them, and no cell prints `0 bpm`.
+- **Read-only means no verb at all.** The tab has one control — Re-read — and there
+  is no code path in the module that could write to the account. A button that
+  implied one would be a promise about somebody else's data.
+- **The gate is the account list, not a read.** The second tab is offered only when
+  a `connected` account exists on the row; a locked tab keeps its place in the tab
+  order, is `aria-disabled`, and states the reason underneath — never `disabled`,
+  which would make that reason unreachable by keyboard.
+- **A locked pane is absent, not empty.** `lock` is part of the pane's `v-if`, not
+  only of the click handler: a mounted dashboard reads on mount, so a locked tab
+  that still rendered its pane would spend an account's budget and show a day it has
+  no grant for. Locked, the chain falls through to the overview pane, and
+  `aria-controls` points at that pane's id because it is the one in the document.
+- **The day is in the address.** `?tab=dashboard&day=YYYY-MM-DD` reopens the same
+  day tomorrow; `today` is the absence of the parameter, `yesterday` is a word (it
+  must still mean yesterday next week), and a value the app did not define is
+  dropped on load rather than sent to the service.
+
 ## Voice mode opens a microphone
 
 The microphone is the one control in the composer that reaches a device. It sits
@@ -1513,7 +1550,14 @@ Rules that keep it that way:
 12. If the page reads a remote service into numbers, it is a dashboard: cache it
    for a day in a JSON file under `~/.entity/`, re-read only on an explicit verb
    or the expiry, and print the rule from `cacheTtlMs` (see *A dashboard caches
-   for a day, in a file*).
-13. Styles go in the sheet for the surface (see **Stylesheets are split by
+   for a day, in a file*). If the service also limits by the hour, count the calls
+   and refuse before spending them (see *A read-only dashboard still spends
+   somebody's budget*).
+13. A dashboard tab with more than one view keeps its view in the address —
+   `?tab=dashboard`, and any filter that is a place a person would want to reopen.
+   Validate what came in the URL against a closed set and drop the rest; never
+   resolve "today" in the renderer, and never send a value the main process did
+   not define back to it.
+14. Styles go in the sheet for the surface (see **Stylesheets are split by
    surface**), and a corner and a type size come from the ladders in
    `tokens.css`.

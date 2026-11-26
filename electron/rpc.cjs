@@ -28,6 +28,7 @@ const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
 const calendarDashboard = require('./calendar-dashboard.cjs')
+const fitbitDashboard = require('./fitbit-dashboard.cjs')
 const lynkDashboard = require('./lynk-dashboard.cjs')
 /* The YouTube Studio dashboard reads the same kinds of things from a different
    grant: an account roster and one window of numbers. Same file-cached, one-read
@@ -394,6 +395,11 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The Fitbit connector's dashboard: six counts and the hour-by-hour heart trace
+       for one day. **Read-only** — every call is a GET, and nothing on the page can
+       log anything. No token is ever read: the module refreshes one on this machine
+       and keeps it there. */
+    'fitbit.dashboard': (args) => fitbitDashboard.readDay(args),
     /* Google Calendar's dashboard: six counts and a week of events, read per
        account from the grant the accounts card already holds. The `accounts` read is
        the tab strip's gate — it answers before the tab is pressed, so a person sees

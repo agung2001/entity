@@ -16,6 +16,7 @@ import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
 import ConnectorHabitifyDashboard from '@/components/ConnectorHabitifyDashboard.vue'
+import ConnectorFitbitDashboard from '@/components/ConnectorFitbitDashboard.vue'
 import { call } from '@/composables/localBridge'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
 import {
@@ -328,6 +329,7 @@ const dashKind = computed(() => {
   /* Habitify's reader lives in this app, so its own `work` block is the whole
      gate — there is no roster to look up beside the row. */
   if (builtIn === 'habitify' && installedRow.value?.work) return 'habitify'
+  if (builtIn === 'fitbit' && installedRow.value?.work) return 'fitbit'
   if (builtIn === 'lynk') return 'lynk'
   return ''
 })
@@ -340,6 +342,13 @@ const dashboardTab = computed(() => Boolean(dashKind.value))
    day, so it falls back to the main process's "today" rather than being forwarded. */
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const day = computed(() => (DAY.test(String(route.query.day || '')) ? String(route.query.day) : ''))
+/* Fitbit's second spelling of a day: its strip offers Yesterday, and the word has
+   to keep meaning yesterday next week — so it travels as a word, exactly as the
+   absent value travels as "today". */
+const fitbitDay = computed(() => {
+  const raw = String(route.query.day || '')
+  return raw === 'yesterday' || DAY.test(raw) ? raw : ''
+})
 /* What the tab offers, in the connector's own words: GitHub's board is 90 days,
    the channel board is the 28 the window chips start on, Clockify's week is a week,
    Habitify's is one day and the week around it, and the Lynk.id report is whatever
@@ -349,6 +358,7 @@ const dashboardHint = computed(() => {
   if (dashKind.value === 'studio') return 'What moved in the last 28 days'
   if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
   if (dashKind.value === 'habitify') return 'What a day was scheduled with, and the week around it'
+  if (dashKind.value === 'fitbit') return 'One day in steps, sleep and heart rate'
   if (dashKind.value === 'lynk') return 'What the store sold, read from a Drive folder'
   return 'What moved in the last 90 days'
 })
@@ -606,6 +616,19 @@ const habitifyLock = computed(() => {
   }
   return null
 })
+/* Fitbit's one lock: no account whose grant this machine holds. The roster is the
+   accounts card's own list rather than a read of this page's own, and `loaded` is
+   part of the answer: a roster that has not arrived yet would lock every Fitbit
+   page, which is how a deep link used to lose its address. */
+const fitbitLock = computed(() => {
+  if (!connectors.loaded) return null
+  const accounts = Array.isArray(installedRow.value?.accounts) ? installedRow.value.accounts : []
+  if (accounts.some((account) => account.status === 'connected')) return null
+  return {
+    before: 'Dashboard needs a signed-in Fitbit account — the accounts card above connects one.',
+    title: 'Needs a signed-in Fitbit account',
+  }
+})
 /* One shape for every lock, whichever way it was written: `dashKind` picks the
    lock, and `opens` stays the folder lock's own answer — the one lock on this page
    whose fix is a control here rather than a card on Overview. */
@@ -615,6 +638,7 @@ const gate = computed(() => {
   if (dashKind.value === 'studio') return gated(studioLock.value)
   if (dashKind.value === 'clockify') return gated(clockifyLock.value)
   if (dashKind.value === 'habitify') return gated(habitifyLock.value)
+  if (dashKind.value === 'fitbit') return gated(fitbitLock.value)
   if (dashKind.value === 'lynk') return lynkGate(installedRow.value)
   return { locked: false, why: null, opens: 'overview' }
 })
@@ -623,6 +647,15 @@ const lock = computed(() => (gate.value.locked ? gate.value.why : null))
    focus, because the reason under the strip is the thing to read and a
    `disabled` attribute would make it unreachable by keyboard. */
 const canOpen = (name) => name === 'overview' || !gate.value.locked
+/* Which pane the Dashboard tab actually controls, and it is not always its own.
+   The two bodies whose lock is part of their `v-if` — Fitbit's and Lynk.id's — fall
+   through to the Overview pane while locked, so `aria-controls` names the id that is
+   in the document rather than the one the tab would have drawn. */
+const dashboardPane = computed(() =>
+  tab.value === 'dashboard' && !(lock.value && (dashKind.value === 'fitbit' || dashKind.value === 'lynk'))
+    ? 'cxn-pane-dashboard'
+    : 'cxn-pane-overview',
+)
 
 /* The picker is the folder lock's own answer, so it lives beside the gate rather
    than inside the tab body: activating the lock is what opens it. */
@@ -659,16 +692,37 @@ function selectDay({ day: wanted = '', force = false } = {}) {
   /* `force` is Refresh: the same day, asked again, past the day-long cache. */
   if (force || wanted !== habitify.day) readHabitifyDashboard({ day: wanted, force }).catch(() => {})
 }
+/* Fitbit's chips and date field ask for a day; the address answers and the pane
+   reads it, so a reload or a shared link asks for the same day. `today` is the
+   absence of the parameter, because that is where a bookmark should land tomorrow. */
+function pickFitbitDay(value) {
+  const next = String(value || '')
+  const query = { ...route.query, tab: 'dashboard' }
+  if (next === '' || next === 'today') delete query.day
+  else if (next === 'yesterday' || DAY.test(next)) query.day = next
+  else return
+  router.replace({ query }).catch(() => {})
+}
 /* The address spells the default out as little as possible: a bare address and
    `?tab=overview` are the same place, and a value nobody defined is not a place at
    all — both end up with no `tab` parameter at all. Only a load that actually
    carries a stray `tab` pays for the rewrite, so `?tab=dashboard` never touches
    the address it was given. */
 function normalizeTab() {
-  if (route.query.tab === undefined || String(route.query.tab) === 'dashboard') return
   const query = { ...route.query }
-  delete query.tab
-  router.replace({ query }).catch(() => {})
+  let touched = false
+  if (query.tab !== undefined && String(query.tab) !== 'dashboard') {
+    delete query.tab
+    touched = true
+  }
+  /* `day` is only a place when the dashboard is the tab on screen and the value is
+     one a dashboard defines: a stray day would otherwise ride along on a page that
+     reads nothing with it. */
+  if (query.day !== undefined && (query.tab !== 'dashboard' || !(fitbitDay.value || day.value))) {
+    delete query.day
+    touched = true
+  }
+  if (touched) router.replace({ query }).catch(() => {})
 }
 /* Roving tabindex, the pattern `SkillsView`'s strip already uses: one stop for the
    whole strip, and the arrows walk it. A locked tab is the exception — it keeps
@@ -695,6 +749,11 @@ function onTabKey(event) {
 }
 
 async function openDashboard() {
+  /* Fitbit draws itself: its pane reads its own day on mount, so the gate here is
+     the row's own account list and there is nothing on this page to ask for. A
+     locked deep link keeps its address — the pane is absent, and the sentence under
+     the strip is the answer the person followed the link for. */
+  if (dashKind.value === 'fitbit') return
   /* The calendar's gate is the account store, so the read that answers it is the
      same one the accounts card makes — no extra request, and no read at all while
      the tab that would spend it is not the one on screen. */
@@ -815,6 +874,7 @@ watch(
       if (name === 'dashboard' && !locked && !habitify.readAt) await readHabitifyDashboard({ day: day.value })
       return
     }
+    if (dashKind.value === 'fitbit') return
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
@@ -887,6 +947,17 @@ watch(
     if (tab.value === 'dashboard' && !gate.value.locked) readIfNeeded()
   },
 )
+/* Fitbit's gate is the row's own account list, and the card above can sign the
+   last account out under an open tab. Only an open → locked change closes it: a
+   roster that has not loaded yet reads as signed-out, and closing on that would
+   send a deep link to the overview before its accounts could arrive. */
+const fitbitGate = computed(() =>
+  dashKind.value === 'fitbit' && connectors.loaded ? Boolean(fitbitLock.value) : null,
+)
+watch(fitbitGate, (locked, was) => {
+  if (was !== false || !locked) return
+  if (tab.value === 'dashboard') select('overview')
+})
 /* The same for a consent granted or revoked on the accounts card: a channel that
    arrived unlocks the tab, and one that went away must not leave the pane open. */
 watch(
@@ -1290,7 +1361,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             role="tab"
             :aria-selected="tab === 'dashboard'"
             :tabindex="tab === 'dashboard' || lock ? 0 : -1"
-            aria-controls="cxn-pane-dashboard"
+            :aria-controls="dashboardPane"
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
@@ -1368,7 +1439,29 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           @select-day="selectDay"
         />
 
-        <div v-else id="cxn-pane-overview" class="cxn-split" role="tabpanel" :aria-labelledby="dashboardTab ? 'cxn-tab-overview' : undefined">
+        <!-- Fitbit's tab is one day and one table, and it is read-only: the copy on
+             the page is the connector's own, and no control here writes to the
+             account. The gate is part of the render, not just of the click: a
+             mounted dashboard reads on mount, so a locked tab would spend an
+             account's budget it has no grant for and paint a day it does not have.
+             Locked, the chain falls through to Overview, which is what
+             `dashboardPane` points at. -->
+        <ConnectorFitbitDashboard
+          v-else-if="dashKind === 'fitbit' && tab === 'dashboard' && !lock"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+          :day="fitbitDay"
+          @pick="pickFitbitDay"
+        />
+
+        <div
+          v-else
+          id="cxn-pane-overview"
+          class="cxn-split"
+          role="tabpanel"
+          :aria-labelledby="tab === 'dashboard' ? 'cxn-tab-dashboard' : dashboardTab ? 'cxn-tab-overview' : undefined"
+        >
           <div class="cxn-main">
           <!-- What this connector is, in the app's own words. Shown for an entry
                this workspace has not installed: the pitch is the page, and a page
