@@ -188,7 +188,7 @@ const visible = ref(PAGE)
    of the colon run belonging to the last one. `@gmail:all:from:stripe` is two:
    the scope (`all`) and the query (`from:stripe`). Absent = every field separate,
    which is right for `@file:` and `@thread:`. */
-const FIELD_GROUPS = { gmail: 2, drive: 2, youtube: 2, 'youtube-studio': 2, x: 2 }
+const FIELD_GROUPS = { gmail: 2, drive: 2, gcal: 2, youtube: 2, 'youtube-studio': 2, x: 2 }
 let searchTimer = null
 let searchSeq = 0
 let searchKind = ''
@@ -396,6 +396,7 @@ function removeAttachment(index) {
 const ACCOUNT_KINDS = {
   gmail: 'Gmail',
   drive: 'Drive',
+  gcal: 'Calendar',
   youtube: 'YouTube',
   'youtube-studio': 'YouTube Studio',
   x: 'X',
@@ -406,6 +407,7 @@ const ACCOUNT_KINDS = {
 const ACCOUNT_MARKS = {
   gmail: 'gmail',
   drive: 'google-drive',
+  gcal: 'google-calendar',
   youtube: 'youtube',
   'youtube-studio': 'youtube-studio',
   x: 'x',

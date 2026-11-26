@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const calendarDashboard = require('./calendar-dashboard.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -366,6 +367,12 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* Google Calendar's dashboard: six counts and a week of events, read per
+       account from the grant the accounts card already holds. The `accounts` read is
+       the tab strip's gate — it answers before the tab is pressed, so a person sees
+       the lock without clicking through to it. */
+    'calendar.dashboard': (args) => calendarDashboard.dashboard(args),
+    'calendar.accounts': () => calendarDashboard.accounts(),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

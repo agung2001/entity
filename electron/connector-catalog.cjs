@@ -302,6 +302,40 @@ const CATALOG = {
       ],
     },
   },
+  /* The calendar is the read-only sibling of the other Google rows: one grant,
+     one week of events, and no verb that would move one. The mention is a search
+     over the calendars a person already sees, which is what makes
+     `@gcal:avery:planning` answer with an event rather than a suggestion to book
+     one. */
+  'google-calendar': {
+    label: 'Google Calendar',
+    kind: 'rest',
+    oauth: true,
+    verify: null,
+    summary: 'The week already on your calendars.',
+    work: {
+      mention: '@gcal:',
+      resolves: 'events in the calendars you name, or in every connected account with `all`',
+      syntax: '@gcal:<account|all>:<query>',
+      examples: ['@gcal:all:planning', '@gcal:avery:standup'],
+      returns: 'the matching events — title, when, which calendar, and a link',
+      resolver: 'calendar',
+      needs: 'one signed-in Google account granting `calendar.readonly`',
+      page: '',
+      how: [
+        'The scope comes first and is required: `@gcal:avery:` is that account, `@gcal:all:` is every connected one.',
+        'The account is the localpart of the address, as the card shows it — `@gcal:avery:` for `avery@example.test`.',
+        'The query is the rest of the line and is matched against event titles, so it may hold spaces.',
+        'Only calendars ticked in Google Calendar are read, which is the same set the app shows.',
+        'This is read-only: it never creates, moves, declines or cancels an event, and no scope it asks for allows that.',
+        'A word that is not one of your accounts is an error, not a search — so a typo cannot quietly read the wrong calendar.',
+      ],
+      samples: [
+        { code: '@gcal:all:planning', then: 'matching events across every connected calendar' },
+        { code: '@gcal:avery:standup', then: 'that one account, titles matching “standup”' },
+      ],
+    },
+  },
   youtube: {
     label: 'YouTube',
     kind: 'rest',
@@ -535,7 +569,7 @@ const CATALOG = {
 /** The resolver keys `mention-ref` actually answers. A catalog entry may not name anything else. */
 const RESOLVERS = new Set([
   'orca', 'github', 'youtrack', 'maka',
-  'gmail', 'drive', 'youtube', 'youtube-studio', 'x',
+  'gmail', 'drive', 'calendar', 'youtube', 'youtube-studio', 'x',
   'clockify', 'habitify', 'opendesign',
   'artifact', 'thread',
 ])

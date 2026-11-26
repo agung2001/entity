@@ -47,7 +47,7 @@ function forgetToken(connector, localpart) {
 }
 
 /** The connector id a resolver kind reads accounts from (`drive` → `google-drive`). */
-const CONNECTOR_OF = { drive: 'google-drive' }
+const CONNECTOR_OF = { drive: 'google-drive', calendar: 'google-calendar' }
 const connectorOfKind = (kind) => CONNECTOR_OF[kind] || kind
 
 /** Every account of a connector, with whether this machine holds a token for it. */

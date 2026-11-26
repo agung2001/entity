@@ -20,6 +20,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { ago, hub, toast } from '@/stores/hub'
+import { googleCalendar, readAccounts as readCalendarAccounts } from '@/composables/googleCalendar'
 import {
   clearOauthClient,
   connectAccount,
@@ -364,14 +365,26 @@ const emptyHint = computed(
    is the string `Re-consent` asks for. More than three collapses to `<first> +N`
    with the full list in `title`. */
 function scopeView(account) {
+  const granted = account?.scopes || []
+  /* The calendar page is gated on one scope, so that scope is the chip that has to
+     survive the collapse — a chip reading `userinfo.email +3` hides the only grant
+     a person is being asked about. Other connectors keep the store's order. */
+  const ordered =
+    props.connector === 'google-calendar'
+      ? [...granted].sort((a, b) => Number(b === 'calendar.readonly') - Number(a === 'calendar.readonly'))
+      : granted
   const cells = [
-    ...(account?.scopes || []).map((scope) => ({ text: scope, miss: false })),
+    ...ordered.map((scope) => ({ text: scope, miss: false })),
     ...(account?.missing || []).map((scope) => ({ text: `${scope} not granted`, miss: true })),
   ]
-  if (cells.length <= 3) return { cells, title: '' }
+  const full = cells.map((cell) => cell.text).join(', ')
+  if (cells.length <= 3) return { cells, title: props.connector === 'google-calendar' ? full : '' }
   return {
     cells: [{ text: `${cells[0].text} +${cells.length - 1}`, miss: false }],
-    title: cells.map((cell) => cell.text).join(', '),
+    /* The collapsed names are only reachable from the `title`, so the calendar tab
+       always sets it — an empty tooltip on `+3` is three scopes with no way to read
+       them. */
+    title: full,
   }
 }
 
@@ -396,6 +409,23 @@ const accountsFact = computed(() => {
     : `${total} · ${usable} usable`
 })
 
+/* ── the calendars column ──────────────────────────────────────────
+   Only Google Calendar has one, and it is the *gate's evidence*: the Dashboard tab
+   is enabled by a grant, and this column is how many calendars that grant actually
+   answered on the last read. `null` is "nothing read yet" and prints `—`; `0` would
+   claim a read that never happened. The other four connectors keep four tracks, so
+   their card is byte-identical to what shipped. */
+const showCalendars = computed(() => props.connector === 'google-calendar')
+const calendarsOf = (account) => {
+  const row = googleCalendar.accounts.find(
+    (entry) => String(entry.localpart || '') === String(account?.localpart || ''),
+  )
+  const count = row?.calendars
+  if (!Number.isFinite(Number(count))) return '—'
+  const n = Number(count)
+  return `${n} ${n === 1 ? 'calendar' : 'calendars'}`
+}
+
 /* The page's Definition card shows this, so the two cannot disagree about the
    same connector.
    Exposed as a **function**, not the computed: `defineExpose` hands the ref object
@@ -407,7 +437,14 @@ defineExpose({ accountsFact: () => accountsFact.value })
 onMounted(async () => {
   /* The client first: with none saved, `Connect` opens the form instead of asking
      the browser for a consent screen it cannot run. */
-  await Promise.all([readClient(), readAccounts(), readTiers()])
+  await Promise.all([
+    readClient(),
+    readAccounts(),
+    readTiers(),
+    /* The Calendars column is answered by the connector's own read, and asking here
+       is what keeps the column and the Dashboard tab's gate the same fact. */
+    showCalendars.value ? readCalendarAccounts().catch(() => {}) : null,
+  ])
   emit('changed', accounts.value)
 })
 </script>
@@ -577,10 +614,11 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-else class="acct" role="table" aria-label="Connected accounts">
+      <div v-else class="acct" :class="{ 'has-cals': showCalendars }" role="table" aria-label="Connected accounts">
         <div class="acct-cols" role="row">
           <span role="columnheader">Account</span>
           <span role="columnheader" data-col="scopes">Scopes</span>
+          <span v-if="showCalendars" role="columnheader">Calendars</span>
           <span role="columnheader">Status</span>
           <span role="columnheader">Action</span>
         </div>
@@ -595,6 +633,7 @@ onMounted(async () => {
             </span>
           </span>
           <span class="acct-scopes" role="cell"><span class="acct-skel acct-skel-line acct-skel-scope"></span></span>
+          <span v-if="showCalendars" class="acct-cals" role="cell"><span class="acct-skel acct-skel-line acct-skel-scope"></span></span>
           <span class="ct-status" role="cell"></span>
           <span class="ct-act" role="cell"></span>
         </div>
@@ -620,6 +659,7 @@ onMounted(async () => {
               :class="{ miss: cell.miss }"
             >{{ cell.text }}</span>
           </span>
+          <span v-if="showCalendars" class="acct-cals" role="cell">{{ calendarsOf(account) }}</span>
           <span class="ct-status" role="cell" :data-s="accountTone(account)">
             <span class="ct-s1">
               <span class="dot" aria-hidden="true"></span>

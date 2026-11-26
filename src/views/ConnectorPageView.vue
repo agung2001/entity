@@ -10,8 +10,15 @@ import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
+import GoogleCalendarDashboard from '@/components/GoogleCalendarDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  canRead as calendarCanRead,
+  googleCalendar,
+  readAccounts as readCalendarAccounts,
+  readDashboard as readCalendarDashboard,
+} from '@/composables/googleCalendar'
 import TailscalePanel from '@/components/TailscalePanel.vue'
 import {
   connectors,
@@ -249,10 +256,11 @@ async function load() {
 }
 
 /* ── the tabs ────────────────────────────────────────────────────────
-   The strip exists only for the GitHub connector this app ships (`builtIn ===
-   'github'`): a tab that led to another connector's half-built dashboard would be
-   a promise nobody kept, so every other row — including a custom `cli` row — gets
-   no tab at all rather than a disabled one.
+   The strip exists only for the two connectors this app ships a dashboard for:
+   GitHub (`builtIn === 'github'`) and Google Calendar (`builtIn ===
+   'google-calendar'`). Every other row — including a custom `cli` row — gets no tab
+   at all rather than a disabled one: a tab that led to a half-built dashboard would
+   be a promise nobody kept.
 
    The two tabs live in the address: `?tab=dashboard` is a place a person can
    bookmark, and the bare address / `?tab=overview` drops the parameter rather than
@@ -261,18 +269,59 @@ const TABS = ['overview', 'dashboard']
 const tab = computed(() =>
   TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'overview',
 )
-/* Only GitHub has a second tab, and only the row the catalog shipped has a `work`
-   block to gate on. A custom `cli` row that happens to be called github is not it. */
+/* Only the rows the catalog shipped have a `work` block to gate on. A custom `cli`
+   row that happens to be called github is not it. */
 const githubRow = computed(() => connectors.rows.find((entry) => entry.builtIn === 'github') || null)
-const dashboardTab = computed(
-  () => Boolean(githubRow.value?.work) && installedRow.value?.builtIn === 'github',
+const calendarRow = computed(
+  () => connectors.rows.find((entry) => entry.builtIn === 'google-calendar') || null,
 )
+/* Which dashboard the tab body draws. Two connectors have one, and the tab strip is
+   the same strip for both — so the *kind* has to be named once, here, rather than
+   inferred again at the pane. It is also the only answer to whether the strip exists
+   at all: asking the GitHub row first would hide the strip on a calendar page when
+   both connectors are installed. */
+const dashboardKind = computed(() => {
+  if (installedRow.value?.builtIn === 'github' && githubRow.value?.work) return 'github'
+  if (installedRow.value?.builtIn === 'google-calendar' && calendarRow.value?.work) return 'calendar'
+  return ''
+})
+const dashboardTab = computed(() => Boolean(dashboardKind.value))
 
-/* The two locks, in the order a person meets them: no binary, then no login. Both
-   sentences are fixed copy — a computed reason would drift from the state it
-   describes — and `code`/`after` are split so the two `gh` mentions stay mono. */
+/* The locks, in the order a person meets them. Both sentences are fixed copy — a
+   computed reason would drift from the state it describes — and `code`/`after` are
+   split so the file names and scope ids stay mono. */
 const lock = computed(() => {
-  if (!dashboardTab.value || !github.loaded) return null
+  if (!dashboardTab.value) return null
+  if (dashboardKind.value === 'calendar') {
+    /* Nothing is pressed here: the calendar gate is answered by the account store,
+       which the accounts card below already reads, so the lock exists before the
+       tab is. Three states, and they are three different sentences because they are
+       three different fixes. */
+    if (!googleCalendar.loaded) return null
+    if (googleCalendar.apiOff) {
+      return {
+        before: "Dashboard needs the Calendar API enabled on Entity's OAuth client.",
+        title: 'Needs the Calendar API enabled in the Google Cloud project',
+      }
+    }
+    const rows = googleCalendar.accounts
+    if (!rows.length) {
+      return {
+        before: 'Dashboard needs a connected Google account. Overview has the only Connect button on this page.',
+        title: 'Needs a connected Google account',
+      }
+    }
+    if (!rows.some(calendarCanRead)) {
+      return {
+        before: "Dashboard needs ",
+        code: 'calendar.readonly',
+        after: ". This account's grant does not include it.",
+        title: 'Needs the calendar.readonly scope',
+      }
+    }
+    return null
+  }
+  if (!github.loaded) return null
   if (!github.binary?.found) {
     return {
       before: 'Dashboard needs the ',
@@ -295,11 +344,19 @@ const lock = computed(() => {
 })
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
    focus, because the reason under the strip is the thing to read and a
-   `disabled` attribute would make it unreachable by keyboard. */
+   `disabled` attribute would make it unreachable by keyboard. Activating it moves
+   focus to that reason and changes nothing else — no tab is selected, no page is
+   loaded, and Overview's own Connect button is never pressed from here. */
 const canOpen = (name) => name === 'overview' || !lock.value
 
 function select(name) {
-  if (!canOpen(name)) return
+  if (!canOpen(name)) {
+    /* `tabindex="-1"` on the reason line is what lets a press land on it; a plain
+       `<p>` cannot take focus, and a locked tab that did nothing at all reads as a
+       broken button. */
+    document.getElementById('cxn-tab-why')?.focus?.()
+    return
+  }
   const query = { ...route.query }
   if (name === 'overview') delete query.tab
   else query.tab = name
@@ -327,10 +384,27 @@ function onTabKey(event) {
   if (delta === undefined) return
   event.preventDefault()
   const next = TABS[(TABS.indexOf(tab.value) + delta + TABS.length) % TABS.length]
-  if (canOpen(next)) select(next)
+  /* A locked tab still takes the arrow: one press has to reach the reason line, and
+     a strip where the arrow key silently stops at the first button reads as broken.
+     Focus only — no `select()`, so the address does not change and nothing reads
+     until the person presses Enter on it. */
+  if (!canOpen(next)) {
+    document.getElementById(`cxn-tab-${next}`)?.focus?.()
+    return
+  }
+  select(next)
+  /* The strip is a roving tabindex: the selected tab is the one stop. Moving the
+     selection without moving focus would leave it on a button that has just become
+     `-1`, so the next Tab would skip the strip entirely. */
+  document.getElementById(`cxn-tab-${next}`)?.focus?.()
 }
 
 async function openDashboard() {
+  if (dashboardKind.value === 'calendar') {
+    await readCalendarAccounts()
+    if (tab.value === 'dashboard' && !lock.value) await readCalendarDashboard()
+    return
+  }
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
@@ -338,25 +412,33 @@ onMounted(async () => {
   normalizeTab()
   await load()
   probeConnectors().catch(() => {})
-  /* The gate is answered by `gh`, so it is asked once the row is known: reading
-     it on every connector's page would run the CLI for a tab that cannot exist. */
+  /* The gate is answered by `gh` for GitHub and by the account store for the
+     calendar, so it is asked once the row is known: reading it on every
+     connector's page would run a CLI, or read a keyring, for a tab that cannot
+     exist. */
   if (dashboardTab.value) await openDashboard()
 })
-/* A deep link straight to the tab: the strip rendered before `gh` answered, so the
-   gate resolves late and the read has to wait for it rather than run against a
-   lock it does not yet know about. */
+/* A deep link straight to the tab: the strip rendered before the gate answered, so
+   it resolves late and the read has to wait for it rather than run against a lock
+   it does not yet know about. */
 watch(
   () => [tab.value, Boolean(lock.value), dashboardTab.value],
   async ([name, locked, hasTab]) => {
     if (!hasTab) return
+    if (dashboardKind.value === 'calendar') {
+      if (!googleCalendar.loaded) await readCalendarAccounts()
+      if (name === 'dashboard' && !locked && !googleCalendar.readAt) await readCalendarDashboard()
+      return
+    }
     if (!github.loaded) await readLogins()
     if (name === 'dashboard' && !locked && !github.readAt) await readDashboard()
   },
 )
-/* Re-checking the CLI from the accounts card changes the gate under the strip, so
-   the strip follows. */
+/* Re-checking the CLI, or signing an account out from the card, changes the gate
+   under the strip, so the strip follows: a tab whose reason just became true
+   cannot stay open on a page with nothing to draw. */
 watch(
-  () => github.logins.length,
+  () => (dashboardKind.value === 'calendar' ? googleCalendar.accounts.length : github.logins.length),
   (count) => {
     if (!count && tab.value === 'dashboard') select('overview')
   },
@@ -637,7 +719,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :aria-disabled="lock ? 'true' : undefined"
             :class="{ 'is-locked': Boolean(lock) }"
             :aria-describedby="lock ? 'cxn-tab-why' : undefined"
-            :title="lock ? lock.title : 'What moved in the last 90 days'"
+            :title="lock ? lock.title : dashboardKind === 'calendar' ? 'What is next, and where the gaps are' : 'What moved in the last 90 days'"
             @click="select('dashboard')"
           >
             <svg
@@ -658,15 +740,22 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           <!-- The reason is a line, not a tooltip: it stays on screen for as long
                as the tab is locked, which is the only way it can be read by
                somebody who never hovers. -->
-          <p v-if="lock" id="cxn-tab-why" class="tab-why">
-            {{ lock.before }}<code class="mono">{{ lock.code }}</code>{{ lock.after }}<template
+          <p v-if="lock" id="cxn-tab-why" class="tab-why" tabindex="-1">
+            {{ lock.before }}<template v-if="lock.code"><code class="mono">{{ lock.code }}</code></template>{{ lock.after }}<template
               v-if="lock.code2"
             ><code class="mono">{{ lock.code2 }}</code>{{ lock.after2 }}</template>
           </p>
         </nav>
 
         <ConnectorDashboard
-          v-if="dashboardTab && tab === 'dashboard'"
+          v-if="dashboardTab && tab === 'dashboard' && dashboardKind === 'github'"
+          id="cxn-pane-dashboard"
+          role="tabpanel"
+          aria-labelledby="cxn-tab-dashboard"
+        />
+
+        <GoogleCalendarDashboard
+          v-else-if="dashboardTab && tab === 'dashboard'"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
