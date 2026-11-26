@@ -10,12 +10,23 @@ import { hub, toast } from '@/stores/hub'
 import McpServerView from '@/views/McpServerView.vue'
 import ConnectorAccountsCard from '@/components/ConnectorAccountsCard.vue'
 import ConnectorDashboard from '@/components/ConnectorDashboard.vue'
+import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
 import ConnectorClockifyDashboard from '@/components/ConnectorClockifyDashboard.vue'
 import ConnectorGithubAccounts from '@/components/ConnectorGithubAccounts.vue'
 import ConnectorStudioDashboard from '@/components/ConnectorStudioDashboard.vue'
 import ConnectorHabitifyDashboard from '@/components/ConnectorHabitifyDashboard.vue'
 import { call } from '@/composables/localBridge'
 import { github, readDashboard, readLogins } from '@/composables/githubDashboard'
+import {
+  adoptLynkConfig,
+  dropLynkAnswer,
+  forgetFolder as forgetLynkFolder,
+  lynk,
+  readDashboard as readLynkDashboard,
+  readFolders as readLynkFolders,
+  saveFolder as saveLynkFolder,
+  testFolder as testLynkFolder,
+} from '@/composables/lynkDashboard'
 import {
   habitify,
   connected as habitifyConnected,
@@ -33,6 +44,8 @@ import {
   connectors,
   installConnector,
   loadConnectors,
+  loadLynkConfig,
+  lynkConfig,
   probeConnectors,
   providerOf,
   removeConnector,
@@ -293,16 +306,22 @@ const studioRow = computed(
   () => connectors.rows.find((entry) => entry.builtIn === 'youtube-studio') || null,
 )
 /* Which dashboard this page is, if any. Named rather than boolean because the three
-   have different locks, different reads and different pane bodies. */
+   have different locks, different reads and different pane bodies. Lynk.id ships no
+   `work.samples`, so the row itself is the test that it has a report to draw. */
 const dashKind = computed(() => {
-  if (installedRow.value?.builtIn === 'github' && githubRow.value?.work) return 'github'
-  if (installedRow.value?.builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
-  if (installedRow.value?.builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
+  const builtIn = String(installedRow.value?.builtIn || '')
+  if (builtIn === 'github' && githubRow.value?.work) return 'github'
+  if (builtIn === 'youtube-studio' && studioRow.value?.work) return 'studio'
+  if (builtIn === 'clockify' && installedRow.value?.work) return 'clockify'
   /* Habitify's reader lives in this app, so its own `work` block is the whole
      gate — there is no roster to look up beside the row. */
-  if (installedRow.value?.builtIn === 'habitify' && installedRow.value?.work) return 'habitify'
+  if (builtIn === 'habitify' && installedRow.value?.work) return 'habitify'
+  if (builtIn === 'lynk') return 'lynk'
   return ''
 })
+/* Which shipped rows have a second tab. One list — `dashKind` — because the strip,
+   the gate and the body must agree about it: a row that shipped a report but is not
+   named there would draw a Dashboard it cannot fill. */
 const dashboardTab = computed(() => Boolean(dashKind.value))
 /* The day is part of the address for the same reason the tab is: `?tab=dashboard&day=`
    is a place a person can send somebody. Anything that is not a civil date is not a
@@ -311,11 +330,13 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
 const day = computed(() => (DAY.test(String(route.query.day || '')) ? String(route.query.day) : ''))
 /* What the tab offers, in the connector's own words: GitHub's board is 90 days,
    the channel board is the 28 the window chips start on, Clockify's week is a week,
-   and Habitify's is one day and the week around it. */
+   Habitify's is one day and the week around it, and the Lynk.id report is whatever
+   the store sold in the folder it reads. */
 const dashboardHint = computed(() => {
   if (dashKind.value === 'studio') return 'What moved in the last 28 days'
   if (dashKind.value === 'clockify') return 'Where the team’s week went, read from Clockify'
   if (dashKind.value === 'habitify') return 'What a day was scheduled with, and the week around it'
+  if (dashKind.value === 'lynk') return 'What the store sold, read from a Drive folder'
   return 'What moved in the last 90 days'
 })
 
@@ -455,6 +476,61 @@ const studioLock = computed(() => {
   return null
 })
 
+/* The Lynk.id locks, in the order Lynk.id meets them: a grant, a grant that was
+   revoked, then a folder to read. An account that exists but is not `connected` is
+   not "no account" — it is the refusal, and the fix is a reauthorize rather than a
+   fresh consent. The third lock is the only one on this page that opens a control
+   instead of pointing at Overview, which is why `opens` is part of the answer. */
+function lynkGate(entry) {
+  if (!lynkConfig.loaded) return { locked: false, why: null, opens: 'overview' }
+  const accounts = Array.isArray(entry?.accounts) ? entry.accounts : []
+  if (!accounts.length) {
+    return {
+      locked: true,
+      opens: 'overview',
+      why: {
+        before: 'Dashboard needs a Google account — ',
+        code: 'drive.readonly',
+        after: '',
+        title: 'Needs a Google account on this machine',
+      },
+    }
+  }
+  if (!accounts.some((account) => account.status === 'connected')) {
+    return {
+      locked: true,
+      opens: 'overview',
+      why: {
+        before: 'Google refused the grant — reauthorize on Overview',
+        code: '',
+        after: '',
+        title: 'The Google grant was refused',
+      },
+    }
+  }
+  if (!lynkConfig.folderId) {
+    return {
+      locked: true,
+      opens: 'picker',
+      why: {
+        before: 'Dashboard needs a Drive folder — pick one on Overview',
+        code: '',
+        after: '',
+        title: 'Needs a Drive folder',
+      },
+    }
+  }
+  return { locked: false, why: null, opens: 'overview' }
+}
+
+/* One shape for every lock, whichever way it was written: `locked` decides whether
+   the tab is a place, `why` is the sentence under the strip, and `opens` says which
+   control answers it. */
+function gated(why) {
+  return why
+    ? { locked: true, why, opens: 'overview' }
+    : { locked: false, why: null, opens: 'overview' }
+}
 /* The week locks, in the order a person meets them: no key, then no workspace id.
    Both sentences are fixed copy for the same reason the two above are. */
 const clockifyLock = computed(() => {
@@ -488,20 +564,36 @@ const habitifyLock = computed(() => {
   }
   return null
 })
-const lock = computed(() => {
-  if (dashKind.value === 'github') return githubLock.value
-  if (dashKind.value === 'studio') return studioLock.value
-  if (dashKind.value === 'clockify') return clockifyLock.value
-  if (dashKind.value === 'habitify') return habitifyLock.value
-  return null
+/* One shape for every lock, whichever way it was written: `dashKind` picks the
+   lock, and `opens` stays the folder lock's own answer — the one lock on this page
+   whose fix is a control here rather than a card on Overview. */
+const gate = computed(() => {
+  if (dashKind.value === 'github') return gated(githubLock.value)
+  if (dashKind.value === 'studio') return gated(studioLock.value)
+  if (dashKind.value === 'clockify') return gated(clockifyLock.value)
+  if (dashKind.value === 'habitify') return gated(habitifyLock.value)
+  if (dashKind.value === 'lynk') return lynkGate(installedRow.value)
+  return { locked: false, why: null, opens: 'overview' }
 })
+const lock = computed(() => (gate.value.locked ? gate.value.why : null))
 /* Both tabs are always present in the tablist; a locked Dashboard still takes
    focus, because the reason under the strip is the thing to read and a
    `disabled` attribute would make it unreachable by keyboard. */
-const canOpen = (name) => name === 'overview' || !lock.value
+const canOpen = (name) => name === 'overview' || !gate.value.locked
+
+/* The picker is the folder lock's own answer, so it lives beside the gate rather
+   than inside the tab body: activating the lock is what opens it. */
+const picker = ref(false)
 
 function select(name) {
-  if (!canOpen(name)) return
+  if (name === 'dashboard' && gate.value.locked) {
+    /* Activating a locked tab does not switch it. A tab waiting for a folder is
+       the one case with an action behind it, so it opens the picker; the other
+       two focus the sentence that says where to fix it. */
+    if (gate.value.opens === 'picker') picker.value = true
+    else document.getElementById('cxn-tab-why')?.focus?.()
+    return
+  }
   const query = { ...route.query }
   if (name === 'overview') {
     delete query.tab
@@ -550,11 +642,18 @@ function onTabKey(event) {
 async function openDashboard() {
   /* The gate for each dashboard is answered by its own read, so only the one this
      page's connector needs is run. */
-  if (dashKind.value === 'studio') {
-    if (!studio.loaded) await readRoster()
+  if (dashKind.value === 'lynk') {
+    await loadLynkConfig({ id: id.value })
+    adoptLynkConfig(lynkConfig)
     /* A locked tab is not a place, and `select()` already refuses one — a deep
        link has to reach the same conclusion, or `?tab=dashboard` would land on a
        pane that has nothing it may read. */
+    if (tab.value === 'dashboard' && gate.value.locked) select('overview')
+    else if (tab.value === 'dashboard') await readIfNeeded()
+    return
+  }
+  if (dashKind.value === 'studio') {
+    if (!studio.loaded) await readRoster()
     if (tab.value === 'dashboard' && lock.value) select('overview')
     else if (tab.value === 'dashboard' && !studio.readAt) await readStudioDashboard()
     return
@@ -576,6 +675,27 @@ async function openDashboard() {
   await readLogins()
   if (tab.value === 'dashboard' && !lock.value) await readDashboard()
 }
+/*
+ * Whether the tab already holds an answer for the folder it is now pointed at.
+ *
+ * This is the difference between "the numbers are on screen" and "the tab was
+ * opened once". The read used to be guarded by `!lynk.readAt`, which is only ever
+ * set by a successful read — so a refusal, a quota, or a folder picked a moment
+ * later left the guard answering "already read" and the page stayed wrong until it
+ * was reloaded. The folder the answer came from is the fact that makes the read
+ * unnecessary, and a folder change is now what triggers the next one.
+ */
+function needsLynkRead() {
+  if (lynk.reading) return false
+  if (!lynk.readAt) return true
+  return Boolean(lynk.readFolderId) && lynk.readFolderId !== lynk.folderId
+}
+
+async function readIfNeeded({ force = false } = {}) {
+  if (!force && !needsLynkRead()) return
+  await readLynkDashboard({ force })
+}
+
 onMounted(async () => {
   normalizeTab()
   await load()
@@ -592,10 +712,18 @@ onMounted(async () => {
    gate resolves late and the read has to wait for it rather than run against a
    lock it does not yet know about. */
 watch(
-  () => [tab.value, Boolean(lock.value), dashboardTab.value],
-  async ([name, locked, hasTab]) => {
+  () => [tab.value, Boolean(gate.value.locked), dashboardTab.value, installedRow.value?.builtIn],
+  async ([name, locked, hasTab, builtIn]) => {
     if (!hasTab) return
-    if (dashKind.value === 'studio') {
+    if (builtIn === 'lynk') {
+      if (!lynkConfig.loaded) {
+        await loadLynkConfig({ id: id.value })
+        adoptLynkConfig(lynkConfig)
+      }
+      if (name === 'dashboard' && !locked) await readIfNeeded()
+      return
+    }
+    if (builtIn === 'youtube-studio') {
       if (!studio.loaded) await readRoster()
       /* Re-read the gate: the roster answered inside this run, so the value the
          watcher was handed is the one from before the read. */
@@ -643,6 +771,42 @@ watch(
     if (!count && tab.value === 'dashboard' && dashKind.value === 'habitify') select('overview')
   },
 )
+/*
+ * The Lynk.id gate has two inputs the strip cannot read on its own: whether a
+ * grant is still `connected` (the accounts card writes it) and whether a folder
+ * was picked (the card below writes it). Either one can lock or unlock the tab, so
+ * both are watched, and a tab that is open only while nothing is stored goes back
+ * to Overview rather than staying on a body it can no longer fill.
+ */
+watch(
+  () => [lynkConfig.folderId, lynkConfig.loaded, installedRow.value?.accounts],
+  async () => {
+    if (installedRow.value?.builtIn !== 'lynk') return
+    if (gate.value.locked && tab.value === 'dashboard') {
+      select('overview')
+      return
+    }
+    /* The gate just unlocked under an open tab — a grant was reauthorized, or a
+       folder was picked. Both mean the answer on screen is not the one this tab
+       would produce now, so it is asked for again here instead of on the next
+       page load. */
+    if (tab.value === 'dashboard' && !gate.value.locked) await readIfNeeded({ force: true })
+  },
+  { deep: true },
+)
+/* The folder whose rows were read is no longer the folder being read, so the
+   numbers on screen belong to somebody else's folder. Dropping the answer is what
+   turns that into a skeleton and a real read; leaving `readAt` alone is what left
+   the previous folder's revenue under the new folder's name. */
+watch(
+  () => [lynkConfig.folderId, lynkConfig.sheetSuffix],
+  ([nextFolder, nextSuffix], [wasFolder, wasSuffix]) => {
+    if (nextFolder === wasFolder && nextSuffix === wasSuffix) return
+    if (installedRow.value?.builtIn !== 'lynk') return
+    dropLynkAnswer()
+    if (tab.value === 'dashboard' && !gate.value.locked) readIfNeeded()
+  },
+)
 /* The same for a consent granted or revoked on the accounts card: a channel that
    arrived unlocks the tab, and one that went away must not leave the pane open. */
 watch(
@@ -656,6 +820,75 @@ watch(
 const back = () => {
   hub.rail.connectors = true
   router.push({ name: 'workspace', params: { workspace: hub.workspace }, query: { tab: 'connectors' } })
+}
+
+/* ── the Lynk.id report card ─────────────────────────────────────────────
+
+   One card, one control: which Drive folder the report is read from. Everything
+   else on it is a fact printed beside that control — the tab suffix, the currency,
+   the zone — because a number without its unit is a number somebody will
+   misread.
+
+   `Test folder` is its own call, not the page's `runTest`: a probe answers a
+   status line, and this answers how many spreadsheets were found and how many of
+   them had anything to read. `Re-read now` is `force`, and `Forget folder` writes
+   an empty id, which locks the tab again. */
+const isLynk = computed(() => installedRow.value?.builtIn === 'lynk')
+const folderTail = computed(() => {
+  const total = lynk.test?.sheets ?? lynk.sheets.total
+  return total ? `${total} ${total === 1 ? 'sheet' : 'sheets'}` : 'not read yet'
+})
+const testLine = computed(() => {
+  const answer = lynk.test
+  if (!answer) return ''
+  const seconds = (Number(answer.ms || 0) / 1000).toFixed(1)
+  return `${answer.sheets} ${answer.sheets === 1 ? 'spreadsheet' : 'spreadsheets'} · ${answer.withTab} with a ${lynkConfig.sheetSuffix.trim()} tab · ${answer.rows} ${answer.rows === 1 ? 'row' : 'rows'} · read in ${seconds} s`
+})
+
+async function onFolderPicked(folder) {
+  picker.value = false
+  try {
+    await saveLynkFolder(folder)
+    adoptLynkConfig(lynkConfig)
+    lynk.test = null
+    notice.value = `Reading ${folder.name}…`
+    await readLynkDashboard({ force: true })
+    notice.value = `${folder.name} is the folder this report reads.`
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  }
+}
+
+async function runFolderTest() {
+  error.value = ''
+  notice.value = ''
+  try {
+    await testLynkFolder()
+    if (lynk.testError) throw new Error(lynk.testError)
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  }
+}
+
+async function reReadNow() {
+  error.value = ''
+  try {
+    await readLynkDashboard({ force: true })
+    notice.value = lynk.error ? lynk.error : `Read ${lynk.sheets.withTab} spreadsheets again.`
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  }
+}
+
+async function dropFolder() {
+  try {
+    await forgetLynkFolder()
+    adoptLynkConfig({ folderId: '', folderName: '' })
+    lynk.test = null
+    notice.value = 'The folder is forgotten; the Dashboard is locked until you pick one.'
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+  }
 }
 
 async function runTest() {
@@ -836,7 +1069,18 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         <PixelBackdrop variant="hero" :color="heroColor" :count="18" />
         <div class="entp-hero-inner">
           <header class="entp-idhead">
-            <span class="cxn-hero-mark" aria-hidden="true">
+            <!-- Lynk.id's mark is a wordmark, and its lettering is near-white: at 34 px
+                 on the hero's tinted plate it would be an invisible word next to a
+                 small green dot. So the one row whose mark is a wordmark gets the
+                 brand's own plate behind it — `#0d1512`, the surface Lynk.id draws
+                 its wordmark on — and every other row keeps the 66 px box. -->
+            <span v-if="row.builtIn === 'lynk'" class="cxn-hero-mark cxn-hero-mk" aria-hidden="true">
+              <svg width="104" height="26" viewBox="0 0 95 24" role="img" aria-label="Lynk.id">
+                <path fill="currentColor" d="M2.85069 0.0341797C3.6847 0.0341797 4.36131 0.681912 4.36143 1.48047V19.8232H13.0177C14.8405 19.8233 16.3174 20.4713 16.3175 21.2695V22.5537C16.317 23.3522 14.8398 23.999 13.0177 23.999H2.87022C2.86373 23.9991 2.8572 24 2.85069 24H1.51085C1.50445 24 1.49769 23.9991 1.49132 23.999H0.867294V23.8604C0.355263 23.6288 0.000106812 23.1318 0.000106812 22.5537V1.48047C0.000235127 0.681912 0.676844 0.0341797 1.51085 0.0341797H2.85069ZM76.047 0.00195312C76.881 0.00196395 77.5577 0.649602 77.5577 1.44824V9.38574H81.9181C86.6475 9.46901 90.5525 5.86511 90.6398 1.33691C90.6415 1.23622 90.6415 1.13528 90.6398 1.03418C90.6399 0.48206 91.1075 0.0341797 91.6837 0.0341797H93.9562C94.5323 0.0342368 94.999 0.481686 94.9991 1.03418C94.9991 5.51618 93.0517 8.99563 89.1564 11.4727C93.0519 13.9505 94.9997 17.4308 95.0001 21.9121V22.5537C95.0001 23.3523 94.3243 23.9999 93.4903 24H92.1495C91.3155 24 90.6398 23.3528 90.6398 22.5537V21.9121C90.7265 17.3835 86.9625 13.6442 82.2335 13.5605H77.5577V22.5537C77.5577 23.3523 76.881 24 76.047 24H74.7062C73.8726 23.9999 73.1964 23.3527 73.1964 22.5537V1.44824C73.1964 0.65004 73.8726 0.00200898 74.7062 0.00195312H76.047ZM19.0226 0C19.8566 6.91459e-05 20.5323 0.64767 20.5323 1.44629V3.6416C20.4451 8.17032 24.209 11.9086 28.9386 11.9922C29.0433 11.9938 29.1488 11.9938 29.254 11.9922C33.9835 12.0756 37.8874 8.47252 37.9747 3.94434V1.44629C37.9747 0.647628 38.6514 0 39.4855 0H40.8253C41.6594 0 42.336 0.647628 42.336 1.44629V3.6416C42.3445 9.83017 37.6639 14.9752 31.505 15.998V22.5537C31.5047 23.3522 30.8291 23.999 29.9952 23.999H28.6544C27.8211 23.9989 27.1449 23.3521 27.1446 22.5537V16.0205C20.9293 15.0559 16.1801 9.89891 16.172 3.67383V1.44629C16.172 0.647628 16.8477 0 17.6817 0H19.0226ZM56.7833 0.0175781C64.0081 0.00880411 69.8724 5.6094 69.8819 12.5273V22.5527C69.8817 23.3508 69.2052 23.998 68.3712 23.998H67.0304C66.1966 23.9978 65.5208 23.3507 65.5206 22.5527V12.5596C65.6074 8.03041 61.843 4.29208 57.1134 4.20898C57.0089 4.20735 56.9044 4.20735 56.7999 4.20898C52.0704 4.12589 48.1652 7.72925 48.0782 12.2578V22.5527C48.078 23.3507 47.4023 23.9979 46.5685 23.998H45.2276C44.3937 23.998 43.7181 23.3508 43.7179 22.5527V12.5596C43.7085 5.64139 49.5583 0.026584 56.7833 0.0175781Z" />
+                <path fill="#00bb79" fill-rule="evenodd" clip-rule="evenodd" d="M56.9181 8.26221C59.8583 8.26221 62.2414 10.4467 62.2414 13.1407V22.2254C62.2414 23.2056 61.3741 23.9999 60.3051 23.9999H53.5312C52.4616 23.9999 51.5949 23.2056 51.5949 22.2254V13.1407C51.5949 10.4467 53.978 8.26221 56.9181 8.26221Z" />
+              </svg>
+            </span>
+            <span v-else class="cxn-hero-mark" aria-hidden="true">
               <IntegrationMark v-if="row.builtIn" :name="row.builtIn" :size="34" />
               <template v-else>{{ row.initial }}</template>
             </span>
@@ -991,17 +1235,22 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           <!-- The reason is a line, not a tooltip: it stays on screen for as long
                as the tab is locked, which is the only way it can be read by
                somebody who never hovers. -->
-          <p v-if="lock" id="cxn-tab-why" class="tab-why">
-            {{ lock.before }}<template v-if="lock.code"><code class="mono">{{ lock.code }}</code>{{ lock.after }}</template><template
+          <p v-if="lock" id="cxn-tab-why" class="tab-why" tabindex="-1">
+            {{ lock.before }}<code v-if="lock.code" class="mono">{{ lock.code }}</code>{{ lock.after }}<template
               v-if="lock.code2"
             ><code class="mono">{{ lock.code2 }}</code>{{ lock.after2 }}</template>
           </p>
         </nav>
 
         <!-- One dashboard, one id: the strip's `aria-controls` names the pane, and a
-             pane that swapped its own name per connector would be four tabs. Every
+             pane that swapped its own name per connector would be five tabs. Every
              dashboard is a link in this one chain — a standalone `v-if` beside it
-             would let the Overview pane render underneath the dashboard. -->
+             would let the Overview pane render underneath the dashboard.
+             A locked Dashboard never renders its body: the gate's sentence under the
+             strip is the whole answer, and a body that could not fill itself would
+             draw six zeroes nobody earned. Lynk.id is the one body that also owns a
+             lock whose fix is a control on this page, so its pane waits for the
+             folder the picker writes. -->
         <ConnectorClockifyDashboard
           v-if="dashKind === 'clockify' && tab === 'dashboard'"
           id="cxn-pane-dashboard"
@@ -1011,7 +1260,8 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           @changed="readClockifyState"
         />
         <ConnectorDashboard
-          v-else-if="dashKind === 'github' && tab === 'dashboard'"
+          v-else-if="tab === 'dashboard' && (dashKind === 'github' || (dashKind === 'lynk' && !gate.locked))"
+          :row="installedRow"
           id="cxn-pane-dashboard"
           role="tabpanel"
           aria-labelledby="cxn-tab-dashboard"
@@ -1077,6 +1327,76 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             </p>
           </section>
 
+          <!-- The Lynk.id report's one setting. It sits above the accounts card
+               because the folder is the thing a person came to change; the grant is
+               already done by the time they get here. -->
+          <section v-if="isLynk && !notInstalled" class="cxn-card cxn-report">
+            <h2>{{ row.label }} report</h2>
+            <p class="cxn-about-lead">
+              One spreadsheet per product, and this folder's <code class="mono">{{ lynkConfig.sheetSuffix }}</code>
+              tab is the one read. Change the folder here and the Dashboard follows it —
+              no reload, and no second setting anywhere else.
+            </p>
+            <div class="cfg">
+              <div class="cfg-row">
+                <span class="lb">Drive folder</span>
+                <button
+                  type="button"
+                  class="field"
+                  data-role="select"
+                  :aria-label="lynkConfig.folderName ? `Drive folder: ${lynkConfig.folderName}` : 'Choose a Drive folder'"
+                  @click="picker = true"
+                >
+                  <span class="val">{{ lynkConfig.folderName || (lynkConfig.folderId ? lynkConfig.folderId : 'Pick a folder…') }}</span>
+                  <span class="tail">{{ folderTail }}</span>
+                  <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                </button>
+              </div>
+              <div class="cfg-row">
+                <span class="lb">Sheet suffix</span>
+                <div class="field-static">
+                  <code class="mono">{{ lynkConfig.sheetSuffix }}</code>
+                  <span class="tail">tab name</span>
+                </div>
+              </div>
+              <div class="cfg-row">
+                <span class="lb">Currency</span>
+                <div class="field-static">
+                  <span>IDR · Indonesian rupiah</span>
+                  <span class="tail">no conversion</span>
+                </div>
+              </div>
+              <div class="cfg-row">
+                <span class="lb">Time zone</span>
+                <div class="field-static">
+                  <span>{{ lynkConfig.timezone }}</span>
+                  <span class="tail">for every date</span>
+                </div>
+              </div>
+            </div>
+            <div class="cfg-actions">
+              <button class="btn btn-primary btn-sm" type="button" :disabled="!lynkConfig.folderId || lynk.testing" @click="runFolderTest">
+                {{ lynk.testing ? 'Reading…' : 'Test folder' }}
+              </button>
+              <button class="btn btn-sm" type="button" :disabled="!lynkConfig.folderId || lynk.reading" @click="reReadNow">
+                {{ lynk.reading ? 'Reading…' : 'Re-read now' }}
+              </button>
+              <button class="btn btn-ghost btn-sm" type="button" :disabled="!lynkConfig.folderId" @click="dropFolder">
+                Forget folder
+              </button>
+            </div>
+            <!-- What the last test actually saw. The numbers are the read's own, so
+                 "70 spreadsheets" here and "70 sheets" on the tab cannot disagree. -->
+            <div v-if="testLine" class="cfg-test">
+              <span class="k">read in {{ (Number(lynk.test?.ms || 0) / 1000).toFixed(1) }} s</span>
+              <p>{{ testLine }}</p>
+            </div>
+            <div v-else-if="lynk.testError" class="cfg-test" data-tone="bad">
+              <span class="k">not read</span>
+              <p>{{ lynk.testError }}</p>
+            </div>
+          </section>
+
           <!-- The accounts card: one row per connected account, on the connector's
                own page. A component of its own because every account-bearing
                connector needs it and nothing about it is Gmail-specific. -->
@@ -1091,7 +1411,32 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                status`, never written here, and never a token field. -->
           <ConnectorGithubAccounts v-else-if="isGithubCli && !notInstalled" />
 
-          <section v-if="work && !isTailscale" class="cxn-card cxn-work">
+          <!-- Lynk.id has no mention, by design: it is a report, not a lookup. The
+               card says so rather than drawing an empty syntax row, which is how a
+               person comes to type `@lynk:` into a composer that never answers. -->
+          <section v-if="isLynk && work && !notInstalled" class="cxn-card cxn-work">
+            <h2>In the chat</h2>
+            <p class="cxn-work-lead">
+              No mention: {{ row.label }} is a report, not a lookup. Its answer is one table
+              over a folder of spreadsheets, so it lives on the
+              <template v-if="dashboardTab">Dashboard tab</template><template v-else>Dashboard tab once this row is installed</template>
+              and its only setting is the folder above.
+            </p>
+            <dl class="cxn-facts">
+              <dt>returns</dt>
+              <dd class="cxn-work-wrap">{{ work.returns }}</dd>
+              <template v-if="work.needs">
+                <dt>needs</dt>
+                <dd>{{ work.needs }}</dd>
+              </template>
+              <template v-if="work.page">
+                <dt>binding</dt>
+                <dd><code class="mono">{{ work.page }}</code> — this connector's definition and its folder</dd>
+              </template>
+            </dl>
+          </section>
+
+          <section v-if="work?.mention && !isTailscale" class="cxn-card cxn-work">
             <h2>In the chat</h2>
             <!-- The account-bearing four put the account first, and their `mention`
                  is only the head (`@gmail:`), so the lead names the shape rather
@@ -1349,5 +1694,15 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
         </div>
       </div>
     </template>
+
+    <!-- The folder lock's answer: one dialog, one job. It lives outside the tab
+         body because the lock is what opens it, and a lock with its own modal is
+         the shortest path from "what is it waiting for" to a folder. -->
+    <DriveFolderPicker
+      v-if="picker"
+      :folder-id="lynkConfig.folderId"
+      @close="picker = false"
+      @pick="onFolderPicked"
+    />
   </div>
 </template>

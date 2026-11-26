@@ -3,6 +3,19 @@ import { computed, ref } from 'vue'
 import { ago } from '@/stores/hub'
 import { copyText } from '@/lib/clipboard'
 import { github, makeActive, readDashboard } from '@/composables/githubDashboard'
+import LynkDashboard from '@/components/LynkDashboard.vue'
+
+/* Two bodies, so two roots: `id`/`role`/`aria-labelledby` are handed on by hand
+   instead of letting Vue warn that a fragment cannot inherit them. */
+defineOptions({ inheritAttrs: false })
+
+/* Which body this shell draws. The band, the chips row and the rail are the same
+   material for both; the table inside is not, so the body is a second component
+   rather than a forest of `v-if` in one template. */
+const props = defineProps({
+  row: { type: Object, default: null },
+})
+const isLynk = computed(() => String(props.row?.builtIn || '') === 'lynk')
 
 /**
  * The GitHub connector's Dashboard tab: what moved in the last 90 days, read from
@@ -305,7 +318,8 @@ async function useActive(login) {
 </script>
 
 <template>
-  <div class="dsh-band">
+  <LynkDashboard v-if="isLynk" v-bind="$attrs" />
+  <div v-else class="dsh-band" v-bind="$attrs">
     <!-- The account that broke, named, with the CLI's sentence quoted verbatim and
          the command that fixes it. Never a sign-in form: Entity does not hold the
          token and could not repair it if it did. -->

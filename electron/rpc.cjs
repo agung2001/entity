@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const githubDashboard = require('./github-dashboard.cjs')
+const lynkDashboard = require('./lynk-dashboard.cjs')
 /* The YouTube Studio dashboard reads the same kinds of things from a different
    grant: an account roster and one window of numbers. Same file-cached, one-read
    shape, no token ever leaves the main process. */
@@ -200,6 +201,20 @@ function createRpc({
   /* Threads are private to their account; the server's per-request identity has
      to reach the chat store, not just the call table. */
   chats.setIdentityResolver(() => currentUser())
+
+  /* The Lynk.id read layer takes its settings from the connector row, never from a
+     constant: which folder, and which tab suffix. `connector.fields` is the only
+     place those live, so this is the one read they go through.
+
+     The names are translated, not forwarded. The row stores `sheetSuffix` (the
+     field the settings form writes); the read layer destructures `suffix`, and
+     `tabOf()` matches a tab with `endsWith(suffix)` — an empty string matches
+     every tab, so a forwarded-but-renamed key would sum every tab in every
+     spreadsheet instead of one. Spelled out here so the shape cannot drift. */
+  const lynkFields = async (args) => {
+    const fields = connectorStore.fieldsOf({ workspace: args?.workspace, id: args?.id || 'lynk' })
+    return { folderId: fields.folderId, suffix: fields.sheetSuffix }
+  }
 
   const handlers = {
     /* workspace */
@@ -378,6 +393,28 @@ function createRpc({
     'github.logins': () => githubDashboard.logins(),
     'github.dashboard': (args) => githubDashboard.dashboard(args),
     'github.useActive': (args) => githubDashboard.useActive(args),
+    /* The Lynk.id dashboard, read from the Drive folder this workspace picked. The
+       folder and the tab suffix are never constants here: they are read off the
+       connector row on every call, so two workspaces may point at two folders and
+       neither report can be the other's. */
+    'connector.lynkFolders': async (args) => lynkDashboard.folders(args),
+    'connector.lynkTestFolder': async (args) => lynkDashboard.testFolder(await lynkFields(args)),
+    'connector.lynkDashboard': async (args) =>
+      lynkDashboard.dashboard({
+        workspace: args?.workspace,
+        id: args?.id,
+        days: args?.days,
+        force: args?.force === true,
+        ...(await lynkFields(args)),
+      }),
+    'connector.lynkForget': () => {
+      lynkDashboard.forgetCache()
+      return { ok: true }
+    },
+    /* How far the read has got. Asked once a second while a folder is open, so a
+       seventy-spreadsheet folder can say `Reading 34 of 70` instead of nothing at
+       all. It reads no folder and spends no request. */
+    'connector.lynkProgress': () => lynkDashboard.progressOf(),
     /* Clockify's dashboard reads, lazy like the token verbs: the connector module
        is only parsed on the page that needs it. `workspaces` answers the Overview
        selector, `dashboard` the tab — both read-only, both keep the key in this
