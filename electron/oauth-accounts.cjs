@@ -243,21 +243,347 @@ const CONSENT_TIMEOUT_MS = 5 * 60_000
 const b64url = (buffer) =>
   buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-/** The HTML a person sees in their browser after the redirect. Deliberately plain:
- *  it is written from the loopback server, which serves nothing else. */
-const PAGE = (heading, body) => `<!doctype html><meta charset="utf-8">
-<title>${heading}</title>
+/* The app's own face, inlined: the loopback server serves this document and
+   nothing else, so the page may not ask for a font file. */
+const GEIST = require('./oauth-callback-font.cjs')
+
+/* A callback URL is composed by whoever redirects the browser here, so every
+   value in this document is a trust boundary: `?error=` can carry markup, and the
+   page renders it as text. */
+const esc = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+/* The app's character, taken once from `entityMark.js`'s geometry (47 cells,
+   `viewBox="-21 -21 50 50"`). It is decoration — the wrapper is `aria-hidden` — and
+   a failure frame lids the eyes at the `bored` mood's own value rather than drawing
+   a second face. */
+const MARK = `<svg viewBox="-21 -21 50 50" shape-rendering="crispEdges" focusable="false"><g class="hd"><g class="bd"><rect class="dx2" x="-6" y="-10" width="28" height="4"/><rect class="dx2" x="-10" y="-6" width="36" height="4"/><rect class="dx2" x="-10" y="-2" width="36" height="4"/><rect class="dx2" x="-10" y="2" width="36" height="4"/><rect class="dx2" x="-10" y="6" width="36" height="4"/><rect class="dx2" x="-10" y="10" width="36" height="4"/><rect class="dx2" x="-10" y="14" width="36" height="4"/><rect class="dx2" x="-10" y="18" width="36" height="4"/><rect class="dx2" x="-6" y="22" width="28" height="4"/><rect class="dx1" x="-10" y="-14" width="28" height="4"/><rect class="dx1" x="-14" y="-10" width="36" height="4"/><rect class="dx1" x="-14" y="-6" width="36" height="4"/><rect class="dx1" x="-14" y="-2" width="36" height="4"/><rect class="dx1" x="-14" y="2" width="36" height="4"/><rect class="dx1" x="-14" y="6" width="36" height="4"/><rect class="dx1" x="-14" y="10" width="36" height="4"/><rect class="dx1" x="-14" y="14" width="36" height="4"/><rect class="dx1" x="-10" y="18" width="28" height="4"/><rect class="hi" x="-14" y="-18" width="28" height="4"/><rect class="hi" x="-18" y="-14" width="4" height="4"/><rect class="fc" x="-14" y="-14" width="28" height="4"/><rect class="hi" x="14" y="-14" width="4" height="4"/><rect class="hi" x="-18" y="-10" width="4" height="4"/><rect class="fc" x="-14" y="-10" width="28" height="4"/><rect class="sh" x="14" y="-10" width="4" height="4"/><rect class="hi" x="-18" y="-6" width="4" height="4"/><rect class="fc" x="-14" y="-6" width="28" height="4"/><rect class="sh" x="14" y="-6" width="4" height="4"/><rect class="hi" x="-18" y="-2" width="4" height="4"/><rect class="fc" x="-14" y="-2" width="28" height="4"/><rect class="sh" x="14" y="-2" width="4" height="4"/><rect class="hi" x="-18" y="2" width="4" height="4"/><rect class="fc" x="-14" y="2" width="28" height="4"/><rect class="sh" x="14" y="2" width="4" height="4"/><rect class="hi" x="-18" y="6" width="4" height="4"/><rect class="fc" x="-14" y="6" width="28" height="4"/><rect class="sh" x="14" y="6" width="4" height="4"/><rect class="sh" x="-18" y="10" width="4" height="4"/><rect class="fc" x="-14" y="10" width="28" height="4"/><rect class="sh" x="14" y="10" width="4" height="4"/><rect class="sh" x="-14" y="14" width="28" height="4"/><g class="ey"><rect class="eye" x="-10" y="-6" width="8" height="8"/><rect class="glint" x="-10" y="-6" width="4" height="4"/><rect class="lid" x="-10" y="-6" width="8" height="8"/></g><g class="ey"><rect class="eye" x="2" y="-6" width="8" height="8"/><rect class="glint" x="2" y="-6" width="4" height="4"/><rect class="lid b" x="2" y="-6" width="8" height="8"/></g></g></g></svg>`
+
+/**
+ * The document a browser is handed at `/oauth/callback`, written from the settled
+ * result — the receipt needs the address the token exchange named, and there is no
+ * script on this page to ask for it later.
+ *
+ * Pure on purpose: no fs, no clock, no store read. The one external piece is the
+ * inlined font, because a page the loopback server serves may make no requests.
+ * Claims nothing: `tone` picks the wash and the lid, the caller supplies the words.
+ */
+const callbackPage = ({ tone = 'ok', kicker, heading, title, facts, body, trace, href, action, quiet }) => {
+  /* The first fact is the account — the one value the receipt emphasises. */
+  const rows = (facts || [])
+    .map(([term, value], index) => `<div class="ob-fact"><dt>${esc(term)}</dt><dd>${index ? esc(value) : `<b>${esc(value)}</b>`}</dd></div>`)
+    .join('\n      ')
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<title>${esc(title)}</title>
 <style>
- :root{font:16px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif;color:#0a0a0a;background:#fff}
- @media (prefers-color-scheme:dark){:root{color:#f2eee4;background:#151411}}
- main{max-width:34rem;margin:18vh auto;padding:0 1.5rem}
- h1{font-size:1.35rem;margin:0 0 .6rem}
- p{margin:0;color:#4a4a4a}
- @media (prefers-color-scheme:dark){p{color:#c7c2b6}}
- code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em}
+/* Geist 300-700, inlined: the loopback server serves this document and nothing
+   else, so this page makes zero network requests (spec §9.4). */
+@font-face{font-family:'Geist';font-style:normal;font-weight:300 700;font-display:swap;src:url(${GEIST}) format('woff2')}
+
+/* ══ tokens · copied from src/styles/tokens.css (light :12-41, dark :97-117) ══ */
+:root {
+  --bg: #ffffff;
+  --surface: #f9f8f5;
+  --ink: #0a0a0a;
+  --ink-2: #3d3f42;
+  --muted: #6b6e73;
+  --border: #e3e2dd;
+  --border-strong: #d3d1c9;
+  --accent: #f8b956;
+  --accent-soft: #ffeed1;
+  --on-accent: #2a2208;                 /* tokens.css:39 — declared twice there, last wins */
+  --danger: oklch(52% 0.19 27);         /* tokens.css:30 · #be2323 */
+  --danger-soft: oklch(96.5% 0.025 27); /* tokens.css:31 · #ffeeea */
+  --ok: oklch(58% 0.13 152);            /* tokens.css:32 · #2e9052 */
+
+  --font: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+
+  --r-xs: 4px; --r-sm: 8px; --r-lg: 16px;             /* tokens.css:45-52 */
+
+  --fs-micro: 9px; --fs-meta: 10px; --fs-secondary: 12px; --fs-small: 13px;
+  --fs-body: 14.5px; --fs-h6: 16px; --fs-h4: 20px; --fs-h2: 26px;   /* tokens.css:64-75 */
+
+  --mk: var(--accent);
+  --mk-h: 78;
+  color-scheme: light;
+}
+/* The real page has no data-theme to read — the app's theme is not reachable
+   from the loopback server — so the OS preference is the whole of it. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151411;
+    --surface: #1d1b17;
+    --ink: #f2eee4;
+    --ink-2: #c7c2b6;
+    --muted: #948d80;
+    --border: #33302a;
+    --border-strong: #4c463c;
+    --accent-soft: #3a2e17;
+    --on-accent: #171407;
+    --danger: oklch(70% 0.17 27);       /* tokens.css:109 · #f66d62 */
+    --danger-soft: #331b18;             /* tokens.css:110 */
+    --ok: oklch(70% 0.13 152);          /* tokens.css:111 · #58b575 */
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }              /* the document owns the viewport, not a frame */
+img, svg { display: block; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-xs); }
+
+/* ══ THE PAGE ══════════════════════════════════════════════════════════════
+   Every value below is traced to a file in the repo; see spec.md §4.
+
+   Two rules decide this page:
+   · it must survive with zero external requests — the loopback server serves
+     this one document and nothing else, so no font file, no stylesheet, no
+     icon. --font-body is system-ui in the app too, so the type is the app's.
+   · it must say what the toast cannot: which account, how much access. The
+     person is looking at it because they just typed a password into Google
+     and deserve to know what came back. */
+
+.ob {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 52px 24px 56px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-h6);
+  line-height: 1.55;
+  overflow: auto;
+}
+/* c1 the sign-in screen's single warm wash — login.css:19-28, same values */
+.ob::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 60% at 50% -10%,
+    color-mix(in oklab, var(--accent-soft) 55%, transparent),
+    transparent 62%
+  );
+  opacity: 0.85;
+  mask-image: linear-gradient(to bottom, #000, transparent 78%);
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 78%);
+}
+.ob[data-tone='fail']::before {
+  background: radial-gradient(
+    120% 60% at 50% -10%,
+    color-mix(in oklab, var(--danger-soft) 70%, transparent),
+    transparent 62%
+  );
+}
+
+.ob-stack {
+  position: relative;
+  width: 100%;
+  max-width: 404px;            /* login.css:29-35 — the same column width */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* c2 the mark — brand.css geometry, the squircle face from entityMark.js */
+.ob-mark {
+  position: relative;
+  z-index: 2;
+  width: 78px; height: 78px;   /* login.css:44-49 (.brand-mark--lg) */
+  margin-bottom: 22px;
+  color: var(--ink);
+}
+.ob-mark svg { width: 100%; height: 100%; }
+.ob-mark .bd { transform-box: fill-box; transform-origin: 50% 100%; }
+.ob-mark .hd { transform-box: fill-box; transform-origin: 50% 100%; }
+.ob-mark .lid  { fill: var(--mk); transform: scaleY(var(--lida, 0)); transform-box: fill-box; transform-origin: 50% 0; }
+.ob-mark .lid.b { transform: scaleY(var(--lidb, 0)); }
+.ob-mark .eye   { fill: var(--ink); }
+.ob-mark .glint { fill: var(--mk); }
+.ob-mark .fc { fill: var(--mk); }
+.ob-mark .hi { fill: color-mix(in oklab, var(--mk) 50%, white); }
+.ob-mark .sh { fill: color-mix(in oklab, var(--mk) 74%, oklch(46% 0.09 var(--mk-h))); }
+.ob-mark .dx1 { fill: color-mix(in oklab, var(--mk) 52%, oklch(34% 0.08 var(--mk-h))); }
+.ob-mark .dx2 { fill: color-mix(in oklab, var(--mk) 26%, oklch(26% 0.06 var(--mk-h))); }
+/* c3 the success hop — the sign-in screen's squash-and-stretch, once, not a loop.
+   transform only, so it cannot trigger layout. */
+@keyframes ob-hop {
+  0%   { transform: translateY(0)     scale(1, 1); }
+  28%  { transform: translateY(-9px)  scale(.96, 1.05); }
+  55%  { transform: translateY(0)     scale(1.05, .95); }
+  78%  { transform: translateY(-2px)  scale(.99, 1.01); }
+  100% { transform: translateY(0)     scale(1, 1); }
+}
+.ob-mark[data-hop] { animation: ob-hop 620ms cubic-bezier(.33, 0, .2, 1) 1 both; }
+/* Removed, never shortened: a page that fades in is still a page that moves. */
+@media (prefers-reduced-motion: reduce) {
+  .ob-mark[data-hop] { animation: none; }
+}
+
+/* c4 the card — .auth-card, login.css:60-67 */
+.ob-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 34px 30px 26px;   /* .auth-card, login.css:60-67 */
+}
+
+/* c5 kicker — .auth-card .kicker, login.css:68-75, plus the .ct-status dot */
+.ob-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* c5b the app's own dot, verbatim — connectors.css:357-359 (6 px, 50%, --ok).
+   Raw --ok measures 3.78:1 on the daylight card and 6.78:1 on the dark one: it
+   clears the 3:1 a non-text indicator needs in both, so the repo's colour stands. */
+.ob-kicker .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.ob[data-tone='fail'] .ob-kicker .dot { background: var(--danger); }
+
+/* c6 heading — .auth-card h1, login.css:76-83 */
+.ob-card h1 {
+  font-family: var(--font);   /* Geist — the app's heading face */
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: -0.032em;
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+
+/* c7 the receipt: what came back, said precisely */
+.ob-facts {
+  margin: 16px 0 0;
+  border-top: 1px solid var(--border);
+}
+.ob-fact {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ob-fact dt {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+.ob-fact dd {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  min-width: 0;
+  overflow-wrap: anywhere;   /* c8 a 254-char address wraps, never overflows */
+}
+.ob-fact dd b { color: var(--ink); font-weight: 500; }
+
+/* c9 the failure prose, and the success footnote */
+.ob-body {
+  margin: 12px 0 0;
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--ink-2);
+  max-width: 40ch;
+}
+.ob-trace {
+  display: inline-block;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* c10 actions — .btn / .btn-primary, context.css:70-109 */
+.ob-actions { margin-top: 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 34px; padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn svg { width: 13px; height: 13px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.btn-primary {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 78%, #000);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+/* c10b hover and press — context.css:106-109, and the app's 1 px press */
+.btn-primary:hover { background: color-mix(in oklch, var(--accent) 90%, #000); border-color: color-mix(in oklch, var(--accent) 82%, #000); }
+.btn:active { transform: translateY(1px); }
+/* c11 the quiet escape hatch. A tab cannot be closed by script — say the true
+   thing instead of offering a button that silently fails. */
+.ob-quiet {
+  margin: 10px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+
+/* c12 360 px: the app's narrowest column — card padding drops before the type does */
+@media (max-width: 420px) {
+  .ob { padding: 36px 16px 40px; }
+  .ob-mark { width: 64px; height: 64px; margin-bottom: 18px; }
+  .ob-card { padding: 26px 20px 22px; }
+  .ob-card h1 { font-size: var(--fs-h4); }
+  .ob-fact { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 10px 0; }
+  .ob-actions .btn { width: 100%; height: 44px; }   /* 44 px touch target */
+}
 </style>
-<main><h1>${heading}</h1><p>${body}</p></main>`
+</head>
+<body>
+<div class="ob"${tone === 'fail' ? ' data-tone="fail"' : ''}>
+  <div class="ob-stack">
+    <span class="ob-mark"${tone === 'fail' ? ' style="--lida:.62;--lidb:.62"' : ' data-hop'} aria-hidden="true">${MARK}</span>
+    <div class="ob-card">
+      <p class="ob-kicker"><span class="dot"></span>${esc(kicker)}</p>
+      <h1>${esc(heading)}</h1>
+      ${rows ? `<dl class="ob-facts">
+      ${rows}
+      </dl>` : ''}
+      <p class="ob-body">${esc(body)}</p>
+      ${trace ? `<span class="ob-trace">${esc(trace)}</span>` : ''}
+      <div class="ob-actions">
+        <a class="btn btn-primary" href="${esc(href)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+          ${esc(action)}
+        </a>
+      </div>
+      ${quiet ? `<p class="ob-quiet">${esc(quiet)}</p>` : ''}
+    </div>
+  </div>
+</div>
+</body>
+</html>`
+}
 
 /** One consent in flight: the promise the call awaits, keyed by `state`. */
 let pending = null
@@ -312,7 +638,10 @@ async function complete(job, code) {
        place a failed exchange explains itself, and naming the wrong service sends
        whoever reads it to the wrong dashboard. */
     const who = secrets.labelOf(provider)
-    return { ok: false, code: 'token_exchange_failed', message: `Nothing was saved. ${who} answered ${said}.` }
+    /* `detail` is the provider's own word for what went wrong (`invalid_client`):
+       the callback page is the one place that shows it, because that failure's fix
+       is in the client configuration, not in the person's head. */
+    return { ok: false, code: 'token_exchange_failed', detail: said, message: `Nothing was saved. ${who} answered ${said}.` }
   }
   if (!token?.refresh_token) {
     return {
@@ -565,25 +894,56 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
         response.writeHead(404, { 'content-type': 'text/plain' }).end('not found')
         return
       }
+      /* Where the primary lands: the connector this run was finishing, or the flat
+         router's workspace list when the job has no workspace to remember. */
+      const base = job.workspace
+        ? `entity://open/#/${encodeURIComponent(job.workspace)}/connectors`
+        : 'entity://open/#/workspaces'
+      const deep = job.workspace ? `${base}/${encodeURIComponent(job.connector)}` : base
+      /* Required at call time: the catalog loads the connector folders, and a
+         dashboard there requires this module back. */
+      const label = require('./connector-catalog.cjs').entryOf(job.connector)?.label || job.connector
+      const who = secrets.labelOf(provider)
+      const send = (status, html) => response.writeHead(status, { 'content-type': 'text/html; charset=utf-8' }).end(html)
+      const fail = (options) =>
+        send(400, callbackPage({
+          tone: 'fail',
+          kicker: 'Nothing was saved',
+          title: options.heading,
+          quiet: 'or close this tab — nothing changed on this machine.',
+          ...options,
+        }))
+
       /* The page the person sees must say the same thing the call concluded, so
          the mismatch case is not dressed as a success in their browser. */
       const wrongState = url.searchParams.get('state') !== job.state
-      const replied = wrongState
-        ? [PAGE('Nothing was saved', 'That answer did not belong to this request. You can close this tab.'), 400]
-        : url.searchParams.get('error')
-          ? [PAGE('Nothing was saved', `${url.searchParams.get('error')} — you can close this tab.`), 400]
-          : url.searchParams.get('code')
-            ? [PAGE('Account connected', 'You can close this tab and return to Entity.'), 200]
-            : [PAGE('Nothing was saved', 'The answer carried no authorization code.'), 400]
-      response.writeHead(replied[1], { 'content-type': 'text/html; charset=utf-8' }).end(replied[0])
-
-      /* The browser has been answered; settle the call. */
-      if (wrongState) return finish({ ok: false, code: 'state', message: STATE_MISMATCH })
+      if (wrongState) {
+        /* `quiet: ''` — the body already says the old tab can be closed. */
+        fail({
+          heading: 'That answer was not for this tab',
+          body: 'It belongs to an earlier sign-in that has already finished, so it was ignored. Start the connection again from Entity — the old tab can be closed.',
+          href: base,
+          action: 'Open Entity',
+          quiet: '',
+        })
+        return finish({ ok: false, code: 'state', message: STATE_MISMATCH })
+      }
       const deniedError = url.searchParams.get('error')
       if (deniedError) {
-        /* Named per provider: these three sentences are the only place a rejected
-           consent explains itself, and every provider reaches them. */
-        const who = secrets.labelOf(provider)
+        /* Named per provider: these sentences are the only place a rejected consent
+           explains itself. `access_denied` has two causes — the tab was closed before
+           Allow, or the client is not on the account's allowed list — so the page
+           names both; `denied()` is the same news for the app's toast. */
+        const refused = deniedError === 'access_denied'
+        fail({
+          heading: `${label} was not added`,
+          body: refused
+            ? `${who} did not allow access, so no token was stored and no account appears in Entity. This usually means the consent screen was closed before you pressed Allow, or this client is not on the account's allowed list.`
+            : `${who} answered ${deniedError} instead of allowing access, so no token was stored and no account appears in Entity.`,
+          trace: refused ? '' : deniedError,
+          href: deep,
+          action: refused ? 'Try again in Entity' : 'Open Entity',
+        })
         return finish({
           ok: false,
           code: deniedError,
@@ -591,16 +951,59 @@ async function connect({ connector, workspace, tier: wantedTier, openExternal } 
         })
       }
       const code = url.searchParams.get('code')
-      if (!code) return finish({ ok: false, code: 'no_code', message: noCode(secrets.labelOf(provider)) })
+      if (!code) {
+        fail({
+          heading: 'That answer was not for this tab',
+          body: 'It carried no authorization code, so there was nothing to exchange. Start the connection again from Entity — the old tab can be closed.',
+          href: base,
+          action: 'Open Entity',
+          quiet: '',
+        })
+        return finish({ ok: false, code: 'no_code', message: noCode(who) })
+      }
+      /* No script on this page, so the order changes: the exchange settles first and
+         the document is written from the settled result — the receipt can name the
+         account only the token endpoint can name. `finish()` runs after the answer is
+         written in every branch: it closes the listener. */
+      let result
       try {
-        finish(await complete(job, code))
+        result = await complete(job, code)
       } catch (problem) {
-        finish({
+        result = {
           ok: false,
           code: 'exchange_failed',
+          detail: text(problem?.message || problem, 200),
           message: `Nothing was saved. ${String(problem?.message || problem)}`,
-        })
+        }
       }
+      if (result.ok) {
+        const held = tierOf(job.connector, job.tier)
+        send(200, callbackPage({
+          kicker: 'Account connected',
+          title: `${label} is connected`,
+          heading: `${label} is connected`,
+          facts: [
+            ['Account', result.account.email],
+            /* The display string, never the wire scope: `gmail.readonly` is not an
+               answer to "how much access did I just give". */
+            ['Access', held ? `${held.label} — ${held.detail}` : 'The access this workspace asked for.'],
+            ['Token', 'This machine only. It never enters the workspace.'],
+          ],
+          body: `Nothing else was requested from ${who}.`,
+          href: deep,
+          action: 'Open Entity',
+          quiet: 'or close this tab — nothing else is needed here.',
+        }))
+        return finish(result)
+      }
+      fail({
+        heading: `${label} was not added`,
+        body: `${who} allowed access, but the token could not be exchanged, so no account appears in Entity. Trying again from Entity is the fix; if it fails twice, the client secret in Connectors is probably out of date.`,
+        trace: `exchange_failed · ${result.detail || result.code || 'unknown'}`,
+        href: deep,
+        action: 'Open Entity',
+      })
+      finish(result)
     })
 
     server.on('error', (problem) =>
@@ -900,6 +1303,9 @@ module.exports = {
   forget,
   connect,
   test,
+  /* the document a browser is handed at /oauth/callback, exported so its contract
+     can be tested and rendered without a listener */
+  callbackPage,
   /* the scope tier: what the card offers, and what the index stores */
   tierChoices,
   tiersFor,
