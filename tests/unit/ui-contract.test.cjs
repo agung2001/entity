@@ -942,6 +942,47 @@ test('a failed session is retried from the card, the fan-out and the tree', () =
   assert.match(store, /!row\?\.failed \|\| row\.working/, 'a retry can start on top of a live turn')
 })
 
+/* ── retrying the prompt itself ───────────────────────────────────────────
+   The failed turn's row has its own Retry, but the question is what a person
+   re-asks, and that row disappears as soon as a retry answers — so the prompt
+   carries the action too. A retry spends a real turn and a prompt that was
+   already answered gets a second question at the foot of the thread, so both
+   buttons go through one confirmation instead of sending on the click. */
+
+test('a prompt is retried from its own row, behind one confirmation', () => {
+  const list = fs.readFileSync(path.join(SRC, 'components', 'MessageList.vue'), 'utf8')
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  const dialog = fs.readFileSync(path.join(SRC, 'components', 'PromptRetryDialog.vue'), 'utf8')
+
+  /* the prompt's own foot: the action is on the row the person wrote, and the
+     failure row's button routes through the same event */
+  assert.match(list, /msg-act--retry/, 'the prompt has no retry in its own actions row')
+  assert.match(list, /Ask this prompt again/, 'the prompt retry has no accessible name')
+  assert.match(list, /emit\('retry', m\)/, 'the prompt retry is not wired out')
+
+  /* one dialog, dismissible like every other surface */
+  assert.match(dialog, /useDialogDismiss\s*\(/, 'Esc must close the retry dialog')
+  assert.match(dialog, /aria-label="Close"/, 'the retry dialog needs a visible close button')
+  assert.match(dialog, /class="scrim"/, 'the retry dialog needs a backdrop that closes it')
+  assert.match(dialog, /prompt-retry-go/, 'the dialog has no confirm button')
+  assert.match(dialog, /replace/, 'the dialog cannot say that the failure is replaced')
+  assert.match(chat, /<PromptRetryDialog\b/, 'the chat does not mount the retry dialog')
+
+  /* the mode is read from the transcript, not remembered on the row */
+  assert.match(chat, /function replacesFailedTurn/, 'the retry cannot tell a failure from an answer')
+  assert.match(chat, /every\(\(entry\) => entry\.who === 'sys' && entry\.error\)/, 'a retry replaces rows that are not a failed turn')
+
+  /* and nothing is sent before the confirmation */
+  const open = chat.indexOf('function retryFailed')
+  const confirm = chat.indexOf('async function confirmRetry')
+  assert.ok(open > 0 && confirm > open, 'the retry open and confirm handlers are not both there')
+  assert.doesNotMatch(
+    chat.slice(open, confirm),
+    /chatSend\(/,
+    'the retry sends before it is confirmed',
+  )
+})
+
 /* ── loading budget ────────────────────────────────────────────────────────
    The app is a desktop shell around local files; a screen that is never
    opened should never be downloaded. These checks keep the entry chunk from

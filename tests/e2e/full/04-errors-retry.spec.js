@@ -27,7 +27,12 @@ test.describe('harness failures and retry', () => {
     await expect(page.locator('.ask-retry')).toBeVisible()
 
     await pinHarness('claude', profile.paths.stub)
-    await page.locator('.ask-retry').click()
+    /* the prompt's own row carries the action, not only the failure under it */
+    await page.locator('.msg-foot[data-who="me"] .msg-act--retry').click()
+    /* a retry is a real turn: it is confirmed before it runs */
+    await expect(page.locator('.prompt-retry')).toBeVisible()
+    await expect(page.locator('.prompt-retry')).toContainText('replaces the error')
+    await page.locator('.prompt-retry-go').click()
     await waitForAnswer(page, 'E2E-STUB-OK')
 
     await expect(page.locator('.ask-sys').filter({ hasText: 'is not signed in' })).toHaveCount(0)
@@ -72,6 +77,8 @@ test.describe('harness failures and retry', () => {
     await expect(page.locator('.msg[data-who="me"]')).toHaveCount(1)
 
     await page.locator('.ask-retry').click()
+    await expect(page.locator('.prompt-retry')).toBeVisible()
+    await page.locator('.prompt-retry-go').click()
     await waitForAnswer(page, 'E2E-FLAKY-RETRY-OK')
     await expect(page.locator('.msg[data-who="me"]')).toHaveCount(1)
 

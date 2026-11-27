@@ -700,6 +700,23 @@
   line-height: 1.5;
   color: var(--ink-2);
 }
+/* The question a retry would re-run, quoted back: the person confirms the words,
+   not only the button, so the dialog has to show them. Collapsed whitespace and
+   a cap keep a pasted log from turning the confirm into a page. */
+.prompt-retry-quote {
+  max-height: 8.5em;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-left: 2px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .confirm-list {
   margin: 0 0 12px;
   padding: 0;

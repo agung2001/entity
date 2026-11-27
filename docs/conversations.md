@@ -39,8 +39,11 @@ and spend sit beside the steps, from the same records the charts use.
 - A slow turn does not lock the composer for other conversations: each thread has its
   own live turn, Stop control and trace. A working thread cannot be deleted until it
   is stopped.
-- A failed turn carries **Retry** — it re-runs the same question without adding a
-  second copy of it, and keeps the files it already saved.
+- A failed turn carries **Retry**, and so does the prompt itself — its actions row, after
+  copy and share. Both open the same confirmation first, because a retry is a real turn: it
+  re-runs the question already on disk without adding a second copy of it, keeps the files it
+  already saved, and replaces the error row with the new answer. Retrying a prompt that was
+  already answered asks it again as a new turn at the end, and the earlier answer stays.
 - A turn finishing somewhere else does not move you: the rail row turns from
   *working* to *done* and the reply waits where it belongs. Nothing switches the
   conversation you are reading — not a completion, not a retry, not a failure.

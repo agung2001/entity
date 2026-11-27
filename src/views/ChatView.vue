@@ -13,6 +13,7 @@ import NewThreadDialog from '@/components/NewThreadDialog.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
+import PromptRetryDialog from '@/components/PromptRetryDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TerminalPanel from '@/components/TerminalPanel.vue'
 import ThreadMetadataPanel from '@/components/ThreadMetadataPanel.vue'
@@ -719,17 +720,79 @@ async function openInitialThread(wanted = '') {
   if (latest) await pickThread(latest)
 }
 
-async function retryFailed(message) {
+/* ── retrying a prompt ────────────────────────────────────────────────
+   Two buttons can ask again — the failure row under the question, and the
+   prompt's own row in the message foot — and they are the same action, so both
+   emit `retry` and land here. Nothing is sent on the click: a retry is a real
+   harness turn, so it is confirmed first (PromptRetryDialog).
+
+   What the retry *does* is read from the transcript, not remembered: while the
+   only rows after a question are its failed turn, the retry replaces that
+   failure in place; once an answer (or a newer question) sits below it, the
+   retry is another turn and the earlier answer stays. */
+const retryOpen = ref(false)
+const retryTarget = ref(null)
+
+function replacesFailedTurn(question) {
+  const list = thread.value?.messages || []
+  const at = list.findIndex(
+    (entry) => entry === question || (question.id && entry.id === question.id),
+  )
+  if (at < 0) return false
+  const after = list.slice(at + 1)
+  return after.length > 0 && after.every((entry) => entry.who === 'sys' && entry.error)
+}
+
+const retryMode = computed(() =>
+  retryTarget.value && replacesFailedTurn(retryTarget.value) ? 'replace' : 'new',
+)
+
+function retryFailed(message) {
   const list = thread.value?.messages || []
   const at = list.findIndex((entry) => entry === message || (message.id && entry.id === message.id))
-  const question = [...list.slice(0, at >= 0 ? at : list.length)]
-    .reverse()
-    .find((entry) => entry.who === 'me')
+  /* A failure row stands for the question above it; a prompt row is itself. */
+  const question =
+    message?.who === 'me'
+      ? message
+      : [...list.slice(0, at >= 0 ? at : list.length)].reverse().find((entry) => entry.who === 'me')
   if (!question) {
     toast('No question to retry.')
     return
   }
-  await chatSend(question.text, { retry: true })
+  retryTarget.value = question
+  retryOpen.value = true
+}
+
+function closeRetry() {
+  retryOpen.value = false
+  retryTarget.value = null
+}
+
+async function confirmRetry() {
+  const question = retryTarget.value
+  if (!question) return
+  const replace = retryMode.value === 'replace'
+  closeRetry()
+  playSfx('send')
+  playReaction(hub.workspace, thread.value?.entity)
+  sendError.value = ''
+  try {
+    /* `retry` drops the failed row and re-asks the question already on disk;
+       anything else goes down the ordinary send path with the same words. The
+       attachment refs are inside the text, which is why `send` passes the same
+       flag and re-extraction is enough here. */
+    const updated = await chatSend(String(question.text || ''), {
+      retry: replace,
+      attachmentsEnabled: true,
+    })
+    /* The store swallows its own rejection, so a failed *new* turn shows up as a
+       falsy result plus `hub.chat.error` — the composer band owns the sentence,
+       exactly as it does for a first send. */
+    if (!updated && hub.chat.error) sendError.value = hub.chat.error
+  } catch (error) {
+    playSfx('error')
+    toast(error?.message || 'The prompt could not be retried.')
+  }
 }
 
 /* A delegated run failed after its turn landed; the retry belongs to the session
@@ -1673,6 +1736,16 @@ watch(
         />
       </div>
     </div>
+
+    <PromptRetryDialog
+      :open="retryOpen"
+      :text="retryTarget?.text || ''"
+      :entity="agent.name"
+      :harness="harnessById(ctx.harness).label"
+      :mode="retryMode"
+      @close="closeRetry"
+      @confirm="confirmRetry"
+    />
 
     <PromptEnhanceDialog
       :open="enhanceOpen"

@@ -764,6 +764,24 @@ function traceSummary(message) {
             <path d="M5.6 7.1l4.8-2.8M5.6 8.9l4.8 2.8" />
           </svg>
         </button>
+        <!-- The prompt's own retry. The failure row carries one too, but the
+             question is where a person looks when they decide to ask again,
+             and a failure row is gone once a retry answers. Both emit `retry`,
+             so both open the same confirmation and neither can drift. -->
+        <button
+          v-if="m.who === 'me'"
+          class="msg-act msg-act--retry"
+          type="button"
+          title="Ask this prompt again"
+          aria-label="Ask this prompt again"
+          :disabled="isSending(threadId)"
+          @click="emit('retry', m)"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+            <path d="M13.2 7A5.2 5.2 0 1 0 12 11" />
+            <path d="M13.4 3.2v4h-4" />
+          </svg>
+        </button>
         <button
           v-if="m.who === 'agent'"
           class="msg-act"

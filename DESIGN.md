@@ -651,6 +651,14 @@ the composer already does: mention another entity.
   grammar — `Nothing started`, the rows that never ran, the app's own **Retry** — and the
   question stays in the transcript. A hold is in memory, so a reload reads `Interrupted`
   and nothing was ever started.
+- **Retrying a prompt is a turn, so it is confirmed at the question.** `Retry` sits in the
+  prompt's own actions row, after copy and share, and the failure row keeps its own button;
+  both open the same `PromptRetryDialog`, because a second copy of the retry path is how the
+  two drift. The dialog says which of the two things will happen, read from the transcript
+  rather than remembered: while the only rows under a question are its failed turn, the
+  retry replaces that error in place and the question is never duplicated; once an answer
+  (or a newer question) sits below it, the retry is another turn and the earlier answer
+  stays. Opening the dialog sends nothing — the confirmation is the click.
 - **A count of one is still a delegation.** The parent prompt swaps the raw sentence for
   "that run already happened" whenever the message delegated anything — `spawn 1`
   included. Gating that on `count > 1` read one requested run as an ordinary message, so
@@ -850,6 +858,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | Scrolling up during a turn snaps back to the newest chunk | A programmatic scroll to the bottom arms the follow flag; the live watchers are not exempt | `tests/e2e/full/13-scroll-follow.spec.js` |
 | The "jump to newest" pill sits under the composer and eats the click | Position floating transcript controls with `--dock-space` + `--term-space`, the same numbers the list pads with | `chat-minimap.css` (`.jump-live`) |
 | `Failed` is painted on a card with no way to fix it | A failure carries its own action: retry the session it left behind, and put the count on the surface that holds the whole fan-out | `npm test` (delegation retry contract) |
+| A retry becomes one-click again as soon as the failure row is gone | The prompt carries the action in its own foot and both routes open one confirmation that says whether the error is replaced or a turn is added | `npm test` (prompt retry contract) |
 | A harness/model is rendered as bare text | Use `HarnessIcon` for the harness mark, then the label | `npm test` (MachineDetailView contract) |
 | A card about an entity names it only in text | The entity that asked wears its own mark (`EntityMark`, its shape/colour/mood badge): the character is how a person knows *who* is on screen before reading the name | `DefinitionWriteCard`, `DelegationCard` |
 | An agent rewrites an entity's standing instructions and the person finds out from the file's mtime | A run's `set-instructions` parks a request in `pending-write.json` and throws `needs_consent`; the card on the composer shows the diff and only `Apply` writes, conditional on the stamp the proposal was read at | `tests/unit/pending-write.test.cjs` |
