@@ -2356,6 +2356,44 @@ async function send({
       emitTurn('done', { message: stopped })
       return readThread(record, thread.id)
     }
+    /* A message that asked for nothing but the reads is already answered, and
+       the answer is the rows themselves. Running the entity on it hands a
+       harness a question nobody asked — a mention-only Studio summary became a
+       YouTrack search for "a board issue about this video", which is an
+       expensive way to ignore the numbers it was given. So the turn settles
+       here, in the app: no harness, no model, no MCP tool call.
+
+       A follow-up with words in it is an ordinary turn again, and it can read
+       the numbers: they are in this turn's `sent`. An attachment is a turn too,
+       because a file or an MCP server the person attached is something only a
+       harness reads. */
+    if (mentioned.readsOnly && !resolvedAttachments.length) {
+      const at = now()
+      writeUserRow(applied, mentioned)
+      const answered = {
+        who: 'agent',
+        id: messageId,
+        text: mentioned.answer,
+        at,
+        /* Not a harness: the transcript says a read answered, so nothing claims
+           a model ran, and the composer's turn timer has a real number. */
+        execution: {
+          harness: 'mention',
+          model: '',
+          status: 'ok',
+          startedAt: pendingRow?.at || at,
+          endedAt: at,
+          ms: Math.max(0, Date.parse(at) - Date.parse(pendingRow?.at || at)),
+          mentions: mentioned.mentions,
+        },
+      }
+      thread.messages.push(answered)
+      thread.updatedAt = at
+      saveTurn(record, thread, baseline)
+      sending.delete(thread.id)
+      emitTurn('done', { message: answered })
+      return attachArtifactsByTurn(thread)
+    }
     /* One session per delegated entity mention. A session that cannot be written
        must not fail the turn that already ran, so each is its own try. */
     for (const mention of turnMentions) {

@@ -1648,3 +1648,55 @@ test('the run’s own record names its worktree, not the ticket key', async () =
     process.env.PATH = previous.path
   }
 })
+
+/* ── a message that is nothing but a read ─────────────────────────────────────
+   A connector mention on its own line is a whole question, and the rows are the
+   answer. Handing it to a harness asked the entity to invent an instruction: a
+   mention-only YouTube Studio summary became a YouTrack search for "a board
+   issue about this video" instead of the numbers already resolved. */
+
+test('a message that is only a read answers itself', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, '@youtrack:AC:login bug', {
+    deps: deps({
+      mcpCall: async () => ({
+        data: { issuesPage: [{ id: 'AC-361', summary: 'Login loops', url: 'https://yt/issue/AC-361' }] },
+      }),
+    }),
+  })
+  assert.equal(out.readsOnly, true)
+  /* the answer is the rows, as Markdown, under the token they came from */
+  assert.match(out.answer, /`@youtrack:AC:login bug`/)
+  assert.match(out.answer, /- AC-361 — Login loops — AC · https:\/\/yt\/issue\/AC-361/)
+  /* and the prompt still carries the block, so a turn that follows can read it */
+  assert.match(out.text, /^Resolved mentions/)
+})
+
+test('a read with a sentence under it is still a turn', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, '@youtrack:AC:login bug\nsummarise the causes', {
+    deps: deps({
+      mcpCall: async () => ({
+        data: { issuesPage: [{ id: 'AC-361', summary: 'Login loops', url: 'https://yt/issue/AC-361' }] },
+      }),
+    }),
+  })
+  assert.equal(out.readsOnly, undefined)
+  assert.equal(out.answer, undefined)
+})
+
+test('a delegated entity is never answered in place of running it', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, '@py-agent', {
+    deps: deps({ runEntity: async () => ({ ok: true, answer: 'nothing to do' }) }),
+  })
+  assert.equal(out.readsOnly, undefined)
+})
+
+test('an empty read answers "nothing found" instead of asking a harness', async () => {
+  const record = workspace()
+  const out = await mention.rewrite(record, '@artifact:no-such-shot', { deps: deps() })
+  assert.equal(out.readsOnly, true)
+  assert.match(out.answer, /nothing found/)
+  assert.match(out.answer, /note: @artifact:no-such-shot matched no file in this workspace/)
+})

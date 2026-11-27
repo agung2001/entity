@@ -463,6 +463,16 @@ the composer already does: mention another entity.
 - **A mention is the trigger.** `@entity <job>` runs the job in the turn *and* files a
   session. No second verb, no prefilled dialog, no floating card: the thing you already
   type is the thing that spawns.
+- **A read is an answer, not a prompt.** A message that is a connector mention and nothing
+  else — no words outside it, nothing under it on its own line — is already answered: the
+  rows resolve, and the app writes them into the transcript as the reply. Nothing is
+  spawned, no model is called, no MCP tool is reachable. A harness handed that message has
+  no instruction to follow, so it invents one — a mention-only YouTube Studio summary
+  became a YouTrack search for "a board issue about this video", which is an expensive way
+  to ignore the subscriber count that was already resolved. Words, a second line or an
+  `@entity` make it an ordinary turn again, and the rows travel in that turn's `sent`, so a
+  follow-up can read them (`mention-ref.cjs` `askedOnlyReads`/`answerFor`, `chat-store.cjs`
+  `send`).
 - **One optional field, on the child**: `spawnedFrom: { workspace, id }`. Both directions
   are derived from the list the window already has; a children array would be a second
   copy that can disagree. A link to a thread that is gone reads as "no link", never as an
@@ -914,6 +924,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | A turn renames the thread it answered, so a title someone wrote disappears | The first message names a thread only while the person has not: `titleSource` records who set it (`auto` / `user`, including a deliberate clear), and a turn merges only the metadata the file actually changed since it started — title, pin, tags, base directory, attachment switch | `chat-store.cjs` (`saveTurn`) |
 | A refresh makes a running turn look idle: no bubble, no Stop, and the composer will start a second turn on one file | `isSending` is the union of this window's `sending` memory and the summary's `working` field, and `settled` overrules a stale summary | `npm test` (`ui-contract`, "a turn that is still running survives a refresh") |
 | A delegated run answers, then the parent does the same work again in the same thread | The prompt swaps the raw sentence for "that run already happened" for **any** delegated run — `spawn 1` included, not only `count > 1` | `npm test` (`mention-ref`, "spawn 1 does not hand the parent its own job back") |
+| A mention-only read (`@youtube-studio:avery:summary`) opens the thread's agent, which goes looking for a YouTrack issue about the video | The rows *are* the answer: a message with no words outside its mentions and nothing under them is settled in the app (`readsOnly`/`answer`) with no harness, no model and no MCP tool. A second line or any prose makes it an ordinary turn again, with the rows in `sent` | `npm test` (`chat-reads`), `mention-ref.cjs` (`askedOnlyReads`, `answerFor`), `chat-store.cjs` (`send`) |
 | A typed plan's job is cut at the next `@`, and the turn rolls back to an empty transcript | `planSentence` puts the person's words **last**, so `delegatePlan` hands `parse` the offset where the job starts (`literalAt`) and everything from there is prose, not mention syntax. Without it `@coder … project @orca:entity, … one app : @orca:One` gave every run the job "For project", resolved `@orca:entity,` as a *read*, and threw before the hold card could be drawn | `npm test` (`mention-ref`, "a typed plan keeps its job past the `@` its words contain") |
 | `@orca:entity, is not a project Orca knows` — a message that reads perfectly, refused by punctuation | A namespaced name takes the sentence's trailing punctuation off the **name** exactly as a plain entity name does; `after` still starts where the token does, so `@orca:One:src/App.vue` keeps its colon | `npm test` (`mention-ref`, "a namespaced name keeps the sentence’s punctuation out of the project") |
 | `spawn per [@scope/pkg, b] @coder …` is refused as `@scope/pkg is not an entity` | A row list is data: a `@` inside the span `SPAWN_ROWS` matches is a row, not a mention. The older `openingProse` already halted there, so only `parse` had to agree — and the span is that regex's, never "any bracket", or a stray `[` in prose would swallow what follows | `npm test` (`mention-ref`, "a bracket row list holds rows, not mentions") |

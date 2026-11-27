@@ -163,6 +163,13 @@ means every mailbox", which is what made the first word ambiguous. A word that i
 of your accounts is an error rather than a search, so a typo cannot quietly read the wrong
 mailbox. The query is the rest of the line; the instruction goes on the next line.
 
+A mention **on a line of its own is the whole question**, and the app answers it: the rows
+the mention resolved are written into the transcript as the reply, and no agent runs. Asking
+for `@youtube-studio:avery:summary` is asking for the numbers, and handing that to a
+YouTrack-first agent turned it into a search of the board instead. Put a sentence under it
+(`@gmail:all:invoice march` then `summarise what is due`) and the turn runs as usual, with
+the rows already in hand.
+
 ## One page per connector
 
 Each connector has its detail page in full — what it reaches, where its credential lives,

@@ -2392,6 +2392,81 @@ async function resolveOne(ctx, segment) {
   }
 }
 
+/**
+ * Did the person ask for the reads themselves and nothing else?
+ *
+ * `@youtube-studio:avery:summary` on its own line is a whole question: the rows
+ * resolved above ARE what was asked for. With no sentence around them the turn
+ * has no instruction to give a harness, and a harness asked for one invents it —
+ * a YouTrack-first agent went looking for an issue about a video instead of
+ * reading the subscriber count it had been handed.
+ *
+ * Only the *shape* is read here: every mention is a read, no word of the message
+ * sits outside one, and nothing follows a mention on its own line.
+ * `@gmail:all:invoice march` followed by `summarise what is due` is a read *and*
+ * an instruction, so it is not one — and neither is a delegated `@coder …` or a
+ * reference, which need the turn they ask for.
+ */
+function askedOnlyReads(source, segments) {
+  if (!segments.length) return false
+  const text = String(source || '')
+  let at = 0
+  for (const segment of segments) {
+    if (text.slice(at, segment.start).trim()) return false
+    if (segment.kind === 'entity' || segment.kind === 'unknown') return false
+    /* One line, because a second line is a sentence. `@gmail:all:invoice march`
+       followed by `summarise what is due` is a read *and* an instruction, and
+       the mention's own query stops at that newline for exactly that reason. */
+    if (String(segment.raw || '').includes('\n')) return false
+    at = segment.end
+  }
+  return !text.slice(at).trim()
+}
+
+/**
+ * What a message that asked only for reads gets back.
+ *
+ * Markdown, because this is the answer and not a prompt: one heading per
+ * mention, one bullet per row, and the reader's own words for anything that
+ * went wrong (`needs a sign-in`, `found no issue`). The `notes` a resolver left
+ * are folded in only when no row already says the same thing.
+ */
+function answerFor(segments, notes = []) {
+  const out = []
+  const tokens = new Set()
+  for (const segment of segments) {
+    const mention = segment.mention
+    if (!mention) continue
+    const token = mention.token || mention.raw || ''
+    tokens.add(token)
+    out.push(`\`${token}\``)
+    if (mention.kind === 'thread') {
+      /* A thread is read for its digest, not for the one row naming it. */
+      const digest = segment.digest || { asked: [], concluded: '' }
+      const where = [mention.entity || 'thread', `${mention.turns || 0} turns`].join(' · ')
+      out.push(`- ${mention.title ? `“${mention.title}” · ` : ''}${where}`)
+      for (const asked of digest.asked || []) out.push(`- asked: ${asked}`)
+      out.push(`- concluded: ${digest.concluded || '(no answer yet)'}`)
+      continue
+    }
+    const items = Array.isArray(mention.items) ? mention.items : []
+    if (!items.length) {
+      out.push(`- ${mention.note || 'nothing found'}`)
+      continue
+    }
+    for (const item of items) {
+      out.push(`- ${item.label}${item.detail ? ` — ${item.detail}` : ''}`)
+    }
+    if (mention.note) out.push(`- note: ${mention.note}`)
+  }
+  for (const note of notes) {
+    /* `@x found nothing` is already the row under its own heading */
+    if ([...tokens].some((token) => note === `${token} found nothing`)) continue
+    out.push(`- note: ${note}`)
+  }
+  return out.join('\n')
+}
+
 function blockFor(segments, notes) {
   const rows = []
   for (const segment of segments) {
@@ -3170,11 +3245,17 @@ async function rewrite(
         'run and their answers are in the list. Write one short paragraph saying what each run did ' +
         'and which one still needs something; do not run them again and do not do their work yourself.'
     : source
+  const resolved = segments
+    .filter((segment) => segment.mention)
+    .map((segment) => segment.mention)
+  /* A message that asked for nothing but the reads is already answered, and
+     writing that answer here is what keeps a harness out of it — see
+     `answerFor`. An empty answer falls back to the ordinary turn. */
+  const answer = askedOnlyReads(source, segments) ? answerFor(segments, ctx.notes) : ''
   return {
     text: block ? `${block}\n\n${prompt}` : prompt,
-    mentions: segments
-      .filter((segment) => segment.mention)
-      .map((segment) => segment.mention),
+    mentions: resolved,
+    ...(answer ? { readsOnly: true, answer } : {}),
   }
 }
 
