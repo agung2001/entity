@@ -200,63 +200,108 @@
   text-underline-offset: 2px;
 }
 
-/* Files produced during a turn sit with the answer, not on a separate page. */
+/* Files produced during a turn sit with the answer, not on a separate page.
+   One grid, one cell shape: a 16:10 tile over a one-line caption, whether the
+   file is a screenshot or a `.md`. Wrapping variable-width cards inside a fixed
+   440 px column is what turned twelve files into a staircase — a 440 px shot, a
+   pair of 215 px ones, then five chips of three different widths. */
 .msg-artifacts {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
+  width: 100%;
+  max-width: 560px;
   margin-top: 10px;
+}
+/* One or two files get the width they can use; twelve share it. */
+.msg-artifacts[data-count='1'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.msg-artifacts[data-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* A lone screenshot is a picture and takes the room; a lone `.md` is a file,
+   and a 560 px hatch behind one name is a card pretending to be a page. */
+.msg-artifacts[data-alone]:not([data-alone='image']) .msg-attach {
+  max-width: 340px;
 }
 .msg-artifacts--sys {
   align-self: center;
-  justify-content: center;
-  width: min(80%, 440px);
   margin-top: -2px;
 }
 .msg-artifacts--turn {
-  max-width: 80%;
-  margin-top: -2px;
-}
-.msg-artifacts--turn[data-who='agent'] {
   align-self: flex-start;
-  margin-left: 36px;
+  max-width: min(560px, calc(80% - 36px));
+  margin-top: -2px;
 }
 .msg-artifacts--turn[data-who='me'] {
   align-self: flex-end;
   margin-right: 36px;
 }
-.msg-artifacts--turn .msg-attach {
-  max-width: min(440px, 100%);
+.msg-artifacts--turn[data-who='agent'] {
+  margin-left: 36px;
 }
 .msg-attach {
-  margin: 0;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  max-width: min(440px, 100%);
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
 }
-.msg-attach-img {
+/* The tile is the link. Actions ride over it, out of the grid's rhythm, and
+   stay reachable by keyboard and on a touch screen. */
+.msg-attach-preview {
+  position: relative;
+  display: block;
+}
+.msg-attach-img,
+.msg-attach-tile {
   display: block;
   width: 100%;
-  max-width: 100%;
+  aspect-ratio: 16 / 10;
   padding: 0;
+  overflow: hidden;
   border: 0;
-  background: var(--surface);
+  background: var(--surface-2);
   cursor: zoom-in;
 }
 .msg-attach-img img {
   display: block;
   width: 100%;
-  max-height: 380px;
-  object-fit: contain;
+  height: 100%;
+  /* every shot on the shelf is a page capture whose identity is at the top
+     left — breadcrumb, title, first row — so the crop keeps that corner */
+  object-fit: cover;
+  object-position: top left;
+}
+/* A file has no shot to show, so the tile states what it is instead of faking
+   a preview: the extension, then the kind. */
+.msg-attach-tile {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--muted) 8%, transparent) 7px 8px),
+    var(--surface-2);
+}
+.msg-attach-tile-kind {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .msg-attach-ph {
   display: grid;
   place-items: center;
-  min-height: 112px;
-  padding: 14px;
+  height: 100%;
+  padding: 12px;
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--muted);
@@ -266,20 +311,32 @@
 }
 .msg-attach figcaption {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  padding: 7px 9px;
+  padding: 6px 8px;
   border-top: 1px solid var(--border);
 }
-.msg-attach-name {
+button.msg-attach-copy {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
   font-family: var(--mono);
   font-size: var(--fs-meta);
+  line-height: 1.3;
   color: var(--ink-2);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+button.msg-attach-copy:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .msg-attach-meta {
   flex: none;
@@ -287,19 +344,32 @@
   font-size: var(--fs-micro);
   color: var(--muted);
 }
-/* One action row per artifact card, decided by the file's extension: reveal
-   and the artifact page always, an editor for text, a browser for a page. */
+/* One action row per file, decided by its extension: reveal and the artifact
+   page always, an editor for text, a browser for a page. Hidden until the card
+   is looked at, so twelve files stay a grid and not a wall of icons. */
 .msg-attach-acts {
+  position: absolute;
+  top: 5px;
+  right: 5px;
   display: flex;
-  flex: none;
   align-items: center;
   gap: 1px;
-  margin-left: auto;
+  padding: 2px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  box-shadow: 0 1px 4px color-mix(in oklab, var(--ink) 10%, transparent);
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
 }
-.msg-attach-acts--row {
-  justify-content: flex-end;
-  margin-left: 0;
-  padding: 0 6px 6px;
+.msg-attach:hover .msg-attach-acts,
+.msg-attach:focus-within .msg-attach-acts {
+  opacity: 1;
+}
+/* no hover to wait for: the actions are part of the card */
+@media (hover: none) {
+  .msg-attach-acts {
+    opacity: 1;
+  }
 }
 .msg-attach-acts .msg-act {
   width: 22px;
@@ -335,59 +405,20 @@
   opacity: 0.5;
   cursor: default;
 }
-.msg-attach-file {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 230px;
-  padding: 10px;
-}
-/* The name is the target: opening the file is the whole point of the card. */
-button.msg-attach-copy {
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-button.msg-attach-copy:hover b {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
+/* The extension badge sits in a file's tile, where the shot would be. */
 .msg-attach-ext {
   display: grid;
-  flex: none;
   place-items: center;
-  width: 34px;
+  min-width: 34px;
   height: 34px;
-  border: 1px solid var(--border);
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
-  background: var(--surface-2);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.04em;
-  color: var(--accent-ink);
-}
-.msg-attach-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.35;
-}
-.msg-attach-copy b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--bg);
   font-family: var(--mono);
   font-size: var(--fs-meta);
-  font-weight: 500;
-  color: var(--ink);
-}
-.msg-attach-copy span {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--muted);
+  letter-spacing: 0.04em;
+  color: var(--accent-ink);
 }
 .msg-artifact-modal {
   position: fixed;

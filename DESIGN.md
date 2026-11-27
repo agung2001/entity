@@ -1402,6 +1402,35 @@ the chat header recipe rather than a floating rounded card.
   binaries keep Download. Editing is not offered where it would corrupt the
   file.
 
+## A turn's files are one grid, and the tile is the file
+
+The chat card that lists what a turn saved used to be `display: flex;
+flex-wrap: wrap` around a 440 px centred column: a 440 px screenshot, then a pair
+of 215 px ones, then five chips of three different widths, some centred and some
+not, with the file cards a second row taller than the image cards because their
+actions had a line of their own. Twelve files came out **2698 px tall and ragged**.
+That is not a density problem, it is a missing unit.
+
+- **One cell shape, whatever the file is.** A 16:10 tile over a one-line caption
+  (name, then size). A screenshot's tile is the shot (`object-fit: cover`,
+  `object-position: top left`, because a page capture's identity is its top
+  left); a file's tile is its extension and its kind. No hatch behind a name that
+  pretends to be a preview.
+- **The tile is the link; the actions ride over it.** At 150–180 px a caption
+  cannot hold a name, a size and four icon buttons without overflowing, so the
+  action row is an overlay that fades in on `:hover` and `:focus-within`, and is
+  always visible under `@media (hover: none)`. It is positioned out of the grid's
+  rhythm, so it never changes a cell's height.
+- **The count decides the columns, not the content.** One file takes the width,
+  two split it, three or more auto-fill at 150 px. `data-alone` keeps a lone
+  `.md` from becoming a 560 px hatch behind one name — a lone screenshot may be
+  large, a lone note is a chip.
+- **The shared selectors are the contract.** `.msg-attach`, `.msg-attach-copy`,
+  `.msg-attach-img`, `.msg-attach-acts`, `.msg-act` all survive the layout, the
+  artifact page's own click path goes through them, and the e2e specs read
+  `.msg-attach`'s text — so the file name stays in the DOM, never only in a
+  `title`.
+
 ## Backups are copies, not exports
 
 The backups page (Account → Backups) owns a schedule and a shelf; it is not a

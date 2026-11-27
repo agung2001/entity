@@ -142,10 +142,22 @@ watch(
 </script>
 
 <template>
-  <div v-if="items.length" v-bind="$attrs" ref="root" class="msg-artifacts" aria-label="Artifacts from this turn">
+  <!-- One grid, one cell: a 16:10 tile over a one-line caption, whether the file
+       is a screenshot or a `.md`. Wrapping variable-width cards around a fixed
+       column is what made twelve files arrive as a staircase. -->
+  <div
+    v-if="items.length"
+    v-bind="$attrs"
+    ref="root"
+    class="msg-artifacts"
+    :data-count="items.length"
+    :data-alone="items.length === 1 ? items[0].kind : ''"
+    aria-label="Artifacts from this turn"
+  >
     <figure v-for="item in items" :key="item.id" class="msg-attach" :data-kind="item.kind">
-      <template v-if="item.kind === 'image'">
+      <div class="msg-attach-preview">
         <button
+          v-if="item.kind === 'image'"
           class="msg-attach-img"
           type="button"
           :data-artifact-load="item.id"
@@ -163,55 +175,24 @@ watch(
             {{ state[item.id]?.error || 'Opening screenshot…' }}
           </span>
         </button>
-        <figcaption>
-          <span class="msg-attach-name" :title="item.id">{{ item.name }}</span>
-          <span class="msg-attach-meta">{{ sizeLabel(item.size) || 'image' }}</span>
-          <div class="msg-attach-acts">
-            <button
-              class="msg-act"
-              type="button"
-              title="Open in Finder"
-              aria-label="Open in Finder"
-              :disabled="busy === `${item.id}:reveal`"
-              @click="open(item, 'reveal')"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                <path d="M1.8 4.2h4l1.4 1.6h7v6.6H1.8z" />
-                <path d="M1.8 5.8v-2h4" />
-              </svg>
-            </button>
-            <router-link class="msg-act" :to="pageOf(item)" title="Go to artifact page" aria-label="Go to artifact page">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                <path d="M4 1.8h5l3.4 3.4v9H4z" />
-                <path d="M9 1.8v3.6h3.4" />
-              </svg>
-            </router-link>
-            <button
-              class="msg-act"
-              type="button"
-              title="Download"
-              aria-label="Download"
-              :disabled="busy === `${item.id}:download`"
-              @click="download(item)"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M8 2.4v8M4.6 7.2L8 10.6l3.4-3.4M3 13.2h10" />
-              </svg>
-            </button>
-          </div>
-        </figcaption>
-      </template>
-      <template v-else>
-        <div class="msg-attach-file">
+        <!-- A file has no shot to show, so the tile states what it is rather
+             than pretending to be a preview: extension, then the kind. -->
+        <button
+          v-else
+          class="msg-attach-tile"
+          type="button"
+          :aria-label="`Open ${item.name}`"
+          :title="`Open ${item.name}`"
+          @click="openArtifactPreview(item.id)"
+        >
           <span class="msg-attach-ext" :data-ext="item.ext">{{ extFor(item) }}</span>
-          <!-- The card opens the artifact page over the conversation: preview,
-               editor, annotator and every action, in one place. -->
-          <button class="msg-attach-copy" type="button" :title="`Open ${item.name}`" @click="openArtifactPreview(item.id)">
-            <b :title="item.id">{{ item.name }}</b>
-            <span>{{ item.kind }}<template v-if="sizeLabel(item.size)"> · {{ sizeLabel(item.size) }}</template></span>
-          </button>
-        </div>
-        <div class="msg-attach-acts msg-attach-acts--row">
+          <span class="msg-attach-tile-kind">{{ item.kind }}</span>
+        </button>
+        <!-- One action row per file, decided by the file's extension: reveal and
+             the artifact page always, an editor for text, a browser for a page.
+             It rides over the tile on hover and focus, so a grid of twelve stays
+             a grid and not a wall of icon rows. -->
+        <div class="msg-attach-acts">
           <button
             class="msg-act"
             type="button"
@@ -271,8 +252,13 @@ watch(
             </svg>
           </button>
         </div>
-      </template>
+      </div>
+      <figcaption>
+        <button class="msg-attach-copy" type="button" :title="item.id" @click="openArtifactPreview(item.id)">
+          {{ item.name }}
+        </button>
+        <span class="msg-attach-meta">{{ sizeLabel(item.size) || item.kind }}</span>
+      </figcaption>
     </figure>
   </div>
-
 </template>
