@@ -1,0 +1,376 @@
+/* ── News — the reader for what the workspace's feeds last said (ENTITY-76) ──
+   Nothing on this page is a new material. The card, the sticky head, the row
+   height, the failing note, the chips, the search field, the segmented control
+   and the tab strip are the shell's own `.dsh-*` / `.cxn-search` / `.seg` /
+   `.sk-tabs` primitives; what this sheet declares is only what the *path* around
+   them needs — the head above the tabs, the two column sets the two tabs differ
+   by, the pager, the one empty block, and the three widths a band this wide
+   actually has.
+
+   There is no rule here for a control that writes: no Add, no Edit, no Remove.
+   That is the page's contract, and its CSS keeps the same shape. */
+
+/* ── the head ─────────────────────────────────────────────────────────────── */
+.pg-id {
+  min-width: 0;
+}
+.pg-id .eyebrow {
+  margin-bottom: 4px;
+}
+.pg-id h1 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.pg-id .sub {
+  margin: 7px 0 0;
+  max-width: 82ch;
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.pg-id .sub b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* ── the tabs ─────────────────────────────────────────────────────────────────
+   `skill.css` owns the strip. The right-hand note is the one thing the other
+   pages do not need: on News the two tabs are different *sources*, so the strip
+   says what orders the tab that is open. */
+.sk-tabs .tab-why {
+  margin: 0 0 0 auto;
+  padding: 12px 0 11px 14px;
+  max-width: 46%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Locked until a read has landed — never `disabled`, because a disabled tab is
+   unreachable by the arrow keys that move inside the strip. */
+.sk-tabs button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── which feeds this tab reads · one line, above the bar ─────────────────── */
+.dsh-from {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+}
+.dsh-from b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* The page's inline verb. A `<button>`, not a span with a role: Enter and Space
+   are then the platform's problem, not this sheet's. */
+.dsh-jump {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: none;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: var(--fs-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.dsh-jump:hover:not(:disabled) {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.dsh-jump:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dsh-jump:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+}
+
+/* ── the two column sets ──────────────────────────────────────────────────────
+   General reads every news feed, so it needs Feed and Published. Trends reads
+   one feed, so a Feed column would repeat one value on every row — it carries
+   Volume and Seen instead. A fixed layout is what lets the headline column keep
+   the width the other three do not need, and what stops a long provenance line
+   from widening the table past its own scroll box. */
+.news-tbl {
+  table-layout: fixed;
+}
+.news-tbl .rank-col {
+  width: 44px;
+}
+.news-tbl .src-col {
+  width: 168px;
+}
+.news-tbl .pub-col {
+  width: 104px;
+}
+.news-tbl .vol-col {
+  width: 88px;
+}
+.news-tbl .seen-col {
+  width: 84px;
+}
+.dsh-tbl td.rank {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.dsh-tbl th.r,
+.dsh-tbl td.r {
+  text-align: right;
+}
+.dsh-tbl td.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* The row: a title, and the line under it that says where the title came from. */
+.lead {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.lead a,
+.lead .t {
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.lead a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lead .k {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* A headline that runs long wraps to two lines inside the row, never a third. */
+.lead.two a,
+.lead.two .t {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.dsh-tbl tbody tr:has(.lead.two) {
+  height: 66px;
+}
+/* The two facts that move into the provenance line when their column leaves. */
+.lead .k-src,
+.lead .k-seen {
+  display: none;
+}
+
+/* A feed's mark is its hue at 16% over the surface, and it always sits beside
+   the feed's name, so the mark never carries the meaning alone. */
+.src {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.src i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.7em;
+  font-style: normal;
+  color: var(--ink-2);
+}
+.src i[data-s='gt'] {
+  background: color-mix(in oklab, #4285f4 16%, var(--surface));
+}
+.src i[data-s='rd'] {
+  background: color-mix(in oklab, #ff4500 16%, var(--surface));
+}
+/* Google prints `1000+`, so the figure is printed back exactly — never rounded,
+   never a dash, because a feed that prints a volume always printed one. */
+.vol {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.vol[data-none='1'] {
+  color: var(--muted);
+}
+
+/* ── the pager ────────────────────────────────────────────────────────────── */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+}
+.pager .lab {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pager .spacer {
+  flex: 1;
+}
+
+/* ── an empty page that is not a broken one ───────────────────────────────────
+   The grammar of `overview-crew.css`'s `.ovc-none`, which is scoped to Overview
+   and cannot be borrowed: what News reads, where a feed is installed, and that it
+   is shared — then the one button that routes there. */
+.news-none {
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.news-none > b {
+  display: block;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.news-none p {
+  margin: 5px 0 10px;
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--muted);
+}
+.news-none p b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* ── the three widths this band has ───────────────────────────────────────────
+   Container-relative, measured on the band rather than the window: the rail is
+   not this page's, and the bar above it keeps the app's own 820 px rule.
+   At 900 the Feed column leaves General — its value is already in the subline
+   under the headline — and the count row steps down to the size a narrower band
+   gives a title. At 560 the chips leave, Seen moves into the subline, and the
+   rows become as tall as their content: three columns each. */
+@container newsband (max-width: 900px) {
+  .pg-id h1 {
+    font-size: var(--fs-h3);
+  }
+  .news-tbl .src-col {
+    display: none;
+  }
+  .lead .k-src {
+    display: inline;
+  }
+}
+
+@container newsband (max-width: 560px) {
+  .pg-id .sub {
+    font-size: var(--fs-secondary);
+  }
+  .dsh-chips {
+    display: none;
+  }
+  .dsh-when {
+    margin-left: 0;
+  }
+  .news-tbl .seen-col {
+    display: none;
+  }
+  /* The Seen column's loss is the Trend column's gain, and the subline moves into
+     it in the same breath: with the age prefixed, `1h ago · explore → google trends`
+     is 193 px of mono, so a 196 px cell (176 px of content) wrapped it and every
+     Trends row grew by a line — 89 px where the spec measures 74. Volume prints
+     five characters, so 60 px is all it needs; the 28 px it gives back is what
+     keeps that subline on one line, and a two-digit rank still fits its own. */
+  .news-tbl .vol-col {
+    width: 60px;
+  }
+  .lead .k {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+  /* Every headline clamps at two lines here, not only the one `.lead.two` marks:
+     the 90-character rule above is a guess about the ≥561 px measure, and at 328 px
+     a 60-character title takes three or four lines — a 113 px row where the spec
+     measures 74. Two lines of `--fs-small` + the subline + 9 px of padding is that
+     74 px, and one line is the 53 px a Trends row measures. */
+  .lead a,
+  .lead .t {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .lead .k-seen {
+    display: inline;
+  }
+  .dsh-tbl tbody tr,
+  .dsh-tbl tbody tr:has(.lead.two) {
+    height: auto;
+  }
+  .dsh-tbl tbody td {
+    padding: 9px 10px;
+  }
+  .dsh-tbl thead th {
+    padding: 7px 10px;
+  }
+  .pager {
+    gap: 7px;
+  }
+  .pager .lab {
+    font-size: var(--fs-micro);
+  }
+}
+
+.news-band {
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  container-name: newsband;
+}
+
+/* Nothing here animates that carries no information. */
+@media (prefers-reduced-motion: reduce) {
+  .dsh-jump,
+  .dsh-jump:hover {
+    transition-duration: 0.01ms !important;
+  }
+}

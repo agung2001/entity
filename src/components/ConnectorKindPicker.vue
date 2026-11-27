@@ -2,19 +2,22 @@
 /**
  * The one "+" behind the kinds a person can add.
  *
- * The row anatomy is identical for every kind (label · kind · scope · status), so
- * there is one add flow with a first step rather than a verb per kind. The list
- * is grouped, because two different questions live in it:
+ * The row anatomy is identical for every kind (label · what it is · where its
+ * credential lives), so there is one add flow with a first step rather than a verb
+ * per kind. The step is two blocks, because two different questions live in it:
  *
- *   - **Sign in to an account** — Gmail, Drive, YouTube, X. A card adds the
- *     *connector*; accounts are connected on the connector's page, so this group
- *     grows by one card per connector and never by one card per mailbox.
+ *   - **Sign in to an account** — the three accounts people add first, and
+ *     `More connectors` as the fourth card. Four, not the whole catalog: a grid that
+ *     grew with it would be the roster's Built-in pane again, and that pane is one
+ *     card below and is still derived from it. The ids are pinned for exactly that
+ *     reason, while the label, the summary and the mark still come from the catalog
+ *     — so a renamed connector renames here too. Both blocks are the same card: one
+ *     anatomy, one grid, and a person reads the whole step the same way.
  *   - **Bring your own** — MCP server (the pool's own dialog writes `mcp.json`),
- *     a CLI already on `PATH` (it holds its own credential), and a REST token.
- *     Each names where its credential actually lives, because that is the only
- *     thing that differs and the only thing a person cannot guess.
- *
- * `More connectors` is a door into the roster's Built-in pane, not a fifth kind.
+ *     a CLI already on `PATH` (it holds its own credential), a REST token, and an
+ *     RSS or Atom feed (a URL and nothing else — News reads it). Each names where
+ *     its credential actually lives, because that is the only thing that differs
+ *     and the only thing a person cannot guess.
  */
 import { computed } from 'vue'
 import IntegrationMark from '@/components/IntegrationMark.vue'
@@ -26,27 +29,37 @@ defineProps({
 
 const emit = defineEmits(['pick', 'cancel'])
 
-/* The account-bearing cards come from the shipped catalog, not from this file: a
-   provider the app ships must appear here without a second edit, and four ids
-   written into a component is how a shipped connector goes missing from its own
-   add sheet. The fallback is the four this build already knows, for the frame
-   before the catalog read lands. */
-const ACCOUNTS = computed(() => {
-  const shipped = (connectors.catalog || []).filter((entry) => entry.oauth)
-  if (shipped.length) return shipped
-  return [
-    { id: 'gmail', label: 'Gmail', summary: 'Mail an agent may read.' },
-    { id: 'google-drive', label: 'Google Drive', summary: 'Files an agent may open.' },
-    { id: 'youtube', label: 'YouTube', summary: 'Channels and captions.' },
-    { id: 'x', label: 'X', summary: 'Posts and threads an agent may read.' },
-  ]
-})
+/* The three, in the order a person meets them. A fourth provider is a fifth card
+   here only if somebody decides it is one of the first things a person adds;
+   everything else is behind `More connectors` by design. */
+const ACCOUNT_IDS = ['gmail', 'google-drive', 'youtube-studio']
+const FALLBACK = {
+  gmail: { label: 'Gmail', summary: 'Mail an agent may read.' },
+  'google-drive': { label: 'Google Drive', summary: 'Files an agent may open.' },
+  'youtube-studio': {
+    label: 'YouTube Studio',
+    summary: 'Views, watch time, subscribers and revenue from your own channel.',
+  },
+}
+const ACCOUNTS = computed(() =>
+  ACCOUNT_IDS.map((id) => {
+    const shipped = (connectors.catalog || []).find((row) => row.id === id)
+    return {
+      id,
+      label: shipped?.label || FALLBACK[id].label,
+      summary: shipped?.summary || FALLBACK[id].summary,
+    }
+  }),
+)
 </script>
 
 <template>
   <div class="kind-groups">
     <div class="kind-group">
       <span class="kind-group-label">Sign in to an account <span class="n">{{ ACCOUNTS.length }}</span></span>
+      <!-- The same card as the block below, and the fourth one is the way out of
+           this grid rather than a fourth connector: dashed, muted, announcing where
+           it goes. -->
       <div class="kinds">
         <button
           v-for="account in ACCOUNTS"
@@ -65,11 +78,24 @@ const ACCOUNTS = computed(() => {
           <p>{{ account.summary }}</p>
           <span class="where">credential → <b>refresh token, this machine</b></span>
         </button>
+
+        <button class="kind kind-more" type="button" :disabled="busy" @click="emit('pick', 'builtin')">
+          <span class="kn">
+            <span class="ki">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M8 3.4v9.2M3.4 8h9.2" />
+              </svg>
+            </span>
+            More connectors
+          </span>
+          <p>Every connector Entity ships.</p>
+          <span class="where">opens <b>Built-in</b></span>
+        </button>
       </div>
     </div>
 
     <div class="kind-group">
-      <span class="kind-group-label">Bring your own <span class="n">3</span></span>
+      <span class="kind-group-label">Bring your own <span class="n">4</span></span>
       <div class="kinds">
         <button class="kind" type="button" :disabled="busy" @click="emit('pick', 'mcp')">
           <span class="kn">
@@ -111,17 +137,18 @@ const ACCOUNTS = computed(() => {
           <span class="where">credential → <b>never synced</b></span>
         </button>
 
-        <button class="kind kind-more" type="button" :disabled="busy" @click="emit('pick', 'builtin')">
+        <button class="kind" type="button" :disabled="busy" @click="emit('pick', 'rss')">
           <span class="kn">
             <span class="ki">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M8 3.4v9.2M3.4 8h9.2" />
+                <circle cx="4.2" cy="11.8" r="1.3" />
+                <path d="M3 7.4a6.2 6.2 0 0 1 5.6 5.6M3 3.4a10.2 10.2 0 0 1 9.6 9.6" />
               </svg>
             </span>
-            More connectors
+            RSS or Atom feed
           </span>
-          <p>Every connector Entity ships.</p>
-          <span class="where">opens <b>Built-in</b></span>
+          <p>A news feed, read here and shown in News.</p>
+          <span class="where">feed → <b>a URL, in this workspace</b></span>
         </button>
       </div>
     </div>

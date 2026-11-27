@@ -1,6 +1,6 @@
 <script setup>
 /**
- * The phone tab bar — the five destinations the rail carries on a desktop
+ * The phone tab bar — the six destinations the rail carries on a desktop
  * window, in the thumb zone. Two of them (Entities, Artifacts) are panels, not
  * routes: tapping one opens its list in the drawer, the same way the rail opens
  * it beside the page.
@@ -49,7 +49,12 @@ function openPanel(item) {
           @click="onTab(item, $event)"
         >
           <NavIcon :name="item.icon" />
-          <span class="tab-lb">{{ item.label }}</span>
+          <span class="tab-lb">
+            <span class="tab-lb-full">{{ item.label }}</span>
+            <!-- Six cells share 360 px: `Configurations` would only ever reach
+                 its ellipsis there, so the thumb bar says `Config`. -->
+            <span class="tab-lb-short">{{ item.short || item.label }}</span>
+          </span>
           <span v-if="item.count && item.count()" class="rail-badge tab-n">{{ item.count() }}</span>
         </router-link>
         <button
@@ -60,7 +65,12 @@ function openPanel(item) {
           @click="openPanel(item)"
         >
           <NavIcon :name="item.icon" />
-          <span class="tab-lb">{{ item.label }}</span>
+          <span class="tab-lb">
+            <span class="tab-lb-full">{{ item.label }}</span>
+            <!-- Six cells share 360 px: `Configurations` would only ever reach
+                 its ellipsis there, so the thumb bar says `Config`. -->
+            <span class="tab-lb-short">{{ item.short || item.label }}</span>
+          </span>
           <span v-if="item.count && item.count()" class="rail-badge tab-n">{{ item.count() }}</span>
         </button>
       </template>

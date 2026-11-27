@@ -35,6 +35,11 @@ defineProps({ name: { type: String, default: 'pulse' } })
     <circle cx="10.6" cy="8" r="1.35" fill="var(--rail-bg)" />
     <circle cx="6.6" cy="11.6" r="1.35" fill="var(--rail-bg)" />
   </svg>
+  <svg v-else-if="name === 'news'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+    <path d="M3 4.2h10v8.4H3z" />
+    <path d="M5 7h6M5 9.4h4M5 4.2h1.4" />
+    <path d="M11.4 2.6a1.6 1.6 0 0 1 1.6 1.6M11.4 2.6v1.6" />
+  </svg>
   <svg v-else-if="name === 'screen'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
     <rect x="1.6" y="2.6" width="12.8" height="8.2" rx="1.6" />
     <path d="M5.4 13.6h5.2" />

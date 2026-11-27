@@ -2,7 +2,7 @@ import { artifacts } from '@/stores/artifacts'
 import { hub, liveSummaries } from '@/stores/hub'
 
 /**
- * The five destinations, in order, for both the rail and the phone tab bar.
+ * The six destinations, in order, for both the rail and the phone tab bar.
  *
  * One of them is a panel rather than a route: Artifacts opens the second tier
  * where it was opened from, so it carries `panel` instead of `name`. Entities
@@ -21,10 +21,17 @@ export const NAV = [
     count: () => artifacts.items.length,
   },
   { name: 'chat', view: 'chat', label: 'Chat', icon: 'chat', count: () => liveSummaries().length },
+  /* News is a destination, not a setting: a member reads it and never adds a
+     feed here — a feed is a connector, created on the Connectors surface. So it
+     carries no count and no route in CONFIG_ROUTES. */
+  { name: 'news', view: 'news', label: 'News', icon: 'news' },
   {
     name: 'workspace',
     view: 'configurations',
     label: 'Configurations',
+    /* Six cells share a 360 px thumb bar; `Configurations` there is an
+       ellipsis and nothing else. The short word is the tab bar's alone. */
+    short: 'Config',
     icon: 'sliders',
   },
 ]

@@ -582,7 +582,7 @@ async function saveAdd() {
        `Connect a server` wizard on its page, which writes first and probes the
        file it just wrote. Every other kind is checked before anything is stored,
        and a refusal leaves the row count unchanged. */
-    if (addKind.value !== 'mcp') {
+    if (addKind.value !== 'mcp' && addKind.value !== 'rss') {
       try {
         await testConnector({
           kind: addKind.value,
@@ -630,7 +630,10 @@ async function saveAdd() {
 }
 
 const kindLabel = computed(
-  () => ({ mcp: 'MCP server', cli: 'CLI on this machine', rest: 'REST token' })[addKind.value] || '',
+  () =>
+    ({ mcp: 'MCP server', cli: 'CLI on this machine', rest: 'REST token', rss: 'RSS or Atom feed' })[
+      addKind.value
+    ] || '',
 )
 
 /* The connectors that carry an account rather than a token, read from the shipped
@@ -899,7 +902,7 @@ const wideSheet = computed(() => !addKind.value)
     <div v-if="addOpen" class="cxn-scrim" @click.self="closeAdd">
       <div class="cxn-dialog" :class="{ 'cxn-dialog--wide': wideSheet }" role="dialog" aria-labelledby="cxn-add-h">
         <h2 id="cxn-add-h">
-          {{ addKind ? `Add a ${kindLabel.toLowerCase()}` : 'Add a connector' }}
+          {{ addKind ? (addKind === 'rss' ? 'Add a feed' : `Add a ${kindLabel.toLowerCase()}`) : 'Add a connector' }}
         </h2>
         <p class="sub">
           Pick what this workspace gets. Accounts are connected on the connector's page afterwards,
@@ -941,7 +944,7 @@ const wideSheet = computed(() => !addKind.value)
                 never guessed from the name.
               </p>
             </template>
-            <label v-else>
+            <label v-else-if="addKind !== 'rss'">
               id
               <input v-model="addForm.id" type="text" placeholder="the id the pool and @ mention use" autocomplete="off" spellcheck="false" />
             </label>
@@ -985,13 +988,36 @@ const wideSheet = computed(() => !addKind.value)
                 <input v-model="addForm.token" type="password" placeholder="verified before it is saved" autocomplete="off" />
               </label>
             </template>
+            <template v-if="addKind === 'rss'">
+              <label>
+                any RSS or Atom URL
+                <input
+                  v-model="addForm.host"
+                  type="url"
+                  placeholder="https://example.org/feed.xml"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <p class="cxn-note">
+                <code class="mono">http</code>/<code class="mono">https</code> only · 8 s timeout ·
+                512 kB cap · a page that answers with HTML instead of XML is refused with its
+                reason, not stored. News reads the result; it cannot add, edit or remove a feed.
+              </p>
+            </template>
           </div>
 
           <div v-if="addError" class="cxn-error" role="alert">{{ addError }}</div>
           <div v-else-if="addNotice" class="cxn-ok" role="status">{{ addNotice }}</div>
 
           <div class="cxn-acts">
-            <button class="btn btn-sm" type="button" :disabled="busy === 'add'" @click="testAdd">
+            <button
+              v-if="addKind !== 'rss'"
+              class="btn btn-sm"
+              type="button"
+              :disabled="busy === 'add'"
+              @click="testAdd"
+            >
               {{ busy === 'add' ? 'Testing…' : 'Test connection' }}
             </button>
             <span class="spacer"></span>

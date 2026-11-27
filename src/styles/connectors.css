@@ -452,7 +452,9 @@ a.ct-who:hover .ct-name {
   border-color: var(--field-edge);
   background: var(--surface);
 }
-/* A door into another pane, not a fifth kind: it reads as the edge of the list. */
+/* A door into another pane, not a fifth kind: the last card in the account grid
+   reads as the edge of that grid — dashed border, muted label — so it says where it
+   goes before it is pressed. */
 .kind-more {
   border-style: dashed;
   color: var(--muted);
@@ -505,6 +507,7 @@ a.ct-who:hover .ct-name {
   color: var(--ink-2);
   font-weight: 500;
 }
+
 
 /* ── the add sheet: teleported to `<body>`, so `vw` is the window ────────── */
 
@@ -570,6 +573,12 @@ a.ct-who:hover .ct-name {
   font-size: var(--fs-small);
   text-transform: none;
   letter-spacing: 0;
+}
+/* A feed's address is a URL in a box, so it takes the app's mono face: the value a
+   person edits is `?geo=US` or `/r/worldnews/`, and the shape has to be legible. */
+.cxn-fields input.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
 }
 /* One notice box, two tones: a rejected save and a successful test. */
 .cxn-error,

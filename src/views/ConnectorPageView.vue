@@ -103,6 +103,12 @@ const isOAuth = computed(() => row.value?.kind === 'rest' && row.value?.oauth ==
    the connector's own `verify()`, so the page asks for the key and nothing else.
    The card heading follows, or it would sell an "endpoint" field it does not show. */
 const isTokenKey = computed(() => row.value?.credential === 'token')
+/* A feed is an address and a ceiling — no token to paste, no account to sign in to.
+   Its own card, because every field the generic one draws would be a lie here: a
+   token box for a credentialless read, and a Save verb behind a definition the
+   roster already holds. */
+const isFeed = computed(() => row.value?.kind === 'rss')
+const feedUrl = computed(() => String(row.value?.url || ''))
 /* The fourth kind has no credential to ask for and no mention to resolve, so every
    card on the generic page would say something untrue about it: a pitch selling an
    install, a sign-in that lives in the CLI, a mention the composer does not offer.
@@ -225,6 +231,9 @@ const credentialWhere = computed(() => {
   if (!entry) return ''
   if (entry.kind === 'mcp') return 'in mcp.json — the definition travels with the workspace, a token in it does not'
   if (entry.kind === 'cli') return "in the CLI's own store on this machine — Entity never holds it"
+  /* A feed is a URL and nothing else: there is no credential to hold, which is
+     the whole reason `news-store` can fetch it without a secret. */
+  if (entry.kind === 'rss') return 'nowhere — a feed URL needs no credential'
   if (entry.oauth) return 'on this machine, as a consent you grant per account; never in the workspace'
   if (entry.credential === 'token') return 'on this machine, as one API key you paste once; never in the workspace'
   return 'on this machine'
@@ -234,7 +243,12 @@ const tone = computed(() => {
   const word = String(row.value?.status || '')
   if (/fail|missing|needs sign-in/i.test(word)) return 'fail'
   if (/unmanaged|untracked|parked|not probed|not set up|not installed/i.test(word)) return 'warn'
-  if (/found|connected|in the pool|ok/i.test(word)) return 'ok'
+  /* `installed` is a feed's whole status word: it is not probed and never will be,
+     so it matched neither list and fell to `off` — the hero then said "not
+     answering" about a row the Definition card calls `installed · a feed URL · read
+     by News`. The warn branch above takes `not installed` first, so this cannot
+     catch an entry nobody installed. */
+  if (/found|connected|in the pool|ok|installed/i.test(word)) return 'ok'
   return 'off'
 })
 
@@ -493,6 +507,9 @@ onMounted(async () => {
   /* The stored key comes first: it is half of the gate under the strip and the
      whole of the sentence on the card that can replace it. */
   await readStoredKey()
+  /* A feed's ceiling is its only setting, and a card that opened on a default would
+     invite somebody to "save" a number that was never theirs. */
+  await readFeedLimit()
   /* The gate is answered by `gh`, the token store or the account store, so it is
      asked once the row is known: reading it on every connector's page would run a
      CLI, open a key file or read a keyring for a tab that cannot exist. */
@@ -594,6 +611,9 @@ async function runTest() {
       id: id.value,
       token: draft.value.token,
       host: draft.value.host,
+      /* A feed's address is the row's own `url`, not the base-URL draft — that
+         draft exists for a REST endpoint and a feed has no other spelling. */
+      url: isFeed.value ? feedUrl.value : '',
       /* A shipped row is tested by the app's own code; a custom one runs the
          self-report its person declared. */
       verify: row.value.verify || null,
@@ -604,6 +624,87 @@ async function runTest() {
     await probeConnectors({ force: true })
   } catch (problem) {
     error.value = String(problem?.message || problem)
+  } finally {
+    busy.value = ''
+  }
+}
+
+/* ── the feed: its address and its ceiling ────────────────────────────
+   Both are the row's own state, read and written through the same plain pair
+   Clockify's workspace and Lynk.id's folder use — no vault, because neither is a
+   secret, and no token verb, because a feed has no credential to check.
+
+   The **address is editable** because a shipped feed is a shape, not a country:
+   Google Trends is `?geo=` and Reddit is `/r/<name>/`, so `?geo=US` and
+   `/r/worldnews/` are the same connector pointed somewhere else. `setFields`
+   checks the scheme and moves `url` and `binding` together. */
+const feedDraft = ref('')
+const itemLimit = ref(100)
+
+async function readFeedLimit() {
+  if (!isFeed.value) return
+  feedDraft.value = feedUrl.value
+  try {
+    const answer = await call('connector.fields', { workspace: hub.workspace, id: id.value })
+    /* The main process always answers this key (`fieldsOf` defaults it), so the
+       fallback only covers a read that failed — and it is the ceiling a new feed
+       gets, never a zero a person would read as "no items". */
+    itemLimit.value = Number(answer?.itemLimit) || 100
+  } catch {
+    itemLimit.value = 100
+  }
+}
+
+/**
+ * Save the address. `connector.setFields` refuses anything but http(s) with a
+ * sentence, and the roster is re-read afterwards so the URL, the Definition card's
+ * binding and this page all print the one that is stored — not the one somebody
+ * typed hopefully.
+ */
+async function saveFeedUrl() {
+  if (!isFeed.value || busy.value) return
+  const next = String(feedDraft.value || '').trim()
+  if (!next || next === feedUrl.value) {
+    feedDraft.value = feedUrl.value
+    return
+  }
+  busy.value = 'url'
+  error.value = ''
+  notice.value = ''
+  try {
+    await call('connector.setFields', { workspace: hub.workspace, id: id.value, fields: { url: next } })
+    await loadConnectors()
+    feedDraft.value = feedUrl.value
+    notice.value = `Saved — this feed reads ${feedUrl.value} on its next read.`
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+    feedDraft.value = feedUrl.value
+  } finally {
+    busy.value = ''
+  }
+}
+
+/**
+ * Save the ceiling. `connector.setFields` is the only writer, and it refuses a value
+ * outside 1..500 with a sentence — that refusal is shown as it came, and the field is
+ * put back to what is stored rather than left claiming a number nobody saved.
+ */
+async function saveFeedLimit() {
+  if (!isFeed.value || busy.value) return
+  busy.value = 'limit'
+  error.value = ''
+  notice.value = ''
+  try {
+    const answer = await call('connector.setFields', {
+      workspace: hub.workspace,
+      id: id.value,
+      fields: { itemLimit: Number(itemLimit.value) },
+    })
+    itemLimit.value = Number(answer?.itemLimit) || itemLimit.value
+    notice.value = `Saved — one read carries up to ${itemLimit.value} items from this feed.`
+  } catch (problem) {
+    error.value = String(problem?.message || problem)
+    await readFeedLimit()
   } finally {
     busy.value = ''
   }
@@ -834,7 +935,10 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
             :aria-label="`${seenTotal} ${row.samplesLabel || 'reported'}, ${row.status}, using ${row.binary || row.binding || 'its own binary'}`"
           >
             <div class="entp-lv">
-              <span>{{ row.samplesLabel ? row.samplesLabel.slice(0, 6).toUpperCase() : 'SEEN' }}</span>
+              <!-- A feed has no per-read item count to put here: the number that
+                   matters is its ceiling, and that is a field on the Feed card.
+                   So the slot keeps its dash and names what the page is reading. -->
+              <span>{{ isFeed ? 'FEEDS' : row.samplesLabel ? row.samplesLabel.slice(0, 6).toUpperCase() : 'SEEN' }}</span>
               <b>{{ seen.length ? seenTotal : '—' }}</b>
             </div>
             <div class="entp-xp-main">
@@ -847,7 +951,9 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
               </div>
               <div class="entp-xp-foot">
                 <span>{{ row.scope === 'machine' ? 'this machine' : 'this workspace' }}</span>
-                <span>{{ tone === 'ok' ? 'answering' : 'not answering' }}</span>
+                <!-- `answering` is a probe's verdict, and a feed is never probed:
+                     News reads it, which is a different verb and the true one. -->
+                <span>{{ isFeed ? 'read by News' : tone === 'ok' ? 'answering' : 'not answering' }}</span>
               </div>
             </div>
           </aside>
@@ -972,6 +1078,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
               <dd>
                 <template v-if="row.kind === 'mcp'">an MCP server — a definition in this workspace's <code class="mono">mcp.json</code></template>
                 <template v-else-if="row.kind === 'cli'">a command-line tool already on this machine</template>
+                <template v-else-if="row.kind === 'rss'">a feed — one URL, read by News, stored nowhere</template>
                 <template v-else-if="row.oauth">a REST service you sign in to, one account at a time</template>
                 <template v-else-if="row.credential === 'token'">a REST service reached with one API key you paste once</template>
                 <template v-else>a REST service</template>
@@ -990,9 +1097,16 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
               </dd>
             </dl>
             <p class="cxn-note">
-              Installing records the definition in this workspace. It copies no
-              credential — that is asked for here, afterwards, and it stays on this
-              machine.
+              <template v-if="isFeed">
+                Installing records this feed's address in the workspace. There is no
+                credential to copy and none is asked for afterwards — a feed URL is the
+                whole connector, and <b>News</b> reads it from the main process.
+              </template>
+              <template v-else>
+                Installing records the definition in this workspace. It copies no
+                credential — that is asked for here, afterwards, and it stays on this
+                machine.
+              </template>
             </p>
           </section>
 
@@ -1131,8 +1245,64 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           </section>
 
           <section v-else-if="!isTailscale && !isOAuth && (!notInstalled || isCli)" class="cxn-card">
-            <h2>{{ isCli ? 'Sign-in' : isTokenKey ? 'API key' : 'Endpoint and token' }}</h2>
-            <template v-if="isCli">
+            <h2>{{ isFeed ? 'Feed' : isCli ? 'Sign-in' : isTokenKey ? 'API key' : 'Endpoint and token' }}</h2>
+            <!-- A feed, in its own words: the address it reads, the ceiling it reads
+                 to, and one verb that asks it. No token field (there is no
+                 credential), no reveal (nothing to hide) and no base URL (the URL
+                 *is* the connector — changing it is a remove and a new add, which is
+                 a verb this page deliberately does not offer). -->
+            <template v-if="isFeed">
+              <div class="cxn-fields">
+                <!-- The address is editable on purpose: a shipped feed is a shape, and
+                     `?geo=US` / `/r/worldnews/` are the same connector pointed
+                     somewhere else. The scheme is checked in main, so a `file://`
+                     address never reaches the reader. -->
+                <label>
+                  feed URL
+                  <input
+                    v-model="feedDraft"
+                    class="mono"
+                    type="url"
+                    placeholder="https://example.org/feed.xml"
+                    autocomplete="off"
+                    spellcheck="false"
+                    :title="feedUrl"
+                    @change="saveFeedUrl"
+                  />
+                </label>
+                <label>
+                  items per read
+                  <input
+                    v-model.number="itemLimit"
+                    type="number"
+                    min="1"
+                    max="500"
+                    step="1"
+                    inputmode="numeric"
+                    @change="saveFeedLimit"
+                  />
+                </label>
+              </div>
+              <div class="cxn-acts">
+                <button class="btn btn-sm" type="button" :disabled="Boolean(busy)" @click="runTest">
+                  {{ busy === 'test' ? 'Reading…' : 'Test feed' }}
+                </button>
+              </div>
+              <p class="cxn-note">
+                This feed is shared by the workspace: <b>News</b> reads it once and every member
+                sees the same rows, up to {{ itemLimit }} items per read. It is installed,
+                changed and removed here — News itself adds nothing, edits nothing and can
+                remove nothing. Both fields save when you leave them.
+              </p>
+              <p class="cxn-note">
+                The address is the whole feed, so a different country or subreddit is the same
+                connector pointed elsewhere: <code class="mono">?geo=US</code> on a Google
+                Trends feed, <code class="mono">/r/worldnews/</code> on a Reddit one. Read in
+                the main process, credentialless: 8 s per request, 512 kB per answer, and a page
+                that answers HTML is refused rather than parsed.
+              </p>
+            </template>
+            <template v-else-if="isCli">
               <p class="cxn-note">
                 This row's credential belongs to the CLI's own store on this machine. Signing in
                 happens in the CLI, never here.
@@ -1216,10 +1386,17 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
           <section v-if="notInstalled && !isTailscale" class="cxn-card">
             <h2>Install</h2>
             <p class="cxn-note">
-              Records the definition in this workspace. <b>No credential is copied</b> — a
-              CLI's sign-in stays with the CLI, an MCP binding stays in
-              <code class="mono">mcp.json</code>, and an account is asked for on this page
-              afterwards.
+              <template v-if="isFeed">
+                Records this feed's address in the workspace. <b>No credential is
+                copied</b> and none is asked for — a feed is one URL, and News reads it
+                without a secret.
+              </template>
+              <template v-else>
+                Records the definition in this workspace. <b>No credential is copied</b> — a
+                CLI's sign-in stays with the CLI, an MCP binding stays in
+                <code class="mono">mcp.json</code>, and an account is asked for on this page
+                afterwards.
+              </template>
             </p>
             <button
               class="btn btn-ink"

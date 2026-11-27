@@ -19,6 +19,7 @@ const ConnectorPageView = () => import('@/views/ConnectorPageView.vue')
 const ArtifactsIndexView = () => import('@/views/ArtifactsIndexView.vue')
 const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
 const MachinesView = () => import('@/views/MachinesView.vue')
+const NewsView = () => import('@/views/NewsView.vue')
 const MachineDetailView = () => import('@/views/MachineDetailView.vue')
 const AccountView = () => import('@/views/AccountView.vue')
 const AccountProfileView = () => import('@/views/account/AccountProfileView.vue')
@@ -165,6 +166,15 @@ const router = createRouter({
           name: 'chat',
           component: ChatView,
           meta: { crumb: 'chat', title: 'Chat · entity' },
+        },
+        {
+          path: ':workspace/news',
+          name: 'news',
+          component: NewsView,
+          /* `rail: false` is the page saying it has no second tier. Without it the
+             shell draws one and the rail falls back to a section — which is how
+             the machine list ended up beside a list of headlines. */
+          meta: { crumb: 'news', title: 'News · entity', rail: false },
         },
         {
           /* The index is a sibling **above** the detail route: `:name` would

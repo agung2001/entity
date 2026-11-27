@@ -26,6 +26,7 @@ const artifacts = require('./artifact-store.cjs')
 const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
+const newsStore = require('./news-store.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -367,6 +368,12 @@ function createRpc({
     'connector.install': (args) => connectorStore.install(args),
     'connector.uninstall': (args) => connectorStore.uninstall(args),
     'connector.copy': (args) => connectorStore.copyFromMachine(args),
+    /* News: two read-only calls. The renderer never fetches a feed and never
+       writes one — `connector.add` (above) is the only door a feed comes in by,
+       and it is on the Connectors surface. `news.probe` answers "does this URL
+       answer?" before a feed is installed; it reads nothing and stores nothing. */
+    'news.read': (args) => newsStore.read(args),
+    'news.probe': (args) => newsStore.probe(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above
