@@ -379,7 +379,8 @@
   color: var(--ink-2);
   cursor: pointer;
 }
-.wsl-seg {
+/* The shared grid/list toggle (`ViewToggle.vue`), used by Workspaces and News. */
+.seg-toggle {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -388,7 +389,7 @@
   border-radius: var(--r-sm);
   background: var(--bg);
 }
-.wsl-seg button {
+.seg-toggle button {
   display: grid;
   place-items: center;
   width: 26px;
@@ -399,11 +400,11 @@
   color: var(--muted);
   cursor: pointer;
 }
-.wsl-seg button svg {
+.seg-toggle button svg {
   width: 12px;
   height: 12px;
 }
-.wsl-seg button[aria-pressed='true'] {
+.seg-toggle button[aria-pressed='true'] {
   background: var(--surface-2);
   color: var(--ink);
 }
