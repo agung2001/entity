@@ -463,7 +463,7 @@ function tabKey(event) {
   else return
   event.preventDefault()
   section.value = SECTIONS[next].id
-  nextTick(() => tablistEl.value?.querySelectorAll('[role="tab"]')[next]?.focus())
+  nextTick(() => tablistEl.value?.querySelectorAll('button')[next]?.focus())
 }
 </script>
 
