@@ -1,14 +1,15 @@
 /* ── News — the reader for what the workspace's feeds last said (ENTITY-76) ──
-   Nothing on this page is a new material. The card, the sticky head, the row
-   height, the failing note, the chips, the search field, the segmented control
-   and the tab strip are the shell's own `.dsh-*` / `.cxn-search` / `.seg` /
-   `.sk-tabs` primitives; what this sheet declares is only what the *path* around
-   them needs — the head above the tabs, the two column sets the two tabs differ
-   by, the pager, the one empty block, and the three widths a band this wide
-   actually has.
+   One read, two drawings: a grid of cards or a list of rows, both from the same
+   `paged` slice. Nothing here writes — no Add, no Edit, no Remove, and no rule
+   for one.
 
-   There is no rule here for a control that writes: no Add, no Edit, no Remove.
-   That is the page's contract, and its CSS keeps the same shape. */
+   The material is the shell's: `.cxn-search`, `.seg`, `.dsh-chip`/`.dsh-chips`,
+   `.dsh-skel`, `.dsh-wait`, `.dsh-jump`, `.news-none` and the `.sk-tabs` strip
+   are shipped and are only placed here. The `nv-` classes draw what this page
+   alone has — the banner, the bar's grid, the card, the row and the pager.
+
+   Dark is the default rule and light is the override, the direction
+   `backdrops.css` writes its own material in. */
 
 /* ── the head ─────────────────────────────────────────────────────────────── */
 .pg-id {
@@ -20,14 +21,14 @@
 .pg-id h1 {
   margin: 0;
   font-family: var(--font);
-  font-size: var(--fs-h2);
+  font-size: var(--fs-h1);
   font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
 }
 .pg-id .sub {
-  margin: 7px 0 0;
-  max-width: 82ch;
+  margin: 8px 0 0;
+  max-width: 76ch;
   font-size: var(--fs-small);
   line-height: 1.6;
   color: var(--muted);
@@ -101,154 +102,305 @@
   outline-offset: 2px;
 }
 
-/* ── the two column sets ──────────────────────────────────────────────────────
-   General reads every news feed, so it needs Feed and Published. Trends reads
-   one feed, so a Feed column would repeat one value on every row — it carries
-   Volume and Seen instead. A fixed layout is what lets the headline column keep
-   the width the other three do not need, and what stops a long provenance line
-   from widening the table past its own scroll box. */
-.news-tbl {
-  table-layout: fixed;
+/* ── the bar: an information band, not a soup ─────────────────────────────────
+   The shipped `.dsh-bar` is a flex wrap whose row count depends on the width of
+   its own controls; here the four controls and the chip row are *placed* — search
+   and the three controls on row one, the feed filter on a full row of its own.
+   Two rows on every desktop band, one on Trends (no chips), three at 328 px.
+   `.dsh-bar` itself is untouched: Connectors keeps its own bar. */
+.nv-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 16px;
 }
-.news-tbl .rank-col {
-  width: 44px;
+.nv-bar > .cxn-search {
+  grid-row: 1;
+  grid-column: 1;
 }
-.news-tbl .src-col {
-  width: 168px;
+.nv-bar > .seg {
+  grid-row: 1;
+  grid-column: 2;
 }
-.news-tbl .pub-col {
-  width: 104px;
+.nv-bar > .nv-seg {
+  grid-row: 1;
+  grid-column: 3;
 }
-.news-tbl .vol-col {
-  width: 88px;
+.nv-bar > .nv-when {
+  grid-row: 1;
+  grid-column: 4;
+  justify-self: end;
 }
-.news-tbl .seen-col {
-  width: 84px;
+.nv-bar > .dsh-chips {
+  grid-row: 2;
+  grid-column: 1 / -1;
 }
-.dsh-tbl td.rank {
+
+/* The read line: what the last read was, when the next one is due, and the one
+   verb that clears a filter. Mono, because it is a timestamp, not a sentence. */
+.nv-when {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.nv-when .sep {
+  opacity: 0.6;
+}
+.nv-when .dsh-jump {
+  font-size: var(--fs-meta);
+  border-bottom-color: var(--border-strong);
+}
+
+/* The shared grid/list toggle (`ViewToggle.vue`, `.seg-toggle` is its own
+   geometry in `directory.css`). News only adds the two things a placed grid
+   needs — no shrink, and the ring every control on this page wears. */
+.nv-bar .nv-seg {
+  flex: none;
+}
+.nv-seg button {
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+.nv-seg button:hover {
+  color: var(--ink);
+}
+.nv-seg button:focus-visible {
+  outline: 2px solid var(--field-edge);
+  outline-offset: 2px;
+}
+/* Tabbable, but with nothing to change until a read lands. */
+.nv-seg button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── the set: how many, drawn how ─────────────────────────────────────────── */
+.nv-meta {
+  margin: 0 0 10px;
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.dsh-tbl th.r,
-.dsh-tbl td.r {
-  text-align: right;
+
+/* ── the grid ─────────────────────────────────────────────────────────────────
+   One auto-filled grid: 3 up at a 996 px band, 2 up at 736, 1 up at 328 — the
+   column count falls out of the card floor, so no query needs to name it. */
+.nv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.dsh-tbl td.mono {
+.nv-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+/* The card is the anchor — like `.ash-card`, nothing inside it is interactive,
+   so one hit target and one tab stop are the whole truth about it. The 138 px
+   floor is measured (padding 25 + top line 16 + gap 9 + 3 × line + foot 23) and
+   the skeleton uses the same box, so a read landing never reflows the grid. */
+.nv-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 138px;
+  padding: 13px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out, transform 0.14s ease-out;
+}
+.nv-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 8px 22px color-mix(in oklab, var(--ink) 7%, transparent);
+  transform: translateY(-1px);
+}
+.nv-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.nv-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 9px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nv-top .fl {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nv-top .tm {
+  margin-left: auto;
+  flex: none;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.nv-card h3 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.32;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  /* The clamp is 3, so the box is 3: two cards on one row line their feet up
+     even when one headline is 48 characters and its neighbour is 96. */
+  min-height: calc(1.32em * 3);
+}
+.nv-card:hover h3 {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nv-card .foot {
+  margin: auto 0 0;
+  padding-top: 11px;
   font-family: var(--mono);
   font-size: var(--fs-meta);
-  color: var(--ink-2);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The row: a title, and the line under it that says where the title came from. */
-.lead {
-  min-width: 0;
+/* A feed's mark is its own hue at 16–26 % over the surface, and it always sits
+   beside the feed's name, so the mark never carries the meaning alone. The two
+   brand mixtures are the ones this sheet already carried. */
+.nv-gl {
   display: grid;
-  gap: 1px;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  color: var(--ink-2);
 }
-.lead a,
-.lead .t {
+.nv-gl[data-s='gt'] {
+  background: color-mix(in oklab, #4285f4 16%, var(--surface));
+}
+.nv-gl[data-s='rd'] {
+  background: color-mix(in oklab, #ff4500 16%, var(--surface));
+}
+/* Google prints `1000+`, so the figure is printed back exactly — never rounded,
+   never a blank, because a feed that prints a volume always printed one. */
+.vol {
+  color: var(--accent-ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.vol[data-none='1'] {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ── the list ─────────────────────────────────────────────────────────────────
+   The same read with the card's breathing room removed: one row per item, the
+   age on the right so the eye scans one edge. This is the mode that survives the
+   phone unchanged. */
+.nv-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+.nv-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 96px;
+  gap: 12px;
+  align-items: start;
+  padding: 11px 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.nv-row:last-child {
+  border-bottom: 0;
+}
+.nv-row:hover {
+  background: var(--surface);
+}
+.nv-row .nv-gl {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+.nv-row:hover .nv-rt {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nv-rt {
+  display: block;
   font-family: var(--font);
   font-size: var(--fs-small);
   font-weight: 500;
   letter-spacing: -0.008em;
+  line-height: 1.4;
   color: var(--ink);
   overflow-wrap: anywhere;
 }
-.lead a:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.lead .k {
-  min-width: 0;
-  overflow: hidden;
+.nv-prov {
+  margin: 1px 0 0;
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--muted);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-/* A headline that runs long wraps to two lines inside the row, never a third. */
-.lead.two a,
-.lead.two .t {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   overflow: hidden;
-}
-.dsh-tbl tbody tr:has(.lead.two) {
-  height: 66px;
-}
-/* The two facts that move into the provenance line when their column leaves. */
-.lead .k-src,
-.lead .k-seen {
-  display: none;
-}
-
-/* A feed's mark is its hue at 16% over the surface, and it always sits beside
-   the feed's name, so the mark never carries the meaning alone. */
-.src {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--fs-secondary);
-  color: var(--ink-2);
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.src i {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border-radius: var(--r-2xs);
-  background: var(--surface-2);
-  font-family: var(--mono);
-  font-size: 0.7em;
-  font-style: normal;
-  color: var(--ink-2);
-}
-.src i[data-s='gt'] {
-  background: color-mix(in oklab, #4285f4 16%, var(--surface));
-}
-.src i[data-s='rd'] {
-  background: color-mix(in oklab, #ff4500 16%, var(--surface));
-}
-/* Google prints `1000+`, so the figure is printed back exactly — never rounded,
-   never a dash, because a feed that prints a volume always printed one. */
-.vol {
+.nv-row .tm {
   font-family: var(--mono);
   font-size: var(--fs-meta);
-  color: var(--ink-2);
+  color: var(--muted);
+  text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-.vol[data-none='1'] {
-  color: var(--muted);
+  padding-top: 2px;
 }
 
 /* ── the pager ────────────────────────────────────────────────────────────── */
-.pager {
+.nv-foot {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 9px 14px;
+  padding: 12px 0 0;
+  margin-top: 16px;
   border-top: 1px solid var(--border);
 }
-.pager .lab {
+.nv-foot .lab {
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.pager .spacer {
-  flex: 1;
+.nv-foot .btns {
+  display: flex;
+  gap: 7px;
+  margin-left: auto;
 }
 
 /* ── an empty page that is not a broken one ───────────────────────────────────
@@ -283,80 +435,146 @@
 /* ── the three widths this band has ───────────────────────────────────────────
    Container-relative, measured on the band rather than the window: the rail is
    not this page's, and the bar above it keeps the app's own 820 px rule.
-   At 900 the Feed column leaves General — its value is already in the subline
-   under the headline — and the count row steps down to the size a narrower band
-   gives a title. At 560 the chips leave, Seen moves into the subline, and the
-   rows become as tall as their content: three columns each. */
+   At 900 the title steps down and the card floor drops so 736 still holds two
+   columns. At 640 the bar becomes three stacked areas and the chip row scrolls
+   instead of wrapping. At 560 one card per row has nothing to align to, so the
+   reserved height goes and the list folds its age under the headline. */
 @container newsband (max-width: 900px) {
   .pg-id h1 {
     font-size: var(--fs-h3);
   }
-  .news-tbl .src-col {
+  .nv-grid {
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  }
+}
+
+@container newsband (max-width: 640px) {
+  .nv-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'search search search'
+      'chips chips chips'
+      'sort when view';
+    gap: 8px;
+  }
+  .nv-bar > .cxn-search {
+    grid-area: search;
+    min-width: 0;
+  }
+  .nv-bar > .dsh-chips {
+    grid-area: chips;
+  }
+  .nv-bar > .seg {
+    grid-area: sort;
+  }
+  .nv-bar > .nv-when {
+    grid-area: when;
+    justify-self: start;
+  }
+  .nv-bar > .nv-seg {
+    grid-area: view;
+    justify-self: end;
+  }
+  /* A wrapped chip row is three lines of controls above one and a half lines of
+     content on a phone; a scrolling row is one. */
+  .dsh-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding-bottom: 2px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .dsh-chips::-webkit-scrollbar {
     display: none;
   }
-  .lead .k-src {
-    display: inline;
+  .dsh-chip {
+    scroll-snap-align: start;
+  }
+  .nv-row {
+    grid-template-columns: 18px minmax(0, 1fr) 84px;
+    gap: 10px;
   }
 }
 
 @container newsband (max-width: 560px) {
-  .pg-id .sub {
-    font-size: var(--fs-secondary);
+  .nv-card {
+    min-height: 0;
+    padding: 12px 13px 11px;
   }
-  .dsh-chips {
-    display: none;
+  .nv-card h3 {
+    min-height: 0;
   }
-  .dsh-when {
-    margin-left: 0;
+  .nv-card .foot {
+    padding-top: 9px;
   }
-  .news-tbl .seen-col {
-    display: none;
+  .nv-row {
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 10px;
+    row-gap: 2px;
   }
-  /* The Seen column's loss is the Trend column's gain, and the subline moves into
-     it in the same breath: with the age prefixed, `1h ago · explore → google trends`
-     is 193 px of mono, so a 196 px cell (176 px of content) wrapped it and every
-     Trends row grew by a line — 89 px where the spec measures 74. Volume prints
-     five characters, so 60 px is all it needs; the 28 px it gives back is what
-     keeps that subline on one line, and a two-digit rank still fits its own. */
-  .news-tbl .vol-col {
-    width: 60px;
+  .nv-row .nv-gl {
+    width: 16px;
+    height: 16px;
   }
-  .lead .k {
-    overflow: visible;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
+  .nv-row .tm {
+    grid-column: 2;
+    text-align: left;
+    padding-top: 0;
   }
-  /* Every headline clamps at two lines here, not only the one `.lead.two` marks:
-     the 90-character rule above is a guess about the ≥561 px measure, and at 328 px
-     a 60-character title takes three or four lines — a 113 px row where the spec
-     measures 74. Two lines of `--fs-small` + the subline + 9 px of padding is that
-     74 px, and one line is the 53 px a Trends row measures. */
-  .lead a,
-  .lead .t {
+  .nv-rt {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     overflow: hidden;
   }
-  .lead .k-seen {
-    display: inline;
+  .nv-when {
+    flex-wrap: wrap;
+    white-space: normal;
   }
-  .dsh-tbl tbody tr,
-  .dsh-tbl tbody tr:has(.lead.two) {
-    height: auto;
+  .nv-foot .btns {
+    margin-left: 0;
+    width: 100%;
   }
-  .dsh-tbl tbody td {
-    padding: 9px 10px;
+  .nv-foot .btns .btn {
+    flex: 1;
   }
-  .dsh-tbl thead th {
-    padding: 7px 10px;
+  .sk-tabs .tab-why {
+    display: none;
   }
-  .pager {
-    gap: 7px;
+  .sk-tabs {
+    margin-bottom: 14px;
   }
-  .pager .lab {
-    font-size: var(--fs-micro);
+}
+
+/* A pointer that cannot be precise gets a bigger box: the shipped chip is 28 px
+   and the toggle cell 26, fine for a mouse and under a thumb's floor. Scoped to
+   this band, so Connectors keeps the shipped geometry. */
+@media (pointer: coarse) {
+  .news-band .dsh-chip {
+    height: 36px;
+    padding: 0 13px;
+  }
+  .news-band .nv-seg {
+    padding: 5px;
+  }
+  .news-band .nv-seg button {
+    width: 36px;
+    height: 36px;
+  }
+  .news-band .nv-seg button svg {
+    width: 15px;
+    height: 15px;
+  }
+  .news-band .nv-foot .btn {
+    height: 38px;
+  }
+  .news-band .seg button {
+    height: 36px;
+  }
+  .news-band .cxn-search {
+    height: 38px;
   }
 }
 
@@ -367,10 +585,14 @@
   container-name: newsband;
 }
 
-/* Nothing here animates that carries no information. */
+/* Nothing here animates that carries no information — and nothing animates at
+   all when the system asks it not to. The skeleton's shimmer is already stopped
+   by `connector-page.css`'s own reduced-motion block. */
 @media (prefers-reduced-motion: reduce) {
   .dsh-jump,
-  .dsh-jump:hover {
-    transition-duration: 0.01ms !important;
+  .dsh-jump:hover,
+  .nv-card,
+  .nv-seg button {
+    transition: none;
   }
 }
