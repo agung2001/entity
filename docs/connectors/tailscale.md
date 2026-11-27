@@ -11,7 +11,7 @@ credential — it needs the address, and a code it can read off a screen.
 A `cli` row, and the odd one: it authenticates nothing for a workspace and stores no
 token. It reads one machine-local daemon — `tailscale status --json`, one call — and then
 does exactly two things with what it read: it puts this machine's tailnet address in a QR
-code, and it gates one command, the repo's own `npm run dev:lan`.
+code, and it gates one web server.
 
 That makes it the fourth thing a connector can be in practice, whichever chip the rail
 prints: `mcp`, `cli` and `rest` all reach something and hold whatever proves who you are;
@@ -41,16 +41,37 @@ with nothing personal in it, so that is what the card prints.
 
 ## The LAN web server card
 
-**Start server** binds every interface on the chosen port (5183 by default) and starts
-the repo's own `npm run dev:lan` with `--strictPort`, so a port collision is an error
-rather than a silent move to 5184. When it reports serving, the card shows the URL, a
-**Copy**, an **Open in this browser**, a **Use the IP instead** toggle and the QR.
+**Start server** binds every interface on the chosen port (5183 by default), and what it
+binds depends on what this install has. The card names the one it will use, because they
+are not the same thing:
 
-It is a dev server, and the page says so in the card: this binds every interface, not
-just the tailnet, so on a café network the port is open to that network too. **Stop
-server** kills the process tree and waits for the port to be free — the check is `lsof`,
-not a promise — and the server is also stopped on quit, when the daemon leaves `running`,
-and when the port changes.
+| where | what Start runs |
+| --- | --- |
+| a checkout with Vite installed | the repo's own `npm run dev:lan --strictPort` — the same source, with HMR |
+| a packaged app | the built renderer it is already running, served by the main process |
+
+The second row is the one that used to be a lie. A packaged app has no `npm` and no
+`node_modules`, and its `package.json` lives inside `app.asar` — a file, so spawning
+`npm` with that as `cwd` threw `ENOTDIR` before Vite was ever consulted, and every Start
+showed `spawn ENOTDIR` instead of a page. So when there is no checkout, the app serves
+`dist/` itself (`electron/connectors/tailscale/lan-server.cjs`) and answers the two endpoints the renderer's
+browser bridge already speaks — `POST /__entity/call` and `GET /__entity/events`. A phone
+does not want HMR; it wants the page.
+
+Either way a taken port is a sentence rather than a silent move to 5184. When it reports
+serving, the card shows the URL, a **Copy**, an **Open in this browser**, a **Use the IP
+instead** toggle and the QR.
+
+It binds every interface, not just the tailnet, so on a café network the port is open to
+that network too — the card says so, in place, and offers Stop. Neither shape
+authenticates anybody, which is why the port is the one control the page locks while it
+runs. **Stop server** closes the listener or kills the process tree, waits for the port to
+be free — the check is `lsof`, not a promise — and the server is also stopped on quit,
+when the daemon leaves `running`, and when the port changes.
+
+One guard is shared by both shapes: a request whose `Host` is not `localhost`, a literal
+IP, or a name under a tailnet suffix is refused with `403`. Without it a hostname pointed
+at this machine could read the call table from a browser on the same wifi.
 
 ## The mention
 

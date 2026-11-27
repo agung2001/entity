@@ -3,6 +3,7 @@ const { execFile } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 const { createRpc } = require('./rpc.cjs')
+const connectorRegistry = require('./connectors/registry.cjs')
 const { watchWorkspaces } = require('./workspace-watch.cjs')
 const registry = require('./child-registry.cjs')
 const { ensureGuiPath } = require('./shell-path.cjs')
@@ -558,6 +559,10 @@ function broadcast(event) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('entity:event', event)
   }
+  /* The same frame, to a phone watching while the Tailscale page serves this
+     app: one stream, two transports. A no-op when nothing is serving, and the
+     registry keeps this file from having to know which connector that is. */
+  connectorRegistry.fanoutAll(event)
   if (event?.kind === 'chat.turn' && event.phase === 'done') {
     const payload = turnNotification(event, {
       prefs: notificationPrefs,
@@ -610,6 +615,9 @@ app.whenReady().then(() => {
     openInEditor,
     chooseDirectory,
     terminal: true,
+    /* The Tailscale page's LAN server: this process has the built renderer and the
+       call table a phone needs, and it is the only process allowed to serve them. */
+    lan: true,
   })
 
   /* An agent that rewrites its own instructions writes a file this process did

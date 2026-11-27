@@ -1,9 +1,11 @@
 /* ── Tailscale's connector page ────────────────────────────────────────────
    The one connector whose page is two cards of its own (`TailscalePanel.vue`)
    instead of the generic pitch + sign-in pair. Everything here is `ts-`, and the
-   four form primitives are scoped to `.ts-lan` rather than declared globally:
-   `.field` is already used by the login form (`login.css:86`), so a bare rule
-   would reach a page this connector has nothing to do with.
+   form primitives are `ts-port-*` on the port field rather than `.field`/
+   `.input`: `.field` is a boxed control on this very page
+   (`connector-page.css:3979`) and `.field` is also the login form's row
+   (`login.css:86`), so a bare rule would either draw a second box or reach a page
+   this connector has nothing to do with.
 
    The card furniture is `connector-page.css`'s: `.cxn-card`, `.cxn-card-head`,
    `.cxn-facts`, `.cxn-note`, `.state`, `.btn`. Only what is genuinely new is
@@ -154,28 +156,37 @@
 }
 
 /* ── the port field ─────────────────────────────────────────────────────────
-   A 120px field and the sentence that explains the default beside it. The field
-   takes `--field-edge`, not the hairline: it is the one control here a person
-   types into, so it owes 1.4.11 a boundary (`tokens.css:33`). */
+   Label, 120px field, one sentence — stacked, and the stack is deliberately not
+   a class named `field`.
+
+   **`.field` is a boxed control** (`connector-page.css:3979`: border, 34px height,
+   10px padding, its own background). Borrowing the name for a layout wrapper drew
+   that box around the label as well, so the port rendered as a small box with
+   another box hanging out of the bottom of it — the "weird port input" that
+   shipped in the first cut. A wrapper needs its own name (`ts-port-field`); the
+   primitives below are `ts-port-*` for the same reason, since `.field-lbl` and
+   `.input` are one rename away from the same collision. */
 .ts-port {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  gap: 6px;
   margin-top: 12px;
 }
-.ts-lan .field {
+.ts-port-field {
   display: grid;
   gap: 5px;
+  width: 120px;
+  justify-items: start;
 }
-.ts-lan .field-lbl {
+.ts-port-lbl {
   font-family: var(--mono);
   font-size: var(--fs-meta);
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.ts-lan .input {
+/* The field takes `--field-edge`, not the hairline: it is the one control here a
+   person types into, so it owes 1.4.11 a boundary (`tokens.css:33`). */
+.ts-port-input {
   height: 32px;
   width: 100%;
   padding: 0 9px;
@@ -187,30 +198,30 @@
   font-size: var(--fs-small);
   transition: border-color 0.13s ease;
 }
-.ts-lan .input:hover:not([disabled]) {
+.ts-port-input:hover:not([disabled]) {
   border-color: var(--muted);
 }
 /* The ring is global (`tokens.css:158`); the field only darkens its edge, which
    is what tells a person the box is live as well as focused. */
-.ts-lan .input:focus-visible {
+.ts-port-input:focus-visible {
   border-color: var(--ink);
 }
-.ts-lan .input[disabled] {
+.ts-port-input[disabled] {
   border-color: var(--border-strong);
   background: var(--surface-2);
   color: var(--muted);
   cursor: not-allowed;
 }
-.ts-lan .input[aria-invalid='true'] {
+.ts-port-input[aria-invalid='true'] {
   border-color: var(--danger);
 }
-.ts-lan .field-hint {
+.ts-port-hint {
   font-size: var(--fs-secondary);
   color: var(--muted);
   margin: 0;
-  max-width: 70ch;
+  max-width: 68ch;
 }
-.ts-lan .field-hint code {
+.ts-port-hint code {
   color: var(--ink-2);
 }
 
@@ -286,9 +297,6 @@
    query box the accounts table uses. 560 is where the code and its column stop
    fitting side by side — stack, or the URL is a 40px pale. */
 @container cxn (max-width: 559.99px) {
-  .ts-port {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .ts-serve {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -350,7 +358,7 @@
   .ts-lan .state i {
     animation: none;
   }
-  .ts-lan .input,
+  .ts-port-input,
   .ts-lan .btn,
   .ts-tailnet .btn {
     transition: none;

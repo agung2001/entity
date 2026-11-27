@@ -63,7 +63,7 @@ its definition travels; `clockify`, whose credential is one API key pasted once 
 an OAuth account, with its workspace id and timezone kept as workspace state beside it;
 and `tailscale`, a `cli` row that behaves like none of the others — it authenticates
 nothing, stores no token, and reads one machine-local daemon, so it carries no `@` form
-and gates one command instead. A custom row is whatever a person adds: real, working, and
+and gates one web server instead. A custom row is whatever a person adds: real, working, and
 shipping no resolver — so it offers no `@` form either.
 
 **Installing records a definition, never a credential.** An `mcp` entry writes a
@@ -174,7 +174,7 @@ and the mention it answers:
 | [Maka](connectors/maka.md) · `@maka:` | [Open Design](connectors/open-design.md) · `@opendesign:` | [Gmail](connectors/gmail.md) · `@gmail:` |
 | [Google Drive](connectors/google-drive.md) · `@drive:` | [YouTube](connectors/youtube.md) · `@youtube:` | [YouTube Studio](connectors/youtube-studio.md) · `@youtube-studio:` |
 | [Habitify](connectors/habitify.md) · `@habitify:` | [Clockify](connectors/clockify.md) · `@clockify:` | [X](connectors/x.md) · `@x:` |
-| [Tailscale](connectors/tailscale.md) · no `@` form, one command gated | | |
+| [Tailscale](connectors/tailscale.md) · no `@` form, one server gated | | |
 
 ## What it deliberately does not do
 

@@ -19,7 +19,7 @@ import { habitify, readDashboard as readHabitifyDashboard } from '@/connectors/h
 import ClockifyWorkspaceCard from '@/connectors/clockify/WorkspaceCard.vue'
 import ConnectorDashboardPane from '@/connectors/ConnectorDashboardPane.vue'
 import LynkReportCard from '@/connectors/lynk/ReportCard.vue'
-import TailscalePanel from '@/components/TailscalePanel.vue'
+import TailscalePanel from '@/connectors/tailscale/TailscalePanel.vue'
 import BinaryPathCard from '@/connectors/parts/BinaryPathCard.vue'
 import {
   answerGate,
@@ -279,7 +279,12 @@ const fields = computed(() => {
     return [
       { k: 'kind', v: 'cli · this machine' },
       { k: 'reads', v: 'tailscale status --json', mono: true },
-      { k: 'runs', v: 'npm run dev:lan', mono: true },
+      /* Two shapes, one row: a checkout runs the repo's Vite, a packaged app
+         serves its own build. The panel read `mode` off the daemon read, so the
+         rail and the card cannot disagree about what Start will do. */
+      tsRead.value?.mode === 'build'
+        ? { k: 'serves', v: "this app's own build", mono: true }
+        : { k: 'runs', v: 'npm run dev:lan', mono: true },
       { k: 'binds', v: '0.0.0.0:<port>', mono: true },
       { k: 'requires', v: 'Tailscale running' },
       { k: 'for', v: 'every entity · this workspace' },

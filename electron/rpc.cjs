@@ -40,7 +40,6 @@ const pendingWrites = require('./pending-write.cjs')
 const { tilde } = require('./frontmatter.cjs')
 const audit = require('./platform-audit.cjs')
 const remoteSync = require('./remote-sync.cjs')
-const tailscale = require('./tailscale.cjs')
 const threadMetadata = require('./thread-metadata.cjs')
 const usage = require('./usage.cjs')
 const learning = require('./learn.cjs')
@@ -140,6 +139,14 @@ function createRpc({
      in the desktop app and on the dev server, and it is a remote-code-execution
      hole in the shared server, so it is opt-in and off unless asked for. */
   terminal = false,
+  /* True only where a LAN server may stand in for the dev server — the desktop
+     app, which owns a built renderer *and* this call table. Off in the shared
+     server on purpose: a second listener there would answer the whole table with
+     no login, which is the one hole the server build exists to close. It only
+     hands the table over (`registry.attachAll`); the event stream is `broadcast`'s
+     job (`registry.fanoutAll`), because that is where the window's frames already
+     go. */
+  lan = false,
   /* True when this process *is* the sync host (`server/index.cjs`). The shelf's
      sweep can be assigned to that host, and it is the only executor that never
      waits for a person, so it is the only one whose idle switch means nothing. */
@@ -461,15 +468,11 @@ function createRpc({
     'connector.fields': (args) => connectorStore.fieldsOf(args),
     'connector.setFields': (args) => connectorStore.setFields(args),
 
-    /* Tailscale: one read, one toggle. `start`/`stop` are the only verbs that
-       change anything here, and what they change is a Vite child this app owns
-       — never the daemon. Nothing in this namespace takes a path, an argv or a
-       token from the renderer. */
-    'tailscale.status': () => tailscale.read(),
-    'tailscale.start': ({ port } = {}) => tailscale.start(port),
-    'tailscale.stop': () => tailscale.stop(),
-    'tailscale.serve': () => tailscale.serve(),
-    'tailscale.open': () => tailscale.open(),
+    /* Tailscale's five verbs (`tailscale.status`, `.start`, `.stop`, `.serve`,
+       `.open`) arrive with the registry spread above, like every other connector's:
+       they are declared in `connectors/tailscale/connector.cjs`, and this file names
+       no connector module path. What they change is a web server this app owns —
+       never the daemon, and never a path, an argv or a token from the renderer. */
 
     /* workspace artifacts: files beside the entities and chats */
     'artifact.list': (args) => artifacts.list(args),
@@ -861,6 +864,12 @@ function createRpc({
     }
   }
 
+  /* A packaged app has `dist/` but no Vite, and the page a phone loads asks this
+     very table the same questions the window does. So hand it over once, to whichever
+     connector asks for it (`attach` in a connector's descriptor): only the desktop
+     process does this, because only it owns both halves. */
+  if (lan) connectorRegistry.attachAll(call)
+
   return {
     call,
     runner,
@@ -882,14 +891,10 @@ function createRpc({
       remoteSync.stop()
       backups.stop()
       update.stop()
-      /* The LAN web server is a dev server this app started, so quitting the app
-         is a stop: leaving `vite --host 0.0.0.0` behind would be a listener on
-         the tailnet that nothing on screen admits to. */
-      try {
-        tailscale.stop()
-      } catch {
-        /* a child that already exited is not a failed shutdown */
-      }
+      /* A connector that started a server stops it here: quitting the app is a
+         stop, and leaving `vite --host 0.0.0.0` (or a listener in this process)
+         behind would be a port on the tailnet that nothing on screen admits to. */
+      connectorRegistry.shutdownAll()
       await mcpServer.stop()
     },
     activeCount: () => runner.activeCount() + chats.activeCount(),

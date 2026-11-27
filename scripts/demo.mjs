@@ -64,6 +64,10 @@ const TAILNET = {
   magicdnsEnabled: true,
   hostName: DEMO.hostname,
   error: '',
+  /* The still is of a checkout — that is what the docs describe and what the
+     recording runs in — so the card says `npm run dev:lan`, not the packaged
+     app's own-build wording. */
+  mode: 'checkout',
 }
 const SERVING = {
   running: true,

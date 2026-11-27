@@ -85,6 +85,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "server/static.cjs",
       "build/icon.png",
       "package.json"
     ],

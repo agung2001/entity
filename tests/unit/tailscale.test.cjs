@@ -2,7 +2,7 @@
    becomes. No daemon and no binary — `read()` takes an injected `exec`. */
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { derive, addressOf, read } = require('../../electron/tailscale.cjs')
+const { derive, addressOf, planOf, read } = require('../../electron/connectors/tailscale/dashboard.cjs')
 
 const RUNNING = {
   BackendState: 'Running',
@@ -53,4 +53,47 @@ test('a missing binary is `absent`, and bad JSON is one sentence', async () => {
   const broken = await read({ exec: fake('not json') })
   assert.equal(broken.state, 'unreadable')
   assert.match(broken.error, /JSON/)
+})
+
+/* The decision the packaged app got wrong: `spawn(npm, …, { cwd: …/app.asar })` is
+   `ENOTDIR`, because an asar is a file. So a Start asks the filesystem what it has
+   before it touches a child, and the answer is one of three words. */
+const files = (...present) => (file) => present.some((entry) => file.endsWith(entry))
+
+test('a checkout runs the repo\'s Vite, even with a stale `dist/` beside it', () => {
+  const answer = planOf({
+    root: '/repo',
+    dist: '/repo/dist',
+    attached: true,
+    isFile: files('node_modules/vite/package.json', 'dist/index.html'),
+  })
+  assert.equal(answer, 'checkout')
+})
+
+test('a packaged app has no Vite and serves its own build', () => {
+  const asar = '/Applications/Entity.app/Contents/Resources/app.asar'
+  const answer = planOf({
+    root: asar,
+    dist: `${asar}/dist`,
+    attached: true,
+    isFile: files('dist/index.html'),
+  })
+  assert.equal(answer, 'build')
+})
+
+test('a build with no call table behind it is `none`, and so is an empty bundle', () => {
+  /* `dist/` without the table is a page that paints and answers nothing, which is
+     why the shared server — which never attaches — reports `none`. */
+  assert.equal(planOf({ root: '/repo', dist: '/repo/dist', attached: false, isFile: files('dist/index.html') }), 'none')
+  assert.equal(planOf({ root: '/repo', dist: '/repo/dist', attached: true, isFile: () => false }), 'none')
+})
+
+test('the plan is part of the read, so the page never guesses it', async () => {
+  const answer = await read({ exec: fake(RUNNING), plan: () => 'build' })
+  assert.equal(answer.mode, 'build')
+  const absent = await read({
+    exec: async () => ({ stdout: '', stderr: '', error: Object.assign(new Error('spawn tailscale ENOENT'), { code: 'ENOENT' }) }),
+    plan: () => 'checkout',
+  })
+  assert.equal(absent.mode, 'checkout')
 })

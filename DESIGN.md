@@ -797,6 +797,8 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | A dashboard re-reads on every visit, or its `cached 15 min` label outlives the constant | One read a day into `<ENTITY_HOME>/github-dashboard.json`, refreshed only by the explicit verb or the expiry, and the label reads `cacheTtlMs` from the payload instead of typing the number | `electron/connectors/github/dashboard.cjs`, `connectors/github/GithubDashboard.vue` (see *A dashboard caches for a day, in a file*) |
 | A right-aligned column has a left-aligned header | Align the desk's label to the cell's own `justify-content`, or it reads as a different column | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A field's glyph reads as glued to the first letter | `.wsl-search` is a 32px box around a 20px input; give the input `height: 100%` and the field the app's other field's gap (9px) | `tests/e2e/full/24-machines-fleet.spec.js` |
+| A labelled control renders as a box inside a box, with the input hanging out of the bottom | A layout wrapper is not a primitive: `.field` is a *boxed control* on the connector page (`connector-page.css:3979`), so a panel that borrows the name draws that border and 34px height around its own label too. Name the wrapper (`ts-port-field`) and its parts (`ts-port-lbl` / `ts-port-input` / `ts-port-hint`); reach for `.field`/`.input` only when the box is what you want | `src/styles/tailscale.css`, the connector page at two widths |
+| The packaged app throws `spawn ENOTDIR` where the checkout works | `app.asar` is a *file*, so spawning with it as `cwd` fails before the command is read — and there is no `npm` or `node_modules` in a packaged build at all. Ask the filesystem what a Start can do (`planOf`) and serve `dist/` from this process when there is no checkout | `npm test` (`tailscale`, `lan-server`) |
 | A host name is plain text while a tiny arrow beside it goes somewhere | The name is the link, the row is not: the alias carries the route, the arrow is its shortcut, the address is text | `npm test` (`ui-contract`) |
 | A second row is inset 28px from the nav above it | `.entp-bar` shares `.topbar`'s gutter; it bleeds the window and pads its own contents | `tests/e2e/full/24-machines-fleet.spec.js` |
 | Two different actions share (or nearly share) one drawing | Vendored iconoir glyphs, one meaning each; a fleet verb never reuses a row verb's shape | `npm test` (`ui-contract`) |
@@ -1721,6 +1723,14 @@ be a special case in three of them.
   requires no connector module; every dashboard kind has a pane body and a table
   entry; and a catalog row that advertises a resolver is the row the registry names.
   That test replaces the fifteen-file folklore a person used to hold in their head.
+- **A connector that needs the process asks for it, not for `rpc.cjs`.** Three
+  optional hooks on a descriptor are the whole surface: `attach(call)` (the call
+  table, for something that serves this app over HTTP), `fanout(event)` (the event
+  stream, mirrored) and `shutdown()` (stop what it started, on quit). The registry
+  aggregates them (`attachAll` / `fanoutAll` / `shutdownAll`), so `rpc.cjs` and
+  `main.cjs` call the registry and never a connector's path. Tailscale is the one
+  connector that uses all three; it is also the one with a *server* rather than a
+  remote service, which is why the hooks exist at all.
 - **Main answers facts; the renderer answers words.** The lock's *state* is read in
   the main process (a token exists, a grant holds a scope); the sentence a person
   reads is in the renderer's connector entry, so a wording change is not a

@@ -11,6 +11,7 @@
  * | mention kinds  | `index.cjs` (the resolver facade)               |
  * | account heads  | `mention-ref.cjs` (which `@…:` reads an account) |
  * | call table     | `rpc.cjs` (one spread, no connector knowledge)  |
+ * | process hooks  | `rpc.cjs` and `main.cjs` (`attachAll`/`fanoutAll`/`shutdownAll`) |
  *
  * **The descriptor is the source of truth for the three names**, which is why they
  * are not repeated anywhere:
@@ -50,6 +51,11 @@ const FOLDERS = [
   'habitify',
   'fitbit',
   'open-design',
+  /* The fourth kind: it reads a local daemon instead of a remote service, so it
+     authenticates nothing, offers no mention and answers no dashboard tab — but it
+     is a connector like the rest, with its calls and its catalog entry in its own
+     folder. Listed here with the credentialless ones, because it needs no account. */
+  'tailscale',
   'github',
   'youtrack',
   'lynk',
@@ -144,16 +150,61 @@ function dashboardFor(kind) {
   return byKind.get(String(kind || ''))?.dashboard || null
 }
 
+/* ── the process hooks ───────────────────────────────────────────────────────
+   A connector's calls are the normal way to reach it. Three optional hooks are for
+   the one connector that needs the *process* instead: it serves this app over HTTP,
+   so it needs the call table behind that page (`attach`), the event stream it
+   already emits (`fanout`), and a stop when the app quits (`shutdown`).
+
+   They live here rather than as a `require('./connectors/tailscale/…')` in `rpc.cjs`
+   because that is exactly the mistake `rpc.cjs` is not allowed to make (see
+   `tests/unit/connector-registry.test.cjs`): a connector's module path belongs in
+   its own folder, and every caller asks the registry. */
+
+/** Hand the call table to whoever needs it. Called once, by a process that owns one. */
+function attachAll(call) {
+  for (const entry of ENTRIES) {
+    if (typeof entry.attach === 'function') entry.attach(call)
+  }
+}
+
+/** Mirror one emitted event to whatever a connector is currently serving. */
+function fanoutAll(event) {
+  for (const entry of ENTRIES) {
+    if (typeof entry.fanout !== 'function') continue
+    try {
+      entry.fanout(event)
+    } catch {
+      /* a listener that already closed is not an event failure */
+    }
+  }
+}
+
+/** Stop anything a connector started. Runs on quit, where promises never resolve. */
+function shutdownAll() {
+  for (const entry of ENTRIES) {
+    if (typeof entry.shutdown !== 'function') continue
+    try {
+      entry.shutdown()
+    } catch {
+      /* a server that already stopped is not a failed shutdown */
+    }
+  }
+}
+
 module.exports = {
   ENTRIES,
   FOLDERS,
   KINDS,
   accountHeads,
+  attachAll,
   calls,
   catalogEntries,
   dashboardFor,
+  fanoutAll,
   idOfKind,
   mentionModule,
   resolverFor,
+  shutdownAll,
   verifyFor,
 }

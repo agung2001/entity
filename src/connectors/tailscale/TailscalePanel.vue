@@ -6,11 +6,12 @@ import { qrFor } from '@/lib/qr'
 
 /**
  * Tailscale's page body: the daemon read, and the one thing this connector
- * gates — the repo's own `npm run dev:lan`.
+ * gates — a web server this app owns (a checkout's `npm run dev:lan`, or the app's
+ * own built renderer when there is no checkout: read `mode`, never assume).
  *
  * Two cards where a `cli` row's cards would be, because this connector holds no
  * credential and resolves no mention: the first card is the tailnet this machine
- * is on, the second is a child process this app owns and reaps. The page mounts
+ * is on, the second is a server this app starts and reaps. The page mounts
  * this for `tailscale` alone, so this is the one file that knows the
  * `tailscale.*` call names.
  *
@@ -137,7 +138,11 @@ function adopt(report) {
 /* ── the server ─────────────────────────────────────────────────────── */
 
 const isServing = computed(() => Boolean(serving.value?.running))
-const canRun = computed(() => state.value === 'running')
+/* What a Start would do here, read from main rather than guessed: a checkout runs
+   `npm run dev:lan`, a packaged app serves its own build. `''` until the first
+   answer lands, so no copy promises a server this build does not have. */
+const mode = computed(() => tailnet.value?.mode || '')
+const canRun = computed(() => state.value === 'running' && mode.value !== 'none')
 const portNumber = computed(() => Number(portText.value))
 const portValid = computed(
   () => Number.isInteger(portNumber.value) && portNumber.value >= MIN_PORT && portNumber.value <= MAX_PORT,
@@ -335,6 +340,15 @@ const why = computed(() => {
   if (problem.value) return problem.value
   if (reading.value) return null
   const read = tailnet.value || {}
+  if (read.state === 'running' && mode.value === 'none') {
+    return {
+      tone: 'bad',
+      head: 'This build has nothing to serve.',
+      text: 'A start needs either a checkout with Vite or a built renderer beside the app. Build it in the repository, then',
+      mono: 'npm run build',
+      action: 'refresh',
+    }
+  }
   if (read.state === 'running') {
     /* Running is the one state with nothing to fix — unless the tailnet has no
        MagicDNS name, where the code still works but the address is a number a
@@ -497,6 +511,7 @@ watchEffect(() =>
     magicdns: Boolean(tailnet.value?.magicdnsEnabled),
     serving: isServing.value,
     port: port.value,
+    mode: mode.value,
   }),
 )
 
@@ -616,7 +631,12 @@ onBeforeUnmount(() => {
     <div v-else class="ts-row">
       <div class="ts-copy">
         <b>Serve this workspace on the LAN</b>
-        <span>
+        <span v-if="mode === 'build'">
+          Serves this app's own build — the page you are looking at, bound to every interface — so a
+          phone on your tailnet can open it. No dev server to install and no
+          <code class="mono">npm</code>; the code is the first thing you get.
+        </span>
+        <span v-else>
           Runs <code class="mono">npm run dev:lan</code> — the same Vite app, bound to every
           interface — so a phone on your tailnet can open it. Takes about a second; the code is the
           first thing you get.
@@ -634,12 +654,12 @@ onBeforeUnmount(() => {
     </p>
 
     <div class="ts-port">
-      <div class="field">
-        <label class="field-lbl" for="ts-port">Port</label>
+      <div class="ts-port-field">
+        <label class="ts-port-lbl" for="ts-port">Port</label>
         <input
           id="ts-port"
           ref="portField"
-          class="input"
+          class="ts-port-input"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -653,7 +673,7 @@ onBeforeUnmount(() => {
           @keydown="onPortKey"
         />
       </div>
-      <p id="ts-port-hint" class="field-hint">
+      <p id="ts-port-hint" class="ts-port-hint">
         <template v-if="isServing">
           Locked while the server runs — stop it, change the port, start it again. Serving at
           <code class="mono">{{ boundAt }}</code> since {{ servedSince }} ({{ upFor }}).
@@ -663,10 +683,10 @@ onBeforeUnmount(() => {
           server.
         </template>
         <template v-else>
-          1024–65535. Default <code class="mono">5183</code>, the port
-          <code class="mono">npm run dev:lan</code> already uses — change it only if something else
-          holds that port. It is checked before the server starts, so a clash is a sentence rather
-          than a silent 5184.
+          1024–65535. Default <code class="mono">5183</code><template v-if="mode !== 'build'">, the port
+          <code class="mono">npm run dev:lan</code> already uses</template> — change it only if
+          something else holds that port. It is checked before the server starts, so a clash is a
+          sentence rather than a silent 5184.
         </template>
       </p>
     </div>

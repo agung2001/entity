@@ -3,20 +3,37 @@
  *
  * GitHub, Gmail and Clockify each hold a credential and answer questions about a
  * remote service. This one reads **one machine-local daemon** and gates exactly
- * one thing on it: the repo's own `npm run dev:lan`, so a phone on the same
- * tailnet can open the app by name. Nothing here writes to Tailscale — no
- * `up`, no `set`, no auth key, no `serve`/`funnel`. The only side effects in this
- * file are one `tailscale status` read and a Vite child this app owns and reaps.
+ * one thing on it: a web server this app owns, so a phone on the same tailnet can
+ * open the app by name. Nothing here writes to Tailscale — no `up`, no `set`, no
+ * auth key, no `serve`/`funnel`. The only side effects in this file are one
+ * `tailscale status` read and one server this app starts and reaps.
+ *
+ * That server has two shapes, because this app runs in two places (`planOf`):
+ *
+ *   - `checkout` — there is a Vite beside this file, so start the repo's own
+ *     `npm run dev:lan`. That is the same source with HMR, which is what a person
+ *     working on the app wants.
+ *   - `build` — a packaged app, where `npm` and `node_modules` do not exist and
+ *     `package.json` lives *inside* `app.asar`: spawn with that as `cwd` is
+ *     `ENOTDIR`, which is how this feature first shipped and failed. There, serve
+ *     `dist/` from this process (`lan-server.cjs`), with the same call table and
+ *     event stream the Vite middleware mounts.
+ *
+ * This file is the connector's *calls* (`dashboard.cjs` is where the registry's
+ * contract puts them — there is no tab here, because the connector's page draws its
+ * own two cards). The descriptor beside it (`connector.cjs`) is what names them.
  *
  * Everything a page is allowed to know is a field in `read()`'s answer or a field
  * in `serve()`'s answer. No path, no argv, no raw JSON, no stderr beyond one
  * sentence — the renderer gets facts, not a shell.
  */
+const fs = require('node:fs')
 const { execFile, spawn } = require('node:child_process')
 const http = require('node:http')
 const net = require('node:net')
 const path = require('node:path')
-const { spawnTracked, killTree } = require('./child-registry.cjs')
+const { spawnTracked, killTree } = require('../../child-registry.cjs')
+const { createLanServer } = require('./lan-server.cjs')
 
 /* The daemon read is bounded: `tailscale status` talks to a Unix socket and a
    daemon that is wedged must not hold a page's first paint. */
@@ -30,9 +47,17 @@ const MIN_PORT = 1024
 const MAX_PORT = 65535
 
 /* The app runs from the checkout (dev) or the bundled app (packaged); either way
-   `..` from this file is the directory `package.json` lives in, which is the one
-   `npm run dev:lan` has to start in. */
-const ROOT = path.join(__dirname, '..')
+   three levels up from this file (`tailscale/` → `connectors/` → `electron/`) is the
+   directory `package.json` lives in. In a packaged app that directory is `app.asar`
+   — a *file*, so it may be read but never spawned in (`planOf` below is what keeps
+   it out of a `cwd`). */
+const ROOT = path.join(__dirname, '..', '..', '..')
+const DIST = path.join(ROOT, 'dist')
+/* The presence of this file is the whole test for "`npm run dev:lan` can run
+   here": Vite is a dev dependency, so a packaged asar never has it. */
+const VITE = ['node_modules', 'vite', 'package.json']
+const NO_SERVER =
+  'This build has nothing to serve: no Vite checkout and no built renderer beside the app. Run `npm run build` (or `npm run dev:lan` yourself) from the repository.'
 
 /** `BackendState` → the five words this app speaks. `NoState` is a daemon that
  *  is not up, which is what `stopped` means to a person looking at the app. */
@@ -56,8 +81,34 @@ function snapshot(over) {
     magicdnsEnabled: false,
     hostName: '',
     error: '',
+    /* What **Start** would do on this machine, filled in by `read()`. `derive()`
+       is pure and leaves it at the closed word, so no page can read a plan the
+       filesystem did not answer. */
+    mode: 'none',
     ...over,
   }
+}
+
+function fileAt(file) {
+  try {
+    return fs.statSync(file).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * What a Start would do here: `checkout`, `build`, or `none`.
+ *
+ * Exported and injectable because it is the one decision the packaged app got
+ * wrong, and a unit test pinning it is cheaper than a release that repeats it.
+ */
+function planOf({ root = ROOT, dist = DIST, attached = Boolean(host), isFile = fileAt } = {}) {
+  if (isFile(path.join(root, ...VITE))) return 'checkout'
+  /* `attached` is the call table: `dist/` without it is a page that can paint and
+     answer nothing, so the shared server — which never attaches — is `none`. */
+  if (attached && isFile(path.join(dist, 'index.html'))) return 'build'
+  return 'none'
 }
 
 function execFileText(bin, argv) {
@@ -115,25 +166,26 @@ function derive(status, versionText) {
 
 /**
  * Read the daemon. `exec` is injectable so the unit test stubs the binary
- * instead of owning one.
+ * instead of owning one; `plan` is injectable for the same reason.
  */
-async function read({ exec = execFileText } = {}) {
+async function read({ exec = execFileText, plan = planOf } = {}) {
+  const mode = plan()
   const status = await exec('tailscale', ['status', '--json'])
   if (status?.error?.code === 'ENOENT') {
-    return snapshot({ state: 'absent', error: 'No `tailscale` on this machine.' })
+    return snapshot({ state: 'absent', error: 'No `tailscale` on this machine.', mode })
   }
   if (!String(status?.stdout || '').trim()) {
     const line = status?.error ? failureLine(status, 'tailscale status') : 'tailscale status answered nothing.'
-    return snapshot({ state: 'unreadable', error: line })
+    return snapshot({ state: 'unreadable', error: line, mode })
   }
   let parsed = null
   try {
     parsed = JSON.parse(status.stdout)
   } catch {
-    return snapshot({ state: 'unreadable', error: 'tailscale status did not answer with JSON.' })
+    return snapshot({ state: 'unreadable', error: 'tailscale status did not answer with JSON.', mode })
   }
   const version = await exec('tailscale', ['version'])
-  return derive(parsed, version?.stdout)
+  return { ...derive(parsed, version?.stdout), mode }
 }
 
 /** The address the phone opens: the MagicDNS name when there is one, else the
@@ -235,7 +287,35 @@ function hostAnswers(port, host) {
   })
 }
 
+/* ── the process that can serve a built renderer ─────────────────────────────
+   `dist/` is useless without the call table behind it: the page a phone loads asks
+   the same questions the window does. So the process that owns the table hands it
+   over once (`attach`) and copies its own event stream to the phones (`fanout`). A
+   process that never does — the shared server — can only ever spawn
+   `npm run dev:lan`, which is exactly the surface it should have: nothing new
+   listens on a shared host. */
+let host = null
+
+function attach({ call } = {}) {
+  host = { call: typeof call === 'function' ? call : null }
+}
+
+/**
+ * The one event stream, two transports: the window's (already sent by the caller)
+ * and a running LAN server's phones. Called from `broadcast` in the main process,
+ * so a run, a chat and a workspace change all arrive on the phone as the same
+ * frames the window got — not a second, drifting vocabulary.
+ */
+function fanout(event) {
+  try {
+    built?.publish(event)
+  } catch {
+    /* a server that already closed is not an event failure */
+  }
+}
+
 let child = null
+let built = null
 let serving = null
 let stderrTail = ''
 let watch = null
@@ -258,7 +338,7 @@ function startWatch() {
 }
 
 function serve() {
-  if (!serving) return { running: false, port: 0, url: '', addressKind: '', startedAt: '', pid: 0 }
+  if (!serving) return { running: false, port: 0, url: '', addressKind: '', startedAt: '', pid: 0, mode: '' }
   return {
     running: true,
     port: serving.port,
@@ -266,15 +346,32 @@ function serve() {
     addressKind: serving.kind,
     startedAt: serving.startedAt,
     pid: serving.pid,
+    /* `checkout` (the repo's Vite) or `build` (this app's own `dist/`): the page
+       says which one it started, because they are not the same thing. */
+    mode: serving.mode,
   }
 }
 
+/** The answer a phone's first request has to get: the name it typed, answered. */
+async function wouldAnswer(port, tailnet, why) {
+  if (tailnet.dnsName) {
+    const answer = await hostAnswers(port, tailnet.dnsName)
+    if (!answer.ok) {
+      await stop()
+      throw new Error(why(tailnet.dnsName))
+    }
+  }
+  return serve()
+}
+
 /**
- * Start `npm run dev:lan` for this machine and wait until a phone could open it.
+ * Start a web server for this machine and wait until a phone could open it.
  *
  * The order matters and is the feature: a pre-flight bind, so a taken port fails
- * with a sentence instead of Vite silently moving the QR to 5184; the child as a
- * tracked process group, so the stop is real; then the socket, then the host.
+ * with a sentence instead of Vite silently moving the QR to 5184; then the server
+ * (a tracked child in a checkout, a listener in this process in a packaged app);
+ * then the socket, then the host — the name the QR reads has to be answered by the
+ * thing that is now listening.
  */
 async function start(port) {
   const target = Number(port) || DEFAULT_PORT
@@ -282,7 +379,10 @@ async function start(port) {
     throw new Error(`Port must be a whole number between ${MIN_PORT} and ${MAX_PORT}.`)
   }
   if (serving?.port === target) return serve()
-  if (child) await stop()
+  if (child || built) await stop()
+
+  const mode = planOf()
+  if (mode === 'none') throw new Error(NO_SERVER)
 
   const holder = (await portFree(target)) ? '' : await holderOf(target)
   if (!(await portFree(target))) {
@@ -291,6 +391,53 @@ async function start(port) {
 
   const tailnet = await read()
   const address = addressOf(tailnet, target)
+  if (mode === 'build') return startBuilt({ target, tailnet, address })
+  return startCheckout({ target, tailnet, address })
+}
+
+/**
+ * A packaged app: serve the renderer this process already runs.
+ *
+ * No wait loop — our own listener is bound when `listen` resolves, which is a
+ * better readiness signal than a Vite log line.
+ */
+async function startBuilt({ target, tailnet, address }) {
+  const server = createLanServer({
+    distDir: DIST,
+    /* The one name the daemon gave us, on top of the `.ts.net` every tailnet
+       shares: the QR has to survive the phone's `Host` header. */
+    suffixes: [tailnet.magicdnsSuffix],
+    call: host?.call,
+  })
+  try {
+    await server.listen(target)
+  } catch (error) {
+    throw new Error(
+      error?.code === 'EADDRINUSE'
+        ? `Port ${target} is already taken. Stop that process, or pick another port.`
+        : `The LAN server could not bind port ${target}: ${error?.message || error}`,
+    )
+  }
+  built = server
+  serving = {
+    port: target,
+    url: address.url,
+    kind: address.kind,
+    startedAt: new Date().toISOString(),
+    pid: 0,
+    mode: 'build',
+  }
+  await wouldAnswer(
+    target,
+    tailnet,
+    (name) => `The LAN server refused its own tailnet name (${name}), so the QR would open a blocked page. That is a bug in this build, not something to retry.`,
+  )
+  startWatch()
+  return serve()
+}
+
+/** A checkout: `npm run dev:lan`, the same source with HMR, as a process group. */
+async function startCheckout({ target, tailnet, address }) {
   stderrTail = ''
   const spawned = spawnTracked('npm', ['run', 'dev:lan', '--', '--port', String(target), '--strictPort'], {
     cwd: ROOT,
@@ -328,37 +475,37 @@ async function start(port) {
     throw new Error(line)
   }
 
-  if (address.kind === 'magicdns') {
-    const answer = await hostAnswers(target, tailnet.dnsName)
-    if (!answer.ok) {
-      await stop()
-      throw new Error(
-        `Vite did not accept its own MagicDNS name (${tailnet.dnsName}), so the QR would open a blocked page. Check \`server.allowedHosts\` in vite.config.js.`,
-      )
-    }
-  }
-
   serving = {
     port: target,
     url: address.url,
     kind: address.kind,
     startedAt: new Date().toISOString(),
     pid: spawned.pid || 0,
+    mode: 'checkout',
   }
+  await wouldAnswer(
+    target,
+    tailnet,
+    (name) =>
+      `Vite did not accept its own MagicDNS name (${name}), so the QR would open a blocked page. Check \`server.allowedHosts\` in vite.config.js.`,
+  )
   startWatch()
   return serve()
 }
 
-/** Stop the whole group and wait for the port to be free. Idempotent, because a
- *  quit path and a page path can both arrive. */
+/** Stop whatever is serving — the group, the listener, or both — and wait for
+ *  the port to be free. Idempotent, because a quit path and a page path can both
+ *  arrive. */
 async function stop() {
   const running = child
+  const listener = built
   const port = serving?.port || 0
   child = null
+  built = null
   serving = null
   stopWatch()
-  if (!running) return serve()
-  killTree(running)
+  if (running) killTree(running)
+  if (listener) await listener.close()
   const deadline = Date.now() + DOWN_MS
   while (port && Date.now() < deadline) {
     if (await portFree(port)) break
@@ -408,9 +555,12 @@ module.exports = {
   DEFAULT_PORT,
   derive,
   addressOf,
+  planOf,
   read,
   start,
   stop,
   serve,
   open,
+  attach,
+  fanout,
 }
