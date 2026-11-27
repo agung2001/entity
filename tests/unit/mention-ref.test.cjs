@@ -731,7 +731,7 @@ test('the parent is told what ran, never the raw fan-out sentence', async () => 
   /* a parent holding `spawn 2 @py-agent …` could delegate a third time; the
      prompt says the work is done instead. The transcript keeps the words. */
   assert.doesNotMatch(out.text, /spawn 2/)
-  assert.match(out.text, /2 runs of @py-agent, one per row above/)
+  assert.match(out.text, /2 runs of @py-agent, all of the same instruction/)
   /* it has no task of its own any more, so it is told what to write instead of
      answering "your message contains no new task" — which is what it did */
   assert.match(out.text, /Write one short paragraph saying what each run did/)
@@ -1295,7 +1295,11 @@ test('a bracket row list holds rows, not mentions', async () => {
   assert.equal(segments[0].job, 'do it')
 })
 
-test('a readable job never costs a classifier call', async () => {
+test('a delegated message is classified, even when the grammar reads it', async () => {
+  /* The grammar can split `@entity` from its job, and that is all it can do. It
+     cannot see that two lines order two different jobs, so a message that hands
+     work to an agent always pays the one call — the plan is the only reading
+     that is per run. */
   const record = workspace()
   let asked = 0
   const out = await mention.rewrite(record, 'spawn 1 @py-agent redesign the MCP page', {
@@ -1305,9 +1309,22 @@ test('a readable job never costs a classifier call', async () => {
     },
     deps: deps(),
   })
-  assert.equal(asked, 0, 'the grammar already read this one')
+  assert.equal(asked, 1, 'a delegation is never second-guessed by the grammar')
   assert.equal(out.mentions.length, 1)
   assert.equal(out.mentions[0].job, 'redesign the MCP page')
+})
+
+test('a message that delegates nothing costs no classifier call', async () => {
+  const record = workspace()
+  let asked = 0
+  await mention.rewrite(record, 'Take your time, then tell me what @artifact:plan says', {
+    intent: async () => {
+      asked += 1
+      return { spawn: false }
+    },
+    deps: deps(),
+  })
+  assert.equal(asked, 0, 'no entity means nothing to plan')
 })
 
 test('the run’s own record names its worktree, not the ticket key', async () => {

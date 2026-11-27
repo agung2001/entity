@@ -42,9 +42,27 @@ const FIXTURES = [
       /orca child workspace/i.test(plan.job),
   },
   {
-    why: 'the exact prefix the grammar reads — must never cost a model call',
+    why: 'the exact prefix — still classified, because the grammar only splits the job',
     text: 'spawn 3 @secretary write a poem',
     expect: { spawn: true, runs: 3, entity: 'secretary', job: 'write a poem' },
+  },
+  {
+    why: 'two runs ordered two different jobs — both got the whole paragraph, so run 1 read run 2\'s work',
+    text:
+      "ok let's spawn 2 @coder :\n" +
+      "- implement A , don't forget to use orca child worktree\n" +
+      '- implement B , to update the main instruction',
+    expect: null,
+    /* the verdict is the shape and the split: two jobs, each in its own run's
+       words, and run 1 does not carry run 2's order */
+    accept: (plan) =>
+      plan !== null &&
+      plan.mode === 'runs' &&
+      plan.runs.length === 2 &&
+      plan.runs.every((run) => run.entity === 'coder') &&
+      /implement A/i.test(plan.runs[0].job) &&
+      /implement B/i.test(plan.runs[1].job) &&
+      !/implement B/i.test(plan.runs[0].job),
   },
   {
     why: 'a count written as words',

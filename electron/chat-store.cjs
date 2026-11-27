@@ -2165,11 +2165,13 @@ async function send({
            call, the same harness that is about to answer the turn, decides
            between "several parallel runs" and "answer directly"; the plan it
            names goes through the ordinary fan-out path, so the rows, the cap and
-           the hold below stay the ones this file already has. A message the
-           grammar reads exactly (its own `spawn N`, a plain `@entity <job>`)
-           never reaches the model, and a spawned session is headless — it asks
-           nobody. Local only: a remote thread's harness is not here to ask, and
-           its message is forwarded untouched rather than guessed at. */
+           the hold below stay the ones this file already has. A message that
+           **delegates** is always classified — the grammar can split a job off a
+           mention but never read it, and one instruction per run only comes from
+           a plan. A message that delegates nothing (a read, ordinary chat) never
+           reaches the model, and a spawned session is headless — it asks nobody.
+           Local only: a remote thread's harness is not here to ask, and its
+           message is forwarded untouched rather than guessed at. */
         intent:
           thread.machine === 'local' && !thread.spawnedFrom
             ? intent === undefined

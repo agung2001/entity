@@ -478,22 +478,36 @@ the composer already does: mention another entity.
 - **A message is classified, not pattern-matched, into one of two answers.** Every message a
   person sends is one of two things — several parallel sessions, or one direct reply — and no
   regex can tell them apart. `intent-ref` asks the harness that is about to answer the turn and
-  gets back a plan (`{spawn: true, runs: 4, entity, job}` or `{spawn: true, list, entity, job}`)
-  or `{spawn: false}`. The plan is rendered as `spawn N @entity <job>` / `spawn per @list
-  @entity <job>` — the one grammar the rest of the pipeline reads — so the rows, the cap and the
-  hold stay the ordinary ones and there is no second language. `{spawn: false}` is a verdict:
-  the message runs exactly as written.
-- **Three things are decided without the model, and only because they are provable.** A message
-  that names no entity at all has nothing to delegate to; a message opening with a prefix the
-  grammar reads exactly (`spawn 3 @…`, `spawn per [a, b] @…`) is the person's own count and is
-  never second-guessed; and a message that opens with a bare `spawn` is a fan-out by definition.
-  Everything else pays one call. This is not intent parsing — it is eliding a provably empty
-  set, which is what keeps "Take your time." off the slow path.
-- **Two kinds of fan-out, and the difference is the whole point.** `runs` is ONE instruction
-  N times (`runs: 3`, "spawn 4"). `rows`/`typed` is N *different* items, one run each. Four
-  agents handed one sentence produce four versions of one page, when the person asked for one
-  page each — so a message that enumerates work (a bullet list, several URLs, a set of files
-  or pages) is always the second kind, even when it also writes a number.
+  gets back **a list of runs** — `{spawn: true, runs: [{entity, job}, …]}`: one entry per run,
+  each naming its agent and, in its own words, what that run must do. Two entries may name two
+  agents and two different jobs. `rows`/`list` remains for one shared instruction over a list of
+  *items* (one run per item), and `{spawn: false}` is a verdict: the message runs exactly as
+  written. A plan is never re-read as mention syntax: its entries become the runs directly, so
+  a job containing an `@`, a colon or a newline is prose (see `plannedSegments`).
+- **A delegation is always classified; the grammar only decides whether there is one.** The
+  grammar can split `@entity` from its job and nothing more: it cannot see that two lines order
+  two different jobs, so `let's spawn 2 @coder:` over two bullets handed both runs the same
+  paragraph — run 1 and run 2 each opened with the other's work. The one thing still decided
+  without a call is a message that names no entity with a job: it has nothing to delegate.
+  Everything else that delegates pays one call, including a message that writes its own `spawn
+  N` and one that addresses two agents. Two guards keep a plan from lying about what was
+  asked, and both fall back to the grammar, which read those mentions exactly: it may not name
+  an agent the message never addressed, and it may not collapse two job-bearing mentions into
+  fewer runs. This is not intent parsing — it is the difference between a job the grammar
+  *split* and a job it *read*.
+- **A plan is one entry per run, and every entry says what that run does.** The same words
+  repeated N times is still N entries (collapsed to `repeat` here, because the card says "one
+  instruction, N sessions" better); a different job per run is N entries with different words;
+  two agents is N entries with different `entity`. The failure this shape exists to stop is one
+  paragraph handed to every run — four agents then redesign one page, and two agents each open
+  with the other's half of the work. A message that enumerates *items* (pages, files, URLs,
+  issues) under one instruction is the `rows` reading instead: the item travels with the run.
+- **A written count over bullets that are orders is read without a model.** When the number
+  after `spawn` equals the bullet count and the bullets are prose orders (no URL, path or `@`
+  reference — the thing that makes a bullet an item), `repairWithRuns()` turns them into one
+  run per bullet. This is the narrow, provable half, and it exists for the turns with no
+  classifier (the CLI, a spawned session): a plan the model did return is a reading of the
+  message and is left alone, and concrete references stay rows.
 - **A list on screen is read from the screen.** `intent-ref.listedItems()` takes the **last**
   run of bullets in the message — the work, not the material quoted at the top ("By following
   the design of:" … then "I want to improve these pages:") — and `repairWithList()` promotes a
@@ -578,7 +592,9 @@ the composer already does: mention another entity.
   applied once, before the first harness exists — so there is no write in flight to debounce,
   no read-only state and no second round trip. A card the person did not touch follows the
   band; one they edited keeps its words and says `edited`. `Run all` refuses while a card is
-  empty, and so does the key, because an empty run starts a session with no question.
+  empty, and so does the key, because an empty run starts a session with no question. A plan
+  whose runs have their own instructions is the case the band must not misdescribe: it names
+  how many cards still read it, because "sent to both runs" is false when only one does.
 - **A row that has a source is the way to it.** The row line on a card — the issue a fan-out
   resolved to — links to the URL the read recorded for that row (`rowUrl`, carried on the plan
   row and kept on the mention, so the card still links after the run lands). Only `http(s)`
@@ -617,13 +633,14 @@ the composer already does: mention another entity.
   always *splits* `@entity` from its job, so it never demoted itself — but a split can
   throw the instruction away: `@designer on @orca:entity <the real ask>` yields the job
   `"on"`, because a delegated job ends at the next `@` and the person's sentence
-  continues past it. `openingProseHasUnreadableJob` is the third classifier trigger
-  (with "no prefix" and "it enumerates"), so the model hands back
-  `spawn 1 @entity <the whole instruction>` — including the repo named in words — and the
-  ordinary card confirms it. **A plan of one run is a real plan**: `usable()` used to
-  drop `runs: 1` on the ground that "the grammar already delegates that", which was only
-  true when the grammar could read the job. The refusal is the no-classifier fallback
-  (CLI, a spawned session, a `{spawn: false}` answer), never the answer itself.
+  continues past it. Every delegation is classified now, so this message is read like
+  any other: the model hands back `spawn 1 @entity <the whole instruction>` — including
+  the repo named in words — and the ordinary card confirms it.
+  `openingProseHasUnreadableJob` survives as the fallback that refuses a preposition when
+  no classifier is there (CLI, a spawned session). **A plan of one run is a real plan**:
+  `usable()` used to drop `runs: 1` on the ground that "the grammar already delegates
+  that", which was only true when the grammar could read the job. The refusal is the
+  no-classifier fallback, never the answer itself.
 - **A stopped turn still filed its sessions.** `chat.send` writes one per entity mention
   before the harness answers, and Stop does not take them back. The delegation card used
   to render only on an `agent` row, so a turn that ended as `Stopped by you.` showed no
@@ -877,8 +894,9 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | Seven runs of a list all carry the shared instruction as their title | The row (issue id + title) is the mention's label and the session's title, and the block names each run by it |
 | A fan-out message led by `/workspace:skill` routes the parent and leaves N agents in one checkout | The prologue is carried onto every run instead of refused: a classified fan-out gives each job its own skill | `npm test` (`intent-ref`), `mention-ref.cjs` (`delegatePlan`) |
 | `spawn @coder …`, `let's spawn 4 @designer …`, or `Spawn 3` on its own line after a read — each showed ONE card | Every one of those was a regex being asked to read intent, and each shape was patched in turn while the next kept failing. The message is classified once instead: `{spawn: true, runs|list, entity, job}` or `{spawn: false}`, rendered as the sentence the grammar already reads. Never add a fourth prefix — a plan goes through `planSentence` | `npm test` (`intent-ref`, `mention-ref`), `electron/intent-ref.cjs` |
-| The classifier runs on every message, so "thanks" waits on a model | Three answers are provable without one: no entity named, an exact prefix, or a bare opening `spawn` — and an exact prefix over a bullet list is classified anyway, because the count is not the whole ask | `npm test` (`intent-ref`), `intent-ref.cjs` (`namesEntity`, `listedItems`) |
-| Four cards, one prompt — four agents redesign the same page | `runs` is one instruction N times; `rows`/`typed` is N different items. A message that enumerates is the second kind even with a number written, and a bullet list is repaired to one run per row rather than trusted to the model | `npm test` (`intent-ref`), `intent-ref.cjs` (`repairWithList`) |
+| The classifier runs on every message, so "thanks" waits on a model | Only two answers are provable without one: no entity with a job addressed, and two different agents (a plan is one agent's plan). Every actual delegation pays one call — that is the trade for reading the job instead of splitting it | `npm test` (`intent-ref`, `mention-ref`), `mention-ref.cjs` (`rewrite`), `intent-ref.cjs` (`namesEntity`) |
+| Four cards, one prompt — four agents redesign the same page | A plan is one entry per run; an enumerated list of *items* under one instruction is `rows`/`typed`, one run per item. A message that enumerates is never a repeat even with a number written, and a bullet list is repaired to one run per item rather than trusted to the model | `npm test` (`intent-ref`), `intent-ref.cjs` (`repairWithList`) |
+| Run 1 and run 2 open with each other's instructions | A message that orders a different job per run is a list of runs — one instruction per card and per session, never the whole message copied N times. The bullet-repair reads it without a model when the count matches the list, and `shareNote` says "this instruction is yours alone" instead of "of this same instruction" | `npm test` (`intent-ref`, `mention-ref`), `intent-ref.cjs` (`usable`, `repairWithRuns`), `mention-ref.cjs` (`plannedSegments`) |
 | A pasted issue URL shows no confirmation card, because the model wrote `@youtrack:MAKA-359:relates to: unresolved` and the list resolved zero rows | The URL is authoritative for the list: `derivePlan` replaces a model's tracker query while keeping its entity and job, so the card lists the real rows. A model answer the app cannot turn into a plan (prose instead of an `@youtrack:` token) is not `{"spawn": false}` — it also falls through to the URL reading | `npm test` (`intent-ref`), `intent-ref.cjs` (`repairWithIssue`, `choosePlan`) |
 | A page title containing a comma becomes two runs | A row owns a line: typed plans render one row per line, and `SPAWN_ROWS` splits on newlines when there are any | `npm test` (`intent-ref`), `mention-ref.cjs` (`planSentence`, `spawnPrefix`) |
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |

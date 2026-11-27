@@ -232,6 +232,98 @@ test('a row is one item, so a duplicate cannot become two runs', () => {
   assert.deepEqual(dup.rows, ['a', 'b'], 'the same item twice is one run')
 })
 
+test('a plan is a list of runs, each with its own agent and instruction', () => {
+  /* the shape the grammar cannot express: N runs, N different jobs */
+  assert.deepEqual(
+    intent.usable(
+      {
+        spawn: true,
+        runs: [
+          { entity: 'coder', job: 'implement A, use a child worktree' },
+          { entity: 'coder', job: 'implement B, update the instruction' },
+        ],
+      },
+      NAMES,
+    ),
+    {
+      mode: 'runs',
+      runs: [
+        { entity: 'coder', job: 'implement A, use a child worktree' },
+        { entity: 'coder', job: 'implement B, update the instruction' },
+      ],
+      derived: false,
+    },
+  )
+  /* two agents in one message is a list too, not a reason to drop one */
+  const two = intent.usable(
+    {
+      spawn: true,
+      runs: [
+        { entity: 'coder', job: 'fix the parser' },
+        { entity: 'secretary', job: 'summarise the issue' },
+      ],
+    },
+    NAMES,
+  )
+  assert.equal(two.mode, 'runs')
+  assert.deepEqual(two.runs.map((run) => run.entity), ['coder', 'secretary'])
+  /* the same words to the same agent N times is the repeat shape */
+  assert.deepEqual(
+    intent.usable(
+      {
+        spawn: true,
+        runs: [
+          { entity: 'coder', job: 'write a poem' },
+          { entity: 'coder', job: 'write a poem' },
+        ],
+      },
+      NAMES,
+    ),
+    { mode: 'repeat', runs: 2, entity: 'coder', job: 'write a poem', derived: false },
+  )
+  /* one entry is one run */
+  const one = intent.usable({ spawn: true, runs: [{ entity: 'coder', job: 'do it' }] }, NAMES)
+  assert.deepEqual(one, { mode: 'repeat', runs: 1, entity: 'coder', job: 'do it', derived: false })
+  /* capped like every other plan */
+  const many = intent.usable(
+    {
+      spawn: true,
+      runs: Array.from({ length: 9 }, (_, i) => ({ entity: 'coder', job: `job ${i}` })),
+    },
+    NAMES,
+  )
+  assert.equal(many.runs.length, intent.MAX_RUNS)
+  /* an entry with no words, or an agent this workspace does not have, is not a plan */
+  assert.equal(intent.usable({ spawn: true, runs: [{ entity: 'coder', job: '' }] }, NAMES), null)
+  assert.equal(intent.usable({ spawn: true, runs: [{ entity: 'ghost', job: 'do it' }] }, NAMES), null)
+})
+
+test('bullets that are orders become one run per bullet, without a model', () => {
+  /* The message that shipped two identical runs: a written count and a list of
+     two orders. No model answered, so the bullets ARE the instructions, and the
+     count is the person's own. */
+  const text =
+    "ok let's spawn 2 @coder :\n" +
+    "- for implement A , don't forget to use orca child worktree\n" +
+    '- for implement B , to update the main instruction'
+  const plan = intent.repairWithRuns(text, null, NAMES)
+  assert.equal(plan.mode, 'runs')
+  assert.equal(plan.runs.length, 2)
+  assert.equal(plan.runs[0].entity, 'coder')
+  assert.match(plan.runs[0].job, /implement A/)
+  assert.match(plan.runs[1].job, /implement B/)
+  /* a plan the model already gave is a reading, and is left alone */
+  const repeat = { mode: 'repeat', runs: 2, entity: 'coder', job: 'please fix these bugs' }
+  assert.equal(intent.repairWithRuns(text, repeat, NAMES), repeat)
+  /* rows are items, not orders */
+  const items = 'spawn 2 @coder fix these\n- https://example.test/a\n- https://example.test/b'
+  assert.equal(intent.repairWithRuns(items, null, NAMES), null)
+  /* the count still has to match what is on screen */
+  assert.equal(intent.repairWithRuns('spawn 3 @coder do it\n- one\n- two', null, NAMES), null)
+  /* no written count, nothing provable */
+  assert.equal(intent.repairWithRuns('@coder do it\n- one\n- two', null, NAMES), null)
+})
+
 test('an explicit "nothing to fan out" is an answer, not a failed reading', () => {
   /* this is the whole point of the classifier: a direct reply is a verdict */
   assert.equal(intent.usable({ spawn: false }, NAMES), null)
@@ -433,14 +525,17 @@ test('a reader that throws is a reader with nothing to say', async () => {
   assert.equal(runs, 1, 'a broken reader never multiplies a run')
 })
 
-test('the grammar goes first, so an exact message costs no call', async () => {
+test('a delegation is classified, whatever prefix it carries', async () => {
+  /* The grammar can split a job off a mention; it cannot read one. A message that
+     hands the same sentence to two runs is exactly what a per-run plan exists to
+     get right, so an exact prefix no longer buys elision. */
   const record = workspace()
   let asked = 0
   const jobs = []
   await mention.rewrite(record, 'spawn 2 @coder write a poem', {
     intent: async () => {
       asked += 1
-      return null
+      return { spawn: true, runs: 2, entity: 'coder', job: 'write a poem' }
     },
     deps: deps({
       runEntity: async (_record, _entity, job) => {
@@ -449,8 +544,169 @@ test('the grammar goes first, so an exact message costs no call', async () => {
       },
     }),
   })
-  assert.equal(asked, 0, 'an exact prefix is never second-guessed')
+  assert.equal(asked, 1, 'every delegation is read once')
   assert.equal(jobs.length, 2)
+})
+
+test('a message that delegates nothing is never classified', async () => {
+  const record = workspace()
+  let asked = 0
+  await mention.rewrite(record, 'Take your time — what does @artifact:plan say?', {
+    intent: async () => {
+      asked += 1
+      return null
+    },
+    deps: deps(),
+  })
+  assert.equal(asked, 0, 'no entity with a job, no plan to draw')
+})
+
+test('two agents in one message are classified, and both runs survive', async () => {
+  const record = workspace()
+  let asked = 0
+  const jobs = []
+  const out = await mention.rewrite(record, '@coder fix the parser. @secretary summarise the issue.', {
+    intent: async () => {
+      asked += 1
+      return {
+        spawn: true,
+        runs: [
+          { entity: 'coder', job: 'fix the parser.' },
+          { entity: 'secretary', job: 'summarise the issue.' },
+        ],
+      }
+    },
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.equal(asked, 1, 'a delegation is always classified')
+  assert.deepEqual(jobs, ['fix the parser.', 'summarise the issue.'])
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 2)
+})
+
+test('a leading skill is carried onto every run of a runs plan', async () => {
+  const record = workspace()
+  const jobs = []
+  await mention.rewrite(
+    record,
+    'use this skill /skills/code-milestone\n\n' +
+      "let's spawn 2 @coder :\n- implement A\n- implement B",
+    {
+      intent: async () =>
+        intent.usable(
+          {
+            spawn: true,
+            runs: [
+              { entity: 'coder', job: 'implement A' },
+              { entity: 'coder', job: 'implement B' },
+            ],
+          },
+          NAMES,
+        ),
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(jobs.length, 2)
+  for (const job of jobs) assert.match(job, /^use this skill .*skills[\\/]code-milestone\n\nimplement [AB]/)
+})
+
+test('a plan that drops an agent falls back to the grammar, so no run vanishes', async () => {
+  /* One plan naming one agent cannot be a reading of a message that addressed
+     two: accepting it would delete the second run with no word on the card. */
+  const record = workspace()
+  const jobs = []
+  const out = await mention.rewrite(record, '@coder fix the parser. @secretary summarise the issue.', {
+    intent: async () => ({ spawn: true, runs: [{ entity: 'coder', job: 'fix the parser.' }] }),
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.deepEqual(jobs, ['fix the parser.', 'summarise the issue.'])
+  assert.equal(out.mentions.filter((row) => row.kind === 'entity').length, 2)
+})
+
+test('a plan cannot start an agent the message never addressed', async () => {
+  const record = workspace()
+  const jobs = []
+  await mention.rewrite(record, '@coder fix the parser.', {
+    intent: async () => ({
+      spawn: true,
+      runs: [
+        { entity: 'coder', job: 'fix the parser.' },
+        { entity: 'secretary', job: 'write a poem about it' },
+      ],
+    }),
+    deps: deps({
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.deepEqual(jobs, ['fix the parser.'], 'only the addressed agent runs')
+})
+
+test('one instruction per run is a plan, and both cards say their own job', async () => {
+  /* The message that made this shape necessary: `spawn 2 @coder:` over two lines
+     that each order something else. The grammar gave both runs the same
+     paragraph, so run 1 and run 2 opened with each other's work. */
+  const record = workspace()
+  const cards = []
+  const jobs = []
+  const out = await mention.rewrite(
+    record,
+    "ok let's spawn 2 @coder :\n" +
+      "- for implement A , don't forget to use orca child worktree\n" +
+      '- for implement B , to update the main instruction',
+    {
+      intent: async () =>
+        intent.usable(
+          {
+            spawn: true,
+            runs: [
+              { entity: 'coder', job: "for implement A , don't forget to use orca child worktree" },
+              { entity: 'coder', job: 'for implement B , to update the main instruction' },
+            ],
+          },
+          NAMES,
+        ),
+      hold: async (plan) => {
+        cards.push(...plan.rows.map((row) => row.job))
+        return { action: 'run' }
+      },
+      deps: deps({
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(cards.length, 2, 'the card holds one instruction per run')
+  assert.notEqual(cards[0], cards[1], 'the two cards do not say the same thing')
+  assert.match(cards[0], /implement A/)
+  assert.match(cards[1], /implement B/)
+  assert.equal(jobs.length, 2)
+  assert.match(jobs[0], /implement A/)
+  assert.match(jobs[1], /implement B/)
+  assert.doesNotMatch(jobs[1], /implement A/, 'run 2 is not handed run 1\'s job')
+  /* the share note names the plan, not "this same instruction" */
+  assert.match(jobs[0], /this instruction is yours alone/)
+  assert.match(out.text, /2 runs of @coder, each with its own instruction above/)
+  /* a plan's words are never re-read as mentions: an `@` in a job stays prose */
+  assert.equal(out.mentions.filter((row) => row.kind === 'orca').length, 0)
 })
 
 /* ── the list on screen, which no model gets to paraphrase ─────── */
@@ -625,13 +881,14 @@ test('no harness means no model, so a reader is not built', () => {
   assert.equal(typeof intent.reader({ harness: 'claude' }), 'function')
 })
 
-test('the instruction teaches the three shapes and refuses when unsure', () => {
+test('the instruction asks for one entry per run and refuses when unsure', () => {
   /* the prompting is the safety mechanism, so it is asserted like code */
   assert.match(intent.INSTRUCTION, /"spawn": false/)
   assert.match(intent.INSTRUCTION, /"rows"/)
   assert.match(intent.INSTRUCTION, /"runs"/)
   /* kind B exists because four agents handed one sentence redesign one page */
-  assert.match(intent.INSTRUCTION, /"rows".*one run per item|one run per item/s)
+  assert.match(intent.INSTRUCTION, /one instruction for all of them|under one instruction/)
+  assert.match(intent.INSTRUCTION, /one run per item/)
   /* the words are copied, never composed */
   assert.match(intent.INSTRUCTION, /copied as words from the message|Never paraphrase/)
   assert.match(intent.INSTRUCTION, /Unsure\? \{"spawn": false\}/)

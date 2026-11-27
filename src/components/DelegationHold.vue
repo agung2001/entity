@@ -110,10 +110,17 @@ const ceiling = () => {
   return min ? `up to ${min} min each` : 'a time ceiling each'
 }
 
-/* The band's name follows its count: `the run`, `both runs`, `all 4 runs`. */
+/* The band's name follows what it actually reaches: a plan of distinct jobs has
+   cards that do not read it at all, and calling it "sent to both runs" there is
+   the same lie as two identical cards. */
 const bandLabel = computed(() => {
   const n = cards.value.length
   if (n === 1) return 'Instruction · sent to the run'
+  if (sameCount.value < n) {
+    return sameCount.value === 1
+      ? 'Instruction · used by 1 of these runs'
+      : `Instruction · used by ${sameCount.value} of these runs`
+  }
   if (n === 2) return 'Instruction · sent to both runs'
   return `Instruction · sent to all ${n} runs`
 })
@@ -412,7 +419,7 @@ onBeforeUnmount(() => {
             <button class="plan-link" type="button" @click="back">Back to {{ undo.n }}</button>
           </template>
           <template v-else>
-            <span data-long>one instruction · <b>{{ cards.length }}</b> sessions · the most is 5</span>
+            <span data-long>{{ sameCount === cards.length ? 'one instruction' : 'its own instruction per run' }} · <b>{{ cards.length }}</b> sessions · the most is 5</span>
             <span data-short>max 5</span>
           </template>
         </span>

@@ -273,6 +273,43 @@ function expandSpawn(segments, spawn) {
 }
 
 /**
+ * The plan's own list of runs, as mentions.
+ *
+ * A plan that says which run does what is not re-read as a sentence: every job
+ * is the person's prose, and it may contain an `@`, a newline or a colon the
+ * mention grammar would take for syntax — `literalAt` only ever protected one
+ * tail. So these segments are built here, and `parse` never sees the plan. The
+ * fields are the ordinary ones, which is what keeps the card, the share labels,
+ * the run cap and the parent prompt on one path.
+ */
+function plannedSegments(runs) {
+  const total = runs.length
+  /* "your instruction is yours alone" is only true when they are not the same
+     words: two agents may be handed one sentence on purpose. */
+  const distinct = new Set(runs.map((run) => String(run.job || '').trim())).size > 1
+  let at = 0
+  return runs.map((run, index) => {
+    const name = String(run.entity || '').replace(/^@/, '').trim()
+    const job = String(run.job || '').trim()
+    const raw = `@${name} ${job}`.trim()
+    const segment = {
+      start: at,
+      end: at + raw.length,
+      raw,
+      kind: 'entity',
+      name,
+      job,
+      query: job,
+      local: false,
+      share: [index + 1, total],
+      plannedJob: distinct,
+    }
+    at += raw.length + 1
+    return segment
+  })
+}
+
+/**
  * One run for each row a list resolved: the entity mention is copied once per
  * row, and the row travels on the copy so the run, its session, its card and the
  * reply above all say which issue they are about.
@@ -304,6 +341,12 @@ function shareNote(segment) {
     return (
       `(Run ${share[0]} of ${share[1]}: your row is "${segment.row}". Do only that row — ` +
       `the other ${share[1] - 1} runs handle the rest, each in its own place, and you cannot see them.)`
+    )
+  }
+  if (segment.plannedJob) {
+    return (
+      `(Run ${share[0]} of ${share[1]} of this plan, and this instruction is yours alone: ` +
+      `the other ${share[1] - 1} runs have their own, different jobs, and you cannot see them.)`
     )
   }
   return (
@@ -2432,12 +2475,37 @@ function holdError(decision, ctx) {
  * must know travels in the job, which is why the classifier copies the person's
  * words rather than rewriting them.
  */
-async function delegatePlan(record, source, plan) {
-  if (!plan?.entity) return null
-  const known = entities
-    .list(record.id)
-    .some((item) => item.name.toLowerCase() === String(plan.entity).toLowerCase())
-  if (!known) return null
+async function delegatePlan(record, source, plan, addressed = null) {
+  if (!plan) return null
+  const workspaceEntities = entities.list(record.id)
+  /* Every agent the plan names has to exist here: a card naming an entity the
+     workspace does not have would be refused further down, after the person had
+     already read it. */
+  const known = (name) =>
+    workspaceEntities.some((item) => item.name.toLowerCase() === String(name).toLowerCase())
+  /* ...and it has to be an agent the message actually addressed. A plan is a
+     reading of this message, not a place to start a session nobody asked for. */
+  const mentioned = addressed?.length
+    ? new Set(addressed.map((segment) => String(segment.name).toLowerCase()))
+    : null
+  const target = (name) =>
+    known(name) && (!mentioned || mentioned.has(String(name).toLowerCase()))
+  /* Two mentions with their own jobs are two runs the grammar read exactly, so a
+     plan that collapses them into one would delete work off the card. */
+  const collapsed = (count) =>
+    Boolean(mentioned && addressed.length > 1 && count < addressed.length)
+  if (plan.mode === 'runs') {
+    const runs = Array.isArray(plan.runs) ? plan.runs : []
+    if (runs.length < 1) return null
+    if (runs.some((run) => !target(run.entity))) return null
+    if (collapsed(runs.length)) return null
+    /* A `/workspace:` that led the message routes every run of it, exactly as it
+       does for a rendered plan. */
+    const prologue = String(source || '').match(SKILL_PROLOGUE)
+    return { runs, carriedSkill: prologue ? prologue[0].trim() : '' }
+  }
+  if (!plan.entity || !target(plan.entity)) return null
+  if (mentioned && addressed.length > 1) return null
   const sentence = planSentence(plan)
   if (!sentence) return null
   const prologue = String(source || '').match(SKILL_PROLOGUE)
@@ -2488,21 +2556,22 @@ async function rewrite(
   /* Where a classified plan's job starts; `Infinity` for a message a person
      typed, whose every `@` is mention syntax. */
   let literalAt = Infinity
-  /* The grammar first, for free — but only when it is the whole story. A message
-     opening with a prefix it reads exactly is never second-guessed: the person's
-     own count is a better answer than anything a model could return.
-
-     Except when the message also enumerates items. `let's spawn 4 @coder …` over
-     a four-item bullet list is four DIFFERENT pages, and reading just the count
-     gives four agents one sentence — four redesigns of one page, the failure
-     this layer exists to stop. The grammar cannot see a list, so that message is
-     classified: it is the one case where a written count is not the whole ask. */
+  /* The plan's own list of runs, when it answered with one. */
+  let planned = null
+  /* The grammar first, for free — but it is only asked whether the message
+     *delegates*, never whether it read the instruction. A job the grammar splits
+     off is not a job it understood: `let's spawn 2 @coder:` over two lines that
+     each order something else produced two runs of the same paragraph, because a
+     grammar cannot see that the bullets are different jobs. Every message that
+     hands work to an entity is classified, whatever prefix it carries; a message
+     that delegates nothing (`Take your time.`, a bare read) costs no call, which
+     is what keeps chat off the slow path. */
+  const grammar = parse(source)
+  const delegations = grammar.segments.filter(
+    (segment) => segment.kind === 'entity' && String(segment.job || '').trim(),
+  )
   const barePrefix = spawnPrefix(source)
-  /* required here, not imported at load: `intent-ref` is a sibling that already
-     requires this module, and a load-time edge would be a cycle. */
-  const enumerates =
-    barePrefix !== null && require('./intent-ref.cjs').listedItems(source).length >= 2
-  /* `unreadableJob` is the third reason to classify, and the one this layer kept
+  /* `unreadableJob` is the other reason to classify, and the one this layer kept
      getting wrong: the grammar can always *split* an `@entity` from its job, so
      it never demoted itself — even when the split threw the instruction away.
      `spawn 1 @designer on @orca:entity I want to redesign this page` reads as the
@@ -2511,7 +2580,7 @@ async function rewrite(
      it is the grammar reading it wrong, so the model is asked — and its plan
      (`spawn 1 @designer <the real ask>`) is the one the card confirms. */
   const unreadableJob = openingProseHasUnreadableJob(source)
-  if (intent && (barePrefix === null || enumerates || unreadableJob) && !stopped?.()) {
+  if (intent && (delegations.length > 0 || barePrefix !== null || unreadableJob) && !stopped?.()) {
     let plan = null
     try {
       plan = await intent(source)
@@ -2519,22 +2588,28 @@ async function rewrite(
       /* a reader that throws is a reader with nothing to say */
       plan = null
     }
-    const delegated = plan ? await delegatePlan(record, source, plan) : null
-    if (delegated) {
+    const delegated = plan ? await delegatePlan(record, source, plan, delegations) : null
+    if (delegated?.runs) {
+      /* Built from the plan, not parsed back out of it — see `plannedSegments`. */
+      planned = delegated.runs
+      carriedSkill = delegated.carriedSkill || ''
+    } else if (delegated) {
       source = delegated.source
       carriedSkill = delegated.carriedSkill
       literalAt = delegated.literalAt ?? Infinity
     }
   }
-  const spawn = spawnPrefix(source)
+  /* A runs plan has no prefix and nothing to expand: its runs are already one
+     per entry, with their own words. */
+  const spawn = planned ? null : spawnPrefix(source)
   const parsed = parse(source, { literalAt })
-  if (!parsed.segments.length) return { text: source, mentions: [] }
+  let segments = planned ? plannedSegments(planned) : parsed.segments
+  if (!segments.length) return { text: source, mentions: [] }
   if (spawn?.kind === 'repeat' && spawn.count > MAX_SPAWN_RUNS) {
     throw new Error(
       `spawn ${spawn.count} is more than ${MAX_SPAWN_RUNS} runs. Nothing was sent — lower the number.`,
     )
   }
-  let segments = parsed.segments
   let listSegment = null
   let target = null
   if (spawn?.kind === 'rows') {
@@ -2587,8 +2662,9 @@ async function rewrite(
   const rowsUntilRun =
     spawn?.kind === 'rows' ? expandFanout(segments, target, spawn.rows.map((label) => ({ label }))) : null
   if (spawn?.kind === 'rows') segments = rowsUntilRun
-  const runCap =
-    spawn?.kind === 'per' || spawn?.kind === 'rows'
+  const runCap = planned
+    ? planned.length
+    : spawn?.kind === 'per' || spawn?.kind === 'rows'
       ? MAX_FANOUT_ROWS
       : spawn?.kind === 'repeat'
         ? Math.max(MAX_ENTITY_RUNS, spawn.count)
@@ -2817,13 +2893,21 @@ async function rewrite(
      is still a delegated run, and the sentence that delegated it is not the
      parent's task. */
   const fanned =
-    spawn && (spawn.kind === 'per' || spawn.count >= 1) && runs.length >= 1
+    runs.length >= 1 &&
+    Boolean(planned || (spawn && (spawn.kind === 'per' || spawn.count >= 1)))
+  const rowsAbove = runs.some((run) => run.row)
+  const ownJobs = runs.some((run) => run.plannedJob)
+  const arrangement = rowsAbove
+    ? 'one per row above'
+    : ownJobs
+      ? 'each with its own instruction above'
+      : 'all of the same instruction'
   const prompt = fanned
     ? runs.length === 1
       ? `The run of ${tokenOf(target || runs[0])} above has already happened and its answer is ` +
         'in the list. That was the work this message asked for; read it and answer from what it ' +
         'found. Do not repeat it yourself and do not delegate it again.'
-      : `${runs.length} runs of ${tokenOf(target || runs[0])}, one per row above. They have already ` +
+      : `${runs.length} runs of ${tokenOf(target || runs[0])}, ${arrangement}. They have already ` +
         'run and their answers are in the list. Write one short paragraph saying what each run did ' +
         'and which one still needs something; do not run them again and do not do their work yourself.'
     : source
