@@ -144,10 +144,51 @@ function statusText() {
   const mention = props.mention
   if (retrying.value) return 'Retrying…'
   if (mention.answer) return mention.answer
-  if (mention.note) return mention.note
+  /* The failure line above already prints the note: printing it here as well put
+     a whole multi-line salvage report on the card twice. */
+  if (mention.note && !failedNote.value) return mention.note
   if (mention.status === 'running') return 'Working…'
   if (mention.status === 'queued') return 'Queued'
-  return 'No answer recorded.'
+  return stepTail() || 'No answer recorded.'
+}
+
+/** One line of step content, clipped to something a card row can hold. */
+function stepText(value, limit = 120) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
+}
+
+/** A tool call reads as what it was doing, not as a JSON blob. */
+function stepLine(step) {
+  if (!step) return ''
+  if (step.type === 'tool_use') {
+    let input = step.input
+    if (input && typeof input === 'object') {
+      try {
+        input = JSON.stringify(input)
+      } catch {
+        input = ''
+      }
+    }
+    const brief = stepText(input)
+    return `${step.tool || 'tool'}${brief ? ` … ${brief}` : ''}`
+  }
+  return stepText(step.content || step.output || '')
+}
+
+/* A run that was killed leaves steps and no answer, and "No answer recorded."
+   is the one thing that is certainly false about it: it recorded plenty. The
+   last two steps are where the harness had got to — the account a person reads
+   before deciding whether to retry. */
+function stepTail() {
+  const steps = Array.isArray(props.mention.steps) ? props.mention.steps : []
+  return steps
+    .slice(-2)
+    .map(stepLine)
+    .filter(Boolean)
+    .join(' · ')
 }
 </script>
 

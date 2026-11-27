@@ -123,8 +123,9 @@ function reasonOf(result) {
 
 /**
  * Orca: the path `mention-ref` would spawn, probed instead of assumed. Reuses
- * that module's resolver (an app bundle, `ENTITY_ORCA_BIN`, or PATH) rather than
- * duplicating it, so the page and the `@orca:` mention can never disagree.
+ * that module's resolver (a path set on the connector's page, `ENTITY_ORCA_BIN`,
+ * the app's own install, the user's bin, then PATH) rather than duplicating it, so
+ * the page and the `@orca:` mention can never disagree.
  */
 async function probeOrca() {
   const wanted = mentionRef.orcaBinary()
@@ -349,7 +350,11 @@ function rowOf(id, enabled, probe) {
     able to say "nothing is installed here" without probing anything. */
 function installedWithoutProbing(id, workspace) {
   if (id === 'youtrack') return youtrackCredential(workspace).hasCredential
-  return Boolean(harnesses.which(id === 'github' ? 'gh' : 'orca'))
+  if (id === 'github') return Boolean(harnesses.which('gh'))
+  /* Orca can be named on its own page, so its binary is not always a PATH lookup:
+     ask the same resolver the mention uses, then stat what it answered. */
+  const wanted = mentionRef.orcaBinary()
+  return path.isAbsolute(wanted) ? fs.existsSync(wanted) : Boolean(harnesses.which(wanted))
 }
 
 /**

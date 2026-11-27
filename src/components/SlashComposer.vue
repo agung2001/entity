@@ -89,8 +89,11 @@ let mentionAsked = false
 /* The typed mentions. A bare `@name` is an entity, so entities are listed from
    the workspace rather than from this table. A kind whose integration is off in
    Account → Integrations is not offered at all: this list is the `@` menu, which
-   is the only place the switch promises to change. Resolving is untouched — a
-   token typed out in full still works, because off is an offer, not a refusal. */
+   is the first place the switch promises to change. An account connector still
+   *resolves* when off — a token typed out in full is a read someone asked for.
+   Orca is the exception, and it is the CLI app itself: resolving it spawns a
+   process, so the connector refuses while off rather than working quietly
+   behind a switch that says no. */
 const MENTION_KINDS = computed(() => {
   const on = mentionSources.value?.integrations || {}
   const gated = (kind) => on[kind] !== false

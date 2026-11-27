@@ -88,10 +88,6 @@ const isAccountKind = (kind) => Object.values(ACCOUNT_KIND).includes(kind)
 
 const MAX_PER_SOURCE = 3
 const MAX_BLOCK_ROWS = 12
-const ORCA_TIMEOUT_MS = 10_000
-const ORCA_CACHE_MS = 60_000
-/* A child workspace path as Orca writes it in a run's report. */
-const ORCA_WORKSPACE_PATH = /[^\s"'`()<>]*[\\/]orca[\\/]workspaces[\\/][^\s"'`()<>]+/gi
 /* A delegated job is real work — reading a brief, editing files, running the
    test suite — not a search. Two minutes killed the very delegation this
    feature exists for. An hour, because a job that has to be *finished* is not
@@ -115,8 +111,12 @@ const MAX_SPAWN_RUNS = 5
    `MAX_BLOCK_ROWS`, which is what the reply above can read. */
 const MAX_FANOUT_ROWS = 12
 /* What one delegated run may report back. The card and the session show this
-   text; the parent's prompt gets a digest of it. */
-const MAX_DELEGATION_ANSWER = 8_000
+   text; the parent's prompt gets a digest of it. Sixteen thousand because a
+   real report is longer than it looks: seven rows of a milestone plan, each
+   with what changed and what was verified, ends in seven READY lines — and at
+   8 000 the cut lands inside the last row, which is the only part a person
+   scrolls to. A truncated report reads as a report with a missing task. */
+const MAX_DELEGATION_ANSWER = 16_000
 const ARTIFACT_SCAN_CAP = 2000
 /* What a delegated run is told about the conversation it came from. It is a
    hand-off, not a transcript: the last exchange is the part that defines what
@@ -739,15 +739,12 @@ function tokenOf(segment) {
   return segment.raw
 }
 
-/* ── orca ─────────────────────────────────────────────────────────── */
+/* ── cli reads ─────────────────────────────────────────────────────── */
 
-let orcaCache = { at: 0, repos: [] }
-
-function orcaBinary() {
-  if (process.env.ENTITY_ORCA_BIN) return process.env.ENTITY_ORCA_BIN
-  const app = '/Applications/Orca.app/Contents/Resources/bin/orca'
-  return fs.existsSync(app) ? app : 'orca'
-}
+/* One ceiling for the CLIs a mention reads that are not connectors: `gh`, and a
+   `git status` behind a timed-out run's salvage. Orca has its own, next to the
+   code that spawns it (`connectors/orca/mention.cjs`). */
+const CLI_TIMEOUT_MS = 10_000
 
 function execFileText(bin, args, timeout) {
   return new Promise((resolve, reject) => {
@@ -756,7 +753,7 @@ function execFileText(bin, args, timeout) {
         reject(
           new Error(
             error?.code === 'ENOENT'
-              ? 'orca is not installed, or not on PATH.'
+              ? `${bin} is not installed, or not on PATH.`
               : String(error?.message || error).slice(0, 200),
           ),
         )
@@ -783,7 +780,7 @@ function githubBinary() {
 
 async function execGithub(args) {
   try {
-    return await execFileText(githubBinary(), args, ORCA_TIMEOUT_MS)
+    return await execFileText(githubBinary(), args, CLI_TIMEOUT_MS)
   } catch (error) {
     const message = String(error?.message || error)
     throw new Error(
@@ -794,173 +791,117 @@ async function execGithub(args) {
   }
 }
 
-/** The repos Orca knows, cached for a minute: one CLI spawn per burst of mentions. */
-async function orcaRepos({ force = false } = {}) {
-  if (!force && Date.now() - orcaCache.at < ORCA_CACHE_MS) return orcaCache.repos
-  const raw = await execFileText(orcaBinary(), ['repo', 'list', '--json'], ORCA_TIMEOUT_MS)
-  let parsed
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error('orca repo list did not return JSON.')
-  }
-  const repos = parsed?.result?.repos || parsed?.repos || []
-  orcaCache = { at: Date.now(), repos }
-  return repos
-}
+/* The Orca integration lives in its connector folder (`connectors/orca/`): the
+   resolver, the two lists it reads and the worktree state are one fact, and the
+   composer, the card and a timed-out run all ask the same module for it. What is
+   kept here is the name this file's callers already use. */
+const orca = require('./connectors/orca/mention.cjs')
 
-let worktreeCache = { at: 0, list: [] }
+/* ── what a timed-out run left behind ───────────────────────────────
 
-/** Child and main worktrees Orca knows, cached like the repo list. */
-async function orcaWorktrees({ force = false } = {}) {
-  if (!force && Date.now() - worktreeCache.at < ORCA_CACHE_MS) return worktreeCache.list
-  const raw = await execFileText(orcaBinary(), ['worktree', 'list', '--json'], ORCA_TIMEOUT_MS)
-  let parsed
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error('orca worktree list did not return JSON.')
-  }
-  const list = parsed?.result?.worktrees || parsed?.worktrees || []
-  worktreeCache = { at: Date.now(), list }
-  return list
+The deadline kills the harness, and until now the record of an hour's work was
+one sentence: "did not answer within 60 minutes". The work itself usually
+survives — a worktree with commits on it and files still uncommitted — and the
+person a card belongs to needs that more than they need the sentence. So the
+last thing a timed-out run does is read three cheap git facts out of the
+directory it was working in.
+
+This is a courtesy on a run that has already failed, which fixes all three rules
+below: every call is bounded, every failure is swallowed, and the report is
+appended to the failure text (`run.error` → `mention.note` → the card and the
+parent's digest) rather than replacing any of it. */
+
+/* Two seconds: a salvage read must never be the reason an already-stopped turn
+   waits, and a locked index is not evidence worth waiting for. */
+const SALVAGE_GIT_MS = 2_000
+/* Finding the directory can ask Orca for its worktree list, which carries its own
+   ten-second timeout — longer than a turn that just ran an hour should wait to
+   hear that it failed. The whole salvage gets a budget, and an expired budget is
+   the same as no evidence: no line. */
+const SALVAGE_LOOKUP_MS = 5_000
+const SALVAGE_ROWS = 5
+/** `ENTITY-53` at the head of a job names the row the run was about. */
+const TICKET_KEY = /^([A-Z][A-Z0-9]+-\d+)\b/
+
+/** `work()`, or its default when it has not answered inside `ms`. */
+function withinMs(ms, work, fallback = '') {
+  let timer = null
+  const expiry = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms)
+    if (typeof timer.unref === 'function') timer.unref()
+  })
+  return Promise.race([work(), expiry]).finally(() => clearTimeout(timer))
 }
 
 /**
- * clean | dirty | gone | none — the worktree a delegated row works in, as it is
- * *now*. A field stored at run time would freeze at "clean, exists" and lie in
- * exactly the case this exists for: the row was merged and the worktree removed.
+ * The directory a timed-out run was working in, or `''` for "do not guess".
  *
- * The run's own record comes first: a fan-out shares a cwd and a ticket key, so
- * the key alone paints one word on N cards. A delegated run that worked in a
- * child workspace names that path in its report, and a path is per-run. The
- * renderer sends the record, the ticket key and the run's cwd; every path this
- * reads or stats came out of `orca worktree list`, never out of the message.
+ * The order is the point. A run that moved into a child workspace names that
+ * path in its own partial report, and a path is per-run — the same reason
+ * `worktreeState` reads the record before the ticket key, which a fan-out shares
+ * across N cards. Only when the report names nothing is the key matched against
+ * Orca's list, and a `gone`/`none` answer is no directory: a salvage report about
+ * the parent repo for work that happened in a worktree would be the exact lie the
+ * worktree chip exists to prevent.
  */
-async function worktreeState({ cwd = '', ticket = '', record = '' } = {}) {
-  const key = String(ticket || '').trim().toLowerCase()
-  const named = recordPaths(record)
-  /* Nothing said about a worktree, and no key to guess from. */
-  if (!key && !named.length) return { state: 'none' }
-  const dir = cwd ? path.resolve(String(cwd)) : ''
-  const inside = (root, at) => {
-    if (!at) return false
-    const base = path.resolve(String(root || '.'))
-    return at === base || at.startsWith(base + path.sep)
-  }
-  const worktrees = await orcaWorktrees()
-  /* The record's own evidence, kept only where Orca itself lists that path. */
-  const listed = new Map(worktrees.map((worktree) => [path.resolve(String(worktree.path || '.')), worktree]))
-  /* A run on another machine names *that* machine's path, which this machine's
-     list will never contain — a remote report is not evidence of a removal.
-     Keep a named path only where its worktree base (`…/orca/workspaces/<repo>`)
-     is a base this Orca lists, and drop the rest before anything is called gone. */
-  const bases = new Set([...listed.keys()].map((at) => path.dirname(at)))
-  const local = named.filter((at) => bases.has(path.dirname(at)))
-  const mine = local.map((at) => listed.get(at)).filter(Boolean)
-  let hit = mine.find((worktree) => matchesKey(worktree, key)) || mine[0]
-  /* A record that names a workspace this Orca no longer lists is `gone` — that is
-     the difference between "merged and removed" and "never created". */
-  if (!hit && local.length) return { state: 'gone', name: path.basename(local[0]) }
-  if (!hit) {
-    /* The cwd *narrows* the search when it names a repo, and only when it does:
-       an entity whose `dir` is `~` runs outside every checkout, and returning
-       `none` there would hide the chip for exactly the rows that have a worktree.
-       Narrowing is a nicety (one repo's keys), not the boundary — the boundary is
-       that `hit.path` below is Orca's word, and `git` is run against nothing else. */
-    const repos = await orcaRepos()
-    let scope = repos.find((entry) => inside(entry.path, dir))
-    if (!scope) {
-      /* a run pointed *at* a child worktree names its repo the same way */
-      const at = worktrees.find((worktree) => inside(worktree.path, dir))
-      if (at) scope = repos.find((entry) => entry.id === at.repoId)
+async function salvageDir({ partial, dir, ticket }) {
+  /* The record's own paths are text: reading them costs nothing and works with
+     Orca switched off. The fallback asks Orca, so it only runs while the
+     connector is on — a card must not spawn a CLI the person turned off. */
+  const named = orca.recordPaths(partial)[0]
+  if (named) return named
+  if (!orca.isActive()) return ''
+  const state = await orca.worktreeState({ cwd: dir, ticket, record: partial })
+  return state?.path || ''
+}
+
+/**
+ * Two lines of git evidence under a dead run's directory, or `''` when nothing
+ * resolves. Never throws: the caller has a failure to report either way.
+ */
+function salvageText({ partial, dir, ticket }) {
+  return withinMs(SALVAGE_LOOKUP_MS, async () => {
+    const at = await salvageDir({ partial, dir, ticket })
+    if (!at) return ''
+    /* `null`, not `''`: an empty `git status` is a clean tree, a failed one is
+       nothing known, and the two must not print the same sentence. */
+    const git = async (...args) => {
+      try {
+        return String(await execFileText('git', ['-C', at, ...args], SALVAGE_GIT_MS)).trim()
+      } catch {
+        return null
+      }
     }
-    /* The same match the `orca-worktree` skill uses to reuse a child workspace:
-       the ticket key in its branch or display name. */
-    hit = worktrees
-      .filter((worktree) => !worktree.isMainWorktree && (!scope || worktree.repoId === scope.id))
-      .sort((a, b) => Number(b.lastActivityAt || 0) - Number(a.lastActivityAt || 0))
-      .find((worktree) => matchesKey(worktree, key))
-  }
-  /* A run that names no workspace and matches no key shows no chip: absence is
-     not evidence, and a guess here is the lie the chip exists to prevent. */
-  if (!hit) return { state: 'none' }
-  if (!fs.existsSync(String(hit.path))) return { state: 'gone', name: worktreeName(hit) }
-  let files = 0
-  try {
-    files = String(
-      await execFileText('git', ['-C', String(hit.path), 'status', '--porcelain'], ORCA_TIMEOUT_MS),
-    )
-      .split('\n')
-      .filter(Boolean).length
-  } catch {
-    /* `execFileText` says "orca is not installed" on ENOENT, which is not what
-       went wrong for git — swallow it rather than paint a project state. */
-    return { state: 'unknown' }
-  }
-  return {
-    state: files ? 'dirty' : 'clean',
-    files,
-    name: worktreeName(hit),
-    path: String(hit.path),
-    branch: String(hit.branch || '').replace(/^refs\/heads\//, ''),
-  }
-}
-
-/** `ENTITY-53` in a worktree's branch or display name, the skill's own match. */
-function matchesKey(worktree, key) {
-  if (!key) return false
-  return `${worktree.branch || ''} ${worktree.displayName || ''}`.toLowerCase().includes(key)
-}
-
-/** The workspace's own name: what the chip paints, so N runs read as N names. */
-function worktreeName(worktree) {
-  if (!worktree) return ''
-  const raw = String(worktree.branch || '').replace(/^refs\/heads\//, '') || String(worktree.displayName || '') || String(worktree.path || '')
-  return raw ? path.basename(raw) : ''
-}
-
-/** Every `…/orca/workspaces/<repo>/<name>` path a run's record names. */
-function recordPaths(record) {
-  const text = typeof record === 'string' ? record : JSON.stringify(record || '')
-  const out = []
-  for (const [raw] of String(text || '').matchAll(ORCA_WORKSPACE_PATH)) {
-    /* a report writes its paths in prose: "…/card, then merged" */
-    const at = path.resolve(raw.replace(/[.,;:!?]+$/, ''))
-    if (!out.includes(at)) out.push(at)
-  }
-  return out
+    const branch = await git('rev-parse', '--abbrev-ref', 'HEAD')
+    const commits = await git('rev-list', '--count', 'HEAD', '--not', '--remotes')
+    const status = await git('status', '--short')
+    const subject = await git('log', '--oneline', '-n', '1')
+    const rows = status === null ? null : status.split('\n').filter(Boolean)
+    const head = []
+    /* Commits nobody can fetch are the salvage: they exist only in this
+       worktree, so the count is the part that is worth reading. */
+    if (commits) head.push(`${commits} commit${commits === '1' ? '' : 's'}${branch ? ` on ${branch}` : ''}`)
+    else if (branch) head.push(branch)
+    if (rows) head.push(`${rows.length} file${rows.length === 1 ? '' : 's'} uncommitted`)
+    if (!head.length) return ''
+    const lines = [`salvage: ${head.join(' — ')}`]
+    if (subject) lines.push(`  ${subject}`)
+    for (const row of (rows || []).slice(0, SALVAGE_ROWS)) lines.push(`  ${row}`)
+    return lines.join('\n')
+  }).catch(() => '')
 }
 
 /** Project names for the composer's `@` menu. */
 async function sources() {
   try {
-    const repos = await orcaRepos()
+    const repos = await orca.repos()
     return { orca: repos.map((repo) => ({ name: repo.displayName || path.basename(repo.path), path: repo.path })) }
   } catch {
+    /* A connector that is off refuses rather than answering, and the menu's
+       promise is that nothing Orca runs while it is off: no projects offered,
+       no CLI spawned. */
     return { orca: [] }
   }
-}
-
-async function resolveOrca(ctx, segment) {
-  const repos = await ctx.deps.orcaRepos()
-  const wanted = String(segment.project || '').toLowerCase()
-  const repo =
-    repos.find((entry) => String(entry.displayName || '').toLowerCase() === wanted) ||
-    repos.find((entry) => path.basename(String(entry.path || '')).toLowerCase() === wanted)
-  if (!repo) {
-    throw new Error(`@orca:${segment.project} is not a project Orca knows.`)
-  }
-  const root = path.resolve(String(repo.path))
-  if (!segment.file) {
-    return [{ label: root, detail: repo.displayName || path.basename(root) }]
-  }
-  const target = path.resolve(root, segment.file)
-  /* a mention must not walk out of the repo it named */
-  if (target !== root && !target.startsWith(root + path.sep)) {
-    throw new Error(`@orca:${segment.project}:${segment.file} points outside that project.`)
-  }
-  return [{ label: target, detail: fs.existsSync(target) ? '' : 'does not exist yet' }]
 }
 
 /* ── artifacts ────────────────────────────────────────────────────── */
@@ -1119,7 +1060,7 @@ async function resolveGithub(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
 /** Gmail: `@gmail:[<account>:]<query>` — Gmail's own search syntax. */
 /* ── entity: a mini run, not a path ───────────────────────────────── */
 
-function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
+function spawnParse(spec, dir, { record, entity, mcp, onChild = null, job = '' }) {
   return new Promise((resolve) => {
     let child
     try {
@@ -1157,6 +1098,8 @@ function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
     })
     let stderr = ''
     let settled = false
+    /* set the moment the deadline passes; see the timer below */
+    let timedOutText = null
     const done = (error) => {
       if (settled) return
       settled = true
@@ -1197,7 +1140,24 @@ function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
     const timer = setTimeout(() => {
       killTree(child, 'SIGTERM')
       const minutes = Math.round(ENTITY_TIMEOUT_MS / 60_000)
-      done(`did not answer within ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`)
+      const deadline = `did not answer within ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
+      /* `parser.finish()` is safe to read here: the run is over, and calling it a
+         second time in `done` returns the same answer and steps. */
+      let partial = { answer: '', steps: [] }
+      try {
+        partial = parser.finish()
+      } catch {
+        /* no partial text is not a reason to lose the deadline's own sentence */
+      }
+      /* The kill makes `close` arrive before the salvage reads do, so the text is
+         kept as a promise both handlers await: a timed-out run must never be
+         reported with the bare exit code of the process the timer just killed. */
+      timedOutText = salvageText({
+        partial,
+        dir,
+        ticket: (String(job || '').match(TICKET_KEY) || [])[1] || '',
+      }).then((salvage) => (salvage ? `${deadline}\n${salvage}` : deadline))
+      timedOutText.then(done)
     }, ENTITY_TIMEOUT_MS)
     if (typeof timer.unref === 'function') timer.unref()
 
@@ -1220,6 +1180,12 @@ function spawnParse(spec, dir, { record, entity, mcp, onChild = null }) {
       if (stderr.length > 4000) stderr = stderr.slice(-4000)
     })
     child.on('close', (code) => {
+      if (timedOutText) {
+        /* the deadline is authoritative: its own sentence, then whatever the run
+           left behind, never the exit code of the kill it asked for */
+        timedOutText.then(done)
+        return
+      }
       done(
         code === 0
           ? ''
@@ -1263,7 +1229,7 @@ async function runEntity(record, mentioned, job, { onChild = null } = {}) {
       return { ok: false, answer: '', error: String(error?.message || error) }
     }
     spec.cmd = harnesses.binary(mentioned.harness) || spec.cmd
-    return await spawnParse(spec, dir, { record, entity: mentioned, mcp, onChild })
+    return await spawnParse(spec, dir, { record, entity: mentioned, mcp, onChild, job })
   } finally {
     mcp.cleanup?.()
   }
@@ -1449,7 +1415,14 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
   if (kind === 'orca') {
     const project = String(fields[0] || '').trim()
     const file = fields.slice(1).join(':').trim()
-    const repos = await merged.orcaRepos()
+    /* The same refusal `sources()` catches: a menu for a connector that is off is
+       an empty menu, never a composer that breaks on the token. */
+    let repos = []
+    try {
+      repos = await merged.orcaRepos()
+    } catch {
+      return { items: [], more: false }
+    }
 
     if (!fields.length || (fields.length === 1 && !file)) {
       const wanted = project.toLowerCase()
@@ -1880,7 +1853,7 @@ async function search({ record, kind, fields = [], limit = 10, offset = 0, dir =
 }
 
 const defaultDeps = {
-  orcaRepos,
+  orcaRepos: orca.repos,
   mcpCall: mcpTools.callTool,
   execGithub,
   runEntity,
@@ -2065,6 +2038,114 @@ function delegationContext(ctx) {
   return ctx.delegationBlock
 }
 
+/* ── one ceiling for the whole app ────────────────────────────────────
+
+`MAX_ENTITY_RUNS` and `MAX_SPAWN_RUNS` are per message, which is the right rule
+for one person's sentence and no rule at all for the machine: ten threads
+fanning out at once each start ten harnesses, and the app falls over somewhere
+between twenty and thirty processes.
+
+This is the second number, and it is *additional*, not a replacement — the caps
+above still decide how many runs one message may plan. A run waits here before
+its harness process exists, so the ceiling counts work that is actually running
+rather than work that has been decided.
+
+The ceiling is a preference, shaped like `turn-timeout-store.cjs`: one small file
+in `~/.entity/`, `ENTITY_MAX_RUNS` winning over it, a missing or malformed file
+meaning the default rather than an error. Read on every acquisition, so lowering
+it lands on the next run instead of on the next restart. */
+const DEFAULT_MAX_RUNS = 4
+/* One is a serial queue a person can still work in; twelve is more harnesses
+   than this machine's window has ever painted rows for. */
+const RUNS_RANGE = { min: 1, max: 12 }
+const CONCURRENCY_FILE = 'concurrency.json'
+
+/** The file's own number, or the default when it is absent or unreadable. */
+function fileCeiling() {
+  const root = process.env.ENTITY_HOME
+    ? path.resolve(process.env.ENTITY_HOME)
+    : path.join(os.homedir(), '.entity')
+  try {
+    return Number(JSON.parse(fs.readFileSync(path.join(root, CONCURRENCY_FILE), 'utf8'))?.max)
+  } catch {
+    return DEFAULT_MAX_RUNS
+  }
+}
+
+/** How many delegated runs may hold a harness at once. Never zero, never a throw. */
+function runsCeiling() {
+  const env = Number(process.env.ENTITY_MAX_RUNS)
+  const wanted = Number.isFinite(env) && env > 0 ? env : fileCeiling()
+  const n = Math.round(wanted)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_MAX_RUNS
+  return Math.min(RUNS_RANGE.max, Math.max(RUNS_RANGE.min, n))
+}
+
+let activeRuns = 0
+const waitingRuns = []
+
+/** Start every waiting job a free slot can hold, oldest first. */
+function pumpRuns() {
+  const ceiling = runsCeiling()
+  while (activeRuns < ceiling && waitingRuns.length) {
+    const entry = waitingRuns.shift()
+    /* A stop lands between two runs, not only inside one. Nothing has been
+       spawned for this row yet, so a stopped turn drops it here rather than
+       leaving a job that starts minutes later, after the person stopped. */
+    if (entry.stopped?.()) {
+      entry.drop()
+      continue
+    }
+    activeRuns += 1
+    entry.start()
+  }
+}
+
+/**
+ * `job()`, once a slot is free — the app-wide ceiling in front of every spawn.
+ *
+ * `onQueued` fires only when the job has to wait, and `onStart` fires as the
+ * slot is granted: those two are the card's `Queued` → `Working…` transition,
+ * and they travel into `runEntity`'s options so a stubbed run in a test sees the
+ * same shape the real one does. `{ dropped: true }` means the turn was stopped
+ * while the job waited, which is not a failure of the job.
+ */
+async function withRunSlot({ stopped, onQueued = null, onStart = null, job }) {
+  if (stopped?.()) return { dropped: true }
+  const started = await new Promise((resolve) => {
+    waitingRuns.push({ stopped, start: () => resolve(true), drop: () => resolve(false) })
+    if (activeRuns >= runsCeiling()) onQueued?.()
+    pumpRuns()
+  })
+  if (!started) return { dropped: true }
+  onStart?.()
+  try {
+    return { dropped: false, result: await job({ onQueued, onStart }) }
+  } finally {
+    /* the slot is given back however the run ended, including a throw: a leaked
+       slot would shrink the ceiling by one for the rest of the process */
+    activeRuns -= 1
+    pumpRuns()
+  }
+}
+
+/** A row that never ran because the person stopped the turn. */
+function stoppedMention(segment, mentioned) {
+  return {
+    kind: 'entity',
+    raw: segment.raw,
+    token: tokenOf(segment),
+    name: mentioned.name,
+    job: instructionOf(segment),
+    ...(segment.row ? { row: segment.row } : {}),
+    ...(segment.rowUrl ? { rowUrl: segment.rowUrl } : {}),
+    items: [],
+    answer: '',
+    note: 'stopped by you',
+    status: 'error',
+  }
+}
+
 async function resolveOne(ctx, segment) {
   const started = Date.now()
   try {
@@ -2102,24 +2183,10 @@ async function resolveOne(ctx, segment) {
          must not start after the person pressed Stop. */
       if (ctx.stopped?.()) {
         segment.runStatus = 'error'
-        segment.mention = {
-          kind: 'entity',
-          raw: segment.raw,
-          token: tokenOf(segment),
-          name: mentioned.name,
-          job: instructionOf(segment),
-          ...(segment.row ? { row: segment.row } : {}),
-          ...(segment.rowUrl ? { rowUrl: segment.rowUrl } : {}),
-          items: [],
-          answer: '',
-          note: 'stopped by you',
-          status: 'error',
-        }
+        segment.mention = stoppedMention(segment, mentioned)
         ctx.report()
         return
       }
-      segment.runStatus = 'running'
-      ctx.report()
       const instruction = instructionOf(segment)
       /* The skill is resolved on the person's words, not on the row-prefixed
          instruction: `use this skill <path>` has to stay the first line for the
@@ -2148,9 +2215,36 @@ async function resolveOne(ctx, segment) {
       ]
         .filter(Boolean)
         .join('\n\n')
-      const run = await ctx.deps.runEntity(ctx.record, mentioned, job, {
-        onChild: ctx.onChild,
+      /* The row is `Queued` until a slot is actually free: the queue starts the
+         harness, so it is the queue that knows when this row stops waiting. A
+         transition reports to the window as it happens, which is the difference
+         between a card that says `Working…` for ten minutes and one that says
+         `Queued` because it is. */
+      const queued = await withRunSlot({
+        stopped: ctx.stopped,
+        onQueued: () => {
+          segment.runStatus = 'queued'
+          ctx.report()
+        },
+        onStart: () => {
+          segment.runStatus = 'running'
+          ctx.report()
+        },
+        job: ({ onQueued, onStart }) =>
+          ctx.deps.runEntity(ctx.record, mentioned, job, {
+            onChild: ctx.onChild,
+            onQueued,
+            onStart,
+          }),
       })
+      if (queued.dropped) {
+        /* the turn was stopped while this row waited, and nothing was spawned */
+        segment.runStatus = 'error'
+        segment.mention = stoppedMention(segment, mentioned)
+        ctx.report()
+        return
+      }
+      const run = queued.result
       segment.runStatus = run.ok ? 'ok' : 'error'
       segment.mention = {
         kind: 'entity',
@@ -2176,13 +2270,19 @@ async function resolveOne(ctx, segment) {
         ...(run.execution ? { execution: run.execution } : {}),
         ...(Array.isArray(run.steps) && run.steps.length ? { steps: run.steps } : {}),
       }
-      if (!run.ok) ctx.notes.push(segment.mention.note)
+      if (!run.ok) {
+        /* A note is one row of the parent's digest, and a salvage report is
+           several lines: flattened here so the digest stays a list instead of
+           turning one failed run into five unstyled rows. */
+        ctx.notes.push(segment.mention.note.replace(/\s+/g, ' ').trim())
+      }
       ctx.report()
       return
     }
 
     if (segment.kind === 'orca') {
-      const items = await resolveOrca(ctx, segment)
+      const resolve = connectorRegistry.resolverFor('orca')
+      const items = await resolve(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
       segment.mention = { kind: 'orca', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       return
     }
@@ -3166,10 +3266,13 @@ module.exports = {
   tokenOf,
   sources,
   search,
-  orcaRepos,
-  orcaWorktrees,
-  orcaBinary,
-  worktreeState,
+  /* Orca's own module, under the names `integrations-store` and the call table
+     already ask for. The worktree reader here is the primitive: the surfaces that
+     ask it (`mention.worktree`, the salvage above) check the switch first. */
+  orcaRepos: orca.repos,
+  orcaWorktrees: orca.worktrees,
+  orcaBinary: orca.binary,
+  worktreeState: orca.worktreeState,
   resolveArtifact,
   blockFor,
   listProjectFiles,

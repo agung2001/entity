@@ -38,6 +38,8 @@
  * at startup by the catalog and by `rpc.cjs`.
  */
 const FOLDERS = [
+  /* First: this machine's own projects, which is what a person tries first. */
+  'orca',
   'gmail',
   'google-drive',
   'google-calendar',

@@ -13,10 +13,14 @@
  *   2. `env()` — `ENTITY_CLI_PATH`, `ENTITY_WORKSPACE`, `ENTITY_ENTITY`, and the
  *      generated shim the first value points at. A harness launched from Finder
  *      inherits LaunchServices' PATH, not the user's; resolving `entity` through
- *      PATH would work in `npm run dev` and fail in the packaged app.
+ *      PATH would work in `npm run dev` and fail in the packaged app. It also
+ *      names Orca (`ENTITY_ORCA_BIN`, plus that directory first on PATH), because
+ *      a child otherwise spends its first turns rediscovering a CLI the app
+ *      already resolved — see `connectors/orca/path.cjs`.
  */
 const fs = require('node:fs')
 const path = require('node:path')
+const orcaPath = require('./connectors/orca/path.cjs')
 
 const SKILL = fs
   .readFileSync(path.join(__dirname, 'platform-skill.md'), 'utf8')
@@ -140,7 +144,22 @@ function env({ record, entity, remote = false } = {}) {
     ENTITY_WORKSPACE: record?.id || '',
     ENTITY_ENTITY: entity?.name || '',
   }
-  if (record && !remote) out.ENTITY_CLI_PATH = ensureShim(record)
+  if (record && !remote) {
+    out.ENTITY_CLI_PATH = ensureShim(record)
+    /* Local only: a remote run has its own binaries, and a path on this machine
+       must not be claimed as one available there. The directory goes first on
+       PATH as well, because a harness that shells out to `orca` (or to a script
+       whose shebang needs its sibling `node`) has no other way to find it — the
+       inherited PATH is kept behind it, never replaced.
+       The key is the platform's own: Windows stores `Path`, and adding `PATH`
+       beside it would hand the child two entries differing only by case —
+       `shell-path.cjs` makes the same choice for the app's own PATH. */
+    out.ENTITY_ORCA_BIN = orcaPath.orcaBinary()
+    const dir = orcaPath.orcaDir(out.ENTITY_ORCA_BIN)
+    const key = process.platform === 'win32' ? 'Path' : 'PATH'
+    const inherited = process.env[key] || process.env.PATH || ''
+    if (dir) out[key] = [dir, inherited].filter(Boolean).join(path.delimiter)
+  }
   return out
 }
 
