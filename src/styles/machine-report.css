@@ -1,0 +1,851 @@
+/* ── the machine report and its inventory ─────────────────────────────────
+   The third detail page (entity → skill → machine) reuses the `.entp-*` shell
+   from `directory.css` and adds exactly two things of its own: a five-section
+   report behind one tab strip, and a harness roster whose rows disclose their
+   models. Both are drawn in the language the app already ships — `.sk-tabs`
+   for the strip, the inventory's row shape for every table — so this sheet is
+   geometry, not a second visual system.
+
+   One offset per report row (38px), one separator system, and every value from
+   `tokens.css`: no colour, no font size and no radius is decided here. */
+
+/* ── the hero's mark slot ────────────────────────────────────────────────
+   The machine page has no character to open on, so the specimen sheet's
+   station takes the slot the entity page gives its mark — the same 62px tile
+   and the same `--mk` recipe (`machines-fleet.css` draws it for the fleet). */
+.hero-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 62px;
+  height: 62px;
+  margin-top: 3px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--mk) 14%, transparent);
+}
+.hero-mark .vx {
+  display: block;
+  width: 38px;
+  height: 38px;
+}
+
+/* ── the pass tiles ───────────────────────────────────────────────────────
+   One's server report leads with KPI cards. This scan returns four numbers a
+   pass actually produced, so there are four tiles and no invented fifth. */
+.rep-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.rep {
+  min-width: 0;
+  padding: 11px 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.rep dt {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rep dd {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h3);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.rep dd u {
+  text-decoration: none;
+  font-size: var(--fs-label);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.rep .sub {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── the section strip ────────────────────────────────────────────────────
+   `.sk-tabs`' geometry (skill.css:100) at 33px: five sections, one panel. The
+   panel is swapped rather than navigated, so this is a real tablist — see the
+   `role="tab"` / `aria-selected` contract in DESIGN.md. */
+.rpt-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 14px 0 13px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--border);
+}
+.rpt-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 33px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: var(--font);
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rpt-tabs button:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.rpt-tabs button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.rpt-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+.rpt-tabs b {
+  padding: 1px 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.rpt-tabs button[aria-selected='true'] b {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+/* a warning is not a failure: `fail` is the danger pair, `warn` the accent one */
+.rpt-tabs b[data-s='warn'] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.rpt-tabs b[data-s='fail'] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ── the panel's cards ────────────────────────────────────────────────────
+   Two cards under the tiles, one column at the sheet's own 900px breakpoint.
+   `data-w='768'` in the design sheet is the app's 900px: the rail folds there
+   (directory.css:1498), and a two-column card row needs the same room. */
+.rpt-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+.rcard {
+  min-width: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+}
+.rcard > h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rcard > h3 b {
+  margin-left: auto;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rnote {
+  margin: 9px 0 0;
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--muted);
+}
+.rnote code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+
+/* ── meters ───────────────────────────────────────────────────────────────
+   The value is always written out beside the bar: a colour is a second
+   reading, never the only one. */
+.mtr-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 94px;
+  gap: 9px;
+  align-items: center;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.mtr-row:first-of-type {
+  margin-top: 0;
+}
+.mtr-row b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.mtr-row .v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mtr {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  /* mixed toward the paper, not toward white: `#fff` in the dark theme yields a
+     near-white track and the fill drops under 3:1 on it */
+  background: color-mix(in oklab, var(--surface-2) 70%, var(--bg));
+}
+.mtr i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+.mtr[data-tone='warn'] i {
+  /* `--accent` on the track is 1.6:1 — a fill you cannot see is not a warning.
+     45% of the accent mixed back into `--accent-ink` measures 3.3:1 light and
+     still reads amber. */
+  background: color-mix(in oklab, var(--accent) 45%, var(--accent-ink));
+}
+.mtr[data-tone='full'] i {
+  background: var(--danger);
+}
+
+/* ── a key/value block inside a card ─────────────────────────────────────── */
+.minifacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 12px;
+  margin: 0;
+}
+.minifacts > div {
+  min-width: 0;
+}
+.minifacts dt {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.minifacts dd {
+  margin: 1px 0 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* a section's head panel carries four facts across; the Host card two */
+[role='tabpanel'] > .rcard > .minifacts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+/* ── the report tables ────────────────────────────────────────────────────
+   One row grammar for five sections (the inventory's, at a fixed 38px), so
+   switching tabs does not change the rhythm of the page. Each table keeps its
+   own min-width and scrolls sideways inside `.rtbl-scroll` instead of crushing
+   its columns. */
+.rtbl {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+}
+[role='tabpanel'] > .rtbl,
+.rcard > .rtbl + .rtbl {
+  margin-top: 10px;
+}
+.rtbl-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rtbl-cap b {
+  margin-left: auto;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rtbl-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.rtr {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  height: 38px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-label);
+  color: var(--ink-2);
+}
+.rtr:first-child {
+  border-top: 0;
+}
+.rtr > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rtr code {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+}
+.rtr .r {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rtr--head {
+  height: 27px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rtbl-foot {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.rt-disk {
+  grid-template-columns: minmax(0, 1.1fr) 46px 56px 58px 58px 58px;
+  min-width: 420px;
+}
+.rt-cron {
+  grid-template-columns: 118px 70px 96px minmax(0, 1fr);
+  min-width: 560px;
+}
+/* a cron row carries the expression and its reading, so it is two lines tall */
+.rtr.rt-cron:not(.rtr--head) {
+  height: 48px;
+}
+.rt-timer {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 380px;
+}
+.rt-docker {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) 78px minmax(0, 1.3fr) 62px;
+  min-width: 620px;
+}
+.rt-image {
+  grid-template-columns: minmax(0, 1fr) 70px 62px;
+  min-width: 300px;
+}
+.rt-ddisk {
+  grid-template-columns: minmax(0, 1fr) 48px 88px 74px;
+  min-width: 330px;
+}
+.rt-skill {
+  grid-template-columns: minmax(0, 0.9fr) 96px minmax(0, 1.6fr);
+  min-width: 540px;
+}
+.rt-work {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 96px 52px 62px;
+  min-width: 600px;
+}
+.rt-term {
+  grid-template-columns: 58px minmax(0, 1fr) 92px 66px;
+  min-width: 420px;
+}
+.rt-anom {
+  grid-template-columns: 168px 132px minmax(0, 1fr);
+  min-width: 460px;
+}
+
+/* ── a state word in a row ────────────────────────────────────────────────
+   The word carries the meaning; the tint only backs it up. */
+.bdg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 17px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.bdg[data-s='ok'] {
+  border-color: color-mix(in oklab, var(--ok) 40%, var(--border));
+  background: color-mix(in oklab, var(--ok) 12%, var(--bg));
+  color: var(--ok-ink);
+}
+.bdg[data-s='warn'] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.bdg[data-s='fail'] {
+  border-color: color-mix(in oklab, var(--danger) 40%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+/* a percentage is a value, not a coloured cell */
+.use[data-tone='full'] {
+  color: var(--danger);
+  font-weight: 600;
+}
+.use[data-tone='warn'] {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* ── the container split ──────────────────────────────────────────────────
+   "14 containers" is not the fact; "9 running, 1 paused, 4 stopped" is, and it
+   is one glance rather than a sum. Every fill is measured on its own track. */
+.segbar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+}
+.segbar i {
+  display: block;
+  height: 100%;
+}
+.segbar i[data-s='run'] {
+  background: var(--ok);
+}
+.segbar i[data-s='pause'] {
+  background: color-mix(in oklab, var(--accent) 45%, var(--accent-ink));
+}
+.segbar i[data-s='stop'] {
+  background: var(--muted);
+}
+
+/* ── counted bars: cadence and scope ──────────────────────────────────────
+   Scoped to the card, because `connector-page.css` draws a horizontal `.bars`
+   chart of its own and a global `flex-direction: column` here would stack it. */
+.rcard .bars {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rcard .bars li {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 26px;
+  gap: 9px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.rcard .bars .b {
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+}
+.rcard .bars .b i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--accent) 45%, var(--accent-ink));
+}
+.rcard .bars b {
+  text-align: right;
+  font-weight: 400;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the honesty note ─────────────────────────────────────────────────────
+   One per panel: what that section did not read, and the probe that would have
+   to grow. An empty cron table reads as "no cron jobs", which is a lie, so a
+   missing group gets this instead of a table. */
+.rpt-gap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--ink-2); /* 10.1:1 light / 9.9:1 dark on the tinted box */
+}
+.rpt-gap > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+.rpt-gap b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── the failure line: one sentence, then the way out ────────────────────── */
+.fail-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in oklab, var(--danger) 42%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--danger-soft) 72%, var(--bg));
+  font-size: var(--fs-secondary);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.fail-note b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.fail-note > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--danger);
+}
+
+/* ── the harness roster ───────────────────────────────────────────────────
+   A harness is *reported* by a CLI, not installed by this page, and its models
+   are one click away. `details > summary` is the interaction — the platform
+   supplies the keyboard behaviour, the open state and the accessibility tree —
+   so the row is a summary and the chevron is decoration. Five children, one
+   grid, one separator system: the header has the bottom border, every row the
+   top one, and the first row drops it. */
+.inv {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+}
+.inv-head,
+.inv-row > summary {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1.35fr) minmax(0, 1fr) 86px 20px;
+  gap: 11px;
+  align-items: center;
+  padding: 0 12px;
+}
+.inv-head {
+  height: 32px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inv-head .r {
+  text-align: right;
+}
+.inv-row {
+  border-top: 1px solid var(--border);
+}
+.inv-row:first-of-type {
+  border-top: 0;
+}
+.inv-row > summary {
+  min-height: 46px;
+  padding: 8px 12px;
+  list-style: none;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.inv-row > summary::-webkit-details-marker {
+  display: none;
+}
+/* one hover rule for both hover and open: they are the same state */
+.inv-row > summary:hover {
+  background: var(--surface);
+}
+.inv-row[open] > summary {
+  background: var(--surface);
+}
+.inv-row > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.inv-row[open] > summary .chev {
+  transform: rotate(90deg);
+}
+.hico {
+  display: inline-flex;
+  color: var(--ink-2);
+}
+.hico svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.hname {
+  min-width: 0;
+}
+.hname b {
+  display: block;
+  overflow: hidden;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hname .p {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hsrc {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hcnt {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hcnt[data-none='1'] {
+  color: var(--muted);
+}
+/* the inventory's chevron only: `artifact-page.css` and `connector-page.css`
+   ship their own `.chev` at other sizes */
+.inv-row > summary .chev {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: transform 0.16s ease;
+}
+.inv-row > summary .chev svg {
+  width: 11px;
+  height: 11px;
+}
+/* `cards.css` already ships a global `.drawer` — the phone rail's fixed panel.
+   The inventory's disclosure inherits that class name, so it undoes the five
+   properties that would otherwise make it a fixed 430px sheet inside a row. */
+.inv-row .drawer {
+  position: static;
+  z-index: auto;
+  width: auto;
+  height: auto;
+  padding: 0 12px 13px 47px;
+  border-left: 0;
+  background: var(--surface);
+  box-shadow: none;
+  transform: none;
+}
+.inv-row .dflt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 9px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.inv-row .dflt code {
+  padding: 1px 5px;
+  border-radius: var(--r-2xs);
+  background: var(--accent-soft);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--accent-ink);
+}
+/* chips wrap; they never ellipsis — a model id is the whole value */
+.inv-row .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+}
+.inv-row .chips code {
+  padding: 2px 6px;
+  border: 1px solid color-mix(in oklab, var(--ink) 12%, transparent);
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
+}
+.inv-row .chips code[data-d='1'] {
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* ── the field above the roster ───────────────────────────────────────────
+   One box, both axes: a person may remember a harness, a binary path or a
+   model id. The wrapper is a single-line flex — the fleet's `.fbar` carries a
+   role line this page does not have. */
+.ibarbar {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.ibarbar .push {
+  flex: 1;
+}
+.ibarbar .wsl-search {
+  flex: 0 1 320px;
+  min-width: 240px;
+}
+/* the note after the roster and the one that closes the rail: both follow a box
+   and read as its footnote rather than as a new paragraph */
+.inv + .mnote {
+  margin-top: 9px;
+}
+.entp-rail > .mnote {
+  margin-top: 12px;
+}
+.rcard > .bars {
+  margin-bottom: 10px;
+}
+
+/* ── responsive ───────────────────────────────────────────────────────────
+   900px and 640px are the breakpoints this repo already ships (`directory.css`
+   folds the rail at 980/900, `machines-fleet.css` wraps the bar at 620), so the
+   design sheet's 768 and 360 stages land on the same two numbers as the rest
+   of the app rather than on two new ones. */
+@media (max-width: 900px) {
+  .rpt-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* four pass tiles stay four up while the hero and the rail still fit */
+  .rep-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ibarbar .wsl-search {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .rpt-tabs button {
+    height: 34px;
+    padding: 0 9px;
+  }
+  .rtbl-cap {
+    flex-wrap: wrap;
+    gap: 2px 9px;
+  }
+  .rtbl-cap b {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  [role='tabpanel'] > .rcard > .minifacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* the reported-by column is the first thing a 360px row can lose: its meaning
+     lives in the drawer, where the default model is already written down */
+  .inv-head {
+    display: none;
+  }
+  .inv-row > summary {
+    grid-template-columns: 20px minmax(0, 1fr) auto 16px;
+    gap: 2px 9px;
+    min-height: 0;
+    padding: 10px 11px;
+  }
+  .hname {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .hname b {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .hcnt {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .hsrc {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+  .inv-row .drawer {
+    padding: 0 11px 11px;
+  }
+  .hero-mark {
+    width: 46px;
+    height: 46px;
+  }
+  .hero-mark .vx {
+    width: 28px;
+    height: 28px;
+  }
+}

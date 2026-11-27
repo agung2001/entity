@@ -718,6 +718,18 @@ function createRpc({
       return { file }
     },
 
+    /* The renderer never sends a path: the main process knows where its own ssh
+       config is, so a page can only reveal that one file. */
+    'fleet.reveal': () => {
+      const { configPath } = localData.readSshHosts()
+      if (typeof reveal !== 'function') {
+        throw new Error('Revealing files is not available in this build.')
+      }
+      if (!configPath) throw new Error('No ~/.ssh/config to reveal.')
+      reveal(configPath)
+      return { file: configPath }
+    },
+
     /* conversations */
     'chat.list': ({ workspace }) => chats.list({ workspace }),
     'chat.read': ({ workspace, id }) => chats.read({ workspace, id }),
