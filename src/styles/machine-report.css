@@ -471,8 +471,10 @@
   background: var(--muted);
 }
 
-/* ── counted bars: cadence and scope ──────────────────────────────────────── */
-.bars {
+/* ── counted bars: cadence and scope ──────────────────────────────────────
+   Scoped to the card, because `connector-page.css` draws a horizontal `.bars`
+   chart of its own and a global `flex-direction: column` here would stack it. */
+.rcard .bars {
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -480,7 +482,7 @@
   padding: 0;
   list-style: none;
 }
-.bars li {
+.rcard .bars li {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr) 26px;
   gap: 9px;
@@ -489,19 +491,19 @@
   font-size: var(--fs-micro);
   color: var(--muted);
 }
-.bars .b {
+.rcard .bars .b {
   height: 8px;
   overflow: hidden;
   border-radius: var(--r-pill);
   background: var(--surface-2);
 }
-.bars .b i {
+.rcard .bars .b i {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: color-mix(in oklab, var(--accent) 45%, var(--accent-ink));
 }
-.bars b {
+.rcard .bars b {
   text-align: right;
   font-weight: 400;
   color: var(--ink-2);
@@ -678,13 +680,15 @@
 .hcnt[data-none='1'] {
   color: var(--muted);
 }
-.chev {
+/* the inventory's chevron only: `artifact-page.css` and `connector-page.css`
+   ship their own `.chev` at other sizes */
+.inv-row > summary .chev {
   display: grid;
   place-items: center;
   color: var(--muted);
   transition: transform 0.16s ease;
 }
-.chev svg {
+.inv-row > summary .chev svg {
   width: 11px;
   height: 11px;
 }
@@ -759,6 +763,17 @@
 .ibarbar .wsl-search {
   flex: 0 1 320px;
   min-width: 240px;
+}
+/* the note after the roster and the one that closes the rail: both follow a box
+   and read as its footnote rather than as a new paragraph */
+.entp-sec > .mnote {
+  margin-top: 9px;
+}
+.entp-rail > .mnote {
+  margin-top: 12px;
+}
+.rcard > .bars {
+  margin-bottom: 10px;
 }
 
 /* ── responsive ───────────────────────────────────────────────────────────
