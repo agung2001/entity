@@ -139,6 +139,33 @@ test('the section heading is the way to a section that has a page', () => {
 })
 
 /**
+ * A third page arrived the same way the shelf did: `/news` matched no branch of
+ * `section`, so the switch fell through to Overview and a page about headlines
+ * was handed a list of ssh hosts to read past. The fall-through is the bug — a
+ * route with no rail of its own must draw no rail at all — so what is pinned
+ * here is the *absence* of that branch, not one more name in it.
+ */
+test('a route with no rail specification gets no rail, never the machine list', () => {
+  const rail = source('src/components/RailContext.vue')
+  /* Overview is a branch of its own now; nothing may be the default. */
+  assert.match(rail, /if \(name === 'overview'\) return \{ id: 'overview'/, 'Overview lost its own branch')
+  assert.doesNotMatch(
+    rail,
+    /return \{ id: 'overview'[^\n]*\n\}\)/,
+    'the section switch falls through to Overview again — every unlisted route inherits the machines',
+  )
+  assert.match(rail, /return null\s*\n\}\)/, 'an unknown route must resolve to no section')
+  assert.match(rail, /<aside\s*\n\s*v-if="section"/, 'an empty rail still takes a column')
+
+  const appRail = source('src/components/AppRail.vue')
+  assert.match(appRail, /route\.meta\.rail !== false/, 'the phone draws a drawer button for a rail that is not there')
+  assert.match(appRail, /news: 'News'/, 'the appbar names Configurations on the News page')
+
+  const router = source('src/router.js')
+  assert.match(router, /meta: \{ crumb: 'news', title: 'News · entity', rail: false \}/)
+})
+
+/**
  * A page's own top bar is the page's *top edge*, not a block inside the reading
  * measure. The shelf shipped with `.ash-bar` inside `.ash-band`, so the bar's
  * hairline stopped at 1180px instead of the window and its crumb started 28px

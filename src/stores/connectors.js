@@ -383,12 +383,13 @@ export async function setTier({ connector, tier }) {
 /**
  * Test one connector *before* it is saved.
  *
- * Three kinds, three cheap self-reports: an MCP server is one `tools/list`
+ * Four kinds, four cheap self-reports: an MCP server is one `tools/list`
  * through the pool, a CLI is its own `auth status`, a REST row is one `GET` at
- * `verify.path` expecting 2xx. A failure is the service's sentence plus the one
- * fact that matters — nothing was written.
+ * `verify.path` expecting 2xx, and a feed is one fetch in the main process. A
+ * failure is the service's sentence plus the one fact that matters — nothing was
+ * written.
  */
-export async function testConnector({ kind, id, token, host, verify, binary } = {}) {
+export async function testConnector({ kind, id, token, host, url, verify, binary } = {}) {
   if (kind === 'mcp') {
     const answer = await call('mcp.tools', { workspace: hub.workspace, name: id })
     const count = Array.isArray(answer?.tools) ? answer.tools.length : 0
@@ -411,6 +412,24 @@ export async function testConnector({ kind, id, token, host, verify, binary } = 
       samples: Array.isArray(answer?.samples) ? answer.samples : [],
       total: answer?.total ?? null,
       samplesLabel: answer?.samplesLabel || '',
+    }
+  }
+  /* A feed is a URL, not a credential: asking it is one `GET` in the main process,
+     through the same fetch the read itself uses (8 s, 512 kB, HTML refused). The
+     rest fallback below writes through `integrations.saveCredential`, which would
+     try to store a token a feed does not have — so this branch comes first and the
+     page's Test never reaches it. */
+  if (kind === 'rss') {
+    const answer = await call('news.probe', { workspace: hub.workspace, url: String(url || host || '') })
+    /* A refusal is a failure with a sentence, not a thrown transport error: the
+       store's `{ok: false, detail}` is what the page prints in `.cxn-error`. */
+    if (!answer?.ok) throw new Error(answer?.detail || 'The feed did not answer.')
+    return {
+      ok: true,
+      detail: answer.detail,
+      samples: Array.isArray(answer.samples) ? answer.samples : [],
+      total: answer.total ?? null,
+      samplesLabel: answer.samplesLabel || 'items',
     }
   }
   /* rest: the credential write is itself the verify (it is rolled back on

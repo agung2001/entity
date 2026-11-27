@@ -249,6 +249,7 @@ const SECTION_TITLES = {
   entity: 'Entities',
   artifact: 'Artifacts',
   artifacts: 'Artifacts',
+  news: 'News',
   account: 'Account',
 }
 const sectionTitle = computed(() => {
@@ -270,9 +271,14 @@ function openAccountPage() {
 
 const onWorkspaces = computed(() => route.name === 'workspaces')
 const onOverview = computed(() => route.name === 'overview')
+/* Two ways to have no second tier: the destinations that never had one, and a
+   route that says so itself in `meta.rail`. The second one exists because the
+   first is a blocklist — `news` arrived and inherited a machine list beside it,
+   and the phone drew a drawer button that opened nothing. */
 const showContext = computed(
   () =>
     !onWorkspaces.value &&
+    route.meta.rail !== false &&
     (!onOverview.value || hub.rail.entities || hub.rail.artifacts || hub.rail.drawer),
 )
 

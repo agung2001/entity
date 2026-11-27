@@ -40,7 +40,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => compactQuery?.removeEventListener('change', syncCompact))
 
-onMounted(loadFleet)
 const newThreadKey = shortcutLabel('new-thread')
 const history = ref(null)
 const entityPanel = ref(null)
@@ -166,8 +165,28 @@ const section = computed(() => {
       count: mcpScope.value === 'harness' ? mcpGlobals.count : mcpPool.value.length,
     }
   }
-  return { id: 'overview', title: 'Overview', count: hub.machines.length }
+  if (name === 'overview') return { id: 'overview', title: 'Overview', count: hub.machines.length }
+  /* A destination that never asked for a second tier gets **nothing**. This used
+     to fall through to Overview, so every route the switch had not learned yet —
+     `artifacts`, and then `news` — arrived with the machine list beside it: ssh
+     hosts on a page about headlines, and no heading that admitted it. A page
+     with no rail specification renders no rail, and AppRail is told the same
+     thing by `meta.rail` so the phone does not draw an empty drawer either. */
+  return null
 })
+
+/* The fleet is the *machine list*, and exactly two sections print one. This is
+   not `onMounted(loadFleet)`: the rail is drawn on every route, so a `~/.ssh/config`
+   read used to be paid for by every page — including the one that has no rail at
+   all. Still `fleet.loaded`-guarded, like Overview's own read: this one is for
+   display, not for a refresh. */
+watch(
+  () => section.value?.id,
+  (id) => {
+    if ((id === 'overview' || id === 'machines') && !fleet.loaded) loadFleet().catch(() => {})
+  },
+  { immediate: true },
+)
 
 /* The workspace pool and the harness configs on this machine are two scopes of
    the same list, sized for this panel. The panel is the list beside one server's
@@ -281,7 +300,7 @@ async function loadMcpGlobals(force = false) {
 
 /* One scan for the session, paid for only while the MCP section is on screen. */
 watch(
-  () => section.value.id,
+  () => section.value?.id,
   (id) => {
     if (id === 'mcp') loadMcpGlobals().catch(() => {})
   },
@@ -291,7 +310,7 @@ watch(
 /* Escape empties the filter before it closes the rail: the query is the
    narrowest thing on screen, so it goes first. */
 useDialogDismiss({
-  active: () => section.value.id === 'mcp' && Boolean(mcpQuery.value),
+  active: () => section.value?.id === 'mcp' && Boolean(mcpQuery.value),
   close: () => {
     mcpQuery.value = ''
   },
@@ -308,12 +327,12 @@ function newChat() {
 /* A section whose heading names a page: the heading is the link, and the list
    behind it stays as it is. */
 function openSection() {
-  const to = section.value.to
+  const to = section.value?.to
   if (to) router.push(to)
 }
 
 function goBack() {
-  const to = section.value.back
+  const to = section.value?.back
   if (to === 'machines') {
     router.push({ name: 'machines', params: { workspace: hub.workspace } })
     return
@@ -335,16 +354,18 @@ function goBack() {
 }
 
 const backLabel = computed(() => {
-  if (section.value.back === 'machines') return 'Back to machines'
-  if (section.value.back === 'skills') return 'Back to skills'
-  if (section.value.back === 'connectors') return 'Back to connectors'
-  if (section.value.back === 'workspace') return 'Back to workspace settings'
+  if (section.value?.back === 'machines') return 'Back to machines'
+  if (section.value?.back === 'skills') return 'Back to skills'
+  if (section.value?.back === 'connectors') return 'Back to connectors'
+  if (section.value?.back === 'workspace') return 'Back to workspace settings'
   return 'Back to workspaces'
 })
 </script>
 
 <template>
+  <!-- No section, no column: a page that declares no rail gets none. -->
   <aside
+    v-if="section"
     class="rail-t2"
     aria-label="Context"
     :role="compact ? 'dialog' : undefined"

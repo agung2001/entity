@@ -2,7 +2,7 @@
  * The phone shell — one layout for everything ≤ 820 px.
  *
  * The rail does not disappear here, it changes shape: the icon strip becomes a
- * 52 px appbar, its five destinations become the tab bar at the foot of the
+ * 52 px appbar, its six destinations become the tab bar at the foot of the
  * window, and the second tier becomes a drawer over the page. Every layout rule
  * below is inside the one breakpoint, so a desktop window keeps the rail
  * exactly as `rail-two-tier.css` draws it.
@@ -20,7 +20,8 @@
 .ab-search,
 .as-grabber,
 .as-upd,
-.rail-t2-x {
+.rail-t2-x,
+.tab-lb-short {
   display: none;
 }
 
@@ -180,7 +181,7 @@
   }
 
   /* ── 3. the tab bar ────────────────────────────────────────────────────
-     Five destinations, thumb height, the same labels and counts the rail
+     Six destinations, thumb height, the same labels and counts the rail
      shows. The inner track is capped so a tablet does not stretch the icons
      to opposite edges of the window. */
   .tabbar {
@@ -197,7 +198,7 @@
   }
   .tab-track {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     width: 100%;
     max-width: 520px;
     height: var(--tabbar-h);
@@ -230,6 +231,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Six slots, not five: a 360 px cell is 60 px, and "Configurations" spends
+     its whole width on the ellipsis. While the tab bar exists the destination
+     says the short word; above this breakpoint the rail says the full one. */
+  .tab-lb-full {
+    display: none;
+  }
+  .tab-lb-short {
+    display: inline;
   }
   .tab[aria-current='page'] {
     color: var(--ink);

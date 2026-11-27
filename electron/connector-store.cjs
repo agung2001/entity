@@ -1,5 +1,5 @@
 /**
- * Connectors: one list, three kinds, two scopes.
+ * Connectors: one list, four kinds, two scopes.
  *
  * Before this file there were three places to look for "can this workspace reach
  * that service": `~/.entity/integrations.json` (machine-wide switches), the
@@ -45,14 +45,16 @@ const SCHEMA = 1
  * disagree — the earlier version wrote the CLI sentence onto every non-mcp row and
  * made the renderer compensate.
  */
-const bindingFor = ({ kind, oauth, credential }) =>
-  kind === 'mcp'
-    ? 'mcp.json'
-    : credential === 'token'
-      ? 'a token on this machine'
-      : oauth === true
-        ? 'oauth · loopback redirect'
-        : 'the CLI on this machine'
+const bindingFor = ({ kind, oauth, credential, url }) =>
+  kind === 'rss'
+    ? text(url, 400) || 'a URL, in this workspace'
+    : kind === 'mcp'
+      ? 'mcp.json'
+      : credential === 'token'
+        ? 'a token on this machine'
+        : oauth === true
+          ? 'oauth · loopback redirect'
+          : 'the CLI on this machine'
 
 /* The initial a row wears, from its own label — one glyph, never a product logo. */
 const initialOf = (label) => {
@@ -308,7 +310,10 @@ function list({ workspace } = {}) {
      roster only ever listed catalogue entries and pool servers. */
   const known = new Set([...merged, ...extras].map((row) => row.id))
   const custom = Object.entries(index.rows || {})
-    .filter(([id, entry]) => !known.has(id) && (entry.kind === 'cli' || entry.kind === 'rest'))
+    .filter(
+      ([id, entry]) =>
+        !known.has(id) && (entry.kind === 'cli' || entry.kind === 'rest' || entry.kind === 'rss'),
+    )
     .map(([id, entry]) => ({
       id,
       label: entry.label || id,
@@ -318,12 +323,16 @@ function list({ workspace } = {}) {
       builtIn: entry.installedFrom === 'catalog' && catalog.entryOf(id) ? id : '',
       kind: entry.kind,
       scope: 'workspace',
+      /* The address an `rss` row was added with — the one kind whose binding is
+         its own URL, printed by the pages that read it (`news-store`). */
+      url: entry.url || '',
       binding:
         entry.binding ||
         bindingFor({
           kind: entry.kind,
           oauth: entry.oauth === true,
           credential: catalog.entryOf(id)?.credential,
+          url: entry.url,
         }),
       /* The shipped syntax, from the catalog — an installed row offers its mention
          exactly when a resolver exists for it. */
@@ -343,16 +352,19 @@ function list({ workspace } = {}) {
          else is a token row and stays absent, never `false`-shaped. */
       oauth: entry.oauth === true,
       tier: entry.tier || '',
-      status: 'not probed',
+      status: entry.kind === 'rss' ? 'installed' : 'not probed',
       /* An account-bearing row has no self-report to declare; its status line is
          the account count, which the renderer fills from the account store. A
-         token row says which check it runs, or that it has none. */
+         token row says which check it runs, or that it has none. A feed has no
+         check at all — it is read by News, not probed here. */
       statusDetail:
-        entry.oauth === true
-          ? 'no account connected'
-          : entry.verify
-            ? `${entry.binary || id} ${entry.verify.argv.join(' ')}`
-            : 'no verify command',
+        entry.kind === 'rss'
+          ? 'a feed URL · read by News'
+          : entry.oauth === true
+            ? 'no account connected'
+            : entry.verify
+              ? `${entry.binary || id} ${entry.verify.argv.join(' ')}`
+              : 'no verify command',
       managed: true,
       unmanaged: false,
       editable: true,
@@ -389,6 +401,9 @@ function list({ workspace } = {}) {
           kind: entry.kind,
           oauth: entry.oauth === true,
           credential: entry.credential,
+          /* A feed's binding *is* its address: the pitch should name the URL it
+             would install rather than promise “a URL, in this workspace”. */
+          url: entry.url,
         }),
         mention: catalog.mentionOf(id) || '',
         work: catalog.workOf(id),
@@ -454,6 +469,17 @@ function add({ workspace, id, label, kind, scope, command, url, args, env, verif
   const record = workspaces.open(workspace)
   const name = text(id || label, 60).replace(/[^A-Za-z0-9._-]+/g, '-')
   if (!name) throw new Error('A connector needs a name.')
+  /* An `rss` connector is a URL and nothing else: no binary to probe, no server
+     to bind, no account to consent. The scheme is checked at this one door
+     because a URL is all a feed is, and `news-store` refuses anything else to
+     fetch — a `file://` row here would be a promise that store cannot keep. */
+  if (kind === 'rss') {
+    const feed = text(url, 400)
+    if (!feed) throw new Error('An RSS connector needs a URL — that is the whole feed.')
+    if (!/^https?:\/\//i.test(feed)) {
+      throw new Error('An RSS connector needs an http or https URL — that is the only scheme it reads.')
+    }
+  }
   /* An `mcp` connector is a *pointer* into `mcp.json`, so the binding is written
      first and the index second (plan §2.3) — an index row without a definition is
      a row the runtime cannot resolve. `validServer` rejects a definition with
@@ -488,7 +514,7 @@ function add({ workspace, id, label, kind, scope, command, url, args, env, verif
     ...index.rows,
     [name]: {
       label: text(label, 80) || name,
-      kind: ['mcp', 'cli', 'rest'].includes(kind) ? kind : 'mcp',
+      kind: ['mcp', 'cli', 'rest', 'rss'].includes(kind) ? kind : 'mcp',
       scope: 'workspace',
       /* A mention is offered only where a resolver exists, and nothing ships one
          for a name a person just typed — so a custom connector carries no syntax
@@ -497,7 +523,9 @@ function add({ workspace, id, label, kind, scope, command, url, args, env, verif
       createdAt: new Date().toISOString(),
       /* A row a page creates is a definition; a secret is never part of it. */
       adoptedFrom: scope === 'machine' ? 'machine' : '',
-      binding: bindingFor({ kind, oauth }),
+      binding: bindingFor({ kind, oauth, url }),
+      /* The feed's address, for the one kind whose binding *is* its address. */
+      url: kind === 'rss' ? text(url, 400) : '',
       /* Only a `cli` row has a self-report to declare. */
       binary: kind === 'cli' ? text(binary, 120) : '',
       verify: kind === 'cli' ? normaliseVerify(verify) : null,
@@ -560,10 +588,16 @@ function install({ workspace, id } = {}) {
          account: the row lands with 0 accounts and the page's empty state */
       oauth: entry.oauth === true,
       tier: '',
+      /* A feed's address travels with the row: it *is* the connector, and the page
+         that reads it (`news-store`) opens the row and finds nothing else. Without
+         this, installing a shipped feed wrote a row with no URL — a feed the roster
+         listed and the reader skipped. */
+      url: entry.kind === 'rss' ? text(entry.url, 400) : '',
       binding: bindingFor({
         kind: entry.kind,
         oauth: entry.oauth === true,
         credential: entry.credential,
+        url: entry.url,
       }),
       mention: entry.work?.mention || '',
       createdAt: new Date().toISOString(),
@@ -727,6 +761,32 @@ const FIELD_LIMITS = {
 /** The default tab name under a Lynk.id product spreadsheet. */
 const DEFAULT_SHEET_SUFFIX = ' - Transactions'
 
+/**
+ * How many items one feed may contribute to a read.
+ *
+ * `ponytail:` one ceiling **per feed**, not per tab or per page: an aggregator that
+ * returns 300 items is one row on General, and the number that stops it is the
+ * feed's own, so a person can raise the one feed they care about without lifting
+ * every other feed's ceiling with it. 500 is the top because a page paginates at
+ * 25 and a feed is not a corpus.
+ */
+const DEFAULT_ITEM_LIMIT = 100
+const ITEM_LIMIT_MAX = 500
+
+/**
+ * A feed's ceiling, or the default.
+ *
+ * Read-side, like `folderIdOf`: a stored value that is not an integer in range is
+ * dropped here rather than refused, because `fieldsOf` answers a page and a page
+ * that cannot read its own limit should show the default, not fail to render. The
+ * refusal belongs to `setFields`, which is the moment somebody can still fix it.
+ */
+function itemLimitOf(row) {
+  const raw = Number(row?.fields?.itemLimit)
+  if (!Number.isInteger(raw) || raw < 1 || raw > ITEM_LIMIT_MAX) return DEFAULT_ITEM_LIMIT
+  return raw
+}
+
 /** A Drive folder id, or '' — the shape check `folderId` fields are saved under. */
 const folderIdOf = (value) => {
   const id = text(value, FIELD_LIMITS.folderId)
@@ -758,6 +818,9 @@ function fieldsOf({ workspace, id } = {}) {
     folderName: text(raw.folderName, FIELD_LIMITS.folderName),
     sheetSuffix:
       raw.sheetSuffix === undefined ? DEFAULT_SHEET_SUFFIX : text(raw.sheetSuffix, FIELD_LIMITS.sheetSuffix),
+    /* An `rss` row's own ceiling. Every row answers the key — the field bag is one
+       shape for every connector — and only a feed ever reads it back. */
+    itemLimit: itemLimitOf(row),
   }
 }
 
@@ -811,7 +874,43 @@ function setFields({ workspace, id, fields } = {}) {
   if (incoming.sheetSuffix !== undefined) {
     next.sheetSuffix = text(incoming.sheetSuffix, FIELD_LIMITS.sheetSuffix)
   }
-  index.rows = { ...index.rows, [name]: { ...index.rows[name], fields: { ...fieldsOf({ workspace, id: name }), ...next } } }
+  /* A feed's ceiling is refused when it is present and wrong, the way a folder id
+     is: silently rounding 999 down to 500 would show a person a number they did not
+     choose and then read by it. An empty field is `0`, which is not a ceiling. */
+  if (incoming.itemLimit !== undefined) {
+    const limit = Number(incoming.itemLimit)
+    if (!Number.isInteger(limit) || limit < 1 || limit > ITEM_LIMIT_MAX) {
+      throw new Error(`A feed carries between 1 and ${ITEM_LIMIT_MAX} items per read, so it was not saved.`)
+    }
+    next.itemLimit = limit
+  }
+  /* A feed's **address** is a row fact, not a field bag entry: `url` is what
+     `news-store` opens the row and reads, and `binding` is what the Definition card
+     prints — so both move together, in the same write the ceiling comes through.
+
+     This is the door that makes a shipped feed a *shape* rather than one country:
+     `?geo=US` is a different Trends feed, `/r/worldnews/` a different subreddit, and
+     neither is a second catalog entry. The scheme is checked here for the same
+     reason `add()` checks it: a `file://` row would be a promise `news-store`
+     refuses to keep. */
+  const rowPatch = {}
+  if (incoming.url !== undefined) {
+    if (index.rows[name].kind !== 'rss') throw new Error('Only a feed has an address to change.')
+    const feed = text(incoming.url, 400)
+    if (!/^https?:\/\//i.test(feed)) {
+      throw new Error('A feed’s address has to be http or https — that is the only scheme News reads, so it was not saved.')
+    }
+    rowPatch.url = feed
+    rowPatch.binding = feed
+  }
+  index.rows = {
+    ...index.rows,
+    [name]: {
+      ...index.rows[name],
+      ...rowPatch,
+      fields: { ...fieldsOf({ workspace, id: name }), ...next },
+    },
+  }
   writeIndex(record, index)
   return fieldsOf({ workspace, id: name })
 }
@@ -906,6 +1005,9 @@ module.exports = {
   writeIndex,
   fieldsOf,
   setFields,
+  itemLimitOf,
+  DEFAULT_ITEM_LIMIT,
+  ITEM_LIMIT_MAX,
   list,
   add,
   adopt,

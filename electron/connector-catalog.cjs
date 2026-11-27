@@ -235,6 +235,20 @@ const CATALOG = {
 
   x: CONNECTORS.x,
 
+  /* ── the two credentialless feeds ────────────────────────────────────────
+     A feed is a URL and nothing else: no resolver, no account, no call, no token,
+     so neither entry carries a `work` block and neither offers a mention. They are
+     installable all the same — `connector.install` writes the row, `news-store`
+     fetches it in the main process, and News is the only page that reads it.
+
+     Two, not one, because the News tabs read disjoint sets: `google-trends` is the
+     single feed the Trends tab will ever read (its host is the rule `isTrends()`
+     matches) and `reddit` is an ordinary news feed for General. Any other feed —
+     another subreddit, another country's trends, a blog — is a feed a person adds
+     with `kind: 'rss'`, which is why the add sheet keeps its own card for it. */
+  'google-trends': CONNECTORS['google-trends'],
+  reddit: CONNECTORS.reddit,
+
   /* ── shipped parsers, not connectors ────────────────────────────────────
      `@artifact:` and `@thread:` name a workspace object, not a service: there is
      nothing to connect, no credential, no scope. They keep their resolvers and

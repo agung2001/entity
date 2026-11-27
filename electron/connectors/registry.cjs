@@ -51,6 +51,13 @@ const FOLDERS = [
   'github',
   'youtrack',
   'lynk',
+  /* The two credentialless feeds News reads. They are connectors like the rest —
+     a row with a URL and no credential — so they install, list and uninstall with
+     the same verbs; nothing here resolves a mention or answers a call. Kept last
+     because neither is something a workspace attaches on purpose on day one: a
+     person installs the one they want to read. */
+  'google-trends',
+  'reddit',
 ]
 
 const loaded = new Map()
