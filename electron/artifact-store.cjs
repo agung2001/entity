@@ -1004,6 +1004,9 @@ function brief(workspace) {
 module.exports = {
   DIRNAME,
   PERSONAL_DIRNAME,
+  /* where an id *would* be, without requiring it to exist yet: a prompt that
+     names work from a killed turn has to say a path, not an id */
+  absolute,
   adoptUnclaimed,
   artifactsDir,
   personalDir,

@@ -44,6 +44,10 @@ and spend sit beside the steps, from the same records the charts use.
   re-runs the question already on disk without adding a second copy of it, keeps the files it
   already saved, and replaces the error row with the new answer. Retrying a prompt that was
   already answered asks it again as a new turn at the end, and the earlier answer stays.
+- A turn that saved files and then died — the deadline, a crash — leaves those files on the
+  shelf and no prose to point at them. The next turn, retry or typed, is told their absolute
+  paths in its prompt and is asked to read them before rebuilding. Without that, the fresh
+  process started from nothing and redid half a day of work it had already finished.
 - A turn finishing somewhere else does not move you: the rail row turns from
   *working* to *done* and the reply waits where it belongs. Nothing switches the
   conversation you are reading — not a completion, not a retry, not a failure.

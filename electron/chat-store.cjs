@@ -1510,6 +1510,46 @@ function threadsWithArtifacts({ workspace } = {}) {
   return value
 }
 
+/* A turn can save files and still say nothing: a deadline kills the process,
+   never the shelf. `promptFor` reads a conversation's *prose*, so the files
+   named only by a failed row — or by no row at all — were invisible to the next
+   run. That is the asymmetry a retry walked straight into: the question said
+   "redesign the page", the disk held the redesign, and the fresh process
+   started from nothing, re-reading and rebuilding half a day of work before it
+   could reach the state it was handed.
+
+   Name them, as absolute paths: the harness's cwd is the entity's directory or
+   the person's home, never the shelf, so an id alone is not a file anyone can
+   open. Rows are capped — a turn that saved forty screenshots should not
+   become a wall of paths — and the count that follows keeps the cap honest. */
+const SAVED_FILES_CAP = 30
+
+function savedFiles(record, items = []) {
+  const rows = []
+  const seen = new Set()
+  for (const item of items) {
+    const id = item && typeof item.id === 'string' ? item.id : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    if (rows.length >= SAVED_FILES_CAP) continue
+    let shown = `artifacts/${id}`
+    try {
+      shown = artifacts.absolute(record, id)
+    } catch {
+      /* a shelf this process cannot resolve is still worth naming by id */
+    }
+    rows.push(`- ${shown}`)
+  }
+  if (!rows.length) return ''
+  const more = seen.size > rows.length ? `\n(${seen.size - rows.length} more on the shelf.)` : ''
+  return [
+    '',
+    'Files an earlier attempt in this thread already wrote, still on disk. Read what is there before rebuilding it:',
+    ...rows,
+    ...(more ? [more] : []),
+  ].join('\n')
+}
+
 function promptFor(messages) {
   const turns = messages.filter(
     (message) => (message.who === 'me' || message.who === 'agent') && !message.error,
@@ -2052,6 +2092,9 @@ async function send({
   /* The question's own row, written to disk before anything slow starts and
      filled in once the mention resolves — see the comment where it lands. */
   let pendingRow = null
+  /* The failure a retry replaces. Popped before the prompt is built, so its
+     files would otherwise leave the conversation with it — see `savedFiles`. */
+  let failedRow = null
 
   const entity = checkEntity(workspace, thread.entity)
   const enabled =
@@ -2131,8 +2174,10 @@ async function send({
       throw new Error('There is no question to retry.')
     }
     /* The failed row is replaced by the new answer. Keeping it would make the
-       transcript claim two answers to one question. */
-    thread.messages.pop()
+       transcript claim two answers to one question. Its **files** are not
+       replaced — they stay on the shelf — so the row is kept in hand for
+       `savedFiles` below rather than dropped. */
+    failedRow = thread.messages.pop()
   } else {
     if (!thread.title && thread.titleSource !== 'user') {
       thread.title = titleOf({ messages: [{ who: 'me', text: message }] })
@@ -2394,7 +2439,15 @@ async function send({
   sending.set(thread.id, true)
   let turnMessage = null
   try {
-    const prompt = promptFor(thread.messages)
+    /* Work a failed turn left behind is invisible to `promptFor`, which can only
+       speak from prose: the retry's popped row, plus every earlier failure still
+       in the transcript. Read here, once, for both the retry and the ordinary
+       message that follows a dead turn — the asymmetry is the same in both. */
+    const alreadySaved = [
+      ...thread.messages.filter((entry) => entry.error),
+      ...(failedRow ? [failedRow] : []),
+    ].flatMap((entry) => (Array.isArray(entry.artifacts) ? entry.artifacts : []))
+    const prompt = `${promptFor(thread.messages)}${savedFiles(record, alreadySaved)}`
     const turnStartedMs = Date.now()
     const run = await runHarness(entity, thread, prompt, {
       onStart: (execution) => emitTurn('start', { execution }),
