@@ -28,6 +28,7 @@
  * send rather than per keystroke.
  */
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { execFile } = require('node:child_process')
 const { tilde } = require('./frontmatter.cjs')
@@ -117,6 +118,20 @@ const MAX_FANOUT_ROWS = 12
    text; the parent's prompt gets a digest of it. */
 const MAX_DELEGATION_ANSWER = 8_000
 const ARTIFACT_SCAN_CAP = 2000
+/* What a delegated run is told about the conversation it came from. It is a
+   hand-off, not a transcript: the last exchange is the part that defines what
+   "implement A" means, and a whole thread would drown the instruction. The
+   marker sits on a line of its own so a block that travels into a child (and
+   from that child into a grandchild) can be cut back out instead of nesting. */
+const DELEGATION_CONTEXT = 'Context from the conversation this run was delegated from'
+const CONTEXT_ANSWER_CHARS = 2_000
+const CONTEXT_ASK_CHARS = 400
+const CONTEXT_TITLE_CHARS = 100
+const CONTEXT_ARTIFACTS = 4
+/* `artifact://shot-1.png` as the transcript renders it, and as an agent writes
+   it in its answer. Trailing punctuation and markdown emphasis are the
+   sentence's, not the file's. */
+const ARTIFACT_REF = /\bartifact:\/\/([^\s<>"'`]+)/g
 
 /* ── parsing ──────────────────────────────────────────────────────── */
 
@@ -1913,6 +1928,143 @@ function threadDigest(
   }
 }
 
+/* ── what a delegated run knows about where it came from ─────────── */
+
+/** A message's words, without a context block a previous hand-off put there. */
+function withoutDelegationContext(text) {
+  const source = String(text || '')
+  const at = source.indexOf(DELEGATION_CONTEXT)
+  return (at >= 0 ? source.slice(0, at) : source).replace(/\s+/g, ' ').trim()
+}
+
+/** `~/…` back to the path a harness or a `read` tool can open. */
+function expandHome(value) {
+  const source = String(value || '')
+  return source.startsWith('~/') ? path.join(os.homedir(), source.slice(2)) : source
+}
+
+/** The distinct `artifact://` names a piece of prose points at, in order. */
+function artifactRefs(text) {
+  const seen = new Set()
+  const out = []
+  const scan = new RegExp(ARTIFACT_REF.source, 'g')
+  let match
+  while ((match = scan.exec(String(text || ''))) && out.length < CONTEXT_ARTIFACTS) {
+    const rel = match[1].replace(/[.,;:!?)\]"']+$/, '').replace(/\*+$/, '').trim()
+    if (!rel || seen.has(rel.toLowerCase())) continue
+    seen.add(rel.toLowerCase())
+    out.push(rel)
+  }
+  return out
+}
+
+/**
+ * The real path behind each `artifact://` name, so the run can open one.
+ *
+ * The notation is the transcript's (`artifact://plan.md`); a child cannot use it
+ * — it has no mention layer — but it can read a path. Both shelves are searched
+ * (yours and the workspace's) through the artifact store, because the plan a
+ * delegation refers to is usually a personal file. A name that resolves to
+ * nothing is dropped: a wrong path is worse than a name the run can grep for.
+ */
+function artifactPathsFor(record, text) {
+  const refs = artifactRefs(text)
+  if (!refs.length) return []
+  let items = []
+  try {
+    /* required here: the mention layer runs in the CLI and in tests where the
+       artifact store's profile may not be wired. A context block is never a
+       reason for a delegation to fail. */
+    items = require('./artifact-store.cjs').list({ workspace: record.id }).items || []
+  } catch {
+    return []
+  }
+  const out = []
+  for (const rel of refs) {
+    const want = rel.toLowerCase()
+    const hit =
+      items.find((item) => String(item.id).toLowerCase() === want) ||
+      items.find((item) => String(item.name).toLowerCase() === want) ||
+      items.find((item) => String(item.id).toLowerCase().endsWith(`/${want}`))
+    if (!hit) continue
+    /* A file in the shared tree that no share ever claimed is reported as
+       unclaimed, and the store's own path for it points at the personal shelf
+       (it is *reported* as yours). The file is where it is, so the path is the
+       shared tree — `walk` already treats that as the one place it could be. */
+    const abs = hit.unclaimed
+      ? path.join(record.path, 'artifacts', String(hit.id))
+      : expandHome(hit.path)
+    out.push({ rel: String(hit.id), abs })
+  }
+  return out
+}
+
+/**
+ * The block a delegated run is handed about the conversation that asked for it.
+ *
+ * A child session starts with a fresh transcript, so "implement A" had no
+ * referent: the definition lived in this thread and never travelled. The last
+ * exchange is the part that carries it — the ask before this turn, the answer
+ * to it (where the plan usually is), and the real paths of any artifact that
+ * answer names, because the run has to be able to open one.
+ *
+ * Bounded on purpose, and never the current turn's own message: the job already
+ * carries that, and repeating it would make the run think it was asked twice.
+ */
+async function buildDelegationContext(ctx) {
+  if (!ctx.deps.threads || !ctx.threadId) return ''
+  let thread = null
+  try {
+    thread = await ctx.deps.threads.read(ctx.threadId)
+  } catch {
+    return ''
+  }
+  if (!thread) return ''
+  const messages = Array.isArray(thread.messages) ? thread.messages : []
+  const opening = String(ctx.opening || '').replace(/\s+/g, ' ').trim()
+  const asks = messages
+    .filter((message) => message.who === 'me' && !message.error)
+    .map((message) => withoutDelegationContext(message.text))
+    /* the store writes this turn's question before the turn runs, so the
+       trailing `me` is the message being answered right now */
+    .filter((text) => text && text !== opening)
+  const lastAsk = asks[asks.length - 1] || ''
+  const replied = [...messages].reverse().find((message) => message.who === 'agent' && !message.error)
+  const answer = replied ? withoutDelegationContext(replied.text) : ''
+  if (!lastAsk && !answer) return ''
+  /* The artifact list is read from the whole exchange, not from the clipped
+     text above: the plan's name is usually the first thing the answer says and
+     the details come later, so a cut prompt still points at the file. This
+     turn's own words count too — a person can name the file right before the
+     mention, and the plan only copies the job out of it. */
+  const artifacts = artifactPathsFor(ctx.record, `${ctx.opening}\n${lastAsk}\n${answer}`)
+  const clip = (text, max) => {
+    const words = String(text || '')
+    return words.length > max ? `${words.slice(0, max).trimEnd()} …` : words
+  }
+  /* One field per line, labels on their own line: a 2 000-character answer with
+     a label glued to its front is a paragraph nobody can scan, and this block is
+     read by a person before a run. */
+  const lines = [`${DELEGATION_CONTEXT} — background, not your task.`, '']
+  const title = String(thread.title || '').replace(/\s+/g, ' ').trim().slice(0, CONTEXT_TITLE_CHARS)
+  if (title) lines.push(`Conversation: ${title}`, '')
+  if (lastAsk) lines.push('Earlier ask:', clip(lastAsk, CONTEXT_ASK_CHARS), '')
+  if (answer) lines.push('Last answer there:', clip(answer, CONTEXT_ANSWER_CHARS), '')
+  if (artifacts.length) {
+    lines.push('Artifacts named there (open the one your job refers to):')
+    for (const artifact of artifacts) lines.push(`- artifact://${artifact.rel} → ${artifact.abs}`)
+  }
+  return lines.join('\n').trimEnd()
+}
+
+/** One read per turn, whichever run asks first — and never a reason to fail. */
+function delegationContext(ctx) {
+  if (!ctx.delegationBlock) {
+    ctx.delegationBlock = buildDelegationContext(ctx).catch(() => '')
+  }
+  return ctx.delegationBlock
+}
+
 async function resolveOne(ctx, segment) {
   const started = Date.now()
   try {
@@ -1978,12 +2130,21 @@ async function resolveOne(ctx, segment) {
       const resolved = resolveSkillInJob(ctx.record, segment.job)
       /* A carried skill leads every job, but never twice: a job that already has
          its own `/workspace:` reference keeps that one. */
+      /* A field the person answered already holds the block (task + context),
+         so it is not appended a second time. Otherwise the run is handed the
+         turn's block here, which is also the headless path. */
+      const context = segment.prompted
+        ? ''
+        : (segment.context ?? (await delegationContext(ctx)))
       const job = [
         segment.carriedSkill && !/^use this skill /i.test(resolved)
           ? segment.carriedSkill
           : '',
         resolved,
         shareNote(segment),
+        /* The job is the task; this is where the words in it came from. Last on
+           purpose — the first line has to stay the instruction itself. */
+        context,
       ]
         .filter(Boolean)
         .join('\n\n')
@@ -2298,36 +2459,63 @@ function blockFor(segments, notes) {
  * entity has no folder says so instead of throwing here — its run still fails
  * the way it always has.
  */
+/**
+ * One card, from one run.
+ *
+ * A held plan and a re-plan (`chat.replan`, after the person edits the
+ * delegation instruction) both paint this shape, so the two cannot disagree
+ * about what a card is: the run's own instruction, the conversation block it
+ * was built from, and where it would start.
+ */
+function planRow(mentioned, run, index, total, context) {
+  let dir = ''
+  let note = ''
+  try {
+    dir = mentioned ? entities.resolveDir(mentioned) : ''
+  } catch {
+    note = 'no folder set'
+  }
+  return {
+    index,
+    total,
+    name: run.name || mentioned?.name || '',
+    /* the instruction, and the conversation block the engine appends to it.
+       Both are on the row because the card is the form: a prompt the person
+       approves with half of itself hidden is not the prompt that runs. */
+    context: String(context || ''),
+    row: run.row || '',
+    /* the source the read that resolved this row found, so the card can link
+       to the issue instead of only naming it */
+    rowUrl: String(run.rowUrl || ''),
+    job: String(run.job || ''),
+    share: run.share || (total > 1 ? `${index + 1}/${total}` : ''),
+    harness: String(mentioned?.harness || ''),
+    model: String(mentioned?.model || ''),
+    dir,
+    shownDir: tilde(dir),
+    note,
+    status: 'queued',
+    answer: '',
+    ms: 0,
+  }
+}
+
 function planFor(ctx, segments) {
-  const rows = ctx.runs.map((segment, index) => {
-    const mentioned = ctx.entities.get(String(segment.name || '').toLowerCase()) || null
-    let dir = ''
-    let note = ''
-    try {
-      dir = mentioned ? entities.resolveDir(mentioned) : ''
-    } catch {
-      note = 'no folder set'
-    }
-    return {
+  const rows = ctx.runs.map((segment, index) =>
+    planRow(
+      ctx.entities.get(String(segment.name || '').toLowerCase()) || null,
+      {
+        name: segment.runName || segment.name || '',
+        row: segment.row,
+        rowUrl: segment.rowUrl,
+        job: instructionOf(segment),
+        share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
+      },
       index,
-      total: ctx.runs.length,
-      name: segment.runName || segment.name || '',
-      row: segment.row || '',
-      /* the source the read that resolved this row found, so the card can link
-         to the issue instead of only naming it */
-      rowUrl: String(segment.rowUrl || ''),
-      job: instructionOf(segment),
-      share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
-      harness: String(mentioned?.harness || ''),
-      model: String(mentioned?.model || ''),
-      dir,
-      shownDir: tilde(dir),
-      note,
-      status: 'queued',
-      answer: '',
-      ms: 0,
-    }
-  })
+      ctx.runs.length,
+      segment.context,
+    ),
+  )
   /* A read is what makes the gate credible: it names work that already happened
      so the hold only ever covers work that has not. */
   const reads = segments
@@ -2348,10 +2536,11 @@ function planFor(ctx, segments) {
   const dir = dirs.length === 1 ? dirs[0] : ''
   return {
     rows,
-    /* the instruction the plan was drawn from: the band the person edits in the
-       card, seeded from the first run's own words. Plain `job`, no row prefix:
-       the row keeps its own line on the card. */
-    instruction: String(ctx.runs[0]?.job || ''),
+    /* The delegation instruction: what the person actually sent. The child
+       instructions on the rows were derived from it, and editing it asks the
+       classifier again (`chat.replan`) — seeded from one child's job it would
+       be a second, shorter message that re-plans something else. */
+    instruction: String(ctx.opening || ''),
     reads,
     dir,
     shownDir: dir ? tilde(dir) : '',
@@ -2359,6 +2548,41 @@ function planFor(ctx, segments) {
        own */
     dirMixed: dirs.length > 1,
     timeoutMs: ctx.timeoutMs,
+  }
+}
+
+/**
+ * The same plan shape, from runs alone.
+ *
+ * `chat.replan` has no mention segments to read: the classifier handed back a
+ * list of runs and that is all there is. The conversation context is the one
+ * the held card already carries — editing the delegation instruction does not
+ * change the conversation behind it.
+ */
+function planOfRuns(record, runs, { instruction = '', context = '', timeoutMs = ENTITY_TIMEOUT_MS } = {}) {
+  const listed = entities.list(record.id)
+  const rows = runs.map((run, index) => {
+    const mentioned =
+      listed.find((item) => item.name.toLowerCase() === String(run.entity).toLowerCase()) ||
+      null
+    return planRow(
+      mentioned,
+      { name: mentioned?.name || run.entity, job: run.job },
+      index,
+      runs.length,
+      context,
+    )
+  })
+  const dirs = [...new Set(rows.map((row) => row.dir).filter(Boolean))]
+  const dir = dirs.length === 1 ? dirs[0] : ''
+  return {
+    rows,
+    instruction,
+    reads: [],
+    dir,
+    shownDir: dir ? tilde(dir) : '',
+    dirMixed: dirs.length > 1,
+    timeoutMs,
   }
 }
 
@@ -2387,10 +2611,16 @@ function applyPlanRevision(ctx, segments, entityNow, decision) {
          empty run would start a session with no question. */
       if (!text) throw new Error(`run ${index + 1} has no instruction. Nothing was sent.`)
       segment.job = text
+      /* The field held the whole prompt; the block is inside it now. */
+      segment.prompted = true
     }
   } else if (band) {
-    /* One band, no per-card rows: every run gets the same words. */
-    for (const segment of ctx.runs) segment.job = band
+    /* One band, no per-card rows: every run gets the same task, and the turn's
+       context still rides with it — the band is a task, not a prompt. */
+    for (const segment of ctx.runs) {
+      segment.job = segment.context ? `${band}\n\n${segment.context}` : band
+      segment.prompted = true
+    }
   }
   const before = ctx.runs.length
   const wanted = Number.isInteger(decision?.count)
@@ -2681,6 +2911,11 @@ async function rewrite(
     errors: [],
     /* thread ids already injected in this message; see the dedupe in resolveOne */
     seenThreads: new Set(),
+    /* this turn's own message, so the context block never repeats it back to
+       the run as "the earlier ask" */
+    opening: String(text || ''),
+    /* memoised `buildDelegationContext` for this turn; see `delegationContext` */
+    delegationBlock: null,
     onChild,
     stopped,
     hold,
@@ -2857,6 +3092,10 @@ async function rewrite(
      every run starts as it always has, which is what keeps a headless run from
      asking a question nobody can see. */
   if (ctx.hold && ctx.runs.length) {
+    /* Built before the card, not inside the run: the block is part of the
+       prompt, and the person approves the prompt. One read for the whole turn. */
+    const block = await delegationContext(ctx)
+    for (const segment of ctx.runs) segment.context = block
     const decision = await ctx.hold(planFor(ctx, segments))
     if (!decision || decision.action !== 'run') throw holdError(decision, ctx)
     /* The form the person answered is the plan that runs: count and words are
@@ -2923,6 +3162,7 @@ module.exports = {
   rewrite,
   parse,
   parseMention,
+  planOfRuns,
   tokenOf,
   sources,
   search,

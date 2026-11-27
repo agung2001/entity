@@ -93,6 +93,8 @@ const INSTRUCTION = [
   '  instruction is `rows`, not entries that repeat the same words.',
   '- A written count (`spawn 3`) with nothing listed is that many entries with the',
   '  same job.',
+  '- An entry\'s job is its own line\'s words. Never copy a clause from one entry',
+  '  into another; two lines that say the same thing are two equal entries.',
   '- Every sentence that tells an agent something to do must survive in its job.',
   '',
   '- `entity`: the agent addressed, without `@`, from the names below.',
@@ -422,6 +424,29 @@ function usable(plan, entities = []) {
   }
 }
 
+/**
+ * A plan as the list of runs a card paints.
+ *
+ * `chat.replan` has no mention resolver: the classifier's answer is all it has.
+ * `runs` already is that list; `repeat` is the same entry N times; `typed` is
+ * one entry per item with the shared job under it. `rows` names a tracker or a
+ * file query — only a send can resolve that, so it is null here and the card
+ * says so instead of guessing.
+ */
+function runsOf(plan) {
+  if (!plan) return null
+  if (plan.mode === 'runs') {
+    return plan.runs.map((run) => ({ entity: run.entity, job: run.job }))
+  }
+  if (plan.mode === 'repeat') {
+    return Array.from({ length: plan.runs }, () => ({ entity: plan.entity, job: plan.job }))
+  }
+  if (plan.mode === 'typed') {
+    return plan.rows.map((row) => ({ entity: plan.entity, job: `${row}\n\n${plan.job}` }))
+  }
+  return null
+}
+
 /** The classification, or null when the answer carried no JSON at all. */
 function parseAnswer(text) {
   const parsed = lastJson(text)
@@ -589,6 +614,7 @@ module.exports = {
   repairWithIssue,
   repairWithRuns,
   repairWithList,
+  runsOf,
   usable,
   writtenCount,
   reader,

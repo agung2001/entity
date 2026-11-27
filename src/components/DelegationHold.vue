@@ -9,10 +9,14 @@
  * a modal or a second composer (three things DESIGN.md says were built and
  * rejected).
  *
- * The plan is a form: one instruction above the cards, one editable job per
- * card, and a stepper for the count. Run sends exactly what is on screen, so
- * the revision travels on the Run call itself — there is no write in flight and
- * nothing to debounce.
+ * The plan is a form: the delegation instruction above the cards, one child
+ * instruction per card, and a stepper for the count. **Update** asks the
+ * classifier again for an edited delegation instruction and re-plans the
+ * cards from it. A card's prompt is its task *and* the conversation
+ * block the engine appends to it, so the card shows what runs — clamped to four
+ * lines, with **Read more** opening the whole prompt in a dialog that can edit
+ * it. Run sends exactly what is on screen, so the revision travels on the Run
+ * call itself — there is no write in flight and nothing to debounce.
  *
  * The same block, settled, is what a reload shows after a cancel or an expiry:
  * the rows that never ran, and the outcome. It is painted from the turn's own
@@ -20,9 +24,11 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import EntityMark from './EntityMark.vue'
+import PromptDialog from './PromptDialog.vue'
 import PromptEnhanceDialog from './PromptEnhanceDialog.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
+import { replanDelegation } from '@/stores/hub'
 
 const props = defineProps({
   /* the plan a turn is waiting on: rows, instruction, reads, dir, timeoutMs */
@@ -39,16 +45,31 @@ let armTimer = null
 
 /* ── the form ──────────────────────────────────────────────────────
    `cards` is a local copy, so `+`/`−` can change the count without touching the
-   turn's row; `text` is the band, `jobs` one instruction per card, `undo` the
-   rows a trim removed (so `Back to 4` restores their words, not the band's). */
+   turn's row; `text` is the band (the shared task), `tasks` one task per card,
+   `contexts` the engine's conversation block for that card, `undo` the rows a
+   trim removed (so `Back to 4` restores their words, not the band's). */
 const cards = ref([])
 const text = ref('')
-const jobs = ref([])
+const tasks = ref([])
+const contexts = ref([])
+/* Which cards were edited by hand since the last plan. A card's instruction is
+   derived from the delegation instruction, so "follows it" is a fact about the
+   plan, not a string comparison with the band. */
+const own = ref([])
 const source = ref('')
 const undo = ref(null)
 const seeded = ref(false)
 const enhanceOpen = ref(false)
 const enhanceTarget = ref('instruction')
+/* the delegation instruction was edited and the classifier is reading again */
+const replanning = ref(false)
+const replanError = ref('')
+/* the whole prompt of one card, in its own dialog: its instruction and the
+   context block, kept apart so each can be edited on its own */
+const promptOpen = ref(false)
+const promptAt = ref(0)
+const promptTask = ref('')
+const promptContext = ref('')
 
 /* The engine sends a plain job; a fan-out prepends its row. The row keeps its
    own line above the field, so the field is seeded without it. */
@@ -65,8 +86,10 @@ function seedPlan() {
   if (seeded.value || !props.plan) return
   const list = Array.isArray(props.plan.rows) ? props.plan.rows : []
   cards.value = list.map((row) => ({ ...row }))
-  jobs.value = list.map(stripRow)
-  text.value = String(props.plan.instruction || jobs.value[0] || '')
+  tasks.value = list.map(stripRow)
+  contexts.value = list.map((row) => String(row.context || ''))
+  own.value = list.map(() => false)
+  text.value = String(props.plan.instruction || tasks.value[0] || '')
   source.value = text.value
   seeded.value = true
 }
@@ -78,9 +101,19 @@ const rows = computed(() => props.settled?.rows || props.plan?.rows || [])
 const count = computed(() => (props.settled ? rows.value.length : cards.value.length))
 const single = computed(() => count.value === 1)
 const name = computed(() => (props.settled ? rows.value[0]?.name : cards.value[0]?.name) || '')
-const invalidAt = computed(() => jobs.value.findIndex((job) => !String(job || '').trim()))
+/* What the run is actually handed: the task, then the conversation block. The
+   card shows this, so the form and the prompt cannot disagree. */
+const prompts = computed(() =>
+  tasks.value.map((task, index) => {
+    const context = String(contexts.value[index] || '').trim()
+    return context ? `${task}\n\n${context}` : task
+  }),
+)
+const invalidAt = computed(() => tasks.value.findIndex((task) => !String(task || '').trim()))
+/* the delegation instruction changed since the plan was drawn */
 const bandEdited = computed(() => seeded.value && text.value !== source.value)
-const sameCount = computed(() => jobs.value.filter((job) => job === text.value).length)
+/* how many cards still follow it: every card the person did not edit by hand */
+const sameCount = computed(() => own.value.filter((edited) => !edited).length)
 
 const outcome = computed(() => {
   const settled = props.settled?.settled
@@ -110,19 +143,19 @@ const ceiling = () => {
   return min ? `up to ${min} min each` : 'a time ceiling each'
 }
 
-/* The band's name follows what it actually reaches: a plan of distinct jobs has
-   cards that do not read it at all, and calling it "sent to both runs" there is
-   the same lie as two identical cards. */
+/* The band is the delegation instruction — what the parent says to the
+   delegatee. It is what the child instructions are built from; a card that was
+   edited keeps its own and stops following this one. */
 const bandLabel = computed(() => {
   const n = cards.value.length
-  if (n === 1) return 'Instruction · sent to the run'
+  if (n === 1) return 'Delegation instruction'
   if (sameCount.value < n) {
     return sameCount.value === 1
-      ? 'Instruction · used by 1 of these runs'
-      : `Instruction · used by ${sameCount.value} of these runs`
+      ? 'Delegation instruction · followed by 1 of these runs'
+      : `Delegation instruction · followed by ${sameCount.value} of these runs`
   }
-  if (n === 2) return 'Instruction · sent to both runs'
-  return `Instruction · sent to all ${n} runs`
+  if (n === 2) return 'Delegation instruction · both runs follow it'
+  return `Delegation instruction · all ${n} runs follow it`
 })
 
 const enhanceScope = computed(() =>
@@ -131,29 +164,82 @@ const enhanceScope = computed(() =>
     : `run ${enhanceTarget.value + 1} of ${cards.value.length}`,
 )
 const enhanceSeed = computed(() =>
-  enhanceTarget.value === 'instruction' ? text.value : jobs.value[enhanceTarget.value] || '',
+  enhanceTarget.value === 'instruction' ? text.value : tasks.value[enhanceTarget.value] || '',
 )
 
+/* A card is "edited" when a person changed its instruction by hand. The child
+   instruction is never equal to the delegation instruction (it carries the
+   context block), so comparing the two would badge every card as edited. */
 function cardEdited(index) {
-  return (jobs.value[index] || '') !== text.value
+  return Boolean(own.value[index])
 }
 
-/* Band input: a card that still read the old band follows the new one; a card
-   with its own words keeps them. */
+/* A prompt long enough to hide something gets the cut and the way in. */
+function clampedPrompt(index) {
+  const prompt = String(prompts.value[index] || '')
+  return prompt.length > 240 || prompt.split('\n').length > 4
+}
+
+function openPrompt(index) {
+  promptAt.value = index
+  promptTask.value = String(tasks.value[index] || '')
+  promptContext.value = String(contexts.value[index] || '')
+  promptOpen.value = true
+}
+
+/* Each card is independent: what the dialog saves is that run's own instruction
+   and its own context. The engine takes the prompt as given (`prompted`), so a
+   trimmed block is not appended again. */
+function applyPrompt(payload) {
+  const at = promptAt.value
+  tasks.value = tasks.value.map((task, index) => (index === at ? String(payload?.task ?? task) : task))
+  contexts.value = contexts.value.map((context, index) =>
+    index === at ? String(payload?.context ?? context).trim() : context,
+  )
+  own.value = own.value.map((edited, index) => (index === at ? true : edited))
+  promptOpen.value = false
+}
+
+/* Band input changes the delegation instruction only: the child instructions
+   are re-derived by **Update**, never by string substitution — the band and a
+   child instruction are different things. */
 function onBandInput(event) {
-  const next = event.target.value
-  const previous = text.value
-  text.value = next
-  jobs.value = jobs.value.map((job) => (job === previous ? next : job))
+  text.value = event.target.value
 }
 
-function onJobInput(index, event) {
+/* The inline field can only be a short prompt, so it is the whole prompt from
+   the first keystroke: the person owns the words, and no block is re-appended. */
+function onPromptInput(index, event) {
   const next = event.target.value
-  jobs.value = jobs.value.map((job, at) => (at === index ? next : job))
+  tasks.value = tasks.value.map((task, at) => (at === index ? next : task))
+  contexts.value = contexts.value.map((context, at) => (at === index ? '' : context))
+  own.value = own.value.map((edited, at) => (at === index ? true : edited))
 }
 
-function useInstruction(index) {
-  jobs.value = jobs.value.map((job, at) => (at === index ? text.value : job))
+/* The delegation instruction is what the child instructions are derived from:
+   editing it and asking again re-plans the whole card. The conversation context
+   is the engine's and does not change with it. */
+async function replan() {
+  const message = text.value.trim()
+  if (!message || replanning.value) return
+  replanning.value = true
+  replanError.value = ''
+  try {
+    const next = await replanDelegation(message)
+    if (!next?.rows?.length) throw new Error('That instruction planned no run.')
+    cards.value = next.rows.map((row) => ({ ...row }))
+    tasks.value = next.rows.map(stripRow)
+    contexts.value = next.rows.map((row) => String(row.context || ''))
+    own.value = next.rows.map(() => false)
+    source.value = String(next.instruction || message)
+    text.value = source.value
+    undo.value = null
+    promptOpen.value = false
+  } catch (error) {
+    replanError.value = String(error?.message || 'The instruction could not be read.')
+  } finally {
+    replanning.value = false
+  }
 }
 
 function fewer() {
@@ -164,18 +250,25 @@ function fewer() {
     undo.value = {
       n: cards.value.length,
       rows: cards.value.map((card) => ({ ...card })),
-      jobs: [...jobs.value],
+      tasks: [...tasks.value],
+      contexts: [...contexts.value],
+      own: [...own.value],
     }
   }
   cards.value = cards.value.slice(0, -1)
-  jobs.value = jobs.value.slice(0, -1)
+  tasks.value = tasks.value.slice(0, -1)
+  contexts.value = contexts.value.slice(0, -1)
+  own.value = own.value.slice(0, -1)
 }
 
 function more() {
   if (cards.value.length >= 5 || !cards.value.length) return
   const last = cards.value[cards.value.length - 1]
   cards.value = [...cards.value, { ...last }]
-  jobs.value = [...jobs.value, jobs.value[jobs.value.length - 1] ?? text.value]
+  tasks.value = [...tasks.value, tasks.value[tasks.value.length - 1] ?? text.value]
+  contexts.value = [...contexts.value, contexts.value[contexts.value.length - 1] ?? '']
+  /* a card added by hand follows the delegation instruction like the last one */
+  own.value = [...own.value, false]
   undo.value = null
 }
 
@@ -183,7 +276,9 @@ function back() {
   const kept = undo.value
   if (!kept) return
   cards.value = kept.rows.map((card) => ({ ...card }))
-  jobs.value = [...kept.jobs]
+  tasks.value = [...kept.tasks]
+  contexts.value = [...kept.contexts]
+  own.value = [...kept.own]
   undo.value = null
 }
 
@@ -199,10 +294,11 @@ function applyEnhance(payload) {
   if (enhanceTarget.value === 'instruction') {
     const previous = text.value
     text.value = next
-    jobs.value = jobs.value.map((job) => (job === previous ? next : job))
+    tasks.value = tasks.value.map((task) => (task === previous ? next : task))
   } else {
     const at = Number(enhanceTarget.value)
-    jobs.value = jobs.value.map((job, index) => (index === at ? next : job))
+    tasks.value = tasks.value.map((task, index) => (index === at ? next : task))
+    own.value = own.value.map((edited, index) => (index === at ? true : edited))
   }
   enhanceOpen.value = false
 }
@@ -278,7 +374,11 @@ function run() {
   if (!armed.value || busy.value) return
   if (invalidAt.value >= 0) return
   busy.value = true
-  emit('run', { count: cards.value.length, instruction: text.value, rows: [...jobs.value] })
+  emit('run', {
+    count: cards.value.length,
+    instruction: text.value,
+    rows: prompts.value.map((prompt) => prompt.trim()),
+  })
 }
 
 function cancel() {
@@ -291,7 +391,7 @@ function cancel() {
    place that knows whether a card is empty. */
 function onRunKey(event) {
   if (props.settled || !matchesShortcut('run-delegation', event)) return
-  if (enhanceOpen.value) return
+  if (enhanceOpen.value || promptOpen.value || replanning.value) return
   event.preventDefault()
   event.stopPropagation()
   if (invalidAt.value >= 0) return
@@ -358,8 +458,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Held: the plan as a form. The band is the shared instruction, every
-         card is one run's own words, and the stepper moves the count. -->
+    <!-- Held: the plan as a form. The band is the shared task, every card is
+         one run's own prompt (task + conversation block), and the stepper moves
+         the count. -->
     <template v-else>
       <div class="plan-band">
         <div class="plan-band-head">
@@ -368,13 +469,22 @@ onBeforeUnmount(() => {
           <button
             class="plan-enh"
             type="button"
-            aria-label="Enhance the instruction"
+            aria-label="Enhance the task"
             @click="openEnhance('instruction')"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
               <path d="M8 2l1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4z" />
             </svg>
             Enhance
+          </button>
+          <button
+            class="plan-enh plan-upd"
+            type="button"
+            :disabled="replanning || !text.trim()"
+            :aria-label="replanning ? 'Updating the child instructions' : 'Update the child instructions from this one'"
+            @click="replan"
+          >
+            {{ replanning ? 'Updating…' : 'Update' }}
           </button>
         </div>
         <textarea
@@ -385,9 +495,19 @@ onBeforeUnmount(() => {
           @input="onBandInput"
         ></textarea>
         <p class="plan-hint">
-          Every run gets this. A card with its own words keeps them —
-          <b>{{ sameCount }} {{ sameCount === 1 ? 'run still reads' : 'runs still read' }} this text</b>.
+          <template v-if="bandEdited">
+            This instruction changed — <b>Update</b> re-plans the child instructions from it.
+            Run still starts the cards as they are.
+          </template>
+          <template v-else-if="cards.length === 1">
+            The child run is built from this instruction — its card shows exactly what it gets.
+          </template>
+          <template v-else>
+            Each child run is built from this instruction. A card you edit keeps its own —
+            <b>{{ sameCount }} of {{ cards.length }} {{ sameCount === 1 ? 'follows' : 'follow' }} this one</b>.
+          </template>
         </p>
+        <p v-if="replanError" class="plan-err" role="alert">{{ replanError }}</p>
       </div>
 
       <div class="plan-count">
@@ -477,25 +597,40 @@ onBeforeUnmount(() => {
               >
               <span v-else class="row">{{ card.row }}</span>
             </p>
+            <!-- A short prompt is still the field it always was: type in it. One
+                 long enough to hide something (any card that carries the
+                 conversation block) is cut at four lines, and Read more opens
+                 the whole prompt. -->
             <textarea
+              v-if="!clampedPrompt(index)"
               class="plan-job"
               rows="2"
-              :value="jobs[index]"
+              :value="prompts[index]"
               placeholder="No instruction"
-              :aria-label="`Instruction for run ${index + 1} of ${cards.length}`"
+              :aria-label="`Prompt for run ${index + 1} of ${cards.length}`"
               :aria-invalid="invalidAt === index ? 'true' : 'false'"
-              @input="onJobInput(index, $event)"
+              @input="onPromptInput(index, $event)"
             ></textarea>
-            <p v-if="cardEdited(index)" class="plan-hint">
-              <button class="plan-link" type="button" @click="useInstruction(index)">
-                Use the instruction
+            <template v-else>
+              <p
+                class="plan-prompt"
+                data-clamped="1"
+                :aria-invalid="invalidAt === index ? 'true' : 'false'"
+              >{{ prompts[index] }}</p>
+              <button
+                class="plan-link plan-more"
+                type="button"
+                :aria-label="`Read and edit the whole prompt for run ${index + 1} of ${cards.length}`"
+                @click="openPrompt(index)"
+              >
+                Read more
               </button>
+            </template>
+            <p v-if="invalidAt === index" class="plan-err" role="alert">
+              Give this run words, or remove it.
             </p>
             <p v-if="where(card)" class="hold-where" :data-warn="whereWarn(card) ? '1' : '0'">
               {{ where(card) }}
-            </p>
-            <p v-if="invalidAt === index" class="plan-err" role="alert">
-              Give this run words, or remove it.
             </p>
           </div>
         </div>
@@ -514,7 +649,7 @@ onBeforeUnmount(() => {
           ref="primary"
           class="btn btn-ink"
           type="button"
-          :disabled="busy || invalidAt >= 0"
+          :disabled="busy || replanning || invalidAt >= 0"
           @click="run"
         >
           {{ busy ? 'Starting…' : primaryLabel }}
@@ -522,6 +657,15 @@ onBeforeUnmount(() => {
         </button>
       </span>
     </div>
+
+    <PromptDialog
+      :open="promptOpen"
+      :task="promptTask"
+      :context="promptContext"
+      :scope="`run ${promptAt + 1} of ${cards.length}`"
+      @apply="applyPrompt"
+      @close="promptOpen = false"
+    />
 
     <PromptEnhanceDialog
       :open="enhanceOpen"

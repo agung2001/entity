@@ -19,6 +19,7 @@ const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')
 const chats = require('../../electron/chat-store.cjs')
 const harnesses = require('../../electron/harness-store.cjs')
+const intent = require('../../electron/intent-ref.cjs')
 
 let seq = 0
 
@@ -264,6 +265,70 @@ test('the question is on disk while its mention is still resolving', { skip: !PO
   /* one question, one answer: the early row is filled in, never duplicated */
   assert.equal(updated.messages.filter((message) => message.who === 'me').length, 1)
   assert.equal(updated.messages.at(-1).text, 'Stopped by you.')
+})
+
+test('a held plan is read again when the delegation instruction changes', async () => {
+  const record = workspaceWith()
+  const parent = parentIn(record)
+  /* `intent: null` is the grammar's own reading: no harness is asked, and the
+     two runs the message writes are held as written. */
+  const sending = chats.send({
+    workspace: record.id,
+    id: parent.id,
+    text: 'spawn 2 @secretary write a poem',
+    intent: null,
+  })
+  const settled = sending.catch((error) => error)
+  for (let i = 0; i < 200 && !chats.heldPlan(parent.id); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  assert.ok(chats.heldPlan(parent.id), 'the plan is held')
+
+  const message = 'ok spawn 2 @secretary:\n- write a haiku\n- write a limerick'
+  const next = await chats.replan({
+    workspace: record.id,
+    id: parent.id,
+    text: message,
+    /* the reader seam, like `send`'s: what is asserted is the wiring */
+    intent: async () =>
+      intent.usable(
+        {
+          spawn: true,
+          runs: [
+            { entity: 'secretary', job: 'write a haiku' },
+            { entity: 'secretary', job: 'write a limerick' },
+          ],
+        },
+        ['secretary'],
+      ),
+  })
+  /* the band is what was written; the cards are what the classifier made of it */
+  assert.equal(next.instruction, message)
+  assert.deepEqual(
+    next.rows.map((row) => row.job),
+    ['write a haiku', 'write a limerick'],
+  )
+  assert.deepEqual(
+    next.rows.map((row) => row.share),
+    ['1/2', '2/2'],
+  )
+
+  /* an instruction that delegates nothing is refused with a sentence, and the
+     old plan is still the one on screen */
+  await assert.rejects(
+    () =>
+      chats.replan({
+        workspace: record.id,
+        id: parent.id,
+        text: 'never mind, thanks',
+        intent: async () => null,
+      }),
+    /no longer asks for a run/,
+  )
+  assert.ok(chats.heldPlan(parent.id), 'a refused re-plan leaves the plan held')
+
+  chats.decideHold({ workspace: record.id, id: parent.id, action: 'cancel' })
+  await settled
 })
 
 test('a second message is refused while the mention is resolving', { skip: !POSIX }, async (t) => {

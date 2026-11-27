@@ -471,6 +471,18 @@ the composer already does: mention another entity.
   **Continue** at its top right, which opens the session that run created — the job, the
   answer, its steps and its timing are already in it. A card with no way out is a dead
   end someone will click twice.
+- **A run knows where it came from.** A child session starts with a fresh transcript, so a job
+  that says "implement A" has nothing to resolve it against. Every delegated run is handed the
+  last exchange of the conversation that asked for it — the ask before this turn, and the answer
+  to it — plus the real path of any `artifact://…` that exchange names, because the run has no
+  mention layer to turn that notation into a file. It is a hand-off, not a transcript: bounded
+  (400 + 2 000 chars, cut with `…`), never the current message repeated back, and labelled
+  *background, not your task* so the run does not redo the work. It rides **after** the job and
+  the share note, so the first line is still the instruction and the card still shows the job
+  alone. A block that travels again is cut at its own marker first — a grandchild gets one
+  block, never a block inside a block. The held card shows the block too (clamped, with
+  **Read more**), because a prompt approved with half of itself hidden is approved
+  blind.
 - **A session is not a rail row.** The rail lists the conversations the person started;
   a busy thread can own a dozen sessions, and rows for them drown the list. The parent
   row carries `spawned N chats`, the count opens a tree (sessions of sessions included),
@@ -586,8 +598,23 @@ the composer already does: mention another entity.
   folder) before anything starts. **Run** is the one action; the block is the live bubble,
   and it becomes the fan-out's own cards on Run. Never a modal, a second composer or a
   pre-send dialog.
-- **The plan is a form, and Run sends what is on screen.** One instruction band above the
-  cards, one editable job per card, a `−`/`+` stepper for the count, `⌥⇧R` to run it. The
+- **The plan is a form, and Run sends what is on screen.** One **delegation instruction**
+  band above the cards, one **child instruction** per card, a `−`/`+` stepper for the count,
+  `⌥⇧R` to run it. The band is the message the person actually sent (`ctx.opening`), not the
+  first child's job: the children are derived from it. A card's child instruction is what the
+  classifier made of that message **plus the conversation block**, so the card shows what runs;
+  it is clamped at four lines, and **Read more** opens `PromptDialog`: two fields, `Delegation
+  instruction` and `Context from this conversation`, each on its own lines — a 2 000-character
+  block is not one long paragraph to be scrolled. Editing there makes that card's prompt the
+  whole prompt, and the engine does not append a second block.
+- **Update re-derives the children; nothing else rewrites them.** Editing the band and pressing
+  **Update** calls `chat.replan`: the same classifier reads the edited message and the cards are
+  rebuilt from its runs, with the conversation block the plan already had. A read — the hold
+  stays open, nothing is written to the thread, and Run still starts the cards as they are.
+  Editing the band does **not** string-substitute into the cards, and there is no `Use the
+  task`: a child instruction is independent once it stops following the band. "Follows the
+  band" is explicit ownership (`own`), not `child !== band` — a child always differs because it
+  carries the block, so a string comparison badged every card `edited`. The
   revision rides on the answer (`chat.delegate` gets `count`, `instruction`, `rows`) and is
   applied once, before the first harness exists — so there is no write in flight to debounce,
   no read-only state and no second round trip. A card the person did not touch follows the
@@ -902,6 +929,10 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | Three runs of one instruction are three identical cards, or two identical session titles | The share (`1/3`) goes on the mention, the session title and the block the reply reads; the card key includes it | `npm test` (`mention-ref`, `chat-spawn`) |
 | A delegated run is a dead end | The card carries **Continue** at its top right, opening the session the run wrote | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread that delegates a few jobs puts rows for them in the rail | Sessions are not rows: the parent carries `spawned N chats` and the count opens a tree | `npm test` (`chat-spawn`) |
+| The delegation band shows the first child's job instead of what the person wrote | The band is the turn's own message; the child instructions are derived from it, and **Update** (`chat.replan`) re-derives them from an edited band | `npm test` (`intent-ref`, `chat-spawn` "a held plan is read again") |
+| Every card is badged `edited` the moment a plan is drawn | Ownership is explicit (`own`), set by a hand edit and cleared by a re-plan — never `child !== band`, which is true by construction | `npm test` (`mention-ref`), `DelegationHold.vue` |
+| A plan card shows only the instruction and hides the context the run will receive | The row carries both (`job` and `context`); the card composes and clamps the prompt, and `Read more` opens `PromptDialog` with the two as separate multi-line fields. A card's field is the whole prompt, so the engine never appends the block twice (`prompted`) | `npm test` (`mention-ref`, "the card carries the whole prompt") |
+| A delegated run guesses, because "implement A" was defined in a thread it cannot see | The last exchange travels with the run — bounded, labelled background, and with `artifact://` names resolved to real paths — so the run can open the plan it was given | `npm test` (`mention-ref`, "a delegated run is handed the conversation it came from") |
 | A count says 4 and the rail paints 2 | Counts, filters and groups all exclude sessions; only the tree shows them | `hub.activeSummaryCount` |
 | "Save definition" shows `afterScopeWrite is not defined`, and the page keeps its old copy until a manual refresh | A store may not call what it does not define: a refactor deleted the helper and left three call sites, so the write landed and the **refresh** threw — a success reported as a failure. The refresh is restored as one function with one job (re-read what a scope write can move, never `applyScope`, which would drop the open conversations), and `npm test` now demands a definition for every bare call in `src/stores/` | `npm test` (`ui-contract`), `workspaces.js` (`afterScopeWrite`) |
 | A card says a worktree is gone, or clean, when nobody said so | A state read from absence is not a state: require evidence from the row's own record, and let the tooltip hedge what cannot be known | `DelegationCard.vue` (`hadWorktree`), `mention-ref.cjs` (`worktreeState`) |

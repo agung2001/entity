@@ -704,6 +704,7 @@
   font-size: var(--fs-micro);
   white-space: nowrap;
 }
+/* A short prompt is the field (type in it); a long one is the cut preview below. */
 .plan-job {
   display: block;
   width: 100%;
@@ -733,6 +734,117 @@
   border-color: var(--danger);
   background: var(--danger-soft);
 }
+
+/* The card's prompt: its task AND the conversation block the engine appends,
+   clamped to four lines. The card is the form, so it may not hide half of what
+   it approves — what is behind the fold is one `Read more` away. */
+.plan-prompt {
+  margin: 5px 0 0;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.plan-prompt[data-clamped='1'] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.plan-prompt[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.plan-more {
+  display: block;
+  margin: 2px 0 0;
+}
+
+/* ── the child-instruction dialog ──────────────────────────────────
+   Two fields, never one: the instruction and the block it was built from are
+   different things, and a single 2 000-character textarea was unreadable. The
+   block keeps its own lines and the card keeps the cut. */
+.modal.promptdlg {
+  width: min(680px, 94vw);
+}
+.promptdlg .mo-head {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.prompt-kicker {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.promptdlg .mo-head .prompt-lede {
+  max-width: 56ch;
+  line-height: 1.5;
+}
+.promptdlg .mo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 14px;
+}
+.prompt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.prompt-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.prompt-label .prompt-note {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: var(--fs-micro);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.prompt-task {
+  min-height: 96px;
+  resize: vertical;
+}
+.prompt-context {
+  min-height: 210px;
+  max-height: 44vh;
+  resize: vertical;
+  line-height: 1.6;
+}
+.prompt-key {
+  margin-right: auto;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+/* Update re-reads the delegation instruction. A quiet pill, like Enhance: it
+   changes the plan, it does not start anything. */
+.plan-upd {
+  padding: 1px 8px;
+}
+.plan-upd:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* Enhance is a quiet pill on the card, not a second primary: it changes words,
    it does not start anything. */
 .plan-enh {

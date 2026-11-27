@@ -748,6 +748,9 @@ function createRpc({
        nothing. A held turn is in memory, so a stale window gets `none` and the
        card stays as it was. */
     'chat.delegate': (args) => chats.decideHold(args),
+    /* The classifier again, for a held plan whose instruction was edited. A
+       read: the hold is untouched, nothing is written to the thread. */
+    'chat.replan': (args) => chats.replan(args),
     'chat.suggest': (args) => suggestions.suggest(args),
     /* A rewrite, not a turn: no chat write, no counter, nothing sent. */
     'chat.enhance': (args) => enhancement.enhance(args),

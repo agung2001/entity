@@ -324,6 +324,49 @@ test('bullets that are orders become one run per bullet, without a model', () =>
   assert.equal(intent.repairWithRuns('@coder do it\n- one\n- two', null, NAMES), null)
 })
 
+test('a plan becomes the runs a re-plan paints', () => {
+  /* `chat.replan` has no mention resolver, so the only thing it can paint is the
+     classifier's own answer. Every shape that can be a card has to survive. */
+  assert.deepEqual(
+    intent.runsOf(
+      intent.usable(
+        {
+          spawn: true,
+          runs: [
+            { entity: 'coder', job: 'implement A' },
+            { entity: 'coder', job: 'implement B' },
+          ],
+        },
+        NAMES,
+      ),
+    ),
+    [
+      { entity: 'coder', job: 'implement A' },
+      { entity: 'coder', job: 'implement B' },
+    ],
+  )
+  /* the same job N times is N entries, not one */
+  const repeat = intent.runsOf(intent.usable({ spawn: true, runs: 2, entity: 'coder', job: 'write a poem' }, NAMES))
+  assert.equal(repeat.length, 2)
+  assert.deepEqual(repeat[0], repeat[1])
+  /* rows travel with the shared job, the way a card shows them */
+  const typed = intent.runsOf(
+    intent.usable({ spawn: true, rows: ['a', 'b'], entity: 'coder', job: 'do it' }, NAMES),
+  )
+  assert.deepEqual(typed, [
+    { entity: 'coder', job: 'a\n\ndo it' },
+    { entity: 'coder', job: 'b\n\ndo it' },
+  ])
+  /* a query list needs the message's mentions resolved: null, never a guess */
+  assert.equal(
+    intent.runsOf(
+      intent.usable({ spawn: true, list: '@youtrack:ENTITY:bug', entity: 'coder', job: 'fix' }, NAMES),
+    ),
+    null,
+  )
+  assert.equal(intent.runsOf(null), null)
+})
+
 test('an explicit "nothing to fan out" is an answer, not a failed reading', () => {
   /* this is the whole point of the classifier: a direct reply is a verdict */
   assert.equal(intent.usable({ spawn: false }, NAMES), null)
@@ -665,6 +708,7 @@ test('one instruction per run is a plan, and both cards say their own job', asyn
   const record = workspace()
   const cards = []
   const jobs = []
+  let band = ''
   const out = await mention.rewrite(
     record,
     "ok let's spawn 2 @coder :\n" +
@@ -684,6 +728,7 @@ test('one instruction per run is a plan, and both cards say their own job', asyn
         ),
       hold: async (plan) => {
         cards.push(...plan.rows.map((row) => row.job))
+        band = plan.instruction
         return { action: 'run' }
       },
       deps: deps({
@@ -696,6 +741,9 @@ test('one instruction per run is a plan, and both cards say their own job', asyn
   )
   assert.equal(cards.length, 2, 'the card holds one instruction per run')
   assert.notEqual(cards[0], cards[1], 'the two cards do not say the same thing')
+  /* the band is the message the person sent, the thing the children came from */
+  assert.match(band, /^ok let's spawn 2 @coder :/)
+  assert.match(band, /implement B , to update the main instruction/)
   assert.match(cards[0], /implement A/)
   assert.match(cards[1], /implement B/)
   assert.equal(jobs.length, 2)

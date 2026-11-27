@@ -149,6 +149,47 @@ function decideHold({ workspace, id, action, count, instruction, rows } = {}) {
   return { decided: wanted, runs: held.plan.rows.length }
 }
 
+/**
+ * Read a held message again.
+ *
+ * The person edited the **delegation instruction** in the card, so the
+ * classifier is asked again and the card gets new child instructions. The
+ * conversation context stays the one the plan already carries — editing the
+ * instruction does not change the conversation behind it. This only reads: the
+ * hold stays open until Run or Cancel, and nothing is written to the thread.
+ */
+async function replan({ workspace, id, text, intent } = {}) {
+  const record = workspaces.open(workspace)
+  const thread = readThread(record, id)
+  if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
+  const held = heldPlan(id)
+  if (!held) throw new Error('This plan is no longer waiting for you.')
+  const message = String(text || '').trim()
+  if (!message) throw new Error('Write the delegation instruction first.')
+  /* A remote thread's harness is not here to ask, and its message is forwarded
+     untouched; a spawned session has no gate to re-read. */
+  if (thread.machine !== 'local' || thread.spawnedFrom) {
+    throw new Error('This conversation cannot re-read its plan.')
+  }
+  const reader =
+    intent === undefined
+      ? intentRef.reader({
+          harness: thread.harness,
+          model: thread.model,
+          entities: entities.list(record.id).map((item) => item.name),
+        })
+      : intent
+  if (!reader) throw new Error('This thread has no harness to read the instruction with.')
+  const runs = intentRef.runsOf(await reader(message))
+  if (!runs || !runs.length) {
+    throw new Error('That instruction no longer asks for a run — edit it, or Cancel.')
+  }
+  return mentionRef.planOfRuns(record, runs, {
+    instruction: message,
+    context: String(held.rows?.[0]?.context || ''),
+  })
+}
+
 /* The desktop resolves the account from `auth.json`. The server build has a
    different user per request, so `createRpc` installs an identity resolver that
    reads the request's signed-in user. Without it every teammate would share the
@@ -2523,6 +2564,7 @@ module.exports = {
   decideHold,
   /** A held turn, for the tests that pin the plan and the clock. */
   heldPlan,
+  replan,
   /** A delegated mention's own thread; exported for the tests that pin it. */
   spawnMentionSession,
   summarise,

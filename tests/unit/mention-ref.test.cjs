@@ -23,6 +23,7 @@ const ORCA_ONE = path.join(ORCA_ROOT, 'One')
 
 const workspaces = require('../../electron/workspace-store.cjs')
 const entities = require('../../electron/entity-store.cjs')
+const artifacts = require('../../electron/artifact-store.cjs')
 const mention = require('../../electron/mention-ref.cjs')
 
 let seq = 0
@@ -1325,6 +1326,285 @@ test('a message that delegates nothing costs no classifier call', async () => {
     deps: deps(),
   })
   assert.equal(asked, 0, 'no entity means nothing to plan')
+})
+
+/* ── the conversation a run was delegated from ──────────────────── */
+
+/* The message that defines "implement A" lives in this thread and nowhere else.
+   A child session starts empty, so the last exchange has to travel with it. */
+function parentThread(overrides = {}) {
+  return {
+    id: 't_parent',
+    title: 'Delegation throughput',
+    messages: [
+      { who: 'me', text: 'what should we do about the delegation loop?' },
+      {
+        who: 'agent',
+        text: 'Concrete plan: artifact://release-notes.md — A is the loop, B is the brief.',
+      },
+      { who: 'me', text: '@py-agent implement A from artifact://release-notes.md' },
+    ],
+    ...overrides,
+  }
+}
+
+function threadsFor(thread, read = null) {
+  return { read: read || (async (id) => (id === thread.id ? thread : null)) }
+}
+
+test('a delegated run is handed the conversation it came from', async () => {
+  const record = workspace()
+  const thread = parentThread()
+  const jobs = []
+  const out = await mention.rewrite(
+    record,
+    '@py-agent implement A from artifact://release-notes.md',
+    {
+      threadId: thread.id,
+      deps: deps({
+        threads: threadsFor(thread),
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    },
+  )
+  assert.equal(jobs.length, 1)
+  const handed = jobs[0]
+  /* the task still leads: a `/workspace:` skill has to stay the first line */
+  assert.match(handed, /^implement A from artifact:\/\/release-notes\.md/)
+  /* what "A" means is in the prompt now — and this turn's own ask is not
+     repeated back as if it were history */
+  assert.match(handed, /Earlier ask:\nwhat should we do about the delegation loop\?/)
+  assert.match(handed, /Last answer there:\nConcrete plan:/)
+  assert.doesNotMatch(handed, /Earlier ask: @py-agent implement A/)
+  /* the notation became a path the run can open, in the tree the file is in */
+  assert.ok(handed.includes(path.join(record.path, 'artifacts', 'release-notes.md')))
+  /* and it is labelled as background, so the run does not redo the work */
+  assert.match(handed, /background, not your task/)
+  /* the card keeps the job alone: the block is the engine's, not the plan's */
+  assert.equal(out.mentions[0].job, 'implement A from artifact://release-notes.md')
+})
+
+test('a plan saved as a personal artifact is handed over as a real path', async () => {
+  const record = workspace()
+  const plan = artifacts.saveText({
+    workspace: record.id,
+    name: 'delegation-plan.md',
+    text: 'A: checkpoint commits. B: brief rewrite.',
+  })
+  const absolute = plan.path.startsWith('~/')
+    ? path.join(os.homedir(), plan.path.slice(2))
+    : plan.path
+  const thread = parentThread({
+    messages: [
+      { who: 'me', text: 'make a plan' },
+      { who: 'agent', text: `Concrete plan: artifact://${plan.id}` },
+      { who: 'me', text: `@py-agent implement A from artifact://${plan.id}` },
+    ],
+  })
+  const jobs = []
+  await mention.rewrite(record, `@py-agent implement A from artifact://${plan.id}`, {
+    threadId: thread.id,
+    deps: deps({
+      threads: threadsFor(thread),
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.ok(jobs[0].includes(absolute), 'the personal shelf path, not a guess')
+})
+
+test('an artifact named in this turn’s own words is resolved too', async () => {
+  /* the file can be named right before the mention; the plan then copies only
+     the job out of the message, so the exchange alone would not point at it */
+  const record = workspace()
+  const thread = parentThread({ messages: [{ who: 'me', text: 'earlier' }] })
+  const jobs = []
+  await mention.rewrite(record, '@py-agent continue from artifact://shots/login-shot.png', {
+    threadId: thread.id,
+    deps: deps({
+      threads: threadsFor(thread),
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  /* the fixture put this file in the shared tree with no share record, so the
+     path has to be that tree — the store reports it as `unclaimed` */
+  assert.ok(jobs[0].includes(path.join(record.path, 'artifacts', 'shots', 'login-shot.png')))
+})
+
+test('the card carries the whole prompt, and Run sends it once', async () => {
+  /* The card is the form. A prompt approved with the conversation block hidden
+     is approved blind, so the block is on the row — and the field the person
+     leaves is the whole prompt, never task + a block appended twice. */
+  const record = workspace()
+  const thread = parentThread()
+  const cards = []
+  const jobs = []
+  await mention.rewrite(record, '@py-agent implement A from artifact://release-notes.md', {
+    threadId: thread.id,
+    hold: async (plan) => {
+      cards.push(...plan.rows.map((row) => ({ job: row.job, context: row.context })))
+      /* exactly what the component sends: the prompt on screen, task + block */
+      return {
+        action: 'run',
+        count: plan.rows.length,
+        instruction: plan.instruction,
+        rows: plan.rows.map((row) => `${row.job}\n\n${row.context}`.trim()),
+      }
+    },
+    deps: deps({
+      threads: threadsFor(thread),
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.equal(cards.length, 1)
+  assert.match(cards[0].job, /^implement A from artifact:\/\/release-notes\.md/)
+  assert.match(cards[0].context, /Context from the conversation this run was delegated from/)
+  assert.match(cards[0].context, /Earlier ask:\nwhat should we do/)
+  const marks = (jobs[0].match(/Context from the conversation this run was delegated from/g) || [])
+    .length
+  assert.equal(marks, 1, 'the block is in the prompt, not appended to it again')
+  assert.match(jobs[0], /^implement A from artifact:\/\/release-notes\.md/)
+  /* the transcript card is the record of what ran: the whole prompt, once */
+  const out = await mention.rewrite(record, '@py-agent implement A', {
+    threadId: thread.id,
+    hold: async (plan) => ({
+      action: 'run',
+      count: plan.rows.length,
+      rows: plan.rows.map((row) => `${row.job}\n\n${row.context}`.trim()),
+    }),
+    deps: deps({ threads: threadsFor(thread) }),
+  })
+  assert.match(out.mentions[0].job, /^implement A\n\nContext from the conversation/)
+  assert.equal(
+    (out.mentions[0].job.match(/Context from the conversation/g) || []).length,
+    1,
+    'one block on the card too',
+  )
+})
+
+test('a revised task still carries the turn’s context', async () => {
+  /* The band is a task, not a prompt: sending only it must not throw the
+     context away. */
+  const record = workspace()
+  const thread = parentThread()
+  const jobs = []
+  await mention.rewrite(record, '@py-agent implement A from artifact://release-notes.md', {
+    threadId: thread.id,
+    hold: async () => ({ action: 'run', count: 1, instruction: 'implement A, in a child worktree' }),
+    deps: deps({
+      threads: threadsFor(thread),
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.match(jobs[0], /^implement A, in a child worktree\n\nContext from the conversation/)
+  const marks = (jobs[0].match(/Context from the conversation this run was delegated from/g) || [])
+    .length
+  assert.equal(marks, 1)
+})
+
+test('no thread reader, or a thread that cannot be read, leaves the job alone', async () => {
+  const record = workspace()
+  const jobs = []
+  const run = async (depsHere) => {
+    jobs.length = 0
+    await mention.rewrite(record, '@py-agent implement A', {
+      threadId: 't_parent',
+      deps: deps({
+        ...depsHere,
+        runEntity: async (_record, _entity, job) => {
+          jobs.push(job)
+          return { ok: true, answer: 'done', error: '' }
+        },
+      }),
+    })
+    assert.equal(jobs.length, 1)
+    assert.doesNotMatch(jobs[0], /Context from the conversation/)
+    assert.equal(jobs[0], 'implement A')
+  }
+  /* a test seam with no reader, and a reader that throws: both are the same
+     answer — the run keeps its own words and still starts */
+  await run({})
+  await run({
+    threads: {
+      read: async () => {
+        throw new Error('this thread cannot be read')
+      },
+    },
+  })
+})
+
+test('a context block that travelled into a child is not nested again', async () => {
+  const record = workspace()
+  const marker = 'Context from the conversation this run was delegated from'
+  const thread = parentThread({
+    messages: [
+      { who: 'me', text: 'first ask' },
+      {
+        who: 'agent',
+        text:
+          'Deep work happened.\n\n' +
+          marker +
+          ' — background, not your task.\nEarlier ask: the original ask',
+      },
+      { who: 'me', text: '@py-agent delegate once more' },
+    ],
+  })
+  const jobs = []
+  await mention.rewrite(record, '@py-agent delegate once more', {
+    threadId: thread.id,
+    deps: deps({
+      threads: threadsFor(thread),
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.match(jobs[0], /Last answer there:\nDeep work happened\./)
+  assert.doesNotMatch(jobs[0], /the original ask/, 'the nested block was cut out')
+  const marks = (jobs[0].match(/Context from the conversation this run was delegated from/g) || [])
+    .length
+  assert.equal(marks, 1, 'one block, never a block inside a block')
+})
+
+test('the context block is bounded, so one essay cannot drown the job', async () => {
+  const record = workspace()
+  const thread = parentThread({
+    messages: [
+      { who: 'me', text: 'first ask' },
+      { who: 'agent', text: `${'A'.repeat(4_000)}END-OF-ANSWER` },
+      { who: 'me', text: '@py-agent do it' },
+    ],
+  })
+  const jobs = []
+  await mention.rewrite(record, '@py-agent do it', {
+    threadId: thread.id,
+    deps: deps({
+      threads: threadsFor(thread),
+      runEntity: async (_record, _entity, job) => {
+        jobs.push(job)
+        return { ok: true, answer: 'done', error: '' }
+      },
+    }),
+  })
+  assert.doesNotMatch(jobs[0], /END-OF-ANSWER/)
+  assert.ok(jobs[0].length < 3_500, 'a bounded hand-off, not a transcript')
+  /* a cut reads as a cut, not as the end of the answer */
+  assert.match(jobs[0], /…\nArtifacts named there|…$/m)
 })
 
 test('the run’s own record names its worktree, not the ticket key', async () => {

@@ -1423,6 +1423,24 @@ export async function cancelChat() {
  * carries the revision — count, band instruction, per-card rows — on the one
  * call that answers the hold, so the words on screen are the words that start.
  */
+/**
+ * Ask the classifier again for a held plan.
+ *
+ * The person edited the **delegation instruction**, and the child instructions
+ * on the cards are derived from it — so the same reader that planned the turn
+ * plans it again. A read: the hold stays open until Run or Cancel, and the
+ * thread is not touched.
+ */
+export async function replanDelegation(text) {
+  const thread = activeThread()
+  if (!thread) return null
+  return await call('chat.replan', {
+    workspace: hub.workspace,
+    id: thread.id,
+    text: String(text || ''),
+  })
+}
+
 export async function decideDelegation(answer = 'run') {
   const thread = activeThread()
   if (!thread) return null
