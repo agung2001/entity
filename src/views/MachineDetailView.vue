@@ -88,7 +88,10 @@ const label = computed(
 )
 const spec = computed(() => (isLocal.value ? fleet.hostname || 'localhost' : host.value?.spec || ''))
 const identity = computed(() => host.value?.identityFile || '')
-const missing = computed(() => !isLocal.value && !host.value)
+/* An unresolved fleet is not a missing host: until the ssh config has been
+   read, `host` is null for a host that is perfectly present, and the page used
+   to say "not in ~/.ssh/config" over the top of a report it already had. */
+const missing = computed(() => fleet.loaded && !isLocal.value && !host.value)
 const probe = computed(() => probeState(alias.value))
 const heroColor = 'var(--accent)'
 
@@ -374,7 +377,10 @@ const sourceLabel = (entry) => {
 }
 
 async function scan() {
-  if (busy.value || missing.value) return
+  /* `missing` waits for the fleet read, so this also refuses a scan while the
+     host is still unknown — probing `local` over someone else's page would be
+     worse than a dead button for one frame. */
+  if (busy.value || missing.value || (!isLocal.value && !host.value)) return
   busy.value = 'scan'
   try {
     await probeHost(isLocal.value ? { alias: 'local' } : host.value)
@@ -558,7 +564,7 @@ function tabKey(event) {
     </section>
 
     <div v-if="missing" class="empty-note">
-      <b>{{ fleet.error || `${alias} is not in ${fleet.displayPath}.` }}</b>
+      <b>{{ `${alias} is not in ${fleet.displayPath}.` }}</b>
       <span>The facts this workspace kept are still here; the host block is gone.</span>
       <router-link :to="{ name: 'machines', params: { workspace: hub.workspace } }">
         Back to the fleet
@@ -568,7 +574,15 @@ function tabKey(event) {
       </button>
     </div>
 
-    <div v-else-if="!fleet.loaded && !fleet.error" class="empty-note"><b>Reading the fleet…</b></div>
+    <div v-else-if="fleet.error" class="empty-note">
+      <b>{{ fleet.error }}</b>
+      <span>The host this page reads is only knowable from that config.</span>
+      <router-link :to="{ name: 'machines', params: { workspace: hub.workspace } }">
+        Back to the fleet
+      </router-link>
+    </div>
+
+    <div v-else-if="!fleet.loaded" class="empty-note"><b>Reading the fleet…</b></div>
 
     <div v-else class="entp-grid">
       <div class="entp-main">
