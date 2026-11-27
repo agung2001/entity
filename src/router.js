@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
-import { hub, restoreSession } from '@/stores/hub'
+import { hub, restoreSession, toast } from '@/stores/hub'
 import { loadWorkspaceList, loadWorkspaces, openWorkspace, workspaces } from '@/stores/workspaces'
 
 /* Every screen is its own chunk: the sign-in page does not download the chat,
@@ -439,6 +439,22 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   document.title = to.meta.title || 'entity — local agent workspace'
+})
+
+/* A lazy screen that fails to fetch leaves the bar on the old page with the new
+   URL, which reads as "the page is broken" and clicks that do nothing — a dev
+   server that rewrote the file under the tab, or a chunk left over from an older
+   build. Say it, and make the fix one keystroke. */
+router.onError((error) => {
+  const message = String(error?.message || '')
+  if (/dynamically imported module|Importing a module script failed|Loading chunk/i.test(message)) {
+    toast('That screen did not load. Reload the window and it will arrive.', {
+      actionLabel: 'Reload',
+      onAction: () => window.location.reload(),
+    })
+    return
+  }
+  toast(message || 'Could not open that screen.')
 })
 
 export default router
