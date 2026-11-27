@@ -20,7 +20,7 @@ import ClockifyWorkspaceCard from '@/connectors/clockify/WorkspaceCard.vue'
 import ConnectorDashboardPane from '@/connectors/ConnectorDashboardPane.vue'
 import LynkReportCard from '@/connectors/lynk/ReportCard.vue'
 import TailscalePanel from '@/components/TailscalePanel.vue'
-import OrcaPathCard from '@/connectors/orca/PathCard.vue'
+import BinaryPathCard from '@/connectors/parts/BinaryPathCard.vue'
 import {
   answerGate,
   dashboardHint as hintFor,
@@ -115,11 +115,18 @@ const feedUrl = computed(() => String(row.value?.url || ''))
    install, a sign-in that lives in the CLI, a mention the composer does not offer.
    Its page body is `TailscalePanel`, and the cards below stand down for it. */
 const isTailscale = computed(() => id.value === 'tailscale')
-/* Orca is the one `cli` row whose binary this app may have to be *told* about: it
-   is a desktop app with its own installer, so on some machines the automatic search
-   finds nothing. Its card owns that field, the same way Lynk's owns its folder —
-   the resolver and the page read one file (`~/.entity/orca.json`). */
+/* The two `cli` rows this app may have to be *told* about: a desktop app with its
+   own installer, and a package manager's binary that an app launched from Finder
+   never inherited. One card owns that field for both (`BinaryPathCard`), and each
+   connector's resolver reads its own file — `~/.entity/orca.json`, `gh.json`. */
 const isOrca = computed(() => id.value === 'orca')
+/* A binary worth naming, and the calls its card answers: the connector id is the
+   prefix, so a third one is a line here rather than a second component. */
+const binaryRow = computed(() => {
+  if (isOrca.value) return { fn: 'orca', environment: 'ENTITY_ORCA_BIN' }
+  if (id.value === 'github') return { fn: 'github', environment: 'ENTITY_GH_BIN' }
+  return null
+})
 /* Lynk.id's own settings card is the folder and the marketplace document, and both
    are read off this connector's row. Two templates below gate on this name —
    `LynkReportCard` and the "what it resolves" card — and it was never declared, so
@@ -1123,12 +1130,17 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                time they get here. -->
           <LynkReportCard v-if="isLynk && !notInstalled" :label="row.label" />
 
-          <!-- Where Orca's binary is, for the machine whose install the automatic
+          <!-- Where the CLI's binary is, for the machine whose install the automatic
                search cannot find. It sits above the sign-in card because the path is
                what `Test connection` below it actually runs, and it is drawn even for
                an entry this workspace has not installed: the binary is a machine fact,
                and it is the very thing the pitch above names as this connector's need. -->
-          <OrcaPathCard v-if="isOrca" :label="row.label" />
+          <BinaryPathCard
+            v-if="binaryRow"
+            :fn="binaryRow.fn"
+            :label="row.label"
+            :environment="binaryRow.environment"
+          />
 
           <!-- The accounts card: one row per connected account, on the connector's
                own page. A component of its own because every account-bearing

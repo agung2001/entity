@@ -172,7 +172,11 @@ async function probeOrca() {
 }
 
 async function probeGithub() {
-  const bin = harnesses.which('gh')
+  /* The same resolver the `@github:` mention spawns: a path set on the connector's
+     page is then the one the probe tests, and the row cannot report a binary the
+     turn would not run. */
+  const wanted = mentionRef.githubBinary()
+  const bin = path.isAbsolute(wanted) ? (fs.existsSync(wanted) ? wanted : '') : harnesses.which(wanted)
   if (!bin) {
     return { usable: false, word: 'not on PATH', detail: 'gh', path: '', problem: '' }
   }
@@ -350,7 +354,10 @@ function rowOf(id, enabled, probe) {
     able to say "nothing is installed here" without probing anything. */
 function installedWithoutProbing(id, workspace) {
   if (id === 'youtrack') return youtrackCredential(workspace).hasCredential
-  if (id === 'github') return Boolean(harnesses.which('gh'))
+  if (id === 'github') {
+    const wanted = mentionRef.githubBinary()
+    return path.isAbsolute(wanted) ? fs.existsSync(wanted) : Boolean(harnesses.which(wanted))
+  }
   /* Orca can be named on its own page, so its binary is not always a PATH lookup:
      ask the same resolver the mention uses, then stat what it answered. */
   const wanted = mentionRef.orcaBinary()

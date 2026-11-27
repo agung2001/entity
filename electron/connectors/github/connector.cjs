@@ -14,17 +14,24 @@
  */
 module.exports = {
   id: 'github',
+  resolver: 'github',
+  mention: 'github',
+  suffix: 'Github',
   account: false,
+
+  mentionModule: () => require('./mention.cjs'),
 
   dashboard: { call: 'github.dashboard', mode: 'cli', kind: 'github' },
 
-  /* Who `gh` has signed in, what moved in the last 90 days, and the one switch that
-     makes another login active. Read-only apart from that switch, and no token is
-     ever read by this process. */
+  /* Who `gh` has signed in, what moved in the last 90 days, the one switch that
+     makes another login active, and the binary its page names. Read-only apart from
+     that switch and that path, and no token is ever read by this process. */
   calls: {
     'github.logins': () => require('./dashboard.cjs').logins(),
     'github.dashboard': (args) => require('./dashboard.cjs').dashboard(args),
     'github.useActive': (args) => require('./dashboard.cjs').useActive(args),
+    'github.path': () => require('./path.cjs').resolve(),
+    'github.setPath': (args) => require('./dashboard.cjs').setPath(args),
   },
 
   entry: {
@@ -40,13 +47,14 @@ module.exports = {
         examples: ['@github:artistudio/entity', '@github:connector'],
         returns: 'the repository itself — full name, URL, default branch, last push',
         resolver: 'github',
-        needs: 'gh signed in on this machine',
+        needs: 'gh on this machine — found automatically, or named on this page — and signed in',
         page: '',
         how: [
           'A full name (`owner/repo`) is one repository; anything without a slash is a search across the repositories your token can see.',
           'The repository comes back with its URL, default branch and last push, so the entity knows what it is looking at before it runs anything.',
           'A search returns the matching repositories, capped so a broad word cannot flood the prompt.',
           'Entity does not wrap `gh` — the entity calls it itself when it needs one of its verbs.',
+          'A `gh` the app cannot find — a Homebrew prefix it never inherited, a portable install — is named on this page instead of being exported into the app\'s environment.',
         ],
         samples: [
           { code: '@github:artistudio/entity', then: 'one repository, with its URL and default branch' },
