@@ -739,63 +739,14 @@ function tokenOf(segment) {
   return segment.raw
 }
 
-/* ── cli reads ─────────────────────────────────────────────────────── */
-
-/* One ceiling for the CLIs a mention reads that are not connectors: `gh`, and a
-   `git status` behind a timed-out run's salvage. Orca has its own, next to the
-   code that spawns it (`connectors/orca/mention.cjs`). */
-const CLI_TIMEOUT_MS = 10_000
-
-function execFileText(bin, args, timeout) {
-  return new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
-      if (error) {
-        reject(
-          new Error(
-            error?.code === 'ENOENT'
-              ? `${bin} is not installed, or not on PATH.`
-              : String(error?.message || error).slice(0, 200),
-          ),
-        )
-        return
-      }
-      resolve(String(stdout || ''))
-    })
-  })
-}
-
-/**
- * `gh`, resolved once. A missing binary is a miss the mention reports rather than
- * a silent empty list: `harnesses.which` is the same PATH walk the Harnesses
- * page uses, so the two agree on what is installed.
- */
-let githubBinCache = ''
-
-function githubBinary() {
-  if (process.env.ENTITY_GH_BIN) return process.env.ENTITY_GH_BIN
-  if (githubBinCache) return githubBinCache
-  githubBinCache = harnesses.which('gh') || 'gh'
-  return githubBinCache
-}
-
-async function execGithub(args) {
-  try {
-    return await execFileText(githubBinary(), args, CLI_TIMEOUT_MS)
-  } catch (error) {
-    const message = String(error?.message || error)
-    throw new Error(
-      /not installed, or not on PATH/.test(message)
-        ? 'gh is not installed, or not on PATH.'
-        : `gh ${args[0] || ''} failed: ${message}`,
-    )
-  }
-}
-
-/* The Orca integration lives in its connector folder (`connectors/orca/`): the
-   resolver, the two lists it reads and the worktree state are one fact, and the
-   composer, the card and a timed-out run all ask the same module for it. What is
-   kept here is the name this file's callers already use. */
+/* Both local-CLI connectors live in their own folders now — `connectors/orca/` and
+   `connectors/github/` — each with the resolver, the binary it runs and its own
+   switch. What is kept here are the names this file's callers already use, and the
+   dispatch below asks the registry for the resolver like it does for every other
+   connector. `githubBinary` is re-exported for `integrations-store`, which probes
+   the binary a row would run. */
 const orca = require('./connectors/orca/mention.cjs')
+const github = require('./connectors/github/mention.cjs')
 
 /* ── what a timed-out run left behind ───────────────────────────────
 
@@ -855,6 +806,19 @@ async function salvageDir({ partial, dir, ticket }) {
   return state?.path || ''
 }
 
+/** One bounded `git` call, as text. The salvage is the only thing here that spawns. */
+function gitText(args, timeout) {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { timeout, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+      if (error) {
+        reject(error)
+        return
+      }
+      resolve(String(stdout || ''))
+    })
+  })
+}
+
 /**
  * Two lines of git evidence under a dead run's directory, or `''` when nothing
  * resolves. Never throws: the caller has a failure to report either way.
@@ -867,7 +831,7 @@ function salvageText({ partial, dir, ticket }) {
        nothing known, and the two must not print the same sentence. */
     const git = async (...args) => {
       try {
-        return String(await execFileText('git', ['-C', at, ...args], SALVAGE_GIT_MS)).trim()
+        return String(await gitText(['-C', at, ...args], SALVAGE_GIT_MS)).trim()
       } catch {
         return null
       }
@@ -990,57 +954,6 @@ async function resolveYoutrack(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
     detail: [row.project || segment.project, row.customFields?.State, row.url]
       .filter(Boolean)
       .join(' · '),
-  }))
-}
-
-/**
- * `@github:` — one repository by `owner/repo`, or a repository search.
- *
- * ponytail: two shapes only (a repo and a search over repos), because issues and
- * PRs already have their own MCP server surface; widening it means a third
- * dispatch on `gh search issues` / `gh search prs` once someone asks for it.
- *
- * A manually typed token resolves here whatever the Account → Integrations
- * switch says: that switch decides whether the composer *offers* the token, not
- * whether a resolver refuses one a person wrote out in full.
- */
-async function resolveGithub(ctx, segment, { limit = MAX_PER_SOURCE } = {}) {
-  const query = String(segment.query || '').trim()
-  if (!query) throw new Error('@github: needs a repository (owner/repo) or a search query.')
-  const run = ctx.deps.execGithub
-  /* `owner/repo` is a whole query with one slash — the shape `gh api` takes */
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(query)) {
-    const raw = await run(['api', `repos/${query}`])
-    let repo = null
-    try {
-      repo = JSON.parse(raw)
-    } catch {
-      throw new Error(`@github:${query} did not resolve to a repository Gh could read.`)
-    }
-    if (!repo?.full_name) throw new Error(`@github:${query} is not a repository Gh knows.`)
-    return [
-      {
-        id: repo.full_name,
-        label: `${repo.full_name} — ${repo.description || 'a repository'}`,
-        detail: [repo.language, repo.private ? 'private' : 'public', repo.html_url]
-          .filter(Boolean)
-          .join(' · '),
-        url: repo.html_url || `https://github.com/${repo.full_name}`,
-      },
-    ]
-  }
-  const raw = await run(['search', 'repos', '--limit', String(limit), '--json', 'fullName,description,url', query])
-  let rows = []
-  try {
-    rows = JSON.parse(raw)
-  } catch {
-    throw new Error('gh search repos did not return JSON.')
-  }
-  return (Array.isArray(rows) ? rows : []).map((row) => ({
-    id: row.fullName || '',
-    label: `${row.fullName || ''} — ${row.description || 'a repository'}`,
-    detail: row.url || '',
-    url: row.url || '',
   }))
 }
 
@@ -1621,14 +1534,20 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
   }
 
   if (kind === 'github') {
-    /* The composer offers a whole query, so there is one page: the repo the
-       person named, or the first `limit` matches of `gh search repos`. */
-    const query = fields.join(':').trim()
-    if (!query) return { items: [], more: false }
-    const rows = await resolveGithub(ctx, { query }, { limit: offset + limit })
+    /* One page, and it is the resolver's own answer: the repository the person
+       named, or the first matches of `gh search repos`. A connector that is off
+       refuses the read, and an empty menu is what the switch promised. */
+    const preview = connectorRegistry.previewFor('github')
+    if (!preview) return { items: [], more: false }
+    let rows = []
+    try {
+      rows = await preview(fields, { limit: offset + limit + 1 })
+    } catch {
+      return { items: [], more: false }
+    }
     return {
       items: rows.slice(offset, offset + limit).map((row) => ({
-        insert: `@github:${row.id}`,
+        insert: row.mention,
         label: row.label,
         detail: row.detail,
       })),
@@ -1854,8 +1773,8 @@ async function search({ record, kind, fields = [], limit = 10, offset = 0, dir =
 
 const defaultDeps = {
   orcaRepos: orca.repos,
+  execGithub: github.run,
   mcpCall: mcpTools.callTool,
-  execGithub,
   runEntity,
 }
 
@@ -2419,7 +2338,8 @@ async function resolveOne(ctx, segment) {
     }
 
     if (segment.kind === 'github') {
-      const items = await resolveGithub(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
+      const resolve = connectorRegistry.resolverFor('github')
+      const items = await resolve(ctx, segment, { limit: ctx.rowLimit || MAX_PER_SOURCE })
       segment.mention = { kind: 'github', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`@github:${segment.query} matched no repository`)
       return
@@ -3273,6 +3193,7 @@ module.exports = {
   orcaWorktrees: orca.worktrees,
   orcaBinary: orca.binary,
   worktreeState: orca.worktreeState,
+  githubBinary: github.githubBinary,
   resolveArtifact,
   blockFor,
   listProjectFiles,

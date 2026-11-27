@@ -38,6 +38,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const harnesses = require('../../harness-store.cjs')
+const { githubBinary } = require('./path.cjs')
+const config = require('./config.cjs')
 
 const WINDOW_DAYS = 90
 /* One visit, one read: a number that changed twice in a day is not the number a
@@ -200,9 +202,38 @@ function reasonOf(result) {
   return String(result.error?.message || result.error || 'unknown error').slice(0, 300)
 }
 
+/**
+ * The `gh` this connector would spawn — the page's own field first, then the
+ * environment, then the package managers' and PATH's answers. It is the same
+ * resolution `@github:` uses (`path.cjs`), so a binary somebody named on this page
+ * is the one the sign-in read and the mention both run.
+ */
 function binary() {
-  const found = harnesses.which('gh')
+  const wanted = githubBinary()
+  /* A whole path is stat-ed; a bare name is the one case that needs the PATH walk,
+     because `spawn` does it at run time and this answer has to travel to a page. */
+  const found = path.isAbsolute(wanted)
+    ? fs.existsSync(wanted)
+      ? wanted
+      : ''
+    : harnesses.which(wanted)
   return { found: Boolean(found), path: found || '' }
+}
+
+/* ── the binary's own two verbs ──────────────────────────────────── */
+
+/** What `gh` this connector would run right now, and how it was found. */
+function binaryPath() {
+  return require('./path.cjs').resolve()
+}
+
+/** Set (or clear, with an empty string) the path, then answer the new resolution. */
+function setPath({ binary: wanted } = {}) {
+  config.save({ binary: wanted })
+  /* The login cache was filled by a different binary: a name that changed hands is
+     not a cache to keep. */
+  forgetCache()
+  return binaryPath()
 }
 
 /* ── who is signed in ────────────────────────────────────────────── */
@@ -716,4 +747,4 @@ async function useActive({ login } = {}) {
   return { login: wanted, active: true, logins: after.logins }
 }
 
-module.exports = { CACHE_MS, CACHE_FILE, WINDOW_DAYS, dashboard, logins, useActive }
+module.exports = { CACHE_MS, CACHE_FILE, WINDOW_DAYS, binaryPath, dashboard, logins, setPath, useActive }

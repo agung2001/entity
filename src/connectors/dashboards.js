@@ -87,7 +87,7 @@ const DASHBOARDS = {
           why: {
             before: 'Dashboard needs the ',
             code: 'gh',
-            after: " binary. It is not on this machine's PATH.",
+            after: ' binary. It was not found on this machine — name it on this page.',
             title: 'Needs the gh binary on this machine',
           },
         }
