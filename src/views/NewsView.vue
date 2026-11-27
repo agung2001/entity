@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import UiIcon from '@/components/UiIcon.vue'
+import ViewToggle from '@/components/ViewToggle.vue'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
 import { dialogDepth } from '@/composables/useDialog'
@@ -52,6 +53,10 @@ const items = ref([])
 const query = ref('')
 const chip = ref('')
 const sort = ref('rising')
+/* The mode is the drawing, not the data: one `paged` array, two renderings. A
+   plain ref, like `ManageWorkspacesView.vue` — nothing here is stored, and no
+   handler resets it, because a mode change narrows nothing. */
+const view = ref('grid')
 const page = ref(1)
 const searchField = ref(null)
 const searchKey = shortcutLabel('inventory-search')
@@ -232,17 +237,6 @@ const pagerLabel = computed(() => {
    The eyebrow is the machinery, the h1 is the tab's own name. Nothing here says
    how long a read stands: `cachedUntil` reads that off the TTL the store sent. */
 const until = computed(() => cachedUntil(readAt.value, cacheTtlMs.value))
-const published = (iso) => {
-  const at = Date.parse(iso || '')
-  if (!Number.isFinite(at)) return '—'
-  return new Date(at).toLocaleString('en-gb', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
 const absolute = (iso) => {
   const at = Date.parse(iso || '')
   if (!Number.isFinite(at)) return ''
@@ -324,10 +318,17 @@ const foot = computed(() => {
   return 'Ordered by when the feed published the item. The number is the feed’s own position, which is why it is not a sequence — these feeds are interleaved, not ranked. Nothing here is scored.'
 })
 
-const caption = computed(() => {
-  const what = tab.value === 'trends' ? 'Trends from the one trend feed' : 'Headlines from every installed news feed'
-  return skel.value ? `${what}, loading` : `${what}, page ${page.value} of ${pages.value}`
-})
+/* What orders the open tab, in words. The strip's note and the item set's own
+   heading say the same thing, so both read it off one computed. */
+const orderLabel = computed(() =>
+  tab.value === 'trends' && sort.value === 'rising' ? 'most rising first' : 'newest first',
+)
+/* The item set's heading, for the screen reader: how many, in what order, drawn
+   how. A mode change re-announces the same rows, never new ones. */
+const itemsHead = computed(
+  () =>
+    `${skel.value ? '—' : filtered.value.length} ${tab.value === 'trends' ? 'trends' : 'headlines'}, ${orderLabel.value}, ${view.value} view`,
+)
 
 const feedMark = (item) => {
   const feed = feedIndex.value.get(item.feedId)
@@ -523,7 +524,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <span class="n">{{ skel ? '—' : id === 'trends' ? trendItems.length : generalItems.length }}</span>
         </button>
         <span class="tab-why">
-          {{ skel ? 'reading the feeds…' : tab === 'trends' ? (sort === 'rising' ? 'most rising first' : 'newest first') : 'newest first' }}
+          {{ skel ? 'reading the feeds…' : orderLabel }}
         </span>
       </div>
 
@@ -626,7 +627,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </template>
 
         <template v-else-if="shape !== 'dead'">
-          <div v-if="shape === 'list'" class="dsh-bar">
+          <div v-if="shape === 'list'" class="nv-bar">
             <label class="cxn-search">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                 <circle cx="7" cy="7" r="4.2" />
@@ -682,7 +683,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </button>
             </div>
 
-            <div class="dsh-when">
+            <ViewToggle :view="view" :aria-disabled="skel" class="nv-seg" @update:view="view = $event" />
+
+            <div class="nv-when">
               <span v-if="reading">reading…</span>
               <span v-else-if="readAt">read {{ ago(readAt) }}</span>
               <span v-else>not read yet</span>
@@ -694,14 +697,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </div>
           </div>
 
-          <div class="dsh-tblcard">
-            <div class="hd">
-              <h3 id="news-tbl-head">{{ tab === 'trends' ? 'Trend radar' : 'Headlines' }}</h3>
-              <span class="n">{{ headCount }}</span>
-              <span class="spacer"></span>
-            </div>
+          <section aria-labelledby="news-items-head">
+            <h2 id="news-items-head" class="sr-only">{{ itemsHead }}</h2>
+            <p class="nv-meta">{{ headCount }}</p>
 
-            <!-- Zero rows after a filter is not an empty feed, and it names both. -->
+            <!-- Zero rows after a filter is not an empty feed, and it names both.
+                 It carries no verb: `Reset` lives in the read line above, once. -->
             <div v-if="!skel && !filtered.length" class="cxn-empty">
               <template v-if="query && chip">
                 No {{ tab === 'trends' ? 'topic' : 'headline' }} matches “{{ query }}” in {{ chipLabel }}.
@@ -713,92 +714,96 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <template v-else>This read answered with no item.</template>
             </div>
 
-            <div v-else class="dsh-tblscroll" tabindex="0" role="region" aria-labelledby="news-tbl-head">
-              <table
-                class="dsh-tbl news-tbl"
-                :aria-busy="skel ? 'true' : 'false'"
-                :aria-label="skel ? (tab === 'trends' ? 'Trends are loading' : 'Headlines are loading') : undefined"
-              >
-                <caption class="sr-only">
-                  {{ caption }}
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col" class="rank-col">#</th>
-                    <th scope="col">{{ tab === 'trends' ? 'Trend' : 'Headline' }}</th>
-                    <th v-if="tab === 'general'" scope="col" class="src-col">Feed</th>
-                    <th v-if="tab === 'general'" scope="col" class="r pub-col">Published</th>
-                    <th v-if="tab === 'trends'" scope="col" class="r vol-col">Volume</th>
-                    <th v-if="tab === 'trends'" scope="col" class="r seen-col">Seen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template v-if="skel">
-                    <tr v-for="n in 6" :key="`sk${n}`" class="skrow">
-                      <td><span class="dsh-skel" style="width: 14px; height: 9px"></span></td>
-                      <td><span class="dsh-skel" style="width: 62%; height: 9px"></span></td>
-                      <td v-if="tab === 'general'" class="src-col">
-                        <span class="dsh-skel" style="width: 82px; height: 9px"></span>
-                      </td>
-                      <td v-if="tab === 'general'" class="r pub-col">
-                        <span class="dsh-skel" style="width: 54px; height: 9px"></span>
-                      </td>
-                      <td v-if="tab === 'trends'" class="r vol-col">
-                        <span class="dsh-skel" style="width: 34px; height: 9px"></span>
-                      </td>
-                      <td v-if="tab === 'trends'" class="r seen-col">
-                        <span class="dsh-skel" style="width: 46px; height: 9px"></span>
-                      </td>
-                    </tr>
-                  </template>
-                  <tr v-for="row in skel ? [] : paged" :key="`${row.feedId}-${row.rank}`">
-                    <td class="rank">{{ row.rank }}</td>
-                    <td>
-                      <div class="lead" :class="{ two: String(row.title).length > 90 }">
-                        <a
-                          v-if="row.url"
-                          :href="row.url"
-                          :title="row.title"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >{{ row.title }}</a>
-                        <span v-else class="t">{{ row.title }}</span>
-                        <span class="k">
-                          <!-- The seen age and the feed name ride here only when their
-                               own column has left the table, so the row never loses a
-                               fact to a breakpoint. -->
-                          <span v-if="tab === 'general'" class="k-src">{{ row.feed }} · </span>
-                          <span v-if="tab === 'trends'" class="k-seen">{{ ago(row.published) }} · </span>
-                          {{ row.provenance }}
-                        </span>
-                      </div>
-                    </td>
-                    <td v-if="tab === 'general'" class="src-col">
-                      <span class="src"><i :data-s="feedMark(row)">{{ feedGlyph(row) }}</i>{{ row.feed }}</span>
-                    </td>
-                    <td v-if="tab === 'general'" class="r mono pub-col">{{ published(row.published) }}</td>
-                    <td v-if="tab === 'trends'" class="r vol-col">
+            <!-- One set, two drawings. `paged` is the same slice in both: the
+                 mode changes what a row becomes, never what it says. -->
+            <ul v-else-if="view === 'grid'" class="nv-grid">
+              <template v-if="skel">
+                <li v-for="n in 9" :key="`skg${n}`" aria-hidden="true">
+                  <div class="nv-card">
+                    <p class="nv-top">
+                      <span class="dsh-skel" style="width: 16px; height: 16px"></span>
+                      <span class="dsh-skel" style="width: 72px; height: 9px"></span>
+                      <span class="tm dsh-skel" style="width: 44px; height: 9px"></span>
+                    </p>
+                    <h3><span class="dsh-skel" style="width: 88%; height: 11px"></span></h3>
+                    <p class="foot"><span class="dsh-skel" style="width: 104px; height: 9px"></span></p>
+                  </div>
+                </li>
+              </template>
+              <li v-for="row in skel ? [] : paged" :key="`${row.feedId}-${row.rank}`">
+                <component
+                  :is="row.url ? 'a' : 'div'"
+                  class="nv-card"
+                  :href="row.url || undefined"
+                  :title="row.title"
+                  :target="row.url ? '_blank' : undefined"
+                  :rel="row.url ? 'noopener noreferrer' : undefined"
+                >
+                  <p class="nv-top">
+                    <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true">{{ feedGlyph(row) }}</i>
+                    <span class="fl">{{ row.feed }}</span>
+                    <span class="tm">{{ ago(row.published) }}</span>
+                  </p>
+                  <h3>{{ row.title }}</h3>
+                  <p class="foot">
+                    <template v-if="tab === 'trends'">
+                      rank {{ row.rank }} · volume
                       <span class="vol" :data-none="row.volume ? undefined : '1'">{{ row.volume || '—' }}</span>
-                    </td>
-                    <td v-if="tab === 'trends'" class="r mono seen-col">{{ ago(row.published) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    </template>
+                    <template v-else>{{ row.feed }} · {{ row.provenance }}</template>
+                  </p>
+                </component>
+              </li>
+            </ul>
 
-            <div class="pager">
+            <ul v-else class="nv-list">
+              <template v-if="skel">
+                <li v-for="n in 6" :key="`skl${n}`" class="nv-row" aria-hidden="true">
+                  <span class="dsh-skel" style="width: 16px; height: 16px"></span>
+                  <div>
+                    <span class="dsh-skel" style="width: 78%; height: 11px"></span>
+                    <span class="dsh-skel" style="display: block; width: 96px; height: 9px; margin-top: 6px"></span>
+                  </div>
+                  <span class="tm dsh-skel" style="width: 44px; height: 9px"></span>
+                </li>
+              </template>
+              <li v-for="row in skel ? [] : paged" :key="`${row.feedId}-${row.rank}`" class="nv-row">
+                <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true">{{ feedGlyph(row) }}</i>
+                <div>
+                  <component
+                    :is="row.url ? 'a' : 'span'"
+                    class="nv-rt"
+                    :href="row.url || undefined"
+                    :title="row.title"
+                    :target="row.url ? '_blank' : undefined"
+                    :rel="row.url ? 'noopener noreferrer' : undefined"
+                  >{{ row.title }}</component>
+                  <p class="nv-prov">
+                    <template v-if="tab === 'trends'">
+                      {{ row.feed }} · rank {{ row.rank }} ·
+                      <span class="vol" :data-none="row.volume ? undefined : '1'">{{ row.volume || '—' }}</span>
+                    </template>
+                    <template v-else>{{ row.feed }} · {{ row.provenance }}</template>
+                  </p>
+                </div>
+                <span class="tm">{{ ago(row.published) }}</span>
+              </li>
+            </ul>
+
+            <div class="nv-foot">
               <span class="lab" aria-live="polite">{{ pagerLabel }}</span>
-              <span class="spacer"></span>
-              <button class="btn btn-sm" type="button" :disabled="skel || atPage <= 1" @click="page -= 1">
-                Previous
-              </button>
-              <button class="btn btn-sm" type="button" :disabled="skel || atPage >= pages" @click="page += 1">
-                Next
-              </button>
+              <span class="btns">
+                <button class="btn btn-sm" type="button" :disabled="skel || atPage <= 1" @click="page -= 1">
+                  Previous
+                </button>
+                <button class="btn btn-sm" type="button" :disabled="skel || atPage >= pages" @click="page += 1">
+                  Next
+                </button>
+              </span>
             </div>
+          </section>
 
-            <p v-if="foot" class="dsh-foot">{{ foot }}</p>
-          </div>
+          <p v-if="foot" class="dsh-foot">{{ foot }}</p>
         </template>
       </div>
     </div>
