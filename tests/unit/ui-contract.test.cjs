@@ -299,13 +299,13 @@ test('the machine capability page brands harnesses and offers search', () => {
   const text = fs.readFileSync(file, 'utf8')
   assert.match(text, /<HarnessIcon\b/, 'harnesses need their thesvg mark')
   assert.match(text, /type="search"/, 'the harness/model inventory needs a search input')
-  /* One tablist, five tabs, one live panel: a section that loses its tab, or a
-     second panel drawn beside it, is a report the member cannot read section by
-     section, and nothing else in the suite opens this page. */
-  assert.equal([...text.matchAll(/role="tab"/g)].length, 5, 'one tab per report section')
+  /* One tablist, one tab per section, one live panel: a section that loses its
+     tab, or a second panel drawn beside it, is a report the member cannot read
+     section by section, and nothing else in the suite opens this page. */
+  assert.equal([...text.matchAll(/role="tab"/g)].length, 6, 'one tab per report section')
   assert.equal([...text.matchAll(/role="tabpanel"/g)].length, 1, 'the strip owns one panel')
   assert.match(text, /class="rpt-gap"/, 'an unread group draws the note, never an empty table')
-  for (const label of ['Overview', 'Cron', 'Docker', 'Skills', 'Orca']) {
+  for (const label of ['Harnesses', 'Overview', 'Cron', 'Docker', 'Skills', 'Orca']) {
     assert.match(text, new RegExp(`id="rep-tab-${label.toLowerCase()}"`), `${label} needs its tab`)
   }
 })

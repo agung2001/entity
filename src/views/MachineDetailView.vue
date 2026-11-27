@@ -13,9 +13,10 @@ import { hub, toast } from '@/stores/hub'
 import { forgetMachineFacts, machineFactsFor, workspaces } from '@/stores/workspaces'
 
 /**
- * One host, drawn as the third detail page: the same shell as an entity, a
- * five-section report on what a single read-only pass found, and a roster of
- * the harnesses that pass could see with their models one click away.
+ * One host, drawn as the third detail page: the same shell as an entity, and one
+ * section strip over everything a single read-only pass found — the host's five
+ * sections in One's order, with the harness roster that pass could see closing
+ * the strip, its models one click away behind each row.
  *
  * The page answers three questions without a scroll — can this host run agents,
  * with what, and how stale is that answer — and it never draws a section it did
@@ -32,12 +33,16 @@ const searchEl = ref(null)
 const tablistEl = ref(null)
 const searchKey = shortcutLabel('inventory-search')
 
+/* The host's own five sections lead, in One's order, and the page opens on the
+   first of them; the harness roster closes the strip, because it is this app's
+   answer to "with what" rather than a section of the host report. */
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'cron', label: 'Cron' },
   { id: 'docker', label: 'Docker' },
   { id: 'skills', label: 'Skills' },
   { id: 'orca', label: 'Orca' },
+  { id: 'harnesses', label: 'Harnesses' },
 ]
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const EMPTY_REPORT = {
@@ -175,6 +180,7 @@ const tabs = computed(() => {
     /* One badges its Orca tab the same way: open anomalies are a warning the
        member should see before opening the section, not a failure. */
     orca: tab('orca', 'Orca', open, { warn: open > 0 }),
+    harnesses: tab('harnesses', 'Harnesses', foundCount.value),
   }
 })
 const selected = (id) => (section.value === id ? 'true' : 'false')
@@ -592,7 +598,7 @@ function tabKey(event) {
           <div class="entp-sec-head">
             <h2>Report</h2>
             <span class="n">
-              5 sections · 1 pass<template v-if="took"> · {{ took }}</template>
+              6 sections · 1 pass<template v-if="took"> · {{ took }}</template>
               <template v-if="facts"> · read {{ readAt }}</template>
             </span>
           </div>
@@ -685,6 +691,17 @@ function tabKey(event) {
               @click="section = 'orca'"
             >
               Orca <b :data-s="tabs.orca.warn ? 'warn' : null">{{ tabs.orca.count }}</b>
+            </button>
+            <button
+              id="rep-tab-harnesses"
+              type="button"
+              role="tab"
+              :aria-selected="selected('harnesses')"
+              :tabindex="tabStop('harnesses')"
+              aria-controls="rep-panel"
+              @click="section = 'harnesses'"
+            >
+              Harnesses <b>{{ tabs.harnesses.count }}</b>
             </button>
           </div>
 
@@ -1155,7 +1172,7 @@ function tabKey(event) {
             </template>
 
             <!-- ── orca ─────────────────────────────────────────────────── -->
-            <template v-else>
+            <template v-else-if="section === 'orca'">
               <div v-if="report.orca" class="rcard">
                 <h3>
                   Orca
@@ -1278,133 +1295,118 @@ function tabKey(event) {
                 </span>
               </p>
             </template>
-          </div>
-        </section>
-
-        <section class="entp-sec">
-          <div class="entp-sec-head">
-            <h2>Harnesses</h2>
-            <span class="n">
-              {{ foundCount }} of {{ knownTotal }} known · {{ plural(modelCount, 'model', 'models') }}
-            </span>
-            <div class="entp-sec-actions">
-              <button
-                class="btn btn-sm"
-                type="button"
-                :disabled="Boolean(busy) || missing"
-                @click="scan"
-              >
-                {{ busy === 'scan' ? 'Testing…' : 'Test & scan again' }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="foundCount" class="ibarbar">
-            <label class="wsl-search">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4L14 14" />
-              </svg>
-              <input
-                ref="searchEl"
-                v-model="query"
-                type="search"
-                placeholder="Search harness, path or model…"
-                aria-label="Search harnesses and models"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <span class="cnt" aria-live="polite">
-                {{ filteredHarnesses.length }} / {{ foundCount }}
-              </span>
-              <kbd>{{ searchKey }}</kbd>
-            </label>
-            <span class="push"></span>
-            <span class="mnote">one box, path and model</span>
-          </div>
-
-          <div v-if="filteredHarnesses.length" class="inv">
-            <div class="inv-head">
-              <span></span><span>Harness</span><span>Reported by</span>
-              <span class="r">Models</span><span></span>
-            </div>
-            <details v-for="entry in filteredHarnesses" :key="entry.id" class="inv-row">
-              <summary>
-                <span class="hico"><HarnessIcon :name="entry.id" :size="14" /></span>
-                <span class="hname">
-                  <b>{{ entry.label }}</b>
-                  <span class="p" :title="entry.path">{{ entry.path || 'path not reported' }}</span>
-                </span>
-                <span class="hsrc" :title="sourceLabel(entry)">{{ sourceLabel(entry) }}</span>
-                <span class="hcnt" :data-none="matchingModels(entry).length ? null : '1'">
-                  {{ matchingModels(entry).length }}
-                </span>
-                <span class="chev" aria-hidden="true">
-                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7">
-                    <path d="M4.5 2l4 4-4 4" />
+            <template v-else-if="section === 'harnesses'">
+              <div v-if="foundCount" class="ibarbar">
+                <label class="wsl-search">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4L14 14" />
                   </svg>
-                </span>
-              </summary>
-              <div class="drawer">
-                <p v-if="entry.default" class="dflt">Default <code>{{ entry.default }}</code></p>
-                <div v-if="matchingModels(entry).length" class="chips">
-                  <code
-                    v-for="model in matchingModels(entry)"
-                    :key="model"
-                    :data-d="model === entry.default ? '1' : null"
-                    :title="model"
-                  >{{ model }}</code>
-                </div>
-                <p v-else class="dflt">No model list reported by this CLI.</p>
+                  <input
+                    ref="searchEl"
+                    v-model="query"
+                    type="search"
+                    placeholder="Search harness, path or model…"
+                    aria-label="Search harnesses and models"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <span class="cnt" aria-live="polite">
+                    {{ filteredHarnesses.length }} / {{ foundCount }}
+                  </span>
+                  <kbd>{{ searchKey }}</kbd>
+                </label>
+                <span class="push"></span>
+                <span class="mnote">one box, path and model</span>
               </div>
-            </details>
-          </div>
 
-          <div v-else-if="foundCount" class="empty-note">
-            <b>No harness or model matches “{{ query }}”.</b>
-            <span>
-              {{ plural(visibleModelCount, 'model', 'models') }} visible in
-              {{ plural(foundCount, 'harness', 'harnesses') }}.
-            </span>
-            <button class="btn" type="button" @click="query = ''">Clear the search</button>
-          </div>
+              <div v-if="filteredHarnesses.length" class="inv">
+                <div class="inv-head">
+                  <span></span><span>Harness</span><span>Reported by</span>
+                  <span class="r">Models</span><span></span>
+                </div>
+                <details v-for="entry in filteredHarnesses" :key="entry.id" class="inv-row">
+                  <summary>
+                    <span class="hico"><HarnessIcon :name="entry.id" :size="14" /></span>
+                    <span class="hname">
+                      <b>{{ entry.label }}</b>
+                      <span class="p" :title="entry.path">
+                        {{ entry.path || 'path not reported' }}
+                      </span>
+                    </span>
+                    <span class="hsrc" :title="sourceLabel(entry)">{{ sourceLabel(entry) }}</span>
+                    <span class="hcnt" :data-none="matchingModels(entry).length ? null : '1'">
+                      {{ matchingModels(entry).length }}
+                    </span>
+                    <span class="chev" aria-hidden="true">
+                      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7">
+                        <path d="M4.5 2l4 4-4 4" />
+                      </svg>
+                    </span>
+                  </summary>
+                  <div class="drawer">
+                    <p v-if="entry.default" class="dflt">Default <code>{{ entry.default }}</code></p>
+                    <div v-if="matchingModels(entry).length" class="chips">
+                      <code
+                        v-for="model in matchingModels(entry)"
+                        :key="model"
+                        :data-d="model === entry.default ? '1' : null"
+                        :title="model"
+                      >{{ model }}</code>
+                    </div>
+                    <p v-else class="dflt">No model list reported by this CLI.</p>
+                  </div>
+                </details>
+              </div>
 
-          <div v-else-if="facts" class="empty-note">
-            <b>No harness yet.</b>
-            <span>
-              None of the {{ knownTotal }} harnesses this app knows about are in this host's
-              PATH, so there is nothing to list.
-            </span>
-            <button
-              class="btn btn-ink"
-              type="button"
-              :disabled="Boolean(busy) || missing"
-              @click="scan"
-            >
-              Test &amp; scan again
-            </button>
-          </div>
+              <div v-else-if="foundCount" class="empty-note">
+                <b>No harness or model matches “{{ query }}”.</b>
+                <span>
+                  {{ plural(visibleModelCount, 'model', 'models') }} visible in
+                  {{ plural(foundCount, 'harness', 'harnesses') }}.
+                </span>
+                <button class="btn" type="button" @click="query = ''">Clear the search</button>
+              </div>
 
-          <div v-else class="empty-note">
-            <b>No inventory yet.</b>
-            <span>
-              Test the connection to read the installed harnesses and their models; the
-              result is stored in this copy of the workspace.
-            </span>
-            <button
-              class="btn btn-ink"
-              type="button"
-              :disabled="Boolean(busy) || missing"
-              @click="scan"
-            >
-              Test &amp; scan
-            </button>
-          </div>
+              <div v-else-if="facts" class="empty-note">
+                <b>No harness yet.</b>
+                <span>
+                  None of the {{ knownTotal }} harnesses this app knows about are in this host's
+                  PATH, so there is nothing to list.
+                </span>
+                <button
+                  class="btn btn-ink"
+                  type="button"
+                  :disabled="Boolean(busy) || missing"
+                  @click="scan"
+                >
+                  Test &amp; scan again
+                </button>
+              </div>
 
-          <p v-if="facts && missingKnown.length" class="mnote">
-            {{ plural(missingKnown.length, 'known harness was', 'known harnesses were') }} not
-            found: {{ missingKnown.join(', ') }}.
-          </p>
+              <div v-else class="empty-note">
+                <b>No inventory yet.</b>
+                <span>
+                  Test the connection to read the installed harnesses and their models; the
+                  result is stored in this copy of the workspace.
+                </span>
+                <button
+                  class="btn btn-ink"
+                  type="button"
+                  :disabled="Boolean(busy) || missing"
+                  @click="scan"
+                >
+                  Test &amp; scan
+                </button>
+              </div>
+
+              <p v-if="facts && missingKnown.length" class="mnote">
+                {{ plural(missingKnown.length, 'known harness was', 'known harnesses were') }} not
+                found: {{ missingKnown.join(', ') }}.
+              </p>
+            </template>
+          </div>
         </section>
+
       </div>
 
       <aside class="entp-rail">

@@ -766,7 +766,7 @@
 }
 /* the note after the roster and the one that closes the rail: both follow a box
    and read as its footnote rather than as a new paragraph */
-.entp-sec > .mnote {
+.inv + .mnote {
   margin-top: 9px;
 }
 .entp-rail > .mnote {
