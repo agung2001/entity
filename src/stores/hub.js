@@ -338,6 +338,10 @@ export const hub = reactive({
     summaries: [],
     threads: {},
     active: '',
+    /* The thread a `chat.read` is in flight for. A conversation not yet in
+       memory has nothing to paint, so the view says it is opening instead of
+       showing an empty page (or the one you just left) and then snapping. */
+    opening: '',
     /* per-thread turn state: a map so A and B can answer at the same time */
     sending: {},
     /* Threads this window has watched settle: the summary may still say
@@ -995,9 +999,30 @@ export async function waitForTurn(id = hub.chat.active, { timeout = 15_000, step
 
 export const summaryFor = (id) => hub.chat.summaries.find((thread) => thread.id === id) || null
 
+/** Which read is the current one: a second click must not be un-flagged by the
+    slower answer of the first. */
+let threadReadSeq = 0
+
+/**
+ * One disk read, with the transcript told that it is coming.
+ *
+ * `opening` is cleared only by the newest read, so two quick clicks leave the
+ * flag on the thread the reader asked for last. A failure still clears it: the
+ * caller's catch turns that into a toast, not a stranded skeleton.
+ */
+async function readThread(id) {
+  const seq = (threadReadSeq += 1)
+  hub.chat.opening = id
+  try {
+    return await call('chat.read', { workspace: hub.workspace, id })
+  } finally {
+    if (seq === threadReadSeq) hub.chat.opening = ''
+  }
+}
+
 export async function openThread(id) {
   if (!id || !hub.workspace) return null
-  const thread = await call('chat.read', { workspace: hub.workspace, id })
+  const thread = await readThread(id)
   if (!thread) throw new Error('That thread no longer exists.')
   hub.chat.threads = { ...hub.chat.threads, [thread.id]: thread }
   hub.chat.active = thread.id
@@ -1023,7 +1048,7 @@ export async function selectThread(id) {
   const previous = hub.chat.active
   activate(known)
   try {
-    const fetched = await call('chat.read', { workspace: hub.workspace, id })
+    const fetched = await readThread(id)
     if (!fetched) throw new Error('That thread no longer exists.')
     /* Identical content is not worth a second render of every message. */
     const same =

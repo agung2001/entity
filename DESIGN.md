@@ -774,6 +774,9 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | "Erase all" leaves `.archive/` or a personal shelf on the disk | The dot folders the shelf walk skips are walked as their own populations, and one scope per button | `npm test` (`erase-all`) |
 | A destructive dialog's primary fires on one click | Type the word, case-sensitive, primary disabled until it matches | `tests/e2e/full/21-erase-all.spec.js` |
 | A tooltip says `⌘K` but the handler was changed | Combo comes from `shortcutLabel(id)` | `npm test` (forbids `⌘` / `Ctrl+` in `.vue`) |
+| A header button says "Timeline" and nothing about `⌥⇧T` | The chip is the only place a combo is written before a hover, so the bar gives up the label before it gives up the chip — and the header answers to its own column, never to a `@media` width | `ChatView` header (`@container cphead`) |
+| A thread can only be renamed with the mouse | The title is a surface too: a catalog key puts the caret in it with the old name selected | `src/lib/shortcuts.js` (`thread-title`) |
+| Clicking a thread leaves the page blank (or on the one you left) with no sign of work | The read is flagged in the store and the view paints the transcript's own shape, one beat late so a fast read does not flash | `ChatView` (`.chat-opening`), `npm test` (`ui-contract`) |
 | Typing `?` in the composer opens the help guide | Check `isEditable(event.target)` before a bare-key shortcut | `HubLayout.onKey` |
 | A bare-key shortcut fires while someone is typing a URL or a path | A `search`/`focus` key carries a modifier (`⌘/`), or guards `isEditable` | `src/lib/shortcuts.js` |
 | A detail page wraps its breadcrumb row in a card, or sizes it to the reading measure | The bar is the page's top edge: sticky, glass, spanning the content area (`.detail-view` + `.entp-bar`) | `npm run build` + the entity page at two widths |
@@ -1139,16 +1142,43 @@ text passes under it.
   help with `margin-left: auto`. They do not take a header track from the title
   and search, and they do not float over the transcript where they would cover
   a line of the answer.
-- **The bar is a size container.** Below 840px of column the shortcut chips and
-  tag chips go; below 760px the search goes; below 600px the button labels.
-  Container queries, not media queries: the rail takes 300px, so the column and
-  not the window is what runs out of room.
+- **The bar is a size container.** Below 1000px of column the tag chips go;
+  below 760px the search goes; below 600px the button labels. The shortcut
+  chips never go — they are the only place the combo is written before a
+  hover, and an icon beside its chip still fits one row. Container queries, not
+  media queries: the rail takes 300px, so the column and not the window is what
+  runs out of room.
 - **Search is a jump, not a filter.** `cp-search` counts the messages that
   contain the text, highlights each row, and Enter / Shift+Enter move through
   them. It never rewrites the Markdown or hides context.
 - The tint is roughly two-thirds of `--bg` over `blur(16px) saturate(1.8)`. Keep
   it light enough that a line of text under the bar stays readable as a smudge.
 
+### A thread that is not in memory yet says it is opening
+
+Clicking a rail row whose conversation is not loaded is a disk read. Until it
+lands there is nothing honest to paint: the transcript is either the thread you
+just left or — on the first open — an empty page that reads as “no thread”.
+That is the moment the app looked frozen, so the store records the read
+(`chat.opening`, one wrapper around `chat.read` so no call site can skip it) and
+the chat page draws the shape of what is coming.
+
+- **The skeleton is the transcript's shape**, not a spinner over white: a short
+  question on the right, answers on the left, swept once per second
+  (`.og-line`), with the row's title under it so the wait names the thread.
+- **It waits a beat (140ms) before showing.** A local read finishes inside that
+  beat, and a skeleton that flashes on every switch is worse than none.
+- **The flag belongs to the newest read.** A second click must not be
+  un-flagged by the first read's slower answer, so the wrapper counts and only
+  the last one clears it; a failure clears it too, and the caller's catch turns
+  that into a toast rather than a stranded skeleton.
+- **The list read counts as opening.** Before `chat.list` answers there is no
+  thread either, so `chat.loading` shows the same surface instead of claiming
+  “No thread open” for the few hundred milliseconds it takes to find out — and
+  the rail says “Reading your conversations…” rather than “No chats yet”.
+- **A thread already in memory never shows it.** It paints from memory and
+  refreshes underneath — that rule predates the skeleton and still wins.
+`
 ### Any page with its own top bar reuses the thread's header, material and all
 
 `.entp-bar` (entity and MCP detail pages) is not a container: it is the page's

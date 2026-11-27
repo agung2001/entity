@@ -530,6 +530,60 @@ test('voice mode is a dismissible full dialog wired into the composer', () => {
   assert.match(chat, /voiceShortcut = shortcutLabel\('voice'\)/, 'the hint comes from the catalog')
 })
 
+test('the header title has a catalog key, and the combo is never hidden', () => {
+  const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+
+  assert.match(catalog, /id: 'thread-title'/, 'renaming a thread is a catalog action')
+  assert.match(chat, /matchesShortcut\('thread-title'/, 'the catalog entry needs a handler')
+  assert.match(chat, /titleShortcut = shortcutLabel\('thread-title'\)/, 'the hint comes from the catalog')
+  /* the key has to land in the field with the old name selected, not just open it */
+  const start = chat.indexOf('function startTitleEdit')
+  assert.ok(start > 0, 'startTitleEdit is gone')
+  assert.match(
+    chat.slice(start, start + 400),
+    /titleInput\.value\?\.select\(\)/,
+    'the rename key leaves the old title untouched instead of selected',
+  )
+
+  /* The chip is the only place a combo is written before a hover: hiding it
+     left a button that read "Timeline" and said nothing about `⌥⇧T`. A comment
+     naming the class is not a rule, so the sheets are read commented-out. */
+  const hidden = paintedSheets()
+    .filter(({ css }) => /\.trace-kbd[^{]*\{[^}]*display:\s*none/.test(css))
+    .map(({ name }) => name)
+  assert.deepEqual(hidden, [], `the shortcut chip is hidden again in ${hidden.join(', ')} — drop the label, keep the chip`)
+})
+
+test('opening a thread says so instead of showing an empty page', () => {
+  const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
+  const store = fs.readFileSync(path.join(SRC, 'stores', 'hub.js'), 'utf8')
+
+  /* One read wrapper owns the flag, so the rail, the address bar and the first
+     open all say the same thing — a second call site would silently skip it. */
+  assert.match(store, /opening: ''/, 'the chat state has nowhere to record a read in flight')
+  assert.match(store, /async function readThread\(id\)/, 'no single read wrapper')
+  assert.match(store, /hub\.chat\.opening = id/, 'the read never sets the flag')
+  assert.match(store, /if \(seq === threadReadSeq\) hub\.chat\.opening = ''/, 'a slow early read clears the newest flag')
+
+  const open = store.slice(store.indexOf('export async function openThread'))
+  const select = store.slice(store.indexOf('export async function selectThread'))
+  assert.match(open, /await readThread\(id\)/, 'openThread reads around the flag')
+  assert.match(select, /await readThread\(id\)/, 'selectThread reads around the flag')
+
+  /* The skeleton is a surface of its own, before the transcript and after the
+     no-entity note, and it is announced rather than only painted. */
+  const panel = chat.indexOf('class="cpanel cpanel-empty cpanel-opening"')
+  const body = chat.indexOf('v-else-if="thread"')
+  assert.ok(panel > 0, 'the chat view has no opening surface')
+  assert.ok(panel < body, 'the opening surface comes after the thread it replaces')
+  assert.match(chat, /v-else-if="openingSlow"/, 'the skeleton shows on the first frame of every read')
+  assert.match(chat, /aria-busy="true"/, 'the loading surface is not announced')
+  assert.match(chat, /role="status"/, 'the loading surface has no live region')
+  /* the row the rail already lists names what is coming */
+  assert.match(chat, /summaryFor\(openingSlow\.value\)/, 'the skeleton cannot name the thread it opens')
+})
+
 test('the thread metadata drawer is dismissible and belongs to the chat header', () => {
   const panel = fs.readFileSync(
     path.join(SRC, 'components', 'ThreadMetadataPanel.vue'),

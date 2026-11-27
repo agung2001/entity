@@ -183,8 +183,11 @@
 }
 
 @media (max-width: 760px) {
-  .panel-kbd,
-  .trace-kbd {
+  /* `.trace-kbd` is not here: the chat header answers to its own column
+     (`@container cphead`), and a window rule dropped the combo in the 600–760px
+     band where the container still had room for it — the button read "Timeline"
+     and said nothing about `⌥⇧T`. */
+  .panel-kbd {
     display: none;
   }
   .entity-edit-grid {

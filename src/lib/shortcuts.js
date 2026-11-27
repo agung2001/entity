@@ -133,6 +133,17 @@ export const SHORTCUT_GROUPS = [
         browser: ['alt', 'shift', 'M'],
       },
       {
+        id: 'thread-title',
+        label: 'Rename the thread',
+        desc: 'Put the caret in this conversation’s title; Enter keeps the name and Esc leaves it as it was.',
+        /* `A` for the title, not `P`: in a browser tab `alt+shift+P` never
+           reached the page. `annotate` carries the same pair on the artifact
+           preview, which is a different route — the chat header and that
+           preview are never mounted together, so one key cannot fire twice. */
+        desktop: ['mod', 'shift', 'A'],
+        browser: ['alt', 'shift', 'A'],
+      },
+      {
         id: 'voice',
         label: 'Voice mode',
         desc: 'Talk to the entity instead of typing; it listens, answers out loud and takes an interruption.',
@@ -248,7 +259,9 @@ export const SHORTCUT_GROUPS = [
         label: 'Annotate the preview',
         desc: 'Pick an element in a rendered page and write a note about it; the notes go to the open conversation.',
         /* Not an Option/Alt letter: on macOS that produces a dead-key character
-           (Option+Shift+C is Ç) and the tab owns several Alt+Shift letters. */
+           (Option+Shift+C is Ç) and the tab owns several Alt+Shift letters.
+           `thread-title` keeps the same pair on the chat header: the two live on
+           different routes and are never mounted together. */
         desktop: ['mod', 'shift', 'A'],
         browser: ['alt', 'shift', 'A'],
       },

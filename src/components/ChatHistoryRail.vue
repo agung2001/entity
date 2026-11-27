@@ -896,6 +896,9 @@ defineExpose({ newThread })
       <p v-else-if="threads.length" class="rchat-empty">
         No {{ statusNoun }} match this search, tag and time filter.
       </p>
+      <p v-else-if="hub.chat.loading" class="rchat-empty" role="status">
+        Reading your conversations…
+      </p>
       <p v-else class="rchat-empty">
         No chats yet. Use + to start one.
       </p>

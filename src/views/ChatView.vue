@@ -63,6 +63,7 @@ import {
   setThreadContext,
   setThreadTags,
   snippet,
+  summaryFor,
   threadContext,
   threadStarted,
   toast,
@@ -190,6 +191,7 @@ let offEvent = null
    renders the guide in the top bar. */
 const timelineShortcut = shortcutLabel('timeline')
 const metadataShortcut = shortcutLabel('metadata')
+const titleShortcut = shortcutLabel('thread-title')
 const sendShortcut = shortcutLabel('send')
 const focusShortcut = shortcutLabel('focus')
 const voiceShortcut = shortcutLabel('voice')
@@ -211,6 +213,50 @@ const contextOptions = {
 }
 
 const thread = computed(() => activeThread())
+
+/*
+ * Opening a conversation that is not in memory yet is the one moment with
+ * nothing to paint: the rail row is already picked, but the transcript is the
+ * one you left or an empty page. After a beat — a local read finishes faster
+ * than that, and a skeleton on every switch would be worse than none — the
+ * transcript gives way to the shape of the thread it is opening. The store
+ * clears `chat.opening` when the newest read lands, so two quick clicks leave
+ * the flag on the thread asked for last.
+ */
+const OPENING_DELAY = 140
+const openingId = computed(() => {
+  const id = hub.chat.opening
+  if (id) return id === thread.value?.id ? '' : id
+  /* The first paint has no thread and no read yet: the history itself is still
+     being listed, and "No thread open" is a lie for those milliseconds. */
+  return !thread.value && hub.chat.loading ? 'initial' : ''
+})
+const openingSlow = ref('')
+let openingTimer = null
+watch(
+  openingId,
+  (id) => {
+    clearTimeout(openingTimer)
+    openingTimer = null
+    if (!id) {
+      openingSlow.value = ''
+      return
+    }
+    openingTimer = setTimeout(() => {
+      openingSlow.value = id
+      openingTimer = null
+    }, OPENING_DELAY)
+  },
+  { immediate: true },
+)
+
+/* The row the rail already shows is all we know before the read lands: the
+   entity and the title, so the loading card can name what is coming. */
+const openingTitle = computed(() => {
+  const row = summaryFor(openingSlow.value)
+  if (!row) return 'the conversation'
+  return row.title || `thread with ${row.entity || 'the entity'}`
+})
 /* The sheet's height lives in one place: the panel takes it, the transcript
    reserves it. A CSS length, so the two cannot disagree — and it yields to the
    dock, because a 400px draft plus a 360px shell would leave the conversation no
@@ -613,6 +659,15 @@ function onChatKey(event) {
     event.preventDefault()
     event.stopPropagation()
     timelineOpen.value = true
+    return
+  }
+
+  /* The title is the only way to rename a thread from the header, so it gets a
+     key of its own; the caret lands in the field with the old name selected. */
+  if (matchesShortcut('thread-title', event) && thread.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    startTitleEdit()
     return
   }
 
@@ -1105,6 +1160,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   offEvent?.()
   offEvent = null
+  clearTimeout(openingTimer)
+  openingTimer = null
   dockObserver?.disconnect()
   dockObserver = null
   headObserver?.disconnect()
@@ -1258,6 +1315,27 @@ watch(
         </section>
 
         <section
+          v-else-if="openingSlow"
+          class="cpanel cpanel-empty cpanel-opening"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div class="chat-opening">
+            <div class="og-lines" aria-hidden="true">
+              <span class="og-line og-line--me"></span>
+              <span class="og-line"></span>
+              <span class="og-line og-line--short"></span>
+              <span class="og-line og-line--me og-line--tiny"></span>
+            </div>
+            <p class="og-note">
+              <span class="og-dot" aria-hidden="true"></span>
+              <span>Opening <b>{{ openingTitle }}</b></span>
+            </p>
+          </div>
+        </section>
+
+        <section
           v-else-if="thread"
           class="cpanel"
           :style="{
@@ -1313,7 +1391,7 @@ watch(
                   class="cp-title"
                   role="button"
                   tabindex="0"
-                  title="Rename thread"
+                  :title="`Rename thread (${titleShortcut})`"
                   @click="startTitleEdit"
                   @keydown="onTitleTitleKey"
                 >
