@@ -192,10 +192,14 @@ const router = createRouter({
           meta: { crumb: 'entities', title: 'Entity · entity' },
         },
         {
+          /* The roster is an inventory: the band is the list, so there is no
+             second tier to draw. `rail: false` is the same sentence as an empty
+             `section` — without it the phone offers a drawer that opens
+             nothing. */
           path: ':workspace/skills',
           name: 'skills',
           component: SkillsView,
-          meta: { crumb: 'skills', title: 'Skills · entity' },
+          meta: { crumb: 'skills', title: 'Skills · entity', rail: false },
         },
         {
           path: ':workspace/skills/:name',

@@ -19,8 +19,8 @@ const sheet = (page) => page.locator('.skcopy-modal')
 
 async function openRoster(page, p = readProfile()) {
   await page.goto(`/${p.workspace}/skills`)
-  /* the rail carries a "Skills" heading too, so the page is identified by its
-     own command bar rather than by a duplicated accessible name */
+  /* both the hero and the chrome name this page "Skills", so it is identified
+     by its own command bar rather than by a duplicated accessible name */
   await expect(page.locator('.skbar')).toBeVisible()
   await expect(rows(page).first()).toBeVisible()
 }

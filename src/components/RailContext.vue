@@ -5,7 +5,6 @@ import ArtifactRailPanel from '@/components/ArtifactRailPanel.vue'
 import ChatHistoryRail from '@/components/ChatHistoryRail.vue'
 import EntityRailPanel from '@/components/EntityRailPanel.vue'
 import MachineIcon from '@/components/MachineIcon.vue'
-import NavIcon from '@/components/NavIcon.vue'
 import HarnessIcon from '@/components/HarnessIcon.vue'
 import { activeSummaryCount, hub } from '@/stores/hub'
 import { fleet, loadFleet } from '@/stores/fleet'
@@ -92,16 +91,24 @@ const shelfTitle = () => ({
   to: { name: 'artifacts', params: { workspace: hub.workspace } },
 })
 
+/* The roster is a page, so the heading above the entity list is the way to it —
+   the same rule the shelf's title follows. */
+const entitiesTitle = () => ({
+  id: 'entities',
+  title: 'Entities',
+  count: hub.agents.length,
+  to: { name: 'entities', params: { workspace: hub.workspace } },
+})
+
 const section = computed(() => {
   const name = String(route.name || 'overview')
-  if (hub.rail.entities) return { id: 'entities', title: 'Entities', count: hub.agents.length }
+  if (hub.rail.entities) return entitiesTitle()
   if (hub.rail.artifacts) return shelfTitle()
   /* The roster page and one entity's page both keep the entity list beside
      them: the page is the same directory drawn wider, so the rail must not turn
      into some other section — the machines it used to fall through to — just
      because the route is the roster rather than a file. */
-  if (name === 'entity' || name === 'entities')
-    return { id: 'entities', title: 'Entities', count: hub.agents.length }
+  if (name === 'entity' || name === 'entities') return entitiesTitle()
   /* The shelf page keeps the shelf list: it is the same shelf, drawn as works
      instead of rows, and the rail beside it must not turn into some other
      section just because the route is a page rather than a file. */
@@ -131,9 +138,12 @@ const section = computed(() => {
       back,
     }
   }
-  if (name === 'skills') {
-    return { id: 'skills', title: 'Skills', count: hub.skills.length, back: 'workspace' }
-  }
+  /* The skills roster is an inventory, and the panel beside it was the same
+     roster drawn narrower: a page that already is the list gets the band, not a
+     second copy of itself in 306px. Its *detail* page keeps the workspace
+     settings rail above, with the way back to the roster in the header. No
+     branch here means no rail at all, and `meta.rail: false` tells the phone the
+     same thing. */
   if (name === 'workspace') {
     return {
       id: 'workspace',
@@ -477,24 +487,6 @@ const backLabel = computed(() => {
           <span class="m">{{ machine.desc || machine.id }}</span>
         </span>
         <span class="c" :data-state="machine.state">{{ machine.thisMachine ? 'local' : 'ssh' }}</span>
-      </button>
-    </div>
-
-    <div v-else-if="section.id === 'skills'" class="rail-t2-body">
-      <p v-if="!hub.skills.length" class="rail-t2-empty">No skills attached to this workspace.</p>
-      <button
-        v-for="skill in hub.skills"
-        :key="skill.name"
-        class="rail-t2-row"
-        type="button"
-        :aria-current="route.name === 'skill' && route.params.name === skill.name ? 'page' : undefined"
-        @click="router.push({ name: 'skill', params: { workspace: hub.workspace, name: skill.name } })"
-      >
-        <span class="rail-t2-ic"><NavIcon name="star" /></span>
-        <span class="t">
-          <b>{{ skill.name }}</b>
-          <span class="m">{{ skill.missing ? 'missing file' : skill.harnessLabel || 'workspace skill' }}</span>
-        </span>
       </button>
     </div>
 

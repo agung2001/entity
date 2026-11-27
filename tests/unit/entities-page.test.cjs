@@ -36,3 +36,20 @@ test('the index renders the roster and all three ways it can fail to', () => {
   assert.match(view, /entities\.error/, 'the view cannot show an unreadable folder')
   assert.match(view, /loadEntities/, 'the view never reads the folder')
 })
+
+/* The rail beside one entity is the roster drawn narrower, so its heading is
+   the way back to the roster page — a heading that names a page nobody can
+   open is the dead end DESIGN.md paid for on the shelf. */
+test('the rail heading is the way to the roster', () => {
+  const rail = read('components/RailContext.vue')
+  assert.match(rail, /const entitiesTitle = \(\) => \(\{/, 'the entities section has no title helper')
+  assert.match(
+    rail,
+    /to: \{ name: 'entities', params: \{ workspace: hub\.workspace \} \}/,
+    'the Entities heading does not lead to the roster',
+  )
+  /* both entry points carry it: the panel opened from the nav rail, and the
+     section the entity routes resolve to */
+  assert.match(rail, /if \(hub\.rail\.entities\) return entitiesTitle\(\)/)
+  assert.match(rail, /name === 'entity' \|\| name === 'entities'\) return entitiesTitle\(\)/)
+})

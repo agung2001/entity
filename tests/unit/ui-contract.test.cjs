@@ -482,6 +482,27 @@ test('the account has a reachable backups page with smart as the default', () =>
   assert.match(store, /backup\.setDirectory|function setDirectory/, 'the target is persisted')
 })
 
+test('the skills roster is the band, and a skill keeps the settings rail', () => {
+  const rail = fs.readFileSync(path.join(SRC, 'components', 'RailContext.vue'), 'utf8')
+  const router = fs.readFileSync(path.join(SRC, 'router.js'), 'utf8')
+
+  /* The roster is an inventory: the page *is* the list, and the panel beside it
+     was the same rows drawn narrower. No `skills` branch in the route map. */
+  assert.doesNotMatch(rail, /return \{ id: 'skills'/, 'the skills rail section is back')
+  assert.doesNotMatch(rail, /section\.id === 'skills'/, 'the skills panel template is back')
+  /* and the phone must not offer a drawer that opens nothing */
+  assert.match(
+    router,
+    /name: 'skills',[\s\S]{0,220}rail: false/,
+    'the skills route still claims a second tier',
+  )
+
+  /* A skill's own page is a detail page: it shows the workspace settings list,
+     with the way back to the roster in its header. */
+  assert.match(rail, /name === 'machine' \|\| name === 'skill' \|\| name === 'connector-page'/)
+  assert.match(rail, /name === 'skill' \? 'skills'/)
+})
+
 test('voice mode is a dismissible full dialog wired into the composer', () => {
   const chat = fs.readFileSync(path.join(SRC, 'views', 'ChatView.vue'), 'utf8')
   const dialog = fs.readFileSync(
