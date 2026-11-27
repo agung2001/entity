@@ -6,9 +6,11 @@
  *
  *   - **known** — Entity ships a resolver for it. `@github:owner/repo` becomes a
  *     real repository in the prompt, `@orca:project:path` a real path, `@youtrack:AC:bug`
- *     a real issue. The code was already in `mention-ref.cjs`; this file is where
- *     its *contract* lives, as data, so the roster and the composer cannot
- *     disagree about what a mention does.
+ *     a real issue. The resolver lives beside its connector
+ *     (`connectors/<id>/mention.cjs`) or, for the three that predate the
+ *     folders, in `mention-ref.cjs`; this file is where its *contract* lives, as
+ *     data, so the roster and the composer cannot disagree about what a mention
+ *     does.
  *   - **custom** — nothing is shipped. `@<id>:` attaches the connector's
  *     definition and status as context and the entity uses its own tools.
  *
@@ -59,36 +61,10 @@ const SCHEMA = 1
 const CONNECTORS = require('./connectors/registry.cjs').catalogEntries()
 
 const CATALOG = {
-  orca: {
-    label: 'Orca',
-    kind: 'cli',
-    binary: 'orca',
-    summary: 'Projects and worktrees Orca already manages on this machine.',
-    /* what `Test connection` runs, and what makes the row say `found` */
-    verify: { argv: ['--version'], okExit: 0, then: ['repo', 'list', '--json'] },
-    work: {
-      mention: '@orca:',
-      resolves: 'a project on this machine, and optionally one file inside it',
-      syntax: '@orca:<project>[:<path>]',
-      examples: ['@orca:entity', '@orca:entity:src/main.js'],
-      returns: 'the project’s real path, or one file inside it — so the entity reads the file, not a guess',
-      resolver: 'orca',
-      needs: 'the Orca app on this machine',
-      page: '',
-      /* The long form: what to type, what it becomes, and why that is useful.
-         Rendered on the page, so a person learns the syntax without reading code. */
-      how: [
-        'Orca keeps a project for every repository it manages, with a real path on this machine.',
-        'Naming a project puts that path in the prompt, so the entity opens the right folder instead of guessing one.',
-        'Naming a file inside it narrows the turn to that one file — useful when you already know where the bug is.',
-        'The entity then reads the file with its own tools; Entity only tells it where the file is.',
-      ],
-      samples: [
-        { code: '@orca:entity', then: 'the entity project’s path goes into the prompt' },
-        { code: '@orca:entity:src/main.js', then: 'that one file, so the turn starts at the bug' },
-      ],
-    },
-  },
+  /* Orca is a connector folder like the rest (`connectors/orca/`): the descriptor
+     carries this entry and the resolver sits beside it. It stays first because a
+     person's own machine is what they try first. */
+  orca: CONNECTORS.orca,
   github: CONNECTORS.github,
   youtrack: CONNECTORS.youtrack,
   maka: {

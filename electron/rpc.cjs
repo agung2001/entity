@@ -285,13 +285,19 @@ function createRpc({
     }),
     /* the worktree a delegated row works in, *now* — the renderer sends the
        run's own record, its ticket key and its cwd, and only a path Orca itself
-       returned is ever stat-ed. Read-only, and cached in main like the repo list. */
-    'mention.worktree': ({ cwd, ticket, record } = {}) =>
-      mentionRef.worktreeState({
-        cwd: String(cwd || ''),
-        ticket: String(ticket || ''),
-        record: record || '',
-      }),
+       returned is ever stat-ed. Read-only, and cached in main like the repo list.
+
+       Asked only while the Orca connector is switched on: a card must not spawn
+       a CLI the person turned off to paint a chip they did not ask for, so an
+       off switch answers `none` here and the card draws no chip. */
+    'mention.worktree': async ({ cwd, ticket, record } = {}) =>
+      (await integrations.enabled()).orca
+        ? mentionRef.worktreeState({
+            cwd: String(cwd || ''),
+            ticket: String(ticket || ''),
+            record: record || '',
+          })
+        : { state: 'none' },
     /* what the composer offers while an `@kind:` is being typed */
     'mention.search': ({ workspace, kind, fields, limit, offset, dir }) =>
       mentionRef.search({
