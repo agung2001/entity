@@ -6,12 +6,13 @@
  * credential lives), so there is one add flow with a first step rather than a verb
  * per kind. The step is two blocks, because two different questions live in it:
  *
- *   - **Sign in to an account** — a **tree** of the three accounts people add
- *     first, with `More connectors` as its fourth row. The tree is a door, not an
- *     inventory: a list that grew with the catalog would be the roster's Built-in
- *     pane again, and that pane is one row below and is still derived from it. The
- *     ids are pinned for exactly that reason, while the label, the summary and the
- *     mark still come from the catalog — so a renamed connector renames here too.
+ *   - **Sign in to an account** — the three accounts people add first, and
+ *     `More connectors` as the fourth card. Four, not the whole catalog: a grid that
+ *     grew with it would be the roster's Built-in pane again, and that pane is one
+ *     card below and is still derived from it. The ids are pinned for exactly that
+ *     reason, while the label, the summary and the mark still come from the catalog
+ *     — so a renamed connector renames here too. Both blocks are the same card: one
+ *     anatomy, one grid, and a person reads the whole step the same way.
  *   - **Bring your own** — MCP server (the pool's own dialog writes `mcp.json`),
  *     a CLI already on `PATH` (it holds its own credential), a REST token, and an
  *     RSS or Atom feed (a URL and nothing else — News reads it). Each names where
@@ -28,10 +29,10 @@ defineProps({
 
 const emit = defineEmits(['pick', 'cancel'])
 
-/* The three, in the order a person meets them. A fourth provider is a fifth row
+/* The three, in the order a person meets them. A fourth provider is a fifth card
    here only if somebody decides it is one of the first things a person adds;
    everything else is behind `More connectors` by design. */
-const TREE_IDS = ['gmail', 'google-drive', 'youtube-studio']
+const ACCOUNT_IDS = ['gmail', 'google-drive', 'youtube-studio']
 const FALLBACK = {
   gmail: { label: 'Gmail', summary: 'Mail an agent may read.' },
   'google-drive': { label: 'Google Drive', summary: 'Files an agent may open.' },
@@ -40,8 +41,8 @@ const FALLBACK = {
     summary: 'Views, watch time, subscribers and revenue from your own channel.',
   },
 }
-const TREE = computed(() =>
-  TREE_IDS.map((id) => {
+const ACCOUNTS = computed(() =>
+  ACCOUNT_IDS.map((id) => {
     const shipped = (connectors.catalog || []).find((row) => row.id === id)
     return {
       id,
@@ -55,35 +56,42 @@ const TREE = computed(() =>
 <template>
   <div class="kind-groups">
     <div class="kind-group">
-      <span class="kind-group-label">Sign in to an account <span class="n">{{ TREE.length }}</span></span>
-      <!-- Three children under one trunk, and the fourth row is the way out of the
-           tree rather than a fourth connector. -->
-      <ul class="kind-tree">
-        <li v-for="account in TREE" :key="account.id">
-          <button class="kind-row" type="button" :disabled="busy" @click="emit('pick', account.id)">
+      <span class="kind-group-label">Sign in to an account <span class="n">{{ ACCOUNTS.length }}</span></span>
+      <!-- The same card as the block below, and the fourth one is the way out of
+           this grid rather than a fourth connector: dashed, muted, announcing where
+           it goes. -->
+      <div class="kinds">
+        <button
+          v-for="account in ACCOUNTS"
+          :key="account.id"
+          class="kind"
+          type="button"
+          :disabled="busy"
+          @click="emit('pick', account.id)"
+        >
+          <span class="kn">
             <span class="ki">
-              <IntegrationMark :name="account.id" :size="18" />
+              <IntegrationMark :name="account.id" :size="22" />
             </span>
-            <span class="kr">
-              <span class="kn">{{ account.label }}</span>
-              <span class="kq">{{ account.summary }}</span>
-            </span>
-          </button>
-        </li>
-        <li>
-          <button class="kind-row kind-row-more" type="button" :disabled="busy" @click="emit('pick', 'builtin')">
+            {{ account.label }}
+          </span>
+          <p>{{ account.summary }}</p>
+          <span class="where">credential → <b>refresh token, this machine</b></span>
+        </button>
+
+        <button class="kind kind-more" type="button" :disabled="busy" @click="emit('pick', 'builtin')">
+          <span class="kn">
             <span class="ki">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path d="M8 3.4v9.2M3.4 8h9.2" />
               </svg>
             </span>
-            <span class="kr">
-              <span class="kn">More connectors</span>
-              <span class="kq">Every connector Entity ships — the Built-in pane</span>
-            </span>
-          </button>
-        </li>
-      </ul>
+            More connectors
+          </span>
+          <p>Every connector Entity ships.</p>
+          <span class="where">opens <b>Built-in</b></span>
+        </button>
+      </div>
     </div>
 
     <div class="kind-group">

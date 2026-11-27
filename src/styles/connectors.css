@@ -452,111 +452,11 @@ a.ct-who:hover .ct-name {
   border-color: var(--field-edge);
   background: var(--surface);
 }
-/* ── the account tree ─────────────────────────────────────────────────────
-   Three rows under one trunk, and the door to everything else as the fourth.
-   A card grid of every account-bearing connector grew with the catalog and made a
-   person read seven cards to find the one they meant; the tree is short because
-   the full list is one row below it (the roster's Built-in pane). */
-.kind-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-}
-.kind-tree li {
-  position: relative;
-  padding-left: 15px;
-}
-/* The trunk is per row, so it stops where the last elbow is instead of hanging
-   past the end of the list. */
-.kind-tree li::before {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border);
-}
-.kind-tree li:first-child::before {
-  top: 50%;
-}
-.kind-tree li:last-child::before {
-  bottom: auto;
-  height: 50%;
-}
-.kind-tree li::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 50%;
-  width: 9px;
-  height: 1px;
-  background: var(--border);
-}
-.kind-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 9px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 130ms ease, background 130ms ease;
-}
-.kind-row:hover:not(:disabled) {
-  border-color: var(--border);
-  background: var(--surface);
-}
-.kind-row:focus-visible {
-  outline: 2px solid var(--field-edge);
-  outline-offset: 1px;
-}
-.kind-row:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.kind-row .ki {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r-xs);
-  background: var(--surface-2);
-  color: var(--ink-2);
-}
-.kind-row .ki svg {
-  width: 13px;
-  height: 13px;
-}
-.kind-row .ki .int-mark-svg {
-  width: 18px;
-  height: 18px;
-}
-.kind-row .kr {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-.kind-row .kn {
-  font-family: var(--font);
-  font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--ink);
-}
-.kind-row .kq {
-  overflow: hidden;
-  font-size: var(--fs-secondary);
-  color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The fourth row is the way out of the tree, not a fourth connector. */
-.kind-row-more .kn {
+/* A door into another pane, not a fifth kind: the last card in the account grid
+   reads as the edge of that grid — dashed border, muted label — so it says where it
+   goes before it is pressed. */
+.kind-more {
+  border-style: dashed;
   color: var(--muted);
 }
 .kind .kn {
@@ -607,6 +507,7 @@ a.ct-who:hover .ct-name {
   color: var(--ink-2);
   font-weight: 500;
 }
+
 
 /* ── the add sheet: teleported to `<body>`, so `vw` is the window ────────── */
 
