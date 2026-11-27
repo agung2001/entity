@@ -79,3 +79,50 @@ test('the remote TSV is parsed into ordered harnesses and defaults', () => {
 test('a report without metadata is rejected', () => {
   assert.throws(() => machineScan.parseScan('harness\tpi\tpi\t/bin/pi\n'), /capability report/)
 })
+
+test('the report TSV becomes five groups and their failures', () => {
+  const facts = machineScan.parseScan(
+    [
+      'meta\tlab\tLinux\tx86_64',
+      'ovf\tuptime_sec\t86400',
+      'ovf\tcores\t16',
+      'ovf\tload1\t0.42',
+      'disk\t/\text4\t234G\t98G\t136G\t42',
+      'set\tcron\tfiles\t2',
+      'cron\t*/15 * * * *\tdeploy\tuser\t/opt/agents/bin/reap --older-than 6h',
+      'cron\t0 3 * * 0\troot\tsystem\t/usr/local/sbin/rotate',
+      'timer\tagent-sync.timer\t12 Mar 2025, 00:00',
+      'set\tdocker\tversion\t27.1.1',
+      'docker\tagent-gateway\tghcr.io/acme/gateway:1.8.2\trunning\t127.0.0.1:8080\tUp 4 days',
+      'image\tghcr.io/acme/gateway:1.8.2\t412MB',
+      'ddisk\tImages\t9\t41.2GB\t6.8GB',
+      'skill\t/root/.pi/agent/skills\tresearch\t1',
+      'skill\t/root/.pi/agent/skills\ttriage\t0',
+      'skillroot\t/root/.pi/agent/skills\t2',
+      'worktree\t/app/one\tmain\trunning',
+      'anomaly\tfleet-scanner\tstalled-worktree\tno terminal output for 3 h',
+      'term\t12\tread the host report\tworking\t2 m',
+      'error\torca\torca status exited 2',
+      'done',
+    ].join('\n'),
+  )
+  const report = facts.report
+  assert.equal(report.overview.cores, 16)
+  assert.equal(report.overview.disks[0].usePct, 42)
+  assert.equal(report.cron.entries[0].command, '/opt/agents/bin/reap --older-than 6h')
+  assert.equal(report.cron.files, 2)
+  assert.equal(report.docker.containers[0].state, 'running')
+  assert.equal(report.skills.total, 2)
+  assert.equal(report.skills.described, 1)
+  assert.equal(report.orca.rows[0].path, '/app/one')
+  assert.equal(report.orca.rows[0].state, 'running')
+  assert.match(report.errors.orca, /exited 2/)
+  /* a probe that failed and reported nothing leaves its group null, so the page
+     draws the honesty note instead of an empty table */
+  const empty = machineScan.parseScan(
+    'meta\tlab\tLinux\tx86_64\nerror\tdocker\tnever answered\ndone',
+  ).report
+  assert.equal(empty.docker, null)
+  assert.equal(empty.errors.docker, 'never answered')
+  assert.equal(empty.overview, null)
+})
