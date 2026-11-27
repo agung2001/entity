@@ -572,6 +572,18 @@ the composer already does: mention another entity.
   folder) before anything starts. **Run** is the one action; the block is the live bubble,
   and it becomes the fan-out's own cards on Run. Never a modal, a second composer or a
   pre-send dialog.
+- **The plan is a form, and Run sends what is on screen.** One instruction band above the
+  cards, one editable job per card, a `−`/`+` stepper for the count, `⌥⇧R` to run it. The
+  revision rides on the answer (`chat.delegate` gets `count`, `instruction`, `rows`) and is
+  applied once, before the first harness exists — so there is no write in flight to debounce,
+  no read-only state and no second round trip. A card the person did not touch follows the
+  band; one they edited keeps its words and says `edited`. `Run all` refuses while a card is
+  empty, and so does the key, because an empty run starts a session with no question.
+- **A row that has a source is the way to it.** The row line on a card — the issue a fan-out
+  resolved to — links to the URL the read recorded for that row (`rowUrl`, carried on the plan
+  row and kept on the mention, so the card still links after the run lands). Only `http(s)`
+  becomes a link: the shell opens the browser and nothing else, so any other scheme would be a
+  link that does nothing. A row with no source stays text — the card names the issue either way.
 - **The gate never opens behind a refusal.** An unknown name, a cap, an empty list or a
   skill in front of a fan-out throws before a plan exists, and a reference mention (`@coder`
   with no job) plans nothing. A confirmation asked after a refusal teaches people to click
@@ -876,6 +888,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | "Save definition" shows `afterScopeWrite is not defined`, and the page keeps its old copy until a manual refresh | A store may not call what it does not define: a refactor deleted the helper and left three call sites, so the write landed and the **refresh** threw — a success reported as a failure. The refresh is restored as one function with one job (re-read what a scope write can move, never `applyScope`, which would drop the open conversations), and `npm test` now demands a definition for every bare call in `src/stores/` | `npm test` (`ui-contract`), `workspaces.js` (`afterScopeWrite`) |
 | A card says a worktree is gone, or clean, when nobody said so | A state read from absence is not a state: require evidence from the row's own record, and let the tooltip hedge what cannot be known | `DelegationCard.vue` (`hadWorktree`), `mention-ref.cjs` (`worktreeState`) |
 | Delegated runs start before the person can see them | The message is sent, the reads resolve, and the runs wait: one hold per turn with Run/Cancel, and Stop, Esc and the expiry settle it the same way | `DelegationHold.vue`, `mention-ref.cjs` (`hold`), `npm test` (`chat-cancel`) |
+| A held plan can only be approved or thrown away, so a wrong count costs the whole message | The plan is a form and the revision travels on the Run: `chat.delegate` accepts `{ action: 'run', count, instruction, rows }`, and `applyPlanRevision` applies it once before any harness exists (`ponytail:` names the per-keystroke write as the upgrade path). The shortcut is the form's own window listener, not a second one in `ChatView` | `DelegationHold.vue`, `mention-ref.cjs` (`applyPlanRevision`), `npm test` (`mention-ref`, "Run starts the words and the count the card showed") |
 | A cancelled plan paints the thread as failed | A settled plan is not a harness failure: keep the Retry row, and keep `failed` off the summary | `chat-store.cjs` (`summarise`) |
 | A breadcrumb in the meta line renders zero-width | The header's meta track is ~157px; put the crumb on its own line above the title and clip it | `tests/e2e/full/20-spawn-session.spec.js` |
 | A thread title is one character per line on a phone | A hidden grid item keeps its track's `minmax` floor: size the middle track from the box (`auto` + `width: clamp()`), not from a fixed minimum | `ChatView` header |

@@ -132,14 +132,20 @@ function heldPlan(threadId) {
  * Run or cancel a held turn. Returns `none` when nothing is held — a reloaded
  * window asking about a turn that died with its plan, or a double click.
  */
-function decideHold({ workspace, id, action } = {}) {
+function decideHold({ workspace, id, action, count, instruction, rows } = {}) {
   const record = workspaces.open(workspace)
   const thread = readThread(record, id)
   if (!thread || !canAccess(thread)) throw new Error('That thread no longer exists.')
   const held = holds.get(id)
   if (!held) return { decided: 'none' }
   const wanted = action === 'cancel' ? 'cancel' : 'run'
-  held.settle(wanted === 'run' ? { action: 'run' } : { action: 'cancel', reason: 'cancelled' })
+  /* The revision travels on the answer, not on a second write: the form is sent
+     once, with the Run. */
+  held.settle(
+    wanted === 'run'
+      ? { action: 'run', count, instruction, rows }
+      : { action: 'cancel', reason: 'cancelled' },
+  )
   return { decided: wanted, runs: held.plan.rows.length }
 }
 

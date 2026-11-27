@@ -27,7 +27,13 @@ function fields(args) {
     workspace: args?.workspace,
     id: args?.id || 'lynk',
   })
-  return { folderId: row.folderId, suffix: row.sheetSuffix }
+  return {
+    folderId: row.folderId,
+    suffix: row.sheetSuffix,
+    /* Where this workspace's marketplace document lives. Empty means it never said,
+       and then the report carries no landing links — not a hard-coded one. */
+    marketplaceUrl: row.marketplaceUrl,
+  }
 }
 
 module.exports = {

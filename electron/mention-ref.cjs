@@ -1914,6 +1914,7 @@ async function resolveOne(ctx, segment) {
           name: mentioned.name,
           job: instructionOf(segment),
           ...(segment.row ? { row: segment.row } : {}),
+          ...(segment.rowUrl ? { rowUrl: segment.rowUrl } : {}),
           items: [],
           answer: '',
           note: 'stopped by you',
@@ -1954,6 +1955,9 @@ async function resolveOne(ctx, segment) {
         name: mentioned.name,
         job: instruction,
         ...(segment.row ? { row: segment.row } : {}),
+        /* the row's source survives into the transcript, so the card that lands
+           after Run still links to the issue the row was */
+        ...(segment.rowUrl ? { rowUrl: segment.rowUrl } : {}),
         ...(segment.share && segment.share[1] > 1
           ? { share: `${segment.share[0]}/${segment.share[1]}` }
           : {}),
@@ -2266,6 +2270,9 @@ function planFor(ctx, segments) {
       total: ctx.runs.length,
       name: segment.runName || segment.name || '',
       row: segment.row || '',
+      /* the source the read that resolved this row found, so the card can link
+         to the issue instead of only naming it */
+      rowUrl: String(segment.rowUrl || ''),
       job: instructionOf(segment),
       share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
       harness: String(mentioned?.harness || ''),
@@ -2298,6 +2305,10 @@ function planFor(ctx, segments) {
   const dir = dirs.length === 1 ? dirs[0] : ''
   return {
     rows,
+    /* the instruction the plan was drawn from: the band the person edits in the
+       card, seeded from the first run's own words. Plain `job`, no row prefix:
+       the row keeps its own line on the card. */
+    instruction: String(ctx.runs[0]?.job || ''),
     reads,
     dir,
     shownDir: dir ? tilde(dir) : '',
@@ -2306,6 +2317,79 @@ function planFor(ctx, segments) {
     dirMixed: dirs.length > 1,
     timeoutMs: ctx.timeoutMs,
   }
+}
+
+/**
+ * The person edited the plan: apply the count and the words they left on screen
+ * before the first harness starts.
+ *
+ * `rows[i]` is card `i`'s text, already row-stripped; `segment.row` is kept, so
+ * `instructionOf` puts the row back for the run that has one. `count` is the
+ * number of cards, clamped to what the engine allows. With neither, this is a
+ * plain Run and the turn is today's path byte for byte.
+ *
+ * ponytail: edits are applied once, at Run. A per-keystroke `chat.plan` write is
+ * the upgrade path if a second window ever has to see an edit.
+ */
+function applyPlanRevision(ctx, segments, entityNow, decision) {
+  let runList = entityNow
+  const rows = Array.isArray(decision?.rows) ? decision.rows : null
+  const band = String(decision?.instruction ?? '').trim()
+  if (rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const segment = ctx.runs[index]
+      if (!segment) continue
+      const text = String(rows[index] ?? '').trim()
+      /* A trust boundary even though the card refuses to send an empty one: an
+         empty run would start a session with no question. */
+      if (!text) throw new Error(`run ${index + 1} has no instruction. Nothing was sent.`)
+      segment.job = text
+    }
+  } else if (band) {
+    /* One band, no per-card rows: every run gets the same words. */
+    for (const segment of ctx.runs) segment.job = band
+  }
+  const before = ctx.runs.length
+  const wanted = Number.isInteger(decision?.count)
+    ? Math.min(MAX_SPAWN_RUNS, Math.max(1, decision.count))
+    : before
+  /* Fewer: the tail goes, everywhere it is read — the plan, the block and the
+     runs themselves. */
+  while (ctx.runs.length > wanted) {
+    const dropped = ctx.runs.pop()
+    const at = segments.indexOf(dropped)
+    if (at >= 0) segments.splice(at, 1)
+    const runAt = runList.indexOf(dropped)
+    if (runAt >= 0) runList.splice(runAt, 1)
+  }
+  /* More: the last card is copied, because a blank one would block Run on the
+     common path. ponytail: one entity segment is exact for `spawn N @x`; a
+     fan-out of several entities changing its count is not modelled. */
+  while (ctx.runs.length < wanted && ctx.runs.length) {
+    const last = ctx.runs[ctx.runs.length - 1]
+    const clone = { ...last, mention: { ...(last.mention || {}) } }
+    /* A card the person edited after `+` still runs its own words: the row for
+       the new index wins over the copy it grew from. */
+    if (rows) {
+      const text = String(rows[ctx.runs.length] ?? '').trim()
+      if (text) clone.job = text
+      else if (rows[ctx.runs.length] !== undefined) {
+        throw new Error(`run ${ctx.runs.length + 1} has no instruction. Nothing was sent.`)
+      }
+    }
+    const after = segments.lastIndexOf(last)
+    segments.splice(after >= 0 ? after + 1 : segments.length, 0, clone)
+    ctx.runs.push(clone)
+    const runAt = runList.indexOf(last)
+    runList.splice(runAt >= 0 ? runAt + 1 : runList.length, 0, clone)
+  }
+  /* A trimmed plan reads `1/2`, not `1/4`. */
+  if (wanted !== before) {
+    ctx.runs.forEach((segment, index) => {
+      segment.share = [index + 1, ctx.runs.length]
+    })
+  }
+  return runList
 }
 
 /**
@@ -2548,6 +2632,7 @@ async function rewrite(
           row: segment.row || '',
           /* the live card must name the row, or ten runs of one instruction
              read as ten identical lines until they settle */
+          rowUrl: String(segment.rowUrl || ''),
           job: instructionOf(segment),
           share: segment.share ? `${segment.share[0]}/${segment.share[1]}` : '',
           status: segment.runStatus || 'queued',
@@ -2683,7 +2768,7 @@ async function rewrite(
      person approves anything, and a read that throws is the turn's existing hard
      error, which must never open a gate behind it. */
   const reads = runNow.filter((segment) => segment.kind !== 'entity')
-  const entityNow = runNow.filter((segment) => segment.kind === 'entity')
+  let entityNow = runNow.filter((segment) => segment.kind === 'entity')
   await Promise.all(reads.map((segment) => resolveOne(ctx, segment)))
   if (ctx.errors.length) {
     throw new Error(
@@ -2698,6 +2783,9 @@ async function rewrite(
   if (ctx.hold && ctx.runs.length) {
     const decision = await ctx.hold(planFor(ctx, segments))
     if (!decision || decision.action !== 'run') throw holdError(decision, ctx)
+    /* The form the person answered is the plan that runs: count and words are
+       applied once, here, before the first harness exists. */
+    entityNow = applyPlanRevision(ctx, segments, entityNow, decision)
   }
 
   /* `entityNow` includes the references: they resolve here and run nothing, and

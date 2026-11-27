@@ -59,6 +59,16 @@ export const youtrack = reactive({
      not have. */
   window: { days: 30, since: '', until: '' },
   readAt: '',
+  /* The origin the rows came from, straight off the `mcp.json` entry, so every href
+     the pane prints is built on the server the token was actually read from. Empty
+     when the entry holds no URL — never a guessed host. */
+  base: '',
+  /* The sprint board, read beside the two issue reads: `sprint` is the board's
+     current sprint (or `null`), and `sprintState` says which of the four reasons it
+     is null. Kept as the read handed them over so the card can print the reason in
+     words rather than guess. */
+  sprint: null,
+  sprintState: null,
   /* `null`, not `[]`, until a read answers: an empty array is the tracker saying
      "nothing", and a pane that printed a zero before the first read would be the
      confident zero this tab exists to avoid. */
@@ -160,6 +170,9 @@ export async function readDashboard({ force = false } = {}) {
       youtrack.login = String(answer.me.login || youtrack.login)
       youtrack.name = String(answer.me.name || youtrack.name)
     }
+    if (answer?.base) youtrack.base = String(answer.base)
+    youtrack.sprint = answer?.sprint && typeof answer.sprint === 'object' ? answer.sprint : null
+    youtrack.sprintState = answer?.sprintState && typeof answer.sprintState === 'object' ? answer.sprintState : null
     if (answer?.message) youtrack.message = String(answer.message)
     youtrack.error = ''
   } catch (problem) {

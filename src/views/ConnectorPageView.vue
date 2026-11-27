@@ -114,6 +114,13 @@ const feedUrl = computed(() => String(row.value?.url || ''))
    install, a sign-in that lives in the CLI, a mention the composer does not offer.
    Its page body is `TailscalePanel`, and the cards below stand down for it. */
 const isTailscale = computed(() => id.value === 'tailscale')
+/* Lynk.id's own settings card is the folder and the marketplace document, and both
+   are read off this connector's row. Two templates below gate on this name —
+   `LynkReportCard` and the "what it resolves" card — and it was never declared, so
+   `v-if="isLynk"` was `v-if="undefined"` and the settings card could not appear on
+   the page that was supposed to hold it. A missing binding is not a compile error in
+   a template; it is an invisible feature. */
+const isLynk = computed(() => id.value === 'lynk')
 /* The panel's own read, published upward. The hero states the same three facts the
    cards below it do, and a second `tailscale status --json` would let the two
    disagree. `null` means "still reading" — never a zero (DESIGN.md:118). */
@@ -562,9 +569,12 @@ watch(
  * the previous folder's revenue under the new folder's name.
  */
 watch(
-  () => [lynkConfig.folderId, lynkConfig.sheetSuffix],
-  ([nextFolder, nextSuffix], [wasFolder, wasSuffix]) => {
-    if (nextFolder === wasFolder && nextSuffix === wasSuffix) return
+  /* The marketplace URL is in here with the folder: every row's landing link is
+     resolved against it, so changing it dates the answer on screen exactly as
+     changing the folder does. */
+  () => [lynkConfig.folderId, lynkConfig.sheetSuffix, lynkConfig.marketplaceUrl],
+  ([nextFolder, nextSuffix, nextMarket], [wasFolder, wasSuffix, wasMarket]) => {
+    if (nextFolder === wasFolder && nextSuffix === wasSuffix && nextMarket === wasMarket) return
     if (installedRow.value?.builtIn !== 'lynk') return
     dropLynkAnswer()
     if (tab.value === 'dashboard' && !gate.value.locked) readPane('lynk')

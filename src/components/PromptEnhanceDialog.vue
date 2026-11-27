@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { call } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
@@ -19,10 +19,26 @@ import { harnessById, hub } from '@/stores/hub'
  */
 const props = defineProps({
   open: { type: Boolean, default: false },
+  /* A field outside the composer can ask for a rewrite: `seed` is what it holds
+     now, and `from` tells the dialog where Apply writes back. */
+  seed: { type: String, default: '' },
+  from: { type: String, default: 'composer' },
+  scope: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'apply'])
 
 const COUNT_OPTIONS = [1, 2, 3, 4, 5]
+
+/* This dialog is mounted twice — once beside the composer and once inside a
+   held plan — and both copies are in the document at the same time. An id is
+   the one thing on this markup that is shared state: `aria-labelledby` and a
+   `<label for>` resolve against the **first** match, so a literal `enh-guide`
+   in the plan would label the composer's textarea. `useId()` is stable per
+   instance, which is all that is needed to tell the two apart. */
+const uid = useId()
+const titleId = `enh-title-${uid}`
+const countId = `enh-count-lbl-${uid}`
+const guideId = `enh-guide-${uid}`
 
 const draft = ref('')
 /* The thread this dialog is rewriting for: a result that lands after a thread
@@ -54,6 +70,8 @@ const done = computed(() => phase.value === 'results')
 const words = computed(() => (draft.value.trim() ? draft.value.trim().split(/\s+/).length : 0))
 const lines = computed(() => (draft.value ? draft.value.split('\n').length : 0))
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+/* Where Apply writes: the composer for a message, this field for a plan card. */
+const origin = computed(() => (props.from === 'plan' ? 'this field' : 'the composer'))
 const countLabel = computed(() =>
   count.value === 1 ? 'Generate' : `Generate ${plural(count.value, 'variation', 'variations')}`,
 )
@@ -72,9 +90,13 @@ const summaryLabel = computed(
     }`,
 )
 const lede = computed(() => {
-  if (!draft.value.trim()) return 'There is nothing in the composer to rewrite.'
+  if (!draft.value.trim()) return `There is nothing in ${origin.value} to rewrite.`
   if (done.value) {
-    return `${plural(variations.value.length, 'variation', 'variations')} below. Apply keeps the one you pick and leaves the original in the composer until then.`
+    const keeps =
+      props.from === 'plan'
+        ? 'leaves this field as it was'
+        : 'leaves the original in the composer'
+    return `${plural(variations.value.length, 'variation', 'variations')} below. Apply keeps the one you pick and ${keeps} until then.`
   }
   return 'A clearer rewrite of what you typed — same intent, fewer things to guess.'
 })
@@ -147,7 +169,10 @@ watch(
     }
     reset()
     owner.value = hub.chat.active
-    draft.value = String(hub.chat.drafts[hub.chat.active] || '')
+    draft.value =
+      props.from === 'plan'
+        ? String(props.seed || '')
+        : String(hub.chat.drafts[hub.chat.active] || '')
     nextTick(() => generateBtn.value?.focus())
   },
   { immediate: true },
@@ -318,13 +343,16 @@ function onRowKey(event, index) {
       :data-phase="phase"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="enh-title"
+      :aria-labelledby="titleId"
       tabindex="-1"
       @keydown="onKey"
     >
       <div class="mo-head">
-        <h2 id="enh-title">Enhance this prompt</h2>
+        <h2 :id="titleId">Enhance this prompt</h2>
         <p class="enhlede">{{ lede }}</p>
+        <p v-if="from === 'plan' && scope" class="enhcount">
+          from the plan · {{ scope }} · {{ plural(words, 'word', 'words') }}
+        </p>
         <button
           class="mo-x"
           type="button"
@@ -348,7 +376,7 @@ function onRowKey(event, index) {
         <div class="enhbase" :data-empty="draft.trim() ? '0' : '1'">{{ draft.trim() ? draft : 'No draft' }}</div>
 
         <p v-if="!draft.trim()" class="enhhint">
-          Type your question in the composer first, then press <kbd>{{ enhanceKey }}</kbd> again.
+          Type your question in {{ origin }} first, then press <kbd>{{ enhanceKey }}</kbd> again.
         </p>
 
         <details class="enhadv" :open="advanced" @toggle="onToggle">
@@ -361,8 +389,8 @@ function onRowKey(event, index) {
           </summary>
 
           <div class="fld">
-            <span class="lbl" id="enh-count-lbl">Number of variations</span>
-            <div class="enhseg" role="radiogroup" aria-labelledby="enh-count-lbl">
+            <span class="lbl" :id="countId">Number of variations</span>
+            <div class="enhseg" role="radiogroup" :aria-labelledby="countId">
               <button
                 v-for="option in COUNT_OPTIONS"
                 :key="option"
@@ -379,9 +407,9 @@ function onRowKey(event, index) {
           </div>
 
           <div class="fld">
-            <label class="lbl" for="enh-guide">{{ guideLabel }}</label>
+            <label class="lbl" :for="guideId">{{ guideLabel }}</label>
             <textarea
-              id="enh-guide"
+              :id="guideId"
               v-model="guide"
               class="acct-input enharea"
               rows="3"
