@@ -582,8 +582,10 @@ function tabKey(event) {
       </router-link>
     </div>
 
-    <div v-else-if="!fleet.loaded" class="empty-note"><b>Reading the fleet…</b></div>
-
+    <!-- Everything below draws from the snapshot already in memory, so the page
+         is on screen on the first frame; the ssh facts in the rail are the only
+         thing that still arrives with the config read. A page that waits for a
+         store before drawing its own header is a page that looks broken. -->
     <div v-else class="entp-grid">
       <div class="entp-main">
         <section class="entp-sec">
