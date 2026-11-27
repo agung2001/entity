@@ -140,12 +140,18 @@ function windowOf(now = Date.now()) {
 }
 
 /**
- * The six tiles of each band.
+ * The six tiles of each view.
  *
  * `value` is a number, or `null` when the read it needs did not return. `query` is
  * the equivalence a person can paste into the tracker's search box, and it survives
  * a `null` value — the label and the query are the tile, the number is only its
  * current answer.
+ *
+ * `hint` is the one line the tile prints under its number, and it is prose, not the
+ * query. Six tiles in a row share a query prefix (`#Unresolved Assignee: <login>`),
+ * so printing the query put the same fourteen characters under all six and cut the
+ * clause that told them apart. The whole query stays on the tile as its tooltip,
+ * where a reader who wants the pasteable form still finds it.
  */
 function tiles(unresolved, resolved, me, now = Date.now()) {
   const open = Array.isArray(unresolved) ? unresolved : null
@@ -173,84 +179,132 @@ function tiles(unresolved, resolved, me, now = Date.now()) {
      reader can paste; the login is a tracker identifier, never a display name. */
   const login = who.login ? `Assignee: ${who.login}` : 'for: me'
 
+  /* The numbers first, then the tiles that print them: a hint has to name the slice
+     its number is part of, and that means reading the number twice. */
+  const myOpen = open === null || !who.login ? null : rows.filter((row) => has(row, who.login)).length
+  const myProgress = mine((row) => stateIs(row, 'In Progress'))
+  const myWorse = mine((row) => WORSE_WORDS.includes(word(row.priority)))
+  const myUntouched = mine((row) => {
+    const at = stamp(row.updatedAt)
+    return at !== null && at < now - N7
+  })
+  const myDone30 = mineDone(N30)
+  const myDone7 = mineDone(N7)
+  const teamProgress = count((row) => stateIs(row, 'In Progress'))
+  const teamDiscussed = count((row) => stateIs(row, 'To be discussed'))
+  const teamUnassigned = count((row) => assigneesOf(row).length === 0)
+  const teamUntouched = count((row) => {
+    const at = stamp(row.updatedAt)
+    return at !== null && at < now - N7
+  })
+  const teamDone7 = done === null ? null : done.filter((row) => recent(row.resolvedAt, N7)).length
+
+  /* The hint under a state tile is that state's share of the queue it is a slice of.
+     The number above it is the count; a count without its denominator is the sum a
+     lead ends up doing in their head. `pct` floors, so a tile never claims 100% of a
+     queue it has not counted — and `no read` is the same two words the report's own
+     tiles use for a number the read did not answer. */
+  const ofMine = (value) => {
+    if (!who.login) return 'no seat'
+    if (value === null) return 'no read'
+    return myOpen ? `${pct(value, myOpen)} of yours` : 'nothing open'
+  }
+  const ofQueue = (value) => {
+    if (value === null || open === null) return 'no read'
+    return rows.length ? `${pct(value, rows.length)} of open` : 'empty queue'
+  }
+
   return {
     mine: [
       {
         key: 'open',
         label: 'Open',
-        value: open === null || !who.login ? null : rows.filter((row) => has(row, who.login)).length,
+        value: myOpen,
         query: `${OPEN} ${login}`,
+        hint: who.login ? 'assigned to you' : 'no seat',
       },
       {
         key: 'progress',
         label: 'In progress',
-        value: mine((row) => stateIs(row, 'In Progress')),
+        value: myProgress,
         query: `${OPEN} State: {In Progress} ${login}`,
+        hint: ofMine(myProgress),
       },
       {
         key: 'worse',
         label: 'Major or worse',
-        value: mine((row) => WORSE_WORDS.includes(word(row.priority))),
+        value: myWorse,
         query: `${OPEN} ${login} ${WORSE}`,
+        hint: 'Major and above',
       },
       {
         key: 'done30',
         label: 'Resolved 30 d',
-        value: mineDone(N30),
+        value: myDone30,
         query: `${DONE} ${login} resolved date: {minus 30d} .. *`,
+        hint: 'last 30 days',
       },
       {
         key: 'untouched',
         label: 'Untouched 7 d',
-        value: mine((row) => {
-          const at = stamp(row.updatedAt)
-          return at !== null && at < now - N7
-        }),
+        value: myUntouched,
         query: `${OPEN} ${login} updated: * .. {minus 7d}`,
+        hint: 'no update 7 d',
       },
       {
         key: 'done7',
         label: 'Resolved 7 d',
-        value: mineDone(N7),
+        value: myDone7,
         query: `${DONE} ${login} resolved date: {minus 7d} .. *`,
+        hint: 'last 7 days',
       },
     ],
     team: [
-      { key: 'open', label: 'Unresolved', value: open === null ? null : rows.length, query: OPEN },
+      {
+        key: 'open',
+        label: 'Unresolved',
+        value: open === null ? null : rows.length,
+        query: OPEN,
+        hint: 'whole instance',
+      },
       {
         key: 'progress',
         label: 'In progress',
-        value: count((row) => stateIs(row, 'In Progress')),
+        value: teamProgress,
         query: `${OPEN} State: {In Progress}`,
+        hint: ofQueue(teamProgress),
       },
       {
         key: 'discussed',
-        label: 'To be discussed',
-        value: count((row) => stateIs(row, 'To be discussed')),
+        /* The short name the seats table's column already uses: `To be discussed` is
+           three words in a 150 px tile, and the query under it names the state. */
+        label: 'Discussed',
+        value: teamDiscussed,
         query: `${OPEN} State: {To be discussed}`,
+        hint: ofQueue(teamDiscussed),
       },
       {
         key: 'unassigned',
         label: 'Unassigned',
-        value: count((row) => assigneesOf(row).length === 0),
+        value: teamUnassigned,
         /* Not `Assignee: null` and not `{No assignee}` — both answer 0 on a real
            tracker; `has: -assignee` is the form that answers 164. */
         query: `${OPEN} has: -assignee`,
+        hint: ofQueue(teamUnassigned),
       },
       {
         key: 'untouched',
         label: 'Untouched 7 d',
-        value: count((row) => {
-          const at = stamp(row.updatedAt)
-          return at !== null && at < now - N7
-        }),
+        value: teamUntouched,
         query: `${OPEN} updated: * .. {minus 7d}`,
+        hint: ofQueue(teamUntouched),
       },
       {
         key: 'done7',
         label: 'Resolved 7 d',
-        value: done === null ? null : done.filter((row) => recent(row.resolvedAt, N7)).length,
+        value: teamDone7,
         query: `${DONE} resolved date: {minus 7d} .. *`,
+        hint: 'last 7 days',
       },
     ],
   }
@@ -392,7 +446,14 @@ const resolvedAt = (row) => stamp(row.resolvedAt)
  *  share of the queue, rounded the way a reader reads it (`12%`, not `11.5%`). */
 function countRows(counts, total, order = []) {
   return [...counts.entries()]
-    .map(([label, count]) => ({ label, count, pct: total ? Math.round((count / total) * 100) : 0 }))
+    .map(([label, count]) => ({
+      label,
+      count,
+      pct: total ? Math.round((count / total) * 100) : 0,
+      /* The bar's width as a share of the denominator, so the card draws a bar
+         without dividing and every row in the block is on one scale. */
+      share: total ? count / total : 0,
+    }))
     .sort((a, b) => {
       const ai = order.indexOf(a.label)
       const bi = order.indexOf(b.label)
@@ -440,6 +501,26 @@ function issueOf(row, kind, base) {
 /** Every number One's page adds to Entity's, derived once and printed by the pane. */
 const SPRINT_ITEM_LIMIT = 8
 
+/** How many rows the `Oldest unresolved` card prints under the counts. */
+const OLDEST_ROWS = 8
+
+/** How many rows the `Just me` view lists under its tiles. A person's plate is
+ *  shorter than the backlog, and this list is a starting point, not a table. */
+const MY_ROWS = 12
+
+/** A sprint's date range, or the honest name of what it is missing. A board whose
+ *  sprint carries no dates printed `… → open`, which reads as a bug rather than as
+ *  an unset field. */
+function datesOf(start, finish) {
+  const from = Number(start) || 0
+  const to = Number(finish) || 0
+  if (!from && !to) return 'no dates on the board'
+  const fromText = from ? DATE_SHORT.format(new Date(from)) : ''
+  const toText = to ? DATE_SHORT.format(new Date(to)) : ''
+  if (fromText && toText) return `${fromText} → ${toText}`
+  return fromText ? `${fromText} → open` : `until ${toText}`
+}
+
 /**
  * The sprint card's own data, and the four ways it can have none.
  *
@@ -457,19 +538,61 @@ function sprintOf(read, base) {
     detail: String(read?.sprintState?.detail || ''),
   }
   const boardUrl = base && board ? `${base}/agiles/${board}/current` : ''
-  if (!raw) return { sprint: null, sprintState: { ...state, boardUrl }, boardUrl }
+  /* The four ways a sprint card can have no sprint, in words. Derived here so the
+     empty card states the reason rather than printing a blank frame — and so the
+     sentence and the `kind` that chose it cannot drift apart. */
+  const reasonOf = (entry) => {
+    if (entry.kind === 'unreadable') {
+      return {
+        title: 'No current sprint',
+        detail: `${entry.detail || 'The sprint board did not answer'} — check the YouTrack connection and the token scope.`,
+      }
+    }
+    if (entry.kind === 'no-sprint') {
+      return {
+        title: 'No current sprint',
+        detail: `Board ${entry.board || '—'} has no current sprint (all sprints archived).`,
+      }
+    }
+    if (entry.kind === 'empty') {
+      return {
+        title: 'Sprint is empty',
+        detail: `Board ${entry.board || '—'}'s current sprint has no work items yet.`,
+      }
+    }
+    return { title: 'No current sprint', detail: 'The sprint board could not be read.' }
+  }
+  if (!raw) {
+    return {
+      sprint: null,
+      sprintState: { ...state, boardUrl, reason: reasonOf(state) },
+      boardUrl,
+    }
+  }
 
   const total = Number(raw.total) || 0
   const done = Number(raw.done) || 0
   const related = Number(raw.related) || 0
   const relatedDone = Number(raw.relatedDone) || 0
-  const items = Array.isArray(raw.items) ? raw.items : []
+  /* Each listed item is a row the pane can print without adding anything up: the
+     href is the read's own link, with the connector's base as the fallback. */
+  const itemOf = (item) => {
+    const id = String(item?.id || '')
+    return {
+      id,
+      summary: String(item?.summary || ''),
+      state: String(item?.state || '').trim(),
+      resolved: Boolean(item?.resolved),
+      url: String(item?.url || '') || (base && id ? `${base}/issue/${encodeURIComponent(id)}` : ''),
+    }
+  }
+  const items = (Array.isArray(raw.items) ? raw.items : []).map(itemOf)
   /* Only unfinished work is listed: a resolved item needs no progress bar, and the
      board is one click away for the verified ones. */
   const openItems = items.filter((item) => !item?.resolved)
 
   return {
-    sprintState: { ...state, boardUrl },
+    sprintState: { ...state, boardUrl, reason: reasonOf(state) },
     boardUrl,
     sprint: {
       id: String(raw.id || ''),
@@ -484,16 +607,16 @@ function sprintOf(read, base) {
       related,
       relatedDone,
       relatedProgress: related ? Math.round((relatedDone / related) * 100) : 0,
-      /* One segment per bucket, as whole percentages, so a bar's three widths and
-         the three counts beside it are one derivation. */
+      /* One segment per bucket, as a 0..1 share, so a bar's three widths and the
+         three counts beside it are one derivation. */
       segments: total
         ? [
-            { key: 'done', label: 'Resolved', count: done, width: (done / total) * 100 },
-            { key: 'progress', label: 'In progress', count: Number(raw.inProgress) || 0, width: ((Number(raw.inProgress) || 0) / total) * 100 },
-            { key: 'open', label: 'Open', count: Number(raw.open) || 0, width: ((Number(raw.open) || 0) / total) * 100 },
+            { key: 'done', label: 'Resolved', count: done, share: done / total },
+            { key: 'progress', label: 'In progress', count: Number(raw.inProgress) || 0, share: (Number(raw.inProgress) || 0) / total },
+            { key: 'open', label: 'Open', count: Number(raw.open) || 0, share: (Number(raw.open) || 0) / total },
           ]
         : [],
-      dates: `${raw.start ? DATE_SHORT.format(new Date(Number(raw.start))) : '…'} → ${raw.finish ? DATE_SHORT.format(new Date(Number(raw.finish))) : 'open'}`,
+      dates: datesOf(raw.start, raw.finish),
       items,
       openItems,
       shown: openItems.slice(0, SPRINT_ITEM_LIMIT),
@@ -551,9 +674,9 @@ function flow(unresolved, resolved, me, now = Date.now(), count = 7) {
  * stays legible — a bar per total turns every project into a hairline on a tracker
  * where one project dominates.
  */
-function backlog(unresolved, top = 7) {
+function backlog(unresolved, base = '', top = 7) {
   if (!Array.isArray(unresolved)) {
-    return { rows: [], total: null, rest: null, largest: null, empty: null }
+    return { rows: [], total: null, rest: null, others: null, largest: null, empty: null }
   }
   const counts = new Map()
   for (const row of unresolved) {
@@ -566,10 +689,20 @@ function backlog(unresolved, top = 7) {
     project,
     count,
     width: largest ? count / largest : 0,
+    /* The row's link is the tracker's own search for that project, so the number
+       and the list it opens are one query. `no project` names an absence, not a
+       project, so it is the one row that stays plain text. */
+    url:
+      base && project !== 'no project'
+        ? `${base}/issues?q=${encodeURIComponent(`project: ${project}`)}`
+        : '',
   }))
   return {
     rows,
     largest,
+    /* Named, not silently dropped: the foot prints how many projects the top rows
+       leave out — derived here so the pane does not subtract two counts. */
+    others: all.length - rows.length,
     /* Named, not silently dropped: the foot says how many issues the top seven of
        `total` projects leave out. */
     total: all.length,
@@ -598,7 +731,7 @@ function report(read = {}, now = Date.now()) {
   const bands = tiles(unresolved, resolved, me, now)
   const flowRows = flow(unresolved, resolved, me, now)
   const seats = team(unresolved, resolved, me, now)
-  const projects = backlog(unresolved)
+  const projects = backlog(unresolved, base)
 
   /* ── the windows, floored to a UTC midnight, then the three resolved sets ──
      One query answers all three: the resolved read already covers 30 days, which is
@@ -675,6 +808,34 @@ function report(read = {}, now = Date.now()) {
     )
   }
 
+  /* The nudge under the counts: the eight issues that have waited longest, oldest
+     first, on the same `base` as every other link. An undated row sorts last rather
+     than to the top of a list called oldest. */
+  const oldest = [...open]
+    .sort((a, b) => (stamp(a.createdAt) ?? Infinity) - (stamp(b.createdAt) ?? Infinity))
+    .slice(0, OLDEST_ROWS)
+    .map((row) => issueOf(row, 'backlog', base))
+
+  /* The rows behind the `Just me` view's `Open` tile, filtered with the same
+     `assigneesOf` test that tile counts with, so the number in the tile and the list
+     under it cannot disagree. Most recently touched first: the plate a person works
+     from is the one they moved last, and the rows that have gone cold are the
+     `Oldest unresolved` card's job. */
+  const myRows = me.login ? open.filter((row) => assigneesOf(row).some((entry) => entry === me.login)) : []
+  const myOpen = {
+    login: me.login,
+    /* `null` in the two cases the tiles print a dash for — no read, or no login the
+       token can name — so this head can never print a confident `0`. */
+    total: unresolved === null || !me.login ? null : myRows.length,
+    rows: [...myRows]
+      .sort((a, b) => (stamp(b.updatedAt) || 0) - (stamp(a.updatedAt) || 0))
+      .slice(0, MY_ROWS)
+      .map((row) => issueOf(row, 'backlog', base)),
+    /* Named rather than silently cut: the foot says how many rows the list leaves
+       out, derived here so the pane does not subtract two counts. */
+    more: unresolved === null || !me.login ? null : Math.max(0, myRows.length - MY_ROWS),
+  }
+
   const shipped = [...weekResolved]
     .sort((a, b) => (resolvedAt(b) || 0) - (resolvedAt(a) || 0))
     .map((row) => issueOf(row, 'shipped', base))
@@ -705,7 +866,7 @@ function report(read = {}, now = Date.now()) {
     source: String(read.base || read.host || 'YouTrack').replace(/^https?:\/\//, ''),
     generated: STAMP_FULL.format(new Date(stamp(read.readAt) ?? now)),
     /* The reads behind every number here are unfiltered — no `assignee:` clause —
-       so the scope is the whole instance whatever band the chips are showing. */
+       so the scope is the whole instance whichever of the two views is open. */
     scope: String(read.scope || 'whole instance'),
   }
 
@@ -748,10 +909,16 @@ function report(read = {}, now = Date.now()) {
     },
   ]
 
-  const cadence = flowRows.map((entry) => ({ label: entry.wd, value: entry.resolved, day: entry.day }))
   /* The tallest bar, so seven counts share one scale. Derived here because a chart
      that scales itself in a template is a chart that can scale a week two ways. */
-  const cadencePeak = cadence.reduce((max, bar) => Math.max(max, bar.value), 0)
+  const cadencePeak = flowRows.reduce((max, entry) => Math.max(max, entry.resolved), 0)
+  const cadence = flowRows.map((entry) => ({
+    label: entry.wd,
+    value: entry.resolved,
+    day: entry.day,
+    /* The bar's height as a share of the peak, so no template divides. */
+    height: cadencePeak ? entry.resolved / cadencePeak : 0,
+  }))
 
   return {
     state: String(read.state || 'ok'),
@@ -805,7 +972,19 @@ function report(read = {}, now = Date.now()) {
     board,
     shipped,
     open: openIssues,
+    /* The head of that queue, oldest first — the pane's one list of individual
+       issues, derived here so it links like the tables do. */
+    oldest,
+    /* The `Just me` view's own list, beside the tile that counts it. */
+    myOpen,
     stale,
+    /* The stale list in words, capped and named, so the banner's sentence is one
+       string rather than a loop with a slice in a template. */
+    staleText: (() => {
+      const shown = stale.slice(0, 10).map((row) => `${row.id} (${row.date})`)
+      const rest = stale.length - shown.length
+      return shown.length ? `${shown.join(', ')}${rest > 0 ? ` +${rest} more` : ''}` : ''
+    })(),
     highlight,
     summary: summaryParts.join(' ') || 'The resolved read did not answer, so there is no cadence to describe.',
     totals: {
