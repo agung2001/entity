@@ -658,6 +658,24 @@ function parseMention(raw) {
     return { kind: 'fitbit', target: '', query: whole, local }
   }
 
+  /* `@threads:[posts|replies|insights:]<query|post-id>` — the shape Fitbit's day has,
+     with a reader word in front instead of a date. There is no account segment for the
+     same reason: one Threads token per install, so a mention naming an account could
+     never be right on another machine.
+
+     The reader word is checked against a closed list because it sits where a query
+     otherwise would: `@threads:insights` is the 30-day totals, `@threads:posts` the
+     posts behind them, and `@threads:replies:<id>` the replies under one post. A first
+     word that is none of the three is not an error — it is the filter over the post
+     text, because the likeliest thing to type after the colon is a word from a post. */
+  if (head === 'threads') {
+    const readers = new Set(['posts', 'replies', 'insights'])
+    if (readers.has(word.toLowerCase())) {
+      return { kind: 'threads', target: word.toLowerCase(), query: tail, local }
+    }
+    return { kind: 'threads', target: '', query: whole, local }
+  }
+
   /* ── the account-bearing four: the account segment LEADS ─────────────────
      These connectors are multi-account by design, so the account is part of the
      address: `@gmail:work:from:stripe` is "the work mailbox, Gmail's from:
@@ -715,6 +733,9 @@ function tokenOf(segment) {
   }
   if (segment.kind === 'fitbit') {
     return `${at}fitbit:${segment.target ? `${segment.target}:` : ''}${segment.query}`
+  }
+  if (segment.kind === 'threads') {
+    return `${at}threads:${segment.target ? `${segment.target}:` : ''}${segment.query}`
   }
   if (segment.kind === 'clockify') {
     return `${at}clockify:${segment.target}${segment.week ? `:${segment.week}` : ''}`
@@ -1415,6 +1436,23 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     const preview = connectorRegistry.previewFor('fitbit')
     if (!preview) return { items: [], more: false }
     const rows = await preview(fields, { limit: offset + limit + 1 })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
+  if (kind === 'threads') {
+    /* One field: a reader word or a word from a post. The suggestions come from the
+       resolver, so the menu offers only what a send would resolve — and it never
+       spends a request to fill itself. */
+    const preview = connectorRegistry.previewFor('threads')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, { record: ctx.record, limit: offset + limit + 1 })
     return {
       items: rows.slice(offset, offset + limit).map((row) => ({
         insert: row.mention,
@@ -2318,6 +2356,19 @@ async function resolveOne(ctx, segment) {
       })
       segment.mention = { kind: 'clockify', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no tracked hours`)
+      return
+    }
+
+    if (segment.kind === 'threads') {
+      /* One token per install, so there is no account segment and no fan-out: the
+         registry dispatches the resolver like the rest. The three readers share one
+         30-day read, so the reader narrows the answer and not the cost. */
+      const resolve = connectorRegistry.resolverFor('threads')
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling('threads', MAX_PER_SOURCE),
+      })
+      segment.mention = { kind: 'threads', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no post`)
       return
     }
 

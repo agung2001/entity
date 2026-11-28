@@ -196,6 +196,18 @@ const CATALOG = {
 
   x: CONNECTORS.x,
 
+  /* ── the second paste-once credential ─────────────────────────────────────
+     Threads is `credential: 'token'` for the same reason Clockify is: one opaque
+     long-lived token, pasted once, that proves itself against `GET /me` before it is
+     written and never refreshes itself. There is no consent screen to run and no
+     per-account row to keep — one Threads account per install — so this entry carries
+     no `oauth` flag and no provider row, and the token verbs land it with no tier.
+
+     It is read-only and it costs calls: one insight request per post in the window,
+     which is why the dashboard holds its answer for ten minutes and the mention reads
+     that same answer instead of asking again. */
+  threads: CONNECTORS.threads,
+
   /* ── the two credentialless feeds ────────────────────────────────────────
      A feed is a URL and nothing else: no resolver, no account, no call, no token,
      so neither entry carries a `work` block and neither offers a mention. They are
@@ -253,7 +265,7 @@ const CATALOG = {
 /** The resolver keys `mention-ref` actually answers. A catalog entry may not name anything else. */
 const RESOLVERS = new Set([
   'orca', 'github', 'youtrack', 'maka',
-  'gmail', 'drive', 'calendar', 'youtube', 'youtube-studio', 'x',
+  'gmail', 'drive', 'calendar', 'youtube', 'youtube-studio', 'x', 'threads',
   'clockify', 'habitify', 'fitbit', 'opendesign',
   'artifact', 'thread',
 ])
