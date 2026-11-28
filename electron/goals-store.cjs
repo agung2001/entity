@@ -20,6 +20,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const workspaces = require('./workspace-store.cjs')
+const runner = require('./goal-runner.cjs')
 
 const FILE = 'goals.json'
 const PRIORITIES = ['critical', 'major', 'normal', 'minor']
@@ -113,6 +114,20 @@ function taskList(value) {
 }
 
 /**
+ * The stored script: the caller's, bounded, or the counting default. It is code,
+ * so the ceiling is applied when it is saved — a 2 MB script should be refused
+ * at the write, not fail for ever on the first Refresh.
+ */
+function scriptOf(value) {
+  const script = String(value ?? '').trim()
+  if (!script) return runner.DEFAULT_SCRIPT
+  if (script.length > runner.MAX_SCRIPT) {
+    throw refusal(`GOAL.js is larger than ${runner.MAX_SCRIPT / 1024} kB.`, 'invalid')
+  }
+  return script
+}
+
+/**
  * The workspace directory, after `open` has refused one that is not there — so a
  * verb can never build a path out of an id the caller made up.
  */
@@ -174,7 +189,10 @@ function create({ workspace, goal } = {}) {
     createdAt: new Date().toISOString(),
     archivedAt: '',
     tasks: taskList(goal?.tasks),
-    script: String(goal?.script || ''),
+    /* A new goal starts with the counting script, on the record. An empty string
+       would make Refresh answer `null` for ever, which is honest but useless;
+       a script in the store's code would be a number nobody can read or edit. */
+    script: scriptOf(goal?.script),
     read: null,
     readAt: '',
   }
@@ -232,16 +250,26 @@ function remove({ workspace, id } = {}) {
 /**
  * Refresh — the one door a new figure comes in by.
  *
- * `ponytail:` the runner (a `node:vm` context whose whole world is `connectors`,
- * `cache`, `log` and `signal`) is the GOAL.js task. Until it lands this verb
- * re-reads the file and changes no field: a Refresh that invented a number would
- * be the exact claim §8 rule 1 forbids, only quieter.
+ * The script runs in `goal-runner.cjs`'s context, and its answer is stored as the
+ * goal's `read` with its own `readAt`. A throw, a timeout or an empty read stores
+ * `null` and keeps the attempt's reason for the caller: the page prints an em
+ * dash, never a zero, and the Sources panel can say why.
  */
-function refresh({ workspace, id } = {}) {
+async function refresh({ workspace, id } = {}) {
   const goals = readGoals(workspace)
-  const goal = goals.find((entry) => entry.id === String(id || ''))
-  if (!goal) throw refusal('That goal is not in this workspace.', 'not_found')
-  return { goal, goals }
+  const at = goals.findIndex((goal) => goal.id === String(id || ''))
+  if (at < 0) throw refusal('That goal is not in this workspace.', 'not_found')
+  const goal = goals[at]
+  const { read, error } = await runner.run(goal.script, { goal })
+  goals[at] = {
+    ...goal,
+    read,
+    /* Only a landed read stamps the clock: `stale` means "a read answered, a
+       while ago", and a failed attempt is `unread`, not stale. */
+    readAt: read ? new Date().toISOString() : '',
+  }
+  writeGoals(workspace, goals)
+  return { goal: goals[at], goals, error: error || '' }
 }
 
 module.exports = { FILE, read, create, update, tick, remove, refresh }
