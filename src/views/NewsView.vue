@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import UiIcon from '@/components/UiIcon.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
+import FeedMark from '@/components/FeedMark.vue'
 import ViewToggle from '@/components/ViewToggle.vue'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
@@ -223,6 +224,15 @@ const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE)
 const atPage = computed(() => Math.min(Math.max(1, page.value), pages.value))
 const paged = computed(() => filtered.value.slice((atPage.value - 1) * PAGE, atPage.value * PAGE))
 
+/* The volume bar has to be scaled to this page, not to Google's own maximum —
+   the store prints `10000+` as often as `100`, so the bar measures an item
+   against the largest figure the visible page carries. Same read, drawn. */
+const volumeTop = computed(() => Math.max(1, ...paged.value.map((row) => leading(row.volume))))
+const volumeWidth = (row) => {
+  const figure = leading(row.volume)
+  return figure > 0 ? `${Math.max(4, Math.round((figure / volumeTop.value) * 100))}%` : '0%'
+}
+
 const pagerLabel = computed(() => {
   if (skel.value) return `Page — of — · — ${word.value}`
   if (!filtered.value.length) {
@@ -336,11 +346,6 @@ const feedMark = (item) => {
   if (!feed) return undefined
   if (feed.trend) return 'gt'
   return /reddit/i.test(`${feed.label} ${feed.url}`) ? 'rd' : undefined
-}
-const feedGlyph = (item) => {
-  const feed = feedIndex.value.get(item.feedId)
-  if (!feed) return '?'
-  return feed.trend ? 'G' : String(feed.label || '?').trim().charAt(0).toUpperCase()
 }
 
 /* ── acting ──────────────────────────────────────────────────────────────────
@@ -747,6 +752,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                       <span class="tm dsh-skel" style="width: 44px; height: 9px"></span>
                     </p>
                     <h3><span class="dsh-skel" style="width: 88%; height: 11px"></span></h3>
+                    <span v-if="tab === 'trends'" class="nv-meter"><i style="width: 40%"></i></span>
                     <p class="foot"><span class="dsh-skel" style="width: 104px; height: 9px"></span></p>
                   </div>
                 </li>
@@ -761,11 +767,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   :rel="row.url ? 'noopener noreferrer' : undefined"
                 >
                   <p class="nv-top">
-                    <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true">{{ feedGlyph(row) }}</i>
+                    <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true"><FeedMark :family="feedMark(row)" /></i>
                     <span class="fl">{{ row.feed }}</span>
                     <span class="tm">{{ ago(row.published) }}</span>
                   </p>
                   <h3>{{ row.title }}</h3>
+                  <!-- The rank and the figure are already printed below; this is
+                       the same volume, drawn, so rising rows read as a shape. -->
+                  <span v-if="tab === 'trends'" class="nv-meter" aria-hidden="true"><i :style="{ width: volumeWidth(row) }"></i></span>
                   <p class="foot">
                     <template v-if="tab === 'trends'">
                       rank {{ row.rank }} · volume
@@ -792,7 +801,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 </li>
               </template>
               <li v-for="row in skel ? [] : paged" :key="`${row.feedId}-${row.rank}`" class="nv-row">
-                <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true">{{ feedGlyph(row) }}</i>
+                <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true"><FeedMark :family="feedMark(row)" /></i>
                 <div>
                   <component
                     :is="row.url ? 'a' : 'span'"

@@ -272,25 +272,51 @@
 }
 
 /* The card is the anchor — like `.ash-card`, nothing inside it is interactive,
-   so one hit target and one tab stop are the whole truth about it. The 138 px
-   floor is measured (padding 25 + top line 16 + gap 9 + 3 × line + foot 23) and
-   the skeleton uses the same box, so a read landing never reflows the grid. */
+   so one hit target and one tab stop are the whole truth about it. `--hue` is the
+   feed's family colour: the mark's tint, the top edge and the floor wash all read
+   it, so a shelf of cards is colour-coded by source before a word is read. */
 .nv-card {
+  --hue: var(--accent);
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 138px;
-  padding: 13px 14px 12px;
+  padding: 14px 15px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--bg);
+  background: linear-gradient(180deg, var(--bg) 50%, color-mix(in oklab, var(--hue) 6%, var(--bg)));
   transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out, transform 0.14s ease-out;
+}
+.nv-card::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 2px;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: color-mix(in oklab, var(--hue) 60%, var(--border));
+  opacity: 0.8;
+  transition: opacity 0.14s ease-out;
+}
+.nv-card:has(.nv-gl[data-s='gt']) {
+  --hue: #4285f4;
+}
+.nv-card:has(.nv-gl[data-s='rd']) {
+  --hue: #ff4500;
 }
 .nv-card:hover {
   border-color: var(--border-strong);
   box-shadow: 0 8px 22px color-mix(in oklab, var(--ink) 7%, transparent);
   transform: translateY(-1px);
+}
+.nv-card:hover::before {
+  opacity: 1;
+}
+/* The mark and the card are one surface: on hover the chip takes the family hue
+   the rest of the card is already wearing, so the card answers as a whole. */
+.nv-card:hover .nv-gl {
+  background: color-mix(in oklab, var(--hue) 26%, var(--surface));
 }
 .nv-card:focus-visible {
   outline: 2px solid var(--ink);
@@ -312,6 +338,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--ink-2);
+  font-weight: 500;
 }
 .nv-top .tm {
   margin-left: auto;
@@ -320,13 +348,20 @@
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
 }
+/* The age is a chip, not a floating label: it gives the corner an edge and the
+   eye a fixed right margin to scan down. */
+.nv-card .tm {
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+}
 .nv-card h3 {
   margin: 0;
   font-family: var(--font);
-  font-size: var(--fs-h6);
+  font-size: var(--fs-h5);
   font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.32;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
   color: var(--ink);
   overflow-wrap: anywhere;
   text-wrap: balance;
@@ -336,7 +371,7 @@
   overflow: hidden;
   /* The clamp is 3, so the box is 3: two cards on one row line their feet up
      even when one headline is 48 characters and its neighbour is 96. */
-  min-height: calc(1.32em * 3);
+  min-height: calc(1.3em * 3);
 }
 .nv-card:hover h3 {
   text-decoration: underline;
@@ -364,10 +399,14 @@
   height: 16px;
   border-radius: var(--r-2xs);
   background: var(--surface-2);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-style: normal;
   color: var(--ink-2);
+}
+/* One chip, three marks: the RSS drawing, Google's four-colour G, Reddit's mono
+   wordmark — sized here rather than in the component, so a card and a list row
+   share one mark. */
+.nv-gl svg {
+  width: 12px;
+  height: 12px;
 }
 .nv-gl[data-s='gt'] {
   background: color-mix(in oklab, #4285f4 16%, var(--surface));
@@ -385,6 +424,25 @@
 .vol[data-none='1'] {
   color: var(--muted);
   font-weight: 400;
+}
+
+/* The figure, drawn: the item's volume against the largest one on this page, in
+   the card's own family hue. It is the one thing on a Trends card that says
+   "rising" without counting digits, and it is `aria-hidden` because the number
+   it draws is printed under it. */
+.nv-meter {
+  display: block;
+  height: 3px;
+  margin: 10px 0 1px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.nv-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--hue, var(--accent)) 72%, var(--border-strong));
 }
 
 /* ── the list ─────────────────────────────────────────────────────────────────
@@ -415,6 +473,10 @@
   width: 20px;
   height: 20px;
   margin-top: 1px;
+}
+.nv-row .nv-gl svg {
+  width: 14px;
+  height: 14px;
 }
 .nv-row:hover .nv-rt {
   text-decoration: underline;
@@ -601,6 +663,10 @@
   .nv-row .nv-gl {
     width: 16px;
     height: 16px;
+  }
+  .nv-row .nv-gl svg {
+    width: 12px;
+    height: 12px;
   }
   .nv-row .tm {
     grid-column: 2;
