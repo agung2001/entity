@@ -35,10 +35,10 @@ function cancel() {
 </script>
 
 <template>
-  <div class="view detail-view">
+  <div class="view detail-view goals-new">
     <GoalsSubnav />
+    <GoalBackdrop />
     <div class="goals-page goals-create">
-      <GoalBackdrop />
       <GoalCreate
         :save="save"
         :initial-sentence="initialSentence"
