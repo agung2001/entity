@@ -101,6 +101,13 @@ const CATALOG = {
      (`connectors/tailscale/connector.cjs`) like every other connector's. */
   tailscale: CONNECTORS.tailscale,
 
+  /* ── the browser this machine already has open ───────────────────────────
+     Chrome DevTools is an MCP server Google ships, not one a workspace owns, so
+     this entry carries no `launcher`: installing it writes the row and leaves the
+     definition in `mcp.json` to the server's own setup. It answers no `@` form — a
+     browser is something a turn drives, not something typed in a composer. */
+  'chrome-devtools': CONNECTORS['chrome-devtools'],
+
   /* ── a shipped server that lives in the workspace ────────────────────────
      Open Design is an MCP server, and unlike Maka it is not something a person
      installs on their own computer: the workspace's own `skills/opendesign/` holds
