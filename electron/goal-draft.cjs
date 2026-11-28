@@ -316,6 +316,31 @@ const INSTRUCTION = [
   '{"summary":"…","tasks":[{"title":"…","priority":"Major","date":"YYYY-MM-DD","entity":"…","effort":"Medium","token":"@orca:One"}]}',
 ].join('\n')
 
+/**
+ * A revision is the same plan, changed — not a new one. Saying so is most of the
+ * prompt: a model told to "plan" again quietly rewrites titles the person edited,
+ * and a model told to "adjust" keeps them.
+ */
+const REVISE_INSTRUCTION = [
+  'You are revising an existing dated goal plan. The person changed something: a',
+  'task to add, a task that was removed, or an adjustment to the plan.',
+  '',
+  'Rules:',
+  '- Return the WHOLE plan after the change, not a diff and not a commentary.',
+  '- Keep every task that still fits, with its own wording of its title. Do not',
+  '  rewrite titles or re-prioritise rows the change does not touch.',
+  '- A removed task must not come back under another name.',
+  '- Re-date only the tasks whose date no longer holds, so the work still finishes by',
+  '  the deadline. A new task gets a real date inside the window.',
+  '- Keep the same shape as the plan you are given, and the same field rules:',
+  '  "priority" Critical|Major|Normal|Minor, "date" YYYY-MM-DD inside the window,',
+  '  "entity" exactly one of the provided names, "effort" Small|Medium|Large.',
+  '- "summary" is 2–4 sentences about the plan as it now stands.',
+  '',
+  'Answer with JSON only, no prose and no code fences:',
+  '{"summary":"…","tasks":[{"title":"…","priority":"Major","date":"YYYY-MM-DD","entity":"…","effort":"Medium","token":"…"}]}',
+].join('\n')
+
 /** The answer, field by field. Anything outside the window is dropped, not clamped. */
 function cleanTasks(list, { today, deadline, entities = [] }) {
   if (!Array.isArray(list)) return []
@@ -439,4 +464,109 @@ async function draft({
   return { summary, tasks, harness: answer.harness, model: answer.model }
 }
 
-module.exports = { draft, runStreaming, cleanTasks, digest, stepLabel }
+
+/** The plan as the model should see it: the fields that decide the shape, and
+    nothing of the record's bookkeeping. */
+function planOf(tasks, limit = MAX_TASKS) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => String(task?.title || '').trim())
+    .slice(0, limit)
+    .map((task) => ({
+      title: trim(task.title, 200),
+      priority: PRIORITIES.has(String(task.priority)) ? String(task.priority) : 'normal',
+      date: dayOf(task.date),
+      entity: trim(task.entity, 200),
+      effort: EFFORTS.has(String(task.effort)) ? String(task.effort) : '',
+      token: trim(task.token?.label, 120),
+    }))
+}
+
+async function revise({
+  workspace,
+  entity,
+  harness,
+  model,
+  sentence,
+  deadline,
+  context,
+  entities = [],
+  tasks = [],
+  instruction,
+  draftId = '',
+  emit = () => {},
+} = {}) {
+  workspaces.open(workspace)
+  const text = trim(sentence, 8_000)
+  if (!text) throw new Error('The goal has no sentence. Nothing was planned.')
+  const change = trim(instruction, 2_000)
+  if (!change) throw new Error('Say what should change. Nothing was planned.')
+  const id = String(harness || '').trim()
+  if (!id) throw new Error('Choose an entity or a harness to plan with. Nothing was planned.')
+  const due = dayOf(deadline)
+  const today = localDay()
+
+  const send = (phase, data) => {
+    try {
+      emit({ kind: 'goal.draft', workspace, draftId, phase, at: new Date().toISOString(), data })
+    } catch {
+      /* a window that closed mid-plan must not break the plan */
+    }
+  }
+  send('start', { harness: id })
+  send('step', { type: 'status', tool: 'Reading the plan', detail: `${planOf(tasks).length} tasks on it` })
+  const contextBlock = await digest(text, context)
+  const available = (Array.isArray(entities) ? entities : [])
+    .map((entry) => trim(entry, 200))
+    .filter(Boolean)
+    .slice(0, 40)
+  const prompt = [
+    `Entity planning this goal: ${trim(entity, 200) || '(none)'}`,
+    `Entities available for the tasks: ${available.length ? available.join(', ') : '(none listed)'}`,
+    `Today: ${today}`,
+    `Deadline: ${due || '(none)'}`,
+    '',
+    'The goal:',
+    '"""',
+    text,
+    '"""',
+    '',
+    'The context the goal names:',
+    contextBlock || '(none provided)',
+    '',
+    'The plan as it stands:',
+    '```json',
+    JSON.stringify({ tasks: planOf(tasks) }, null, 1),
+    '```',
+    '',
+    'The change to make:',
+    change,
+  ].join('\n')
+
+  send('step', { type: 'status', tool: 'Re-planning', detail: 'keeps what still holds' })
+  let answer
+  try {
+    answer = await runStreaming({
+      harness: id,
+      model: String(model || ''),
+      instruction: REVISE_INSTRUCTION,
+      prompt,
+      workspace,
+      draftId,
+      emit,
+    })
+  } catch (error) {
+    throw new Error(`${String(error?.message || error)} The plan was not changed.`)
+  }
+
+  const parsed = lastJson(answer.text)
+  const summary = trim(parsed?.summary, 1_400)
+  const next = cleanTasks(parsed?.tasks, { today, deadline: due, entities: available })
+  if (!next.length) {
+    throw new Error(
+      `${answer.harness || id} answered with no task list. The plan was not changed — retry, or add the task yourself.`,
+    )
+  }
+  return { summary, tasks: next, harness: answer.harness, model: answer.model }
+}
+
+module.exports = { draft, revise, planOf, runStreaming, cleanTasks, digest, stepLabel }

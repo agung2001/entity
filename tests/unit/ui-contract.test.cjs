@@ -878,13 +878,18 @@ test("a goal's selector and its mark come from the shared components", () => {
   /* An entity is an identity, so its axis is `PickMenu`: a native select cannot
      carry the entity's mark, its search, its teleported menu or its locked state.
      (A compact priority chip may stay a select — it is a word, not a thing.) */
+  /* The fields are one component (step 1 and the review render it), so the
+     picker is asserted where the form lives, and neither file may own a native
+     select for the entity. */
+  const fields = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalFields.vue'), 'utf8')
   const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
   assert.match(
-    create,
+    fields,
     /<PickMenu[\s\S]{0,240}?icons="entity"/,
     "the entity selector is the app's picker",
   )
-  assert.doesNotMatch(create, /<select[\s>]/, 'no native select for the entity')
+  assert.doesNotMatch(fields, /<select[\s>]/, 'no native select for the entity')
+  assert.doesNotMatch(create, /<select[\s>]/, 'no native select in the flow either')
 
   /* One drawing per destination: an empty state or a note wears the rail's own
      glyph. A copied `<circle>` here is a second mark that drifts. */
@@ -906,6 +911,51 @@ test("a goal's selector and its mark come from the shared components", () => {
   assert.match(create, /onRunEvent\(/, 'the page listens to its own stream')
   assert.match(create, /draft-live-clock/, 'the planning turn shows elapsed time')
   assert.match(create, /draft-steps/, 'the planning turn shows what it is doing')
+})
+
+/* ── a write is confirmed on the form that owns it ─────────────────────────
+   `Create goal` used to store on click from a button that showed a count, and a
+   plan edit used to splice a row into a list of dates the planner had reasoned
+   about. Both are the same mistake: the surface skipped the thing that owns the
+   consequence. */
+
+test('creating a goal is confirmed on the goal\'s own fields', () => {
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+  const fields = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalFields.vue'), 'utf8')
+
+  /* one form, two mounts: step 1 and the review dialog render the same component */
+  assert.ok(
+    (create.match(/<GoalFields/g) || []).length >= 2,
+    'the confirmation is the goal\'s fields, not a second design of them',
+  )
+  assert.match(fields, /id="goal-title"/, 'the fields keep their ids, so the shortcuts still find them')
+  assert.match(fields, /defineExpose\(\{ focus, toggleEntity \}\)/, 'the page asks the form for focus')
+
+  /* the plan buttons open the review; the dialog's primary is the only writer */
+  assert.ok(
+    (create.match(/@click="openAdjust"/g) || []).length >= 2,
+    'the head and the foot both open the review',
+  )
+  assert.match(create, /class="modal goaladjust"/, 'the review is a dialog')
+  assert.match(create, /useDialogDismiss\(\{[\s\S]{0,120}?adjustOpen/, 'the review closes on Esc')
+  assert.match(create, /nothing is written until you create it/i, 'the dialog says the write is not done yet')
+})
+
+test('a plan edit is re-planned, not spliced into the list', () => {
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+  const planner = fs.readFileSync(path.join(ROOT, 'electron', 'goal-draft.cjs'), 'utf8')
+  const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
+  const dialog = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskDialog.vue'), 'utf8')
+
+  assert.match(rpc, /'goals\.revise':/, 'the adjust turn has its own call')
+  assert.match(planner, /REVISE_INSTRUCTION/, 'revise is instructed as a change, not a new plan')
+  assert.match(planner, /planOf\(tasks\)/, 'the turn is handed the plan as it stands')
+  assert.match(create, /submitTask[\s\S]{0,600}?revisePlan\(/, 'adding a task re-plans around it')
+  assert.match(create, /removeTask[\s\S]{0,700}?revisePlan\(/, 'removing a task re-plans the rest')
+  assert.match(create, /:editable="!revising"/, 'the list is read-only while the plan is being re-planned')
+  assert.match(create, /@click="addTask"/, '+ Task opens the composer')
+  assert.match(dialog, /SlashComposer/, 'the new task is written in the app\'s composer, not a form')
+  assert.match(dialog, /Add and re-plan/, 'the dialog says what pressing it does')
 })
 
 test('a page draft is per-tab and expires', () => {

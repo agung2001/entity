@@ -406,6 +406,7 @@ function createRpc({
        names (`@orca:` projects are read into the brief). The renderer keeps the
        local split as the "Write the tasks myself" exit. */
     'goals.draft': (args) => goalDraft.draft({ ...args, emit }),
+    'goals.revise': (args) => goalDraft.revise({ ...args, emit }),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

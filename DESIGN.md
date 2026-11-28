@@ -831,6 +831,47 @@ read. The scope is the thing a person is paying for, so it is chosen first.
   (`gives up after 5 minutes`) from a constant that mirrors `TIMEOUT_MS`; there
   is no streaming for `entity.learn`, so a clock is what the wait has.
 
+### A write is confirmed on the form that owns it
+
+`Create goal` used to store on click, from a button that showed a count. The
+confirmation is not a second dialog with a summary of a summary: it is the goal's
+own five fields, reopened over the plan.
+
+- **One form, two mounts.** The fields live in `components/goal/GoalFields.vue`;
+  step 1 renders it inline and the review renders the same component inside the
+  modal. A copied form is the version that drifts — the review would keep asking
+  for a field the page had dropped.
+- **The confirmation names what it will write.** `5 tasks · 2 critical · 4
+  entities · due 12 Dec 2026` above the fields, and `Nothing is written until you
+  create it` beside the scrim. The primary says the verb, not "OK".
+- **Refusals land in the dialog.** A `save` that throws prints in the surface
+  that asked; closing it to read the error moves the person away from the fix.
+- **A review is dismissible like any surface.** `useDialogDismiss`, the
+  `scrim-dialog` variant, and the footer's `Back to tasks` — the same three
+  exits a dialog already owes (see above).
+
+### A planned list is re-planned, not spliced
+
+A drafted plan is dates, entities and efforts the planner reasoned about
+together. Adding a row by hand makes every later date a lie, so the edit is a
+turn:
+
+- **`goals.draft` plans; `goals.revise` adjusts.** Revise is handed the current
+  plan as JSON and returns the whole list, not a diff; its instruction says
+  *keep titles the change does not touch* and *a removed task must not come
+  back*. Two prompts exist because a model told to "plan again" quietly rewrites
+  rows it was not asked about.
+- **The row can appear at once, the dates may not.** An added task shows
+  immediately (that is what you asked for) and the table is read-only while the
+  turn runs; a failed turn keeps the row and says the plan was not re-balanced.
+  Never re-date locally as a fallback.
+- **The turn is visible.** `re-planning with {entity}` with the same `m:ss`
+  clock as the draft, and after it lands, one line: `Re-planned · 6 tasks`.
+- **`+ Task` opens a composer, not a form.** Title, priority, entity, effort and
+  date are the planner's answer; a modal that asks for them first asks the person
+  to do the planning. The dialog says what it will do (`Add and re-plan`) before
+  it does it.
+
 ## Common mistakes
 
 | Symptom | Rule | Where it is enforced |

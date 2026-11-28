@@ -1410,136 +1410,204 @@
   padding-right: 11px;
 }
 
-/* the schedule, full width where it can be read */
-.goals-page .draft-weeks {
-  margin-bottom: 14px;
-}
-.goals-page .dpw-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 272px;
-}
-.goals-page .dpw-plot {
-  position: relative;
-  padding: 18px 22px 12px;
-  border-right: 1px solid var(--border);
-}
-.goals-page .dpw-cols {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-evenly;
-  gap: 12px;
-}
-.goals-page .dpw-col {
-  flex: 1 1 0;
-  max-width: 132px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 5px;
-}
-.goals-page .dpw-n {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 400;
-  color: var(--ink-2);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.goals-page .dpw-n[data-zero='1'] {
-  color: var(--muted);
-}
-.goals-page .dpw-bar {
-  display: flex;
-  flex-direction: column-reverse;
-  justify-content: flex-start;
-  min-height: 3px;
-  border-radius: var(--r-2xs) var(--r-2xs) 0 0;
-  overflow: hidden;
-  background: var(--surface-2);
-}
-.goals-page .dpw-bar[data-empty='1'] {
-  background: var(--border);
-}
-.goals-page .dpw-bar i {
-  display: block;
-  width: 100%;
-}
-.goals-page .dpw-bar i[data-p='critical'] {
-  background: var(--danger);
-}
-.goals-page .dpw-bar i[data-p='major'] {
-  background: var(--accent);
-}
-.goals-page .dpw-bar i[data-p='normal'] {
-  background: var(--ink-2);
-}
-.goals-page .dpw-bar i[data-p='minor'] {
-  background: var(--muted);
-}
-.goals-page .dpw-lb {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  text-align: center;
-  white-space: nowrap;
-}
-.goals-page .dpw-avg {
-  position: absolute;
-  left: 22px;
-  right: 22px;
-  border-top: 1px dashed var(--border-strong);
-  pointer-events: none;
-}
-.goals-page .dpw-avg-l {
-  position: absolute;
-  right: 24px;
-  padding: 0 3px;
+/* the plan's two readings: the table, or the month it lands on */
+.goals-page .pview {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 12px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xs);
   background: var(--bg);
+}
+.goals-page .pview button {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-2xs);
+  background: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.goals-page .pview button:hover {
+  color: var(--ink);
+}
+.goals-page .pview button[aria-selected='true'] {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.goals-page .dcal {
+  padding: 12px 14px 14px;
+}
+.goals-page .dcal-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+.goals-page .dcal-m {
+  margin: 0 2px;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+}
+.goals-page .dcal-out,
+.goals-page .dcal-due {
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
-  pointer-events: none;
 }
-.goals-page .dpw-facts {
-  margin: 0;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+.goals-page .dcal-due {
+  margin-left: 10px;
+  color: var(--accent-ink);
 }
-.goals-page .dpw-facts > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+.goals-page .dcal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
-.goals-page .dpw-facts dt {
+.goals-page .dcal-wd {
+  padding: 5px 7px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
   font-family: var(--mono);
   font-size: var(--fs-micro);
-  letter-spacing: 0.07em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.goals-page .dpw-facts dd {
-  margin: 0;
-  font-size: var(--fs-h5);
-  font-weight: 500;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
+.goals-page .dcal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 74px;
+  padding: 4px 5px 5px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
-.goals-page .dpw-facts dd small {
+.goals-page .dcal-cell[data-off='1'] {
+  background: var(--surface);
+}
+.goals-page .dcal-d {
   font-family: var(--mono);
   font-size: var(--fs-micro);
-  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.goals-page .dcal-d[data-today='1'] {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.goals-page .dcal-chip {
+  display: block;
+  padding: 1px 4px;
+  border-left: 2px solid var(--border-strong);
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goals-page .dcal-chip[data-p='critical'] {
+  border-left-color: var(--danger);
+}
+.goals-page .dcal-chip[data-p='major'] {
+  border-left-color: var(--accent);
+}
+.goals-page .dcal-chip[data-p='normal'] {
+  border-left-color: var(--ink-2);
+}
+.goals-page .dcal-chip[data-p='minor'] {
+  border-left-color: var(--muted);
+}
+.goals-page .dcal-more {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
   color: var(--muted);
 }
-.goals-page .dpw-note {
-  margin: 4px 0 0;
-  padding-top: 9px;
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-secondary);
-  line-height: 1.5;
+
+/* a plan edit is a turn, and it says so while it runs */
+.goals-page .replan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--accent-soft) 34%, var(--bg));
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+}
+.goals-page .replan-bar .sp {
+  flex: 1;
+}
+.goals-page .replan-clock {
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.goals-page .replan-hint {
+  color: var(--muted);
+}
+.goals-page .replan-note {
+  margin: 0;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.goals-page .replan-note.danger {
+  color: var(--danger);
+}
+
+/* the add-task dialog */
+.modal.taskdlg {
+  width: min(560px, 94vw);
+}
+.taskdlg .tasklede {
+  max-width: 52ch;
+}
+.taskdlg .tasknote {
+  margin: 12px 0 0;
+}
+.taskdlg .tasknote kbd {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xs);
+}
+
+/* the review dialog: step 1's form, over the plan */
+.modal.goaladjust {
+  width: min(680px, 94vw);
+  max-height: min(90vh, 760px);
+}
+.goaladjust .galede {
+  max-width: 54ch;
+}
+.goaladjust-body {
+  padding: 14px 18px 6px;
+}
+.goaladjust .errbar {
+  margin: 4px 0 10px;
+}
+.goaladjust .galfoot-why {
+  margin-right: auto;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
   color: var(--muted);
 }
 
@@ -1728,6 +1796,34 @@
   background: var(--surface-2);
 }
 @media (max-width: 700px) {
+  /* a 55 px month cell cannot hold a title: the chips become the heat of the plan */
+  .goals-page .dcal-cell {
+    min-height: 46px;
+    padding: 3px;
+  }
+  .goals-page .dcal-chip {
+    height: 3px;
+    padding: 0;
+    border-left: 0;
+    border-radius: var(--r-pill);
+    font-size: 0;
+    background: var(--border-strong);
+  }
+  .goals-page .dcal-chip[data-p='critical'] {
+    background: var(--danger);
+  }
+  .goals-page .dcal-chip[data-p='major'] {
+    background: var(--accent);
+  }
+  .goals-page .dcal-chip[data-p='normal'] {
+    background: var(--ink-2);
+  }
+  .goals-page .dcal-chip[data-p='minor'] {
+    background: var(--muted);
+  }
+  .goals-page .dcal-out {
+    display: none;
+  }
   .goals-page .fld-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;

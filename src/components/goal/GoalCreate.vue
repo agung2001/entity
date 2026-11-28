@@ -17,16 +17,16 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { call, onRunEvent } from '@/composables/localBridge'
-import PickMenu from '@/components/PickMenu.vue'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
-import SlashComposer from '@/components/SlashComposer.vue'
-import DraftWeeks from '@/components/goal/DraftWeeks.vue'
+import DraftCalendar from '@/components/goal/DraftCalendar.vue'
+import GoalFields from '@/components/goal/GoalFields.vue'
+import TaskDialog from '@/components/goal/TaskDialog.vue'
 import DraftShape from '@/components/goal/DraftShape.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
-import { EFFORT_WEIGHT, PRIORITY_ORDER, blankTask, draftFrom, mergeTasks, priorityWord, today } from '@/lib/goals'
+import { EFFORT_WEIGHT, PRIORITY_ORDER, blankTask, day, draftFrom, mergeTasks, priorityWord, today } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { clearDraft, readDraft, saveDraft, sweepDrafts } from '@/lib/draftCache'
-import { dialogDepth } from '@/composables/useDialog'
+import { dialogDepth, useDialogDismiss } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
 import { pickableHarnesses } from '@/stores/harnesses'
@@ -134,11 +134,16 @@ let elapsedTimer = null
 let stopDraftEvents = null
 const CACHE_KEY = `goals-new:${hub.workspace}`
 let saveTimer = null
-const titleField = ref(null)
-const entityPick = ref(null)
-const composer = ref(null)
-const dateField = ref(null)
-const privacyField = ref(null)
+const fields = ref(null)
+const adjustOpen = ref(false)
+/* list is the plan; calendar is the same plan where it lands */
+const planView = ref('list')
+/* a plan edit is a planning turn: the person sees it running and the list that
+   comes back, never a row that was silently re-dated */
+const revising = ref(false)
+const taskOpen = ref(false)
+const replanNote = ref('')
+const replanError = ref('')
 const deadline = ref('')
 const privacy = ref('private')
 const touched = ref({ sentence: false, date: false })
@@ -227,9 +232,28 @@ const days = computed(() => {
   return Math.max(0, Math.round((Date.UTC(year, month - 1, date) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86_400_000))
 })
 
-function pick(value) {
-  deadline.value = value
-  touched.value.date = true
+function onTouch(field) {
+  if (field === 'sentence' || field === 'date') touched.value[field] = true
+}
+
+/* The review dialog is a dismissible surface: Escape and the scrim close it, and
+   it registers with the same stack every other dialog uses. */
+useDialogDismiss({
+  active: () => adjustOpen.value && !creating.value,
+  close: () => {
+    adjustOpen.value = false
+  },
+})
+
+/** `Create goal` never writes from a button that is not a confirmation: it
+    reopens the goal's own fields, with the plan it is about to store. */
+async function openAdjust() {
+  if (!canCreate.value) return
+  refused.value = ''
+  adjustOpen.value = true
+  await nextTick()
+  /* the first thing the person may want to change is the title */
+  document.getElementById('goal-title')?.focus()
 }
 
 /* The page owns its keys at the window, like the thread dialog: focus moves
@@ -253,18 +277,18 @@ function onKey(event) {
     return
   }
   const targets = {
-    'goal-title': titleField,
-    'goal-entity': entityPick,
-    'goal-sentence': composer,
-    'goal-deadline': dateField,
-    'goal-privacy': privacyField,
+    'goal-title': 'title',
+    'goal-entity': 'entity',
+    'goal-sentence': 'sentence',
+    'goal-deadline': 'deadline',
+    'goal-privacy': 'privacy',
   }
-  for (const [id, target] of Object.entries(targets)) {
+  for (const [id, field] of Object.entries(targets)) {
     if (!matchesShortcut(id, event)) continue
     event.preventDefault()
     /* the picker opens; a field or the composer takes the caret */
-    if (id === 'goal-entity') target.value?.toggle?.()
-    else target.value?.focus?.()
+    if (field === 'entity') fields.value?.toggleEntity()
+    else fields.value?.focus(field)
     return
   }
 }
@@ -275,7 +299,8 @@ async function runStep() {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   await nextTick()
   if (step.value === 1) draft()
-  else await create()
+  else if (adjustOpen.value) await create()
+  else openAdjust()
 }
 
 onMounted(() => {
@@ -384,8 +409,66 @@ function draftLocally() {
   step.value = 2
 }
 
-function addTask(priority) {
-  tasks.value = [...tasks.value, blankTask(priority)]
+function addTask() {
+  if (revising.value || drafting.value) return
+  replanError.value = ''
+  taskOpen.value = true
+}
+
+/**
+ * The row appears at once — you asked for a task, so it is on the list — and the
+ * planner re-fits the whole plan around it. If the turn fails the row stays and
+ * says so; a refused re-plan never takes the task back out.
+ */
+function submitTask(text) {
+  taskOpen.value = false
+  const title = String(text || '').trim()
+  if (!title) return
+  tasks.value = [...tasks.value, { ...blankTask('normal'), title }]
+  replanNote.value = ''
+  revisePlan(
+    `Add this task: “${title}”. Give it a date, an entity and an effort, and re-date anything else that no longer fits.`,
+    'Added — the planner did not answer, so the rest of the plan was left as it was.',
+  )
+}
+
+/** A planning turn, with the current plan as its input and the new plan as its
+    only output. `fallback` is what the page says when the turn refuses. */
+async function revisePlan(instruction, fallback) {
+  if (revising.value || drafting.value) return
+  revising.value = true
+  replanError.value = ''
+  draftId.value = `revise-${Date.now()}`
+  startClock()
+  try {
+    const answer = await call('goals.revise', {
+      workspace: hub.workspace,
+      entity: entity.value,
+      harness: harness.value,
+      sentence: sentence.value,
+      deadline: deadline.value,
+      context: attachments.value,
+      entities: entityOptions.value.map((option) => option.id),
+      tasks: tasks.value,
+      instruction,
+      draftId: draftId.value,
+    })
+    if (!Array.isArray(answer?.tasks) || !answer.tasks.length) {
+      throw new Error('The planner returned no task list.')
+    }
+    tasks.value = answer.tasks
+    if (answer.summary) draftSummary.value = answer.summary
+    replanNote.value = `Re-planned · ${answer.tasks.length} ${answer.tasks.length === 1 ? 'task' : 'tasks'}`
+  } catch (problem) {
+    /* a dropped connection is not a reason to print a stack-trace sentence; the
+       fallback already says what the page now holds */
+    const why = String(problem?.message || '')
+    replanError.value = /fetch|network|socket/i.test(why) ? fallback : `${why} ${fallback}`.trim()
+  } finally {
+    revising.value = false
+    draftId.value = ''
+    stopClock()
+  }
 }
 
 function updateTask(task, patch) {
@@ -394,6 +477,14 @@ function updateTask(task, patch) {
 
 function removeTask(task) {
   tasks.value = tasks.value.filter((entry) => entry.id !== task.id)
+  replanNote.value = ''
+  if (revising.value) return
+  /* nothing left to balance: the empty state is the answer */
+  if (!tasks.value.length) return
+  revisePlan(
+    `The task “${task.title}” was removed. Keep it out of the plan and re-date the rest so the work still finishes by the deadline.`,
+    'Removed — the planner did not answer, so the rest of the plan was left as it was.',
+  )
 }
 
 function toggle(task, done) {
@@ -545,8 +636,8 @@ async function create() {
       <div class="head-actions">
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
         <button v-if="step === 1" class="btn" type="button" @click="cancel()">Cancel</button>
-        <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
-          {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
+        <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust">
+          Create goal<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </header>
@@ -591,103 +682,27 @@ async function create() {
         <div v-for="n in 4" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${70 - n * 7}%`, height: '10px' }"></span></div>
       </div>
 
-      <template v-if="!drafting">
-      <div class="fld-solo">
-        <label for="goal-title">Title <kbd class="fld-key">{{ keys.title }}</kbd></label>
-        <input id="goal-title" ref="titleField" v-model="title" type="text" :placeholder="titleOf" />
-        <span class="hint">The line the backlog and the calendar will print. Left empty, it takes the first line of the sentence.</span>
-      </div>
-
-      <div class="fld-row">
-        <div class="fld-solo">
-          <label class="fld-head">Entity <kbd class="fld-key">{{ keys.entity }}</kbd></label>
-          <PickMenu
-            ref="entityPick"
-            class="field-select"
-            head="Entity"
-            icons="entity"
-            :options="entityOptions"
-            :model-value="entity"
-            @update:model-value="entity = $event"
-          />
-        </div>
-        <div class="fld-solo">
-          <label class="fld-head">Harness</label>
-          <PickMenu
-            class="field-select"
-            head="Harness"
-            icons="harness"
-            :options="harnessOptions"
-            :model-value="harness"
-            @update:model-value="harness = $event"
-          />
-        </div>
-      </div>
-      <span class="hint fld-row-hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers; its harness is the one the goal is planned with.</span>
-
-      <div class="fld-solo">
-        <label class="fld-head">Goal <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.sentence }}</kbd></label>
-        <!-- The thread composer, not a textarea: `/` inserts a skill and `@` a
-             mention, and a picked item becomes a token in the sentence — the same
-             box the chat uses, so a goal can be written the way a prompt is. -->
-        <div class="cm cm-composer" :data-state="sentenceWhy ? 'error' : undefined" @focusout="touched.sentence = true">
-          <SlashComposer
-            ref="composer"
-            :agent="agent"
-            :show-send="false"
-            machine="local"
-            base-dir=""
-            placeholder="Describe the outcome you want by the deadline — / skills · @ mentions"
-            label="Goal sentence — / for a skill, @ to mention"
-            :draft="sentence"
-            v-model:attachments="attachments"
-            @update:draft="sentence = $event"
-            @send="onSend"
-            @enhance="openEnhance"
-          />
-          <div class="cm-acts">
-            <span class="cm-hint" :class="{ danger: sentenceWhy }">
-              {{ sentenceWhy || 'One sentence, plus whatever you mention — the draft reads that context and plans from it.' }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div class="fld-solo">
-        <label for="goal-due">Deadline <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.deadline }}</kbd></label>
-        <div class="dates">
-          <button
-            v-for="pill in pills"
-            :key="pill.label"
-            type="button"
-            :aria-pressed="deadline === pill.value ? 'true' : 'false'"
-            @click="pick(pill.value)"
-          >{{ pill.label }}</button>
-          <span class="own">
-            <input id="goal-due" ref="dateField" type="date" :value="deadline" @change="pick($event.target.value); $event.target.blur()" />
-            <span class="hint" :class="{ danger: Boolean(dateWhy) }">{{ dateWhy || 'or a date' }}</span>
-          </span>
-        </div>
-        <span class="hint">No default. A goal without a date is a wish; the field stays empty until you pick one.</span>
-      </div>
-
-      <div class="fld-solo" role="radiogroup" aria-label="Who can see this goal">
-        <label class="fld-head">Who can see it <kbd class="fld-key">{{ keys.privacy }}</kbd></label>
-        <div class="priv">
-          <label :data-on="privacy === 'private' ? '1' : undefined">
-            <input ref="privacyField" v-model="privacy" type="radio" value="private" name="goal-privacy" />
-            <span class="rd"></span>
-            <span class="t"><b>Only me</b><span>Not in Wake Space, not in anyone else's backlog.</span></span>
-          </label>
-          <label :data-on="privacy === 'workspace' ? '1' : undefined">
-            <input v-model="privacy" type="radio" value="workspace" name="goal-privacy" />
-            <span class="rd"></span>
-            <span class="t"><b>The workspace</b><span>Visible to everyone here. They can read it; only you can edit the tasks.</span></span>
-          </label>
-        </div>
-      </div>
-
-      </template>
+      <GoalFields
+        v-if="!drafting"
+        ref="fields"
+        v-model:title="title"
+        v-model:entity="entity"
+        v-model:harness="harness"
+        v-model:sentence="sentence"
+        v-model:deadline="deadline"
+        v-model:privacy="privacy"
+        v-model:attachments="attachments"
+        :entity-options="entityOptions"
+        :harness-options="harnessOptions"
+        :agent="agent"
+        :pills="pills"
+        :title-placeholder="titleOf"
+        :sentence-why="sentenceWhy"
+        :date-why="dateWhy"
+        @enhance="openEnhance"
+        @send="onSend"
+        @touch="onTouch"
+      />
 
       <div v-if="draftError" class="errbar" role="status">
         <b>The draft did not answer.</b>
@@ -740,9 +755,23 @@ async function create() {
         <div class="dph">
           <h2>The tasks</h2>
           <span class="c">{{ plural(tasks.length, 'task') }}</span>
+          <span class="pview" role="tablist" aria-label="How to read the plan">
+            <button type="button" role="tab" :aria-selected="planView === 'list' ? 'true' : 'false'" @click="planView = 'list'">List</button>
+            <button type="button" role="tab" :aria-selected="planView === 'calendar' ? 'true' : 'false'" @click="planView = 'calendar'">Calendar</button>
+          </span>
           <span class="sp"></span>
-          <button class="add" type="button" :disabled="drafting" @click="addTask('normal')">+ Task</button>
+          <button class="add" type="button" :disabled="drafting || revising" @click="addTask">+ Task</button>
         </div>
+
+        <div v-if="revising" class="replan-bar" role="status">
+          <span class="model-spin" aria-hidden="true"></span>
+          <span class="replan-t">Re-planning with {{ agent.name || 'the entity' }}</span>
+          <b class="replan-clock">{{ elapsedLabel }}</b>
+          <span class="sp"></span>
+          <span class="replan-hint">Every date and title comes back from the planner.</span>
+        </div>
+        <p v-else-if="replanNote" class="replan-note">{{ replanNote }}</p>
+        <p v-if="replanError && !revising" class="replan-note danger">{{ replanError }}</p>
 
         <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Drafting the tasks">
           <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${72 - n * 5}%`, height: '10px' }"></span></div>
@@ -755,7 +784,9 @@ async function create() {
             <button class="lnk" type="button" @click="keepSeparate">Keep them separate</button>
           </div>
 
-          <div v-if="tasks.length" class="dtable">
+          <DraftCalendar v-if="planView === 'calendar'" :tasks="tasks" :deadline="deadline" />
+
+          <div v-if="tasks.length && planView === 'list'" class="dtable">
             <div class="dhead" aria-hidden="true">
               <span></span><span>Priority</span><span>Task</span><span>Entity</span><span>Effort</span><span>Due</span><span></span>
             </div>
@@ -764,7 +795,7 @@ async function create() {
                 v-for="task in sortedTasks"
                 :key="task.id"
                 :task="task"
-                editable
+                :editable="!revising"
                 show-entity
                 show-effort
                 :show-source="false"
@@ -785,21 +816,85 @@ async function create() {
         </template>
       </section>
 
-      <DraftWeeks :tasks="tasks" :deadline="deadline" />
-
-      <div v-if="refused" class="errbar" role="status">
-        <b>Could not create the goal.</b>
-        <p>{{ refused }}</p>
-      </div>
-
       <div class="plan-foot">
         <span class="why">{{ createWhy || 'Nothing is written until you create the goal.' }}</span>
         <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
-          {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
+        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust">
+          Create goal<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </template>
+
+    <TaskDialog
+      :open="taskOpen"
+      :agent="agent"
+      :harness="harness"
+      @close="taskOpen = false"
+      @submit="submitTask"
+    />
+
+    <!-- ── the confirmation: the goal's own fields, reopened ────────────── -->
+    <!-- mounted only while open: a closed dialog that stays in the document keeps
+         its fields' ids, and a second `#goal-title` is a label pointing at nothing -->
+    <Teleport v-if="adjustOpen" to="body">
+      <div class="scrim scrim-dialog" data-open="1" @click="adjustOpen = false" />
+      <div
+        class="modal goaladjust"
+        data-open="1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="goaladjust-t"
+        tabindex="-1"
+      >
+        <div class="mo-head">
+          <h2 id="goaladjust-t">Create this goal?</h2>
+          <p class="galede">
+            {{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical · {{ entitiesUsed }} entities ·
+            due {{ day(deadline) }}. Adjust anything below — nothing is written until you create it.
+          </p>
+          <button class="mo-x" type="button" aria-label="Close" @click="adjustOpen = false">
+            <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="mo-body goals-page goaladjust-body">
+          <GoalFields
+            v-model:title="title"
+            v-model:entity="entity"
+            v-model:harness="harness"
+            v-model:sentence="sentence"
+            v-model:deadline="deadline"
+            v-model:privacy="privacy"
+            v-model:attachments="attachments"
+            :entity-options="entityOptions"
+            :harness-options="harnessOptions"
+            :agent="agent"
+            :pills="pills"
+            :title-placeholder="titleOf"
+            :sentence-why="sentenceWhy"
+            :date-why="dateWhy"
+            @enhance="openEnhance"
+            @send="onSend"
+            @touch="onTouch"
+          />
+
+          <div v-if="refused" class="errbar" role="status">
+            <b>Could not create the goal.</b>
+            <p>{{ refused }}</p>
+          </div>
+        </div>
+
+        <div class="mo-foot">
+          <span class="galfoot-why">{{ createWhy || 'Stored in this workspace' }}</span>
+          <button class="btn" type="button" :disabled="creating" @click="adjustOpen = false">Back to tasks</button>
+          <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
+            {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
 
     <PromptEnhanceDialog
       :open="enhanceOpen"
