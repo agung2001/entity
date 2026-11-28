@@ -196,6 +196,20 @@ const CATALOG = {
 
   x: CONNECTORS.x,
 
+  /* ── an account-bearing row whose credential is pasted ────────────────────
+     Threads is `oauth: true` with `provider: 'threads'`, so its accounts live in the
+     same two files Gmail's and X's do — one row per account, one token per row — and
+     the mention's first segment is the account. What makes it different is only how an
+     account gets there: `pasteToken` on the provider row, because Threads has no
+     per-install loopback redirect to register, so the card asks for the token a person
+     already holds instead of opening a browser. The token verbs are not used for it at
+     all, which is why this entry carries no `credential: 'token'`.
+
+     It is read-only and it costs calls: one insight request per post in the window,
+     which is why the dashboard holds its answer for ten minutes and the mention reads
+     that same answer instead of asking again. */
+  threads: CONNECTORS.threads,
+
   /* ── the two credentialless feeds ────────────────────────────────────────
      A feed is a URL and nothing else: no resolver, no account, no call, no token,
      so neither entry carries a `work` block and neither offers a mention. They are
@@ -253,7 +267,7 @@ const CATALOG = {
 /** The resolver keys `mention-ref` actually answers. A catalog entry may not name anything else. */
 const RESOLVERS = new Set([
   'orca', 'github', 'youtrack', 'maka',
-  'gmail', 'drive', 'calendar', 'youtube', 'youtube-studio', 'x',
+  'gmail', 'drive', 'calendar', 'youtube', 'youtube-studio', 'x', 'threads',
   'clockify', 'habitify', 'fitbit', 'opendesign',
   'artifact', 'thread',
 ])

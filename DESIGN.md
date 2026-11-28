@@ -98,6 +98,18 @@ on the browser's Find.
   `Ctrl/Cmd+F`.
 - Long model lists stay inside a bounded scroll area; do not let the page grow
   by hundreds of rows.
+- **A shipped connector's mark always carries its own colour.**
+  `IntegrationMark` draws two kinds of mark: `int-mark-brand` brings its own
+  palette (Gmail, Drive, YouTube, Clockify, Fitbit, Lynk.id, YouTrack), and
+  `int-mark-mono` is one path drawn with `currentColor` (GitHub, X, Threads,
+  Reddit, Tailscale, Open Design). A mono mark has no palette of its own, so its
+  **tile is the brand**: `src/styles/connectors.css` gives every mono id a
+  `--mk-ground` and a `--mk-ink`, and the glyph is knocked out of that ground.
+  Drawing it as a flat glyph on the neutral tile made those six read as “no
+  colour” beside Gmail's red — and it was paid for twice, because the first fix
+  recoloured the glyph and left the tile blank. `tests/unit/ui-contract.test.cjs`
+  reads every `int-mark-mono` block and fails one with no ground, so a new
+  connector's mark cannot ship colourless.
 
 #### A capability read is two calls, and the cheap one paints first
 
@@ -1823,6 +1835,37 @@ be a special case in three of them.
   reads is in the renderer's connector entry, so a wording change is not a
   main-process release. Entity is where the copy lives, because a dashboard is a
   screen and `electron/` has no screens.
+
+### An account is added by a consent screen, or by a pasted token
+
+Multi-account is one path, not one path per provider. An account-bearing connector
+(`account: true`) reads its rows from `oauth-accounts.cjs`, its tokens from
+`oauth-secrets.cjs`, and its provider from the `oauth`/`provider` fields of its
+catalog entry. A mention's first segment is the account, `all` is every usable one,
+and the resolver never touches a token itself — `_shared.cjs`'s `accessToken()` and
+`accountScope()` are the only two entries.
+
+- **A provider that cannot run a consent screen declares it, and gets a token form.**
+  Threads has no per-install loopback redirect to register, so its provider row
+  carries `pasteToken: true` and no `authorize`/`token`; the accounts card draws a
+token field instead of a Connect button, and `oauth-accounts.adopt()` proves the token
+  against the provider's own identity read (`GET /me` for Threads) before it writes a
+  row. The username that comes back names the row — never what somebody typed — so a
+  mistyped name cannot point two rows at one account.
+- **A refresh shape belongs to the provider row, not to an `if` in the store.**
+  Google and X refresh with a POSTed `refresh_token` form; Threads renews its own
+  long-lived token with a **GET and the token alone** (`tokenRefresh: { url, grant }`).
+  `oauth-accounts.cjs` has one branch for that shape, declared by the row, and no
+  provider name in it. A second provider with the same shape is one row.
+- **A secret that is used once is not stored.** The Threads app secret only upgrades a
+  short-lived token to 60 days; the long-lived token renews itself, so keeping the
+  secret would be one more thing to leak for no gain. `putToken` gets the token, never
+  the secret.
+- **One read per account, and the tab says which.** A dashboard is a screen, so it
+  reads the account on screen (chips in the band); `all` belongs in the mention, where
+  the rows are a list. An insight read across accounts groups by **metric**, not by
+  account: eight lines with each account's figure, instead of twenty-four that spend
+  the row ceiling on the first account.
 
 ## Voice mode opens a microphone
 

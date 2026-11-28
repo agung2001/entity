@@ -800,7 +800,7 @@ const wideSheet = computed(() => !addKind.value)
             :title="`What ${row.label} does, before you install it`"
           >
             <span class="ct-who" role="cell">
-              <span class="ct-mk" data-brand="1" aria-hidden="true">
+              <span class="ct-mk" data-brand="1" :data-mk="row.builtIn" aria-hidden="true">
                 <IntegrationMark :name="row.builtIn" :size="18" />
               </span>
               <span class="ct-copy">

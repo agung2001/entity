@@ -294,6 +294,29 @@ test('the connectors page paints its rows before it probes the CLIs', () => {
   assert.match(page, /nothing is written|Nothing was saved/i, 'the connector page says the same')
 })
 
+/* A mark with no palette of its own must still carry its connector's colour.
+
+   `IntegrationMark` draws six shipped marks as one path with `currentColor`
+   (GitHub, X, Threads, Reddit, Tailscale, Open Design). Without a ground in
+   `connectors.css` each one painted the tile's `--accent-ink` — a brown glyph on a
+   blank tile — and the roster read as "some connectors have no colour". Paid for
+   twice: the first fix recoloured the glyph and left the tile empty. */
+test('every single-colour mark carries its connector’s own ground', () => {
+  const mark = fs.readFileSync(path.join(SRC, 'components', 'IntegrationMark.vue'), 'utf8')
+  const css = allStyles()
+  const mono = [
+    ...mark.matchAll(/v-else-if="name === '([a-z-]+)'"[\s\S]{0,200}?int-mark-mono/g),
+  ].map((match) => match[1])
+  assert.ok(mono.length >= 6, `the shipped mono marks could not be read (found ${mono.length})`)
+  for (const id of mono) {
+    assert.match(
+      css,
+      new RegExp(`\\.ct-mk\\[data-mk='${id}'\\]`),
+      `@${id}'s mark is drawn with currentColor but declares no --mk-ground/--mk-ink, so its tile is blank`,
+    )
+  }
+})
+
 test('the machine capability page brands harnesses and offers search', () => {
   const file = path.join(SRC, 'views', 'MachineDetailView.vue')
   const text = fs.readFileSync(file, 'utf8')

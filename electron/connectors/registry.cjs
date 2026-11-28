@@ -47,6 +47,7 @@ const FOLDERS = [
   'youtube',
   'youtube-studio',
   'x',
+  'threads',
   'clockify',
   'habitify',
   'fitbit',

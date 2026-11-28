@@ -1929,6 +1929,15 @@ table.dsh-tbl {
   margin-top: 14px;
 }
 
+/* ── Threads: two cards stacked in the band ───────────────────────────────
+   Every other dashboard puts its cards inside `.dsh-main`, which pays the gap
+   between siblings. This one has no rail, so its cards sit straight in the band and
+   the tiles' own `margin-bottom` is the only gap there was — the chart card and the
+   table card ended up touching. */
+.dsh-band > .dsh-card + .dsh-card {
+  margin-top: 14px;
+}
+
 /* ── the chart ──────────────────────────────────────────────────────────
    Four elements on a 640×120 grid: the baseline, the filled band, the line, the
    peak. No canvas and no library, because the series is one polyline and the axis
