@@ -53,7 +53,9 @@ const bindingFor = ({ kind, oauth, credential, url }) =>
       : credential === 'token'
         ? 'a token on this machine'
         : oauth === true
-          ? 'oauth · loopback redirect'
+          /* A consent screen and a pasted token are two doors to the same fact: the
+             credential is one account, on this machine, never in the workspace. */
+          ? 'an account on this machine'
           : 'the CLI on this machine'
 
 /* The initial a row wears, from its own label — one glyph, never a product logo. */
@@ -314,26 +316,33 @@ function list({ workspace } = {}) {
       ([id, entry]) =>
         !known.has(id) && (entry.kind === 'cli' || entry.kind === 'rest' || entry.kind === 'rss'),
     )
-    .map(([id, entry]) => ({
+    .map(([id, entry]) => {
+      /* **The build's answer, not the index row's.** An index row is a snapshot of
+         the release that installed it, and anything it decides — whether this row
+         carries accounts, where its credential lives, which card the page draws —
+         would otherwise describe a connector this build no longer ships. Threads
+         was installed as a paste-once token, became account-bearing, and kept asking
+         for an endpoint and a key because the row still said `oauth: false`. */
+      const shipped = catalog.entryOf(id)
+      const oauth = shipped ? shipped.oauth === true : entry.oauth === true
+      return {
       id,
       label: entry.label || id,
       initial: initialOf(entry.label || id),
       /* Provenance: a row this index says came from the catalog *is* a built-in,
          and the page says so. Anything else stays a row a person added. */
-      builtIn: entry.installedFrom === 'catalog' && catalog.entryOf(id) ? id : '',
+      builtIn: entry.installedFrom === 'catalog' && shipped ? id : '',
       kind: entry.kind,
       scope: 'workspace',
       /* The address an `rss` row was added with — the one kind whose binding is
          its own URL, printed by the pages that read it (`news-store`). */
       url: entry.url || '',
       binding:
+        (shipped
+          ? bindingFor({ kind: entry.kind, oauth, credential: shipped.credential, url: entry.url })
+          : '') ||
         entry.binding ||
-        bindingFor({
-          kind: entry.kind,
-          oauth: entry.oauth === true,
-          credential: catalog.entryOf(id)?.credential,
-          url: entry.url,
-        }),
+        bindingFor({ kind: entry.kind, oauth, url: entry.url }),
       /* The shipped syntax, from the catalog — an installed row offers its mention
          exactly when a resolver exists for it. */
       mention: catalog.mentionOf(id) || entry.mention || '',
@@ -344,13 +353,14 @@ function list({ workspace } = {}) {
          `token` for a paste-once API key. Without it an *installed* row and the
          catalog row it came from disagreed about which verbs the page offers:
          the row that can actually save a key was the one that could not name it. */
-      credential: catalog.entryOf(id)?.credential || '',
+      credential: shipped?.credential || '',
       /* A declared self-report is what makes it answerable at all. */
       binary: entry.binary || '',
       verify: entry.verify || null,
-      /* An index row that says `oauth` is the flag the roster reads; anything
-         else is a token row and stays absent, never `false`-shaped. */
-      oauth: entry.oauth === true,
+      oauth,
+      /* The provider the account is added under, for the page's card — the same
+         reason the Built-in pane carries it. */
+      provider: shipped?.provider || '',
       tier: entry.tier || '',
       status: entry.kind === 'rss' ? 'installed' : 'not probed',
       /* An account-bearing row has no self-report to declare; its status line is
@@ -360,7 +370,7 @@ function list({ workspace } = {}) {
       statusDetail:
         entry.kind === 'rss'
           ? 'a feed URL · read by News'
-          : entry.oauth === true
+          : oauth
             ? 'no account connected'
             : entry.verify
               ? `${entry.binary || id} ${entry.verify.argv.join(' ')}`
@@ -368,7 +378,8 @@ function list({ workspace } = {}) {
       managed: true,
       unmanaged: false,
       editable: true,
-    }))
+      }
+    })
   const workspaceRows = [...merged, ...custom, ...extras]
 
   /* Catalog entries installed nowhere in this workspace: read-only, one verb. */

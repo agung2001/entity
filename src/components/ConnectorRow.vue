@@ -85,7 +85,7 @@ const scopeTitle = (row) => {
 <template>
   <div class="ct-row" role="row">
     <router-link class="ct-who" role="cell" :to="pageFor(row)" :title="row.label">
-      <span class="ct-mk" :data-brand="brandOf(row) || row.kind === 'mcp' ? '1' : '0'" aria-hidden="true">
+      <span class="ct-mk" :data-brand="brandOf(row) || row.kind === 'mcp' ? '1' : '0'" :data-mk="brandOf(row)" aria-hidden="true">
         <IntegrationMark v-if="brandOf(row)" :name="brandOf(row)" :size="18" />
         <template v-else>{{ row.initial }}</template>
       </span>

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { onRunEvent } from '@/composables/localBridge'
 import { useDialogDismiss } from '@/composables/useDialog'
 import BrandMark from '@/components/BrandMark.vue'
+import ViewToggle from '@/components/ViewToggle.vue'
 import RemoteConnectDialog from '@/components/RemoteConnectDialog.vue'
 import RemoteSyncPanel from '@/components/RemoteSyncPanel.vue'
 import { matchesQuery } from '@/composables/search'
@@ -403,14 +404,7 @@ async function deleteOne(record) {
           <option value="name">Name</option>
         </select>
       </label>
-      <div class="wsl-seg" role="group" aria-label="View">
-        <button type="button" :aria-pressed="view === 'grid' ? 'true' : 'false'" aria-label="Grid view" title="Grid" @click="view = 'grid'">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
-        </button>
-        <button type="button" :aria-pressed="view === 'list' ? 'true' : 'false'" aria-label="List view" title="List" @click="view = 'list'">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3.4h12M2 8h12M2 12.6h12" /></svg>
-        </button>
-      </div>
+      <ViewToggle :view="view" @update:view="view = $event" />
     </div>
 
     <div v-if="workspaces.error" class="empty-note wsl-empty">

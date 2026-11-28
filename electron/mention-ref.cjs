@@ -1425,6 +1425,23 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
     }
   }
 
+  if (kind === 'threads') {
+    /* Two fields: the account, then a reader word or a word from a post. The
+       suggestions come from the resolver, so the menu offers only what a send would
+       resolve — and it never spends a request to fill itself. */
+    const preview = connectorRegistry.previewFor('threads')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, { record: ctx.record, limit: offset + limit + 1 })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
   if (kind === 'clockify') {
     /* One field: the project or member login being typed. The preview comes from
        the resolver itself, so the menu offers only what a send would resolve. */

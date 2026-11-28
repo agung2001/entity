@@ -654,21 +654,7 @@ async function complete(job, code) {
 
   /* The address is what the row is named by, so it is read from the token's own
      identity, never typed by the person. */
-  let profile = {}
-  if (config.profile) {
-    const profileResponse = await fetch(config.profile, {
-      headers: { authorization: `Bearer ${token.access_token}` },
-    })
-    const raw = await profileResponse.json().catch(() => ({}))
-    /* X answers `{ data: { username, name } }` where Google answers a flat
-       object, so a provider that nests says how to read it. */
-    profile = config.profileOf ? config.profileOf(raw) : raw
-  } else if (config.profileOf) {
-    /* A provider with no userinfo endpoint names the account out of the grant it
-       just got — Habitify's OIDC id_token. Without this branch the identity was
-       always empty and the connect flow always refused. */
-    profile = config.profileOf(token)
-  }
+  const profile = await identityOf(config, token.access_token, token)
   const email = text(profile.email || profile.preferred_username || '', 200)
   if (!email) {
     return {
@@ -1124,6 +1110,73 @@ function tokenForm(config, client, token) {
 }
 
 /**
+ * The account's own identity, read from the provider — never typed by a person.
+ *
+ * X answers `{ data: { username, name } }` where Google answers a flat object, so a
+ * provider that nests says how to read it (`profileOf`). A provider with no userinfo
+ * endpoint names the account out of the grant it just got (Habitify's OIDC
+ * id_token), which is why the token body is the second source.
+ */
+async function identityOf(config, accessTokenValue, tokenBody = {}) {
+  if (config.profile) {
+    const response = await fetch(config.profile, {
+      headers: { authorization: `Bearer ${accessTokenValue}`, accept: 'application/json' },
+    })
+    const raw = await response.json().catch(() => ({}))
+    return config.profileOf ? config.profileOf(raw) : raw
+  }
+  return config.profileOf ? config.profileOf(tokenBody) : {}
+}
+
+/**
+ * A provider whose long-lived token renews itself with the token alone.
+ *
+ * Threads' long-lived token is both the credential and its own renewable: a GET
+ * `?grant_type=th_refresh_token&access_token=<the token>` answers a fresh 60 days.
+ * No client, no secret, no form — a second refresh shape, declared by the provider
+ * row so this file has no `if (provider === 'threads')` in it.
+ *
+ * The new token replaces the old one in **both** slots: for this shape the token IS
+ * the refresh token, and leaving the old one there would refresh a credential the
+ * server has already superseded.
+ */
+async function renewWithToken(config, provider, connector, localpart, current) {
+  const url = new URL(config.tokenRefresh.url)
+  if (config.tokenRefresh.grant) url.searchParams.set('grant_type', config.tokenRefresh.grant)
+  url.searchParams.set('access_token', current.refreshToken)
+  const response = await fetch(url, { headers: { accept: 'application/json' } })
+  const answer = await response.json().catch(() => ({}))
+  if (!response.ok || !answer?.access_token) {
+    throw new Error(
+      `@${connector}:${localpart} needs a sign-in — ${secrets.labelOf(provider)} refused to renew its token.`,
+    )
+  }
+  const live = String(answer.access_token)
+  secrets.putToken({
+    ...current,
+    connector,
+    localpart,
+    provider,
+    refreshToken: live,
+    accessToken: live,
+    expiresAt: answer.expires_in ? Date.now() + Number(answer.expires_in) * 1000 : undefined,
+  })
+  return answer
+}
+
+/** One row's status, written where the roster and the card both read it. */
+function markRow(connectorId, localpart, ok) {
+  const store = read()
+  const rows = store.accounts[connectorId] || []
+  store.accounts[connectorId] = rows.map((row) =>
+    row.localpart === localpart
+      ? { ...row, status: ok ? 'connected' : 'needs sign-in', refreshedAt: new Date().toISOString() }
+      : row,
+  )
+  write(store)
+}
+
+/**
  * Exchange a stored refresh token for an access token, and record what that means.
  *
  * One place decides `connected` vs `needs sign-in`, so the roster's aggregate and
@@ -1134,6 +1187,18 @@ function tokenForm(config, client, token) {
 async function refresh(connector, config, connectorId, entry) {
   const token = secrets.tokenFor({ connector: connectorId, localpart: entry.localpart })
   if (!token?.refreshToken) return { ok: false, reason: 'no_token' }
+  /* The token-only shape pays no client: that is the whole point of it. */
+  if (config.tokenRefresh) {
+    try {
+      const provider = providerOf(connectorId)
+      await renewWithToken(config, provider, connectorId, entry.localpart, token)
+      markRow(connectorId, entry.localpart, true)
+      return { ok: true, reason: 'refresh_ok' }
+    } catch (problem) {
+      markRow(connectorId, entry.localpart, false)
+      return { ok: false, reason: text(problem?.message || 'refresh_failed', 80) }
+    }
+  }
   const client = clientForToken(config, token, connectorId)
   if (!client) return { ok: false, reason: 'no_client' }
   try {
@@ -1173,6 +1238,11 @@ async function accessTokenFor(connector, localpart, workspace) {
      than paying for a refresh on the first mention after connecting. */
   if (token.accessToken && Number(token.expiresAt) - Date.now() > 60_000) {
     return { accessToken: token.accessToken, scopes: token.scopes || [] }
+  }
+  /* The token-only shape renews itself with no client at all. */
+  if (config.tokenRefresh) {
+    const answer = await renewWithToken(config, provider, connector, localpart, token)
+    return { accessToken: answer.access_token, scopes: token.scopes || [] }
   }
   const client = clientForToken(config, token, connector)
   if (!client) throw new Error('No OAuth client is saved on this machine, so a token cannot be refreshed.')
@@ -1235,6 +1305,109 @@ function connectedAccounts(connector) {
       hasToken,
     }
   })
+}
+
+/**
+ * Add an account from a pasted token — the door a paste-once provider opens.
+ *
+ * Threads has no consent screen this app can run: there is no per-install loopback
+ * redirect to register, and the token a person already holds — the one their own
+ * cron keeps refreshed — is a long-lived one. So the card asks for it directly.
+ *
+ * Two steps, in this order:
+ *
+ *   1. **Optionally upgrade it.** A *short-lived* token (minted moments ago in the
+ *      app dashboard) becomes a 60-day one with the app secret —
+ *      `?grant_type=th_exchange_token`. The secret is used here and **not stored**:
+ *      a long-lived token renews itself with the token alone, so keeping a second
+ *      secret on this machine would be one more thing to leak for no gain.
+ *   2. **Name the row from the provider.** The username comes from the token's own
+ *      identity read, never from what someone typed — a mistyped name would point
+ *      two rows at one account.
+ *
+ * A refusal writes nothing. A re-paste of an account that is already here updates
+ * its token instead of adding a second row for the same account.
+ */
+async function adopt({ connector, token, secret } = {}) {
+  const name = text(connector, 60)
+  if (!name) throw new Error('Which connector should the account be added to?')
+  const provider = providerOf(name)
+  const config = providerConfig(provider)
+  if (!config?.pasteToken) {
+    return {
+      ok: false,
+      code: 'no_paste',
+      message: `${secrets.labelOf(provider)} accounts are added by signing in, not by pasting a token. Nothing was saved.`,
+    }
+  }
+  let live = text(token, 2000)
+  if (!live) throw new Error(`Paste a ${config.label} access token first.`)
+
+  let expiresAt = 0
+  const appSecret = text(secret, 200)
+  if (appSecret && config.exchange) {
+    const url = new URL(config.exchange.url)
+    if (config.exchange.grant) url.searchParams.set('grant_type', config.exchange.grant)
+    url.searchParams.set('client_secret', appSecret)
+    url.searchParams.set('access_token', live)
+    const response = await fetch(url, { headers: { accept: 'application/json' } })
+    const answer = await response.json().catch(() => ({}))
+    if (!response.ok || !answer?.access_token) {
+      const said = text(
+        answer?.error_message || answer?.error_description || answer?.error || `HTTP ${response.status}`,
+        200,
+      )
+      return {
+        ok: false,
+        code: 'exchange_failed',
+        message: `Nothing was saved. ${config.label} refused to exchange that token — ${said}. If it is already a long-lived token, leave the app secret empty.`,
+      }
+    }
+    live = String(answer.access_token)
+    if (answer.expires_in) expiresAt = Date.now() + Number(answer.expires_in) * 1000
+  }
+
+  const profile = await identityOf(config, live)
+  const email = text(profile.email || '', 200)
+  if (!email) {
+    return {
+      ok: false,
+      code: 'no_identity',
+      message: `Nothing was saved. ${config.label} accepted the token but answered no account to name the row by.`,
+    }
+  }
+
+  const localpart = text(email.split('@')[0], 80)
+  /* The secret first: a row that points at a token is recoverable; a token with no
+     row is an orphan nobody can see. */
+  secrets.putToken({
+    connector: name,
+    localpart,
+    provider,
+    /* For a token-only provider the token IS the renewable credential. */
+    refreshToken: live,
+    accessToken: live,
+    /* Left unset when the age of a pasted token is unknown: the first mention then
+       renews it instead of trusting a deadline nobody read. */
+    expiresAt: expiresAt || undefined,
+    scopes: [],
+  })
+
+  const store = read()
+  const rows = store.accounts[name] || []
+  const now = new Date().toISOString()
+  const row = {
+    email,
+    localpart,
+    scopes: [],
+    missing: [],
+    status: 'connected',
+    addedAt: rows.find((entry) => entry.localpart === localpart)?.addedAt || now,
+    refreshedAt: now,
+  }
+  store.accounts[name] = [...rows.filter((entry) => entry.localpart !== localpart), row]
+  write(store)
+  return { ok: true, account: normalise(row), accounts: store.accounts[name].map(normalise) }
 }
 
 /**
@@ -1302,6 +1475,7 @@ module.exports = {
   remove,
   forget,
   connect,
+  adopt,
   test,
   /* the document a browser is handed at /oauth/callback, exported so its contract
      can be tested and rendered without a listener */

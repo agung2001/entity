@@ -22,6 +22,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ago, hub, toast } from '@/stores/hub'
 import { accountColumn } from '@/connectors/accountColumns'
 import {
+  adoptAccount,
   clearOauthClient,
   connectAccount,
   loadAccounts,
@@ -239,6 +240,58 @@ async function readAccounts() {
   }
 }
 
+/* ── a pasted token ─────────────────────────────────────────────────────
+   Threads has no consent screen this app can run: there is no per-install loopback
+   redirect to register, and the token a person already holds is a long-lived one. So
+   the primary verb asks for the token instead of opening a browser, and the main
+   process proves it against the provider's own identity read before writing anything
+   — the same door, with the field the person actually has. */
+const tokenOpen = ref(false)
+const tokenForm = ref({ token: '', secret: '' })
+const tokenBusy = ref(false)
+const tokenError = ref('')
+
+function openTokenForm() {
+  if (busy.value) return
+  tokenError.value = ''
+  accountsError.value = ''
+  accountsNotice.value = ''
+  tokenOpen.value = true
+}
+
+function closeTokenForm() {
+  /* The token is dropped the moment the form closes: it lives in a 0600 file now, and
+     a form that keeps it is a second copy on screen. */
+  tokenForm.value = { token: '', secret: '' }
+  tokenError.value = ''
+  tokenOpen.value = false
+}
+
+async function submitToken() {
+  if (tokenBusy.value) return
+  tokenBusy.value = true
+  tokenError.value = ''
+  accountsNotice.value = ''
+  try {
+    const answer = await adoptAccount({
+      connector: props.connector,
+      token: tokenForm.value.token,
+      secret: tokenForm.value.secret,
+    })
+    if (answer?.ok) {
+      accountsNotice.value = `${answer.account?.email || 'The account'} was added.`
+      closeTokenForm()
+      await readAccounts()
+    } else {
+      tokenError.value = answer?.message || 'Nothing was saved.'
+    }
+  } catch (problem) {
+    tokenError.value = `Nothing was saved. ${String(problem?.message || problem)}`
+  } finally {
+    tokenBusy.value = false
+  }
+}
+
 /** One consent screen, in the system browser. */
 async function connectOauth() {
   if (busy.value) return
@@ -356,6 +409,7 @@ const EMPTY_HINT = {
   'youtube-studio':
     'Sign in with the Google account that manages the channel. A personal account that owns no channel is refused, not saved.',
   x: 'One sign-in adds one X account. Repeat for a second handle.',
+  threads: 'One pasted token adds one Threads account. Repeat for a second handle.',
 }
 const emptyHint = computed(
   () => EMPTY_HINT[props.connector] || `One ${providerLabel.value} sign-in adds one account.`,
@@ -451,9 +505,9 @@ onMounted(async () => {
         class="btn btn-sm btn-primary"
         type="button"
         :disabled="Boolean(busy)"
-        @click="connectOauth"
+        @click="client.pasteToken ? openTokenForm() : connectOauth()"
       >
-        Connect {{ providerLabel }} account
+        {{ client.pasteToken ? `Add ${providerLabel} account` : `Connect ${providerLabel} account` }}
       </button>
     </div>
 
@@ -487,9 +541,59 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- The token form a paste-once provider draws instead of a consent screen.
+         Two fields: the token every account needs, and the app secret that only
+         upgrades a short-lived one (used once, never stored). -->
+    <div v-if="tokenOpen && canConnect && client.pasteToken" class="acct-client">
+      <p class="acct-client-lead">
+        {{ client.instruction || 'Paste a token for this account.' }}
+        It is checked against {{ providerLabel }} before it is saved, and it stays on this
+        machine — never in the workspace.
+      </p>
+      <div class="cxn-fields">
+        <label>
+          access token
+          <input
+            v-model="tokenForm.token"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="the long-lived token for this account"
+            @keydown.enter.prevent="submitToken"
+          />
+        </label>
+        <label>
+          app secret — only to upgrade a short-lived token
+          <input
+            v-model="tokenForm.secret"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="leave empty for a long-lived token"
+            @keydown.enter.prevent="submitToken"
+          />
+        </label>
+      </div>
+      <div v-if="tokenError" class="cxn-error" role="alert">{{ tokenError }}</div>
+      <div class="acct-client-acts">
+        <button
+          class="btn btn-sm btn-primary"
+          type="button"
+          :disabled="tokenBusy || !tokenForm.token.trim()"
+          @click="submitToken"
+        >
+          {{ tokenBusy ? 'Checking…' : 'Add account' }}
+        </button>
+        <button class="btn btn-sm btn-ghost" type="button" :disabled="tokenBusy" @click="closeTokenForm">
+          Cancel
+        </button>
+      </div>
+    </div>
+
     <!-- The client the consent screen runs under: asked once per machine, stored
-         0600, never returned. -->
-    <div v-if="clientOpen && canConnect" class="acct-client">
+         0600, never returned. A paste-once provider has no consent screen, so it has
+         no client either. -->
+    <div v-if="clientOpen && canConnect && !client.pasteToken" class="acct-client">
       <p class="acct-client-lead">
         A consent screen needs an OAuth client.
         {{ client.instruction || 'Create one, then paste its id here.' }}
@@ -576,7 +680,7 @@ onMounted(async () => {
     </div>
 
     <!-- A saved client is a fact worth one line: which one, never the secret. -->
-    <p v-else-if="client.configured && canConnect" class="acct-client-note">
+    <p v-else-if="client.configured && canConnect && !client.pasteToken" class="acct-client-note">
       Client <code class="mono">{{ client.hint }}</code> on this machine ·
       <button class="empty-link" type="button" @click="clientOpen = true">replace it</button>
     </p>
@@ -599,8 +703,13 @@ onMounted(async () => {
         <p><b>No account is connected yet.</b></p>
         <p class="acct-empty-hint">{{ emptyHint }}</p>
         <div v-if="canConnect">
-          <button class="btn btn-sm btn-primary" type="button" :disabled="Boolean(busy)" @click="connectOauth">
-            Connect {{ providerLabel }} account
+          <button
+            class="btn btn-sm btn-primary"
+            type="button"
+            :disabled="Boolean(busy)"
+            @click="client.pasteToken ? openTokenForm() : connectOauth()"
+          >
+            {{ client.pasteToken ? `Add ${providerLabel} account` : `Connect ${providerLabel} account` }}
           </button>
         </div>
       </div>

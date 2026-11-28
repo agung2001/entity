@@ -191,7 +191,7 @@ const visible = ref(PAGE)
    of the colon run belonging to the last one. `@gmail:all:from:stripe` is two:
    the scope (`all`) and the query (`from:stripe`). Absent = every field separate,
    which is right for `@file:` and `@thread:`. */
-const FIELD_GROUPS = { gmail: 2, drive: 2, gcal: 2, youtube: 2, 'youtube-studio': 2, x: 2 }
+const FIELD_GROUPS = { gmail: 2, drive: 2, gcal: 2, youtube: 2, 'youtube-studio': 2, x: 2, threads: 2 }
 let searchTimer = null
 let searchSeq = 0
 let searchKind = ''

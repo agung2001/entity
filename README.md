@@ -139,9 +139,9 @@ workspace. A thread can be pinned there, terminal included.
 <tr>
 <td width="50%" valign="middle">
 
-### Fourteen connectors, one roster
+### Fifteen connectors, one roster
 
-Fourteen rows, one table. The Gmail, Drive, YouTube Studio and Habitify accounts sit
+Fifteen rows, one table. The Gmail, Drive, YouTube Studio and Habitify accounts sit
 beside the MCP servers, the CLI binaries this machine already had, and one row that is
 neither — Tailscale, which reads a local daemon and gates one command instead of storing
 a credential. One row per connector, not one per mailbox — and each row states its kind,
@@ -193,15 +193,15 @@ assistant gets its own calendar and bill.
 </tr>
 </table>
 
-**Also in the box:** fourteen shipped connectors with per-account OAuth and a
+**Also in the box:** fifteen shipped connectors with per-account OAuth and a
 `read` → `write` → `full` tier per workspace · the harness inventory at **Account →
 Harnesses**, with the profile, sound and notification pages beside it · **Learning**
 with a scope you choose before it spends a run · a rebuilt composer dock and
 delegation cards that fold into a session tree behind `spawn N` / `spawn per` · an
 execution timeline per answer · a links-and-paths drawer derived from each thread ·
 `@entity`, `@thread:`, `@artifact:`, `@maka:`, `@opendesign:`, `@youtrack:`, `@orca:`,
-`@github:`, `@gmail:`, `@drive:`, `@youtube:`, `@youtube-studio:`, `@x:`, `@clockify:`
-and `@habitify:` mentions resolved before the agent
+`@github:`, `@gmail:`, `@drive:`, `@youtube:`, `@youtube-studio:`, `@x:`, `@threads:`,
+`@clockify:` and `@habitify:` mentions resolved before the agent
 sees them · personal and shared artifact shelves with a two-clock archive sweep · a
 folder-per-thread base directory with `/project:` skills · a terminal beside the chat
 (``Ctrl+` ``) · voice with barge-in and read-aloud · ZIP backups on a rolling schedule ·
@@ -246,9 +246,10 @@ binary or a signed-out CLI is reported as a failed turn, not a friendly fake ans
 
 Everything a workspace can reach lives in one roster at **Workspace settings →
 Connectors**: an MCP server, a CLI binary and a REST service are three *kinds* of one
-row, and the old bulk MCP list is a permanent redirect into it. Entity ships fourteen —
-`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x` and `habitify` account-bearing;
-`orca`, `youtrack` and `github` the three the composer offered before connectors existed
+row, and the old bulk MCP list is a permanent redirect into it. Entity ships fifteen —
+`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x`, `habitify` and `threads`
+account-bearing (`threads`' token is pasted rather than consented); `orca`, `youtrack` and
+`github` the three the composer offered before connectors existed
 (`orca` and `github` are `cli` rows, `youtrack` is an `mcp` row); `maka` and `open-design`
 the MCP-backed ones; `clockify`, whose credential is one API key you paste once;
 `tailscale`, a `cli` row that authenticates nothing at all — it reads this machine's
@@ -290,7 +291,8 @@ it drives the Chrome this machine already has open, on
 [Drive](docs/connectors/google-drive.md), [YouTube](docs/connectors/youtube.md),
 [YouTube Studio](docs/connectors/youtube-studio.md),
 [Habitify](docs/connectors/habitify.md), [Clockify](docs/connectors/clockify.md),
-[X](docs/connectors/x.md) and [Chrome DevTools](docs/connectors/chrome-devtools.md) — with
+[Threads](docs/connectors/threads.md), [X](docs/connectors/x.md) and
+[Chrome DevTools](docs/connectors/chrome-devtools.md) — with
 the detail page, what it reaches and the mention it answers.
 
 **[Connectors →](docs/connectors.md)** · **[MCP servers →](docs/mcp.md)**

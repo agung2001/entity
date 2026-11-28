@@ -401,11 +401,20 @@ function capabilitiesFor(name) {
   return out
 }
 
-function metadata(record, rel, stat, index = { shared: {} }, scope = 'shared') {
+function metadata(record, rel, stat, index = { shared: {} }, scope = 'shared', dirs = null) {
   const name = path.basename(rel)
   const ext = path.extname(name).toLowerCase()
   const local = scope === 'personal' || scope === 'unclaimed'
-  const dir = local ? personalDir(record) : artifactsDir(record)
+  /* `dirs` is the caller's answer to "which shelf": a walk asks it once instead
+     of once per file, and asking used to mean reading `auth.json` — 1 200 of
+     those reads was most of the cost of listing a shelf. */
+  const dir = dirs
+    ? local
+      ? dirs.personal
+      : dirs.shared
+    : local
+      ? personalDir(record)
+      : artifactsDir(record)
   const entry = scope === 'shared' ? index.shared?.[rel] : null
   return {
     id: rel,
@@ -427,7 +436,7 @@ function metadata(record, rel, stat, index = { shared: {} }, scope = 'shared') {
   }
 }
 
-function walk(record, root, rel, out, index, scope) {
+function walk(record, root, rel, out, index, scope, dirs = null) {
   let entries = []
   try {
     entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
@@ -445,7 +454,7 @@ function walk(record, root, rel, out, index, scope) {
        shelf either — 391 of them read as the owner's own files. */
     if (!rel && entry.isDirectory() && entry.name === CONFLICTS_DIR) continue
     if (entry.isDirectory()) {
-      walk(record, root, child, out, index, scope)
+      walk(record, root, child, out, index, scope, dirs)
       continue
     }
     if (!entry.isFile()) continue
@@ -460,7 +469,7 @@ function walk(record, root, rel, out, index, scope) {
        it as shared is the leak this rule exists to stop, so it is reported as
        the person's own until they actually share it. */
     const claimed = scope !== 'shared' || Boolean(index.shared?.[child])
-    out.push(metadata(record, child, stat, index, claimed ? scope : 'unclaimed'))
+    out.push(metadata(record, child, stat, index, claimed ? scope : 'unclaimed', dirs))
   }
 }
 
@@ -550,8 +559,9 @@ function list({ workspace } = {}) {
   const index = readScope(record)
   const origins = readOrigins(record)
   const rows = []
-  walk(record, personalDir(record), '', rows, index, 'personal')
-  walk(record, artifactsDir(record), '', rows, index, 'shared')
+  const dirs = { personal: personalDir(record), shared: artifactsDir(record) }
+  walk(record, dirs.personal, '', rows, index, 'personal', dirs)
+  walk(record, dirs.shared, '', rows, index, 'shared', dirs)
   /* One id names one file: sharing moves it between the roots, so a duplicate
      can only be a half-finished move. Yours is the one you can see. */
   const seen = new Set()
@@ -574,8 +584,8 @@ function list({ workspace } = {}) {
     pruneOrigins(record, origins, (id) => present.has(id))
   }
   return {
-    path: tilde(artifactsDir(record)),
-    personal: tilde(personalDir(record)),
+    path: tilde(dirs.shared),
+    personal: tilde(dirs.personal),
     count: items.length,
     items,
     counts,
