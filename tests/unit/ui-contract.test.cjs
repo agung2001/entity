@@ -871,6 +871,31 @@ test('the terminal sheet is a closed card, not a flap', () => {
   assert.match(rule[0], /border-radius:\s*var\(--r-md\)/, 'the sheet is not rounded on all four corners')
 })
 
+test("a goal's selector and its mark come from the shared components", () => {
+  const goalFiles = FILES.filter((entry) => /(^|\/)components\/goal\/|(^|\/)views\/Goal/.test(entry.rel))
+  assert.ok(goalFiles.length >= 5, 'the goals surface is still there')
+
+  /* An entity is an identity, so its axis is `PickMenu`: a native select cannot
+     carry the entity's mark, its search, its teleported menu or its locked state.
+     (A compact priority chip may stay a select — it is a word, not a thing.) */
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+  assert.match(
+    create,
+    /<PickMenu[\s\S]{0,240}?icons="entity"/,
+    "the entity selector is the app's picker",
+  )
+  assert.doesNotMatch(create, /<select[\s>]/, 'no native select for the entity')
+
+  /* One drawing per destination: an empty state or a note wears the rail's own
+     glyph. A copied `<circle>` here is a second mark that drifts. */
+  const redrawn = goalFiles
+    .filter((entry) => /circle cx="8" cy="8" r="2\.2"/.test(entry.text))
+    .map((entry) => entry.rel)
+  assert.deepEqual(redrawn, [], `the goal mark belongs to NavIcon, not ${redrawn.join(', ')}`)
+  const blank = fs.readFileSync(path.join(SRC, 'views', 'GoalsView.vue'), 'utf8')
+  assert.match(blank, /<NavIcon name="goal"\s*\/>/, "the empty state wears the rail's glyph")
+})
+
 /* ── one ladder each ─────────────────────────────────────────────────────
    A radius is a step on the scale in tokens.css, and so is an absolute type
    size. Twenty-six raw radii and forty-seven raw sizes used to live in the

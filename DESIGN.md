@@ -191,6 +191,60 @@ The message box is for the prompt. Attachments belong in a tray below it.
 - Previous/next conversation shortcuts live in the shortcut catalog and wrap at
   the ends only if the rail wraps; they are not a hidden component handler.
 
+## A selector is the app's picker
+
+Every axis a person chooses — **entity, machine, harness** — is `PickMenu`, never a
+native `<select>` and never a bespoke dropdown. The picker is one control with one
+set of behaviours, and a `<select>` can carry none of them. `options` is
+`[{ id, label, meta, glyph }]`:
+
+```html
+<PickMenu
+  class="field-select"
+  head="Entity"
+  icons="entity"
+  :options="entityOptions"
+  :model-value="entity"
+  @update:model-value="entity = $event"
+/>
+```
+
+- **The mark is the identity.** `icons="entity"` paints the animated `EntityMark`
+  plus `moodGlyph(markFor(workspace, id, mark).mood)` on the trigger and on every
+  row; `machine` and `harness` use their own brand marks. A `<select>` can only
+  print a name, so two entities read as two strings.
+- **It is searchable, teleported and keyboard-complete.** The menu goes to
+  `<body>` so a scrolling dialog cannot clip it, flips above the trigger when the
+  bottom is near, filters on every axis, and closes with the shared `Esc` stack.
+- **A locked axis says it is locked** (`disabled` → lock glyph, title with the
+  reason). A disabled native select says nothing.
+- Filter and sort strips may stay native selects where the value is a word with
+  no identity; the rule is about **choosing an entity, a machine or a harness** —
+  where a person is picking a thing that has a face.
+
+The New-thread dialog and the chat's context row are the reference
+(`NewThreadDialog.vue`, `ChatView.vue`), and `forms.css` owns `.field-select`
+(100 % wide, 36 px, `--border-strong`). Reuse both; do not restyle a select to
+look like them.
+
+## A destination's mark is drawn once
+
+The rail, the phone tab bar, an empty state and a note on a page all wear the
+**same** drawing, and that drawing has one definition: `src/components/NavIcon.vue`
+(or `HarnessIcon` / `MachineIcon` / `VoxelMark` for their own families).
+
+```html
+<NavIcon name="goal" />    <!-- rail, tab, empty state, note -->
+```
+
+- A page that copies the glyph's `<path>`/`<circle>` markup into its template has
+  created a second mark that will drift the first time either changes — and the
+  empty state was the copy that stopped matching its own rail.
+- The shared component is sized by the context (`svg { width; height }` in the
+  surrounding block), so reuse costs no CSS.
+- Add a new destination by adding one `<svg v-else-if="name === '…'">` branch to
+  `NavIcon.vue`; read it from `NAV` everywhere else.
+
 ## A roster is a table, and a copy is a decision
 
 A seven-item roster used to be a three-up card grid: about 60% of the horizontal
@@ -837,6 +891,8 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | The desk's labels do not line up with the cells below | `auto` / `max-content` in a grid's tracks resolve per row; use lengths | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A reading rail squeezes a five-column roster into a third of the band | Prose gets a rail, an inventory gets the band: the facts become a row above the table | `npm test` (`ui-contract`), `tests/e2e/full/24-machines-fleet.spec.js` |
 | A page nobody gave a rail arrives with a list of ssh hosts beside it | A route with no section draws **no** second tier: `section` returns `null`, the `<aside>` is `v-if`, and `meta.rail: false` tells the phone not to offer a drawer. Never a fall-through to Overview — a default section means every unlisted route inherits another page's list | `npm test` (`artifacts-index`: *a route with no rail specification gets no rail*), `src/components/RailContext.vue` |
+| A surface picks an entity/machine/harness from a native `<select>` | It is `PickMenu`: `<PickMenu class="field-select" icons="entity" :options="…" />` — the mark, the search, the teleported menu and the locked state are the control's, not the page's | `npm test` (`ui-contract`: *a goal's selector and mark*) |
+| The same destination has three drawings for one icon | One definition in `NavIcon.vue`; the empty state and notes render `<NavIcon name="…" />` instead of copying the path | `npm test` (`ui-contract`: *a goal's selector and mark*) |
 | A roster is drawn as a three-up card gallery | A table with one bounded scroller, 60 px rows and five fixed cells | `npm test` (`ui-contract`) |
 | A sweep control appears on a machine that cannot run a pass | The button only where the capability is; a word (`owner decides`) everywhere else | `tests/e2e/full/24-machines-fleet.spec.js` |
 | A settings card mixes two populations that have different rules | One shelf per tab, in the URL as a second axis (`?tab=artifacts&shelf=personal`), and the rule renders only on the shelf it governs | `npm test` (`ui-contract`), `tests/e2e/full/23-artifact-shelves.spec.js` |
