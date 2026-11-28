@@ -24,6 +24,10 @@ const props = defineProps({
   seed: { type: String, default: '' },
   from: { type: String, default: 'composer' },
   scope: { type: String, default: '' },
+  /* A page that is not a thread (the goal composer) names the harness itself;
+     a thread always wins, because its context is the history. */
+  harness: { type: String, default: '' },
+  model: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'apply'])
 
@@ -121,8 +125,10 @@ const clock = computed(() => {
   const ss = String(total % 60).padStart(2, '0')
   return `${mm}:${ss}`
 })
+const threadHarness = computed(
+  () => props.harness || hub.chat.threads[owner.value]?.harness || '',
+)
 const harnessLabel = computed(() => harnessById(threadHarness.value).label)
-const threadHarness = computed(() => hub.chat.threads[owner.value]?.harness || '')
 
 function onToggle(event) {
   advanced.value = Boolean(event.target?.open)
@@ -232,6 +238,8 @@ async function generate() {
     const data = await call('chat.enhance', {
       workspace: hub.workspace,
       threadId: owner.value,
+      harness: props.harness,
+      model: props.model,
       draft: text,
       count: count.value,
       /* closed Advanced sends exactly what open-but-untouched sends */

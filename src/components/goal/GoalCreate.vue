@@ -16,8 +16,9 @@
  * a harness answer would have to arrive in, and the merge below is the rule that
  * answer must keep.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PickMenu from '@/components/PickMenu.vue'
+import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
@@ -25,7 +26,9 @@ import { markFor, moodGlyph } from '@/composables/entityMark'
 import { dialogDepth } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
-import { hub } from '@/stores/hub'
+import { pickableHarnesses } from '@/stores/harnesses'
+import { hub, toast } from '@/stores/hub'
+import { workspaces } from '@/stores/workspaces'
 
 const props = defineProps({
   /** the write, owned by the view: a promise, so a refusal lands beside the button */
@@ -55,6 +58,12 @@ const entity = ref(String(entities.value[0]?.id || entities.value[0]?.name || ''
 const agent = computed(
   () => entities.value.find((entry) => (entry.id || entry.name) === entity.value) || entities.value[0] || { name: 'Goal' },
 )
+/* A harness is the entity's default until the person picks another one; the
+   choice rides with the goal so the plan can be run with it later. */
+watch(entity, () => {
+  const next = String(agent.value?.harness || '')
+  if (next) harness.value = next
+})
 /* One digit per field, from the catalog, so the key on the label and the
    handler below cannot drift — the same contract the New-thread dialog keeps. */
 const keys = {
@@ -65,6 +74,21 @@ const keys = {
   privacy: shortcutLabel('goal-privacy'),
 }
 const draftKey = shortcutLabel('goal-draft')
+const attachments = ref([])
+const harness = ref(String(entities.value[0]?.harness || ''))
+const harnessOptions = computed(() =>
+  pickableHarnesses.value.map((item) => ({
+    id: item.id,
+    label: item.label,
+    meta: item.installed ? 'installed' : 'not found',
+  })),
+)
+const mcpOptions = computed(() =>
+  Object.keys(workspaces.mcp?.servers || {})
+    .sort()
+    .map((name) => ({ id: name, label: name, meta: 'MCP server' })),
+)
+const enhanceOpen = ref(false)
 const titleField = ref(null)
 const entityPick = ref(null)
 const composer = ref(null)
@@ -105,7 +129,14 @@ const dateWhy = computed(() => (touched.value.date && !deadline.value ? 'No date
 const titleOf = computed(() => {
   const typed = title.value.trim()
   if (typed) return typed
-  const first = sentence.value.trim().split(/[.,;\n]/)[0].replace(/\s+/g, ' ').trim()
+  /* a token is context, not a title: strip `@mention` and `/skill` before the
+     sentence's first clause becomes the default title */
+  const first = sentence.value
+    .trim()
+    .split(/[.,;\n]/)[0]
+    .replace(/(^|\s)[@/][\w:.-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   return (first || 'A new goal').slice(0, 90)
 })
 
@@ -153,6 +184,11 @@ function onKey(event) {
     return
   }
   if (step.value !== 1) return
+  if (matchesShortcut('enhance-prompt', event) && sentence.value.trim()) {
+    event.preventDefault()
+    openEnhance()
+    return
+  }
   const targets = {
     'goal-title': titleField,
     'goal-entity': entityPick,
@@ -181,6 +217,34 @@ async function runStep() {
 
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+/** An MCP server is a mention in the sentence, the same token `@mcp:` inserts;
+    picking it here only saves typing the name. */
+function addMcp(name) {
+  if (!name) return
+  const body = sentence.value.trimEnd()
+  sentence.value = `${body}${body ? ' ' : ''}@mcp:${name} `
+  nextTick(() => composer.value?.focus?.())
+}
+
+function openEnhance() {
+  if (!sentence.value.trim()) return
+  enhanceOpen.value = true
+}
+
+/* A rewrite replaces the sentence, in place, and offers the one step back the
+   chat's own enhance offers. */
+function applyEnhancement({ text, index }) {
+  const previous = sentence.value
+  sentence.value = text
+  enhanceOpen.value = false
+  toast(`Applied variation ${index + 1} · the sentence was replaced`, {
+    actionLabel: 'Undo',
+    onAction: () => {
+      sentence.value = previous
+    },
+  })
+}
 
 /** The composer's send is this flow's `Draft tasks`: the sentence stays in the
     box (a goal is written once and edited, not sent away). */
@@ -243,6 +307,8 @@ async function create() {
       deadline: deadline.value,
       privacy: privacy.value,
       entity: entity.value,
+      harness: harness.value,
+      context: attachments.value,
       tasks: tasks.value.map((task) => ({ ...task, title: String(task.title).trim() })),
     })
   } catch (problem) {
@@ -292,19 +358,42 @@ async function create() {
         <span class="hint">The line the backlog and the calendar will print. Left empty, it takes the first line of the sentence.</span>
       </div>
 
-      <div class="fld-solo">
-        <label class="fld-head">Entity <kbd class="fld-key">{{ keys.entity }}</kbd></label>
-        <PickMenu
-          ref="entityPick"
-          class="field-select"
-          head="Entity"
-          icons="entity"
-          :options="entityOptions"
-          :model-value="entity"
-          @update:model-value="entity = $event"
-        />
-        <span class="hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers.</span>
+      <div class="fld-row">
+        <div class="fld-solo">
+          <label class="fld-head">Entity <kbd class="fld-key">{{ keys.entity }}</kbd></label>
+          <PickMenu
+            ref="entityPick"
+            class="field-select"
+            head="Entity"
+            icons="entity"
+            :options="entityOptions"
+            :model-value="entity"
+            @update:model-value="entity = $event"
+          />
+        </div>
+        <div class="fld-solo">
+          <label class="fld-head">Harness</label>
+          <PickMenu
+            class="field-select"
+            head="Harness"
+            icons="harness"
+            :options="harnessOptions"
+            :model-value="harness"
+            @update:model-value="harness = $event"
+          />
+        </div>
+        <div class="fld-solo">
+          <label class="fld-head">MCP</label>
+          <PickMenu
+            class="field-select"
+            head="MCP"
+            :options="mcpOptions"
+            :model-value="''"
+            @update:model-value="addMcp"
+          />
+        </div>
       </div>
+      <span class="hint fld-row-hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers; MCP inserts an <code class="mono">@mcp:</code> token into the sentence.</span>
 
       <div class="fld-solo">
         <label class="fld-head">Goal <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.sentence }}</kbd></label>
@@ -320,15 +409,15 @@ async function create() {
             placeholder="Describe the outcome you want by the deadline — / skills · @ mentions"
             label="Goal sentence — / for a skill, @ to mention"
             :draft="sentence"
+            v-model:attachments="attachments"
             @update:draft="sentence = $event"
             @send="onSend"
+            @enhance="openEnhance"
           />
           <div class="cm-acts">
             <span class="cm-hint" :class="{ danger: sentenceWhy }">
               {{ sentenceWhy || 'One sentence. The draft reasons from it and nothing else.' }}
             </span>
-            <span class="cm-grow"></span>
-            <span class="cm-hint"><kbd>{{ draftKey }}</kbd> drafts the tasks</span>
           </div>
         </div>
       </div>
@@ -451,5 +540,13 @@ async function create() {
         </div>
       </div>
     </div>
+
+    <PromptEnhanceDialog
+      :open="enhanceOpen"
+      :seed="sentence"
+      :harness="harness"
+      @close="enhanceOpen = false"
+      @apply="applyEnhancement"
+    />
   </div>
 </template>

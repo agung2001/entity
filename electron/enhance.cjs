@@ -73,20 +73,25 @@ function cleanVariations(list, count = MAX_VARIATIONS) {
   return out
 }
 
-async function enhance({ workspace, threadId, draft, count, guide } = {}) {
+async function enhance({ workspace, threadId, draft, count, guide, harness, model } = {}) {
   const text = String(draft || '').trim()
   if (!text) throw new Error('There is nothing in the composer to rewrite.')
   const id = String(threadId || '')
-  if (!id) throw new Error('No thread is open.')
-
   const record = workspaces.open(workspace)
   let thread = null
-  try {
-    thread = JSON.parse(fs.readFileSync(path.join(record.path, 'chats', `${id}.json`), 'utf8'))
-  } catch {
-    thread = null
+  if (id) {
+    try {
+      thread = JSON.parse(fs.readFileSync(path.join(record.path, 'chats', `${id}.json`), 'utf8'))
+    } catch {
+      thread = null
+    }
+    if (!thread) throw new Error('That thread no longer exists.')
   }
-  if (!thread) throw new Error('That thread no longer exists.')
+  /* A goal's composer is not a thread: it names the harness it wants, and the
+     rewrite runs there instead of borrowing a conversation's history. */
+  const targetHarness = String(thread?.harness || harness || '')
+  const targetModel = String(thread?.model || model || '')
+  if (!targetHarness) throw new Error(id ? 'That thread has no harness.' : 'No thread is open.')
 
   const wanted = countOf(count)
   const extra = trim(guide, MAX_GUIDE)
@@ -106,8 +111,8 @@ async function enhance({ workspace, threadId, draft, count, guide } = {}) {
   let result
   try {
     result = await runOneShot({
-      harness: thread.harness,
-      model: thread.model,
+      harness: targetHarness,
+      model: targetModel,
       instruction: INSTRUCTION,
       prompt,
       timeoutMs: TIMEOUT_MS,
@@ -121,10 +126,10 @@ async function enhance({ workspace, threadId, draft, count, guide } = {}) {
   const variations = cleanVariations(parsed?.variations, wanted)
   if (!variations.length) {
     throw new Error(
-      `${String(thread.harness || 'The harness')} returned no text. Nothing was applied to your draft.`,
+      `${targetHarness || 'The harness'} returned no text. Nothing was applied to your draft.`,
     )
   }
-  return { variations, harness: String(thread.harness || ''), model: String(thread.model || '') }
+  return { variations, harness: targetHarness, model: targetModel }
 }
 
 module.exports = { enhance, cleanVariations, countOf }

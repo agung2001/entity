@@ -52,6 +52,29 @@ function day(value) {
   return same ? at : ''
 }
 
+/**
+ * The context a person picked in the composer: connector rows, a Drive file, an
+ * Orca project, an MCP server, an entity. References are kept; a local file's
+ * bytes are not — `data` would put a base64 upload in every read of the goal.
+ */
+function contextOf(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .slice(0, 40)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null
+      return {
+        kind: text(entry.kind, 40),
+        value: text(entry.value, 500),
+        label: text(entry.label || entry.name, 200),
+        detail: text(entry.detail, 300),
+        url: text(entry.url, 800),
+        account: text(entry.account, 120),
+      }
+    })
+    .filter((entry) => entry && (entry.value || entry.label))
+}
+
 function tokenOf(raw) {
   return {
     kind: TOKEN_KINDS.includes(String(raw?.kind)) ? String(raw.kind) : 'draft',
@@ -89,6 +112,8 @@ function goalOf(raw) {
        workspace and its name is the identity — renaming the agent is a rename of
        the file, which a goal cannot follow. */
     entity: text(raw.entity, 200),
+    harness: text(raw.harness, 80),
+    context: contextOf(raw.context),
     /* The identity, not a display name: the read-only rule compares this with the
        person opening the goal, and a renamed member must not lose their goals. */
     owner: text(raw.owner, 200),
@@ -190,6 +215,8 @@ function create({ workspace, goal } = {}) {
     deadline,
     privacy: PRIVACY.includes(String(goal?.privacy)) ? String(goal.privacy) : 'private',
     entity: text(goal?.entity, 200),
+    harness: text(goal?.harness, 80),
+    context: contextOf(goal?.context),
     owner: text(goal?.owner, 200),
     createdAt: new Date().toISOString(),
     archivedAt: '',

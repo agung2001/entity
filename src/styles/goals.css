@@ -1046,6 +1046,30 @@
   gap: 6px;
   margin-bottom: 18px;
 }
+/* entity · harness · MCP: three picks on one line, the composer below */
+.goals-page .fld-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.goals-page .fld-row .fld-solo {
+  margin-bottom: 8px;
+}
+.goals-page .fld-row-hint {
+  display: block;
+  margin: -6px 0 18px;
+}
+.goals-page .fld-row-hint code {
+  padding: 1px 4px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+}
+@media (max-width: 700px) {
+  .goals-page .fld-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
 .goals-page .fld-solo > label,
 .goals-page .fld-solo .fld-head {
   font-family: var(--mono);
@@ -1118,9 +1142,9 @@
   padding: 0;
   font-size: var(--fs-small);
 }
-.goals-page .cm-composer .slash-actions {
-  display: none;
-}
+/* the composer's own rail is the thread's: attach, enhance, send. It is not a
+   second footer — `Draft tasks` stays the page's one primary button, and a Send
+   here is a send of the sentence, which is the same act. */
 .goals-page .cm-composer .ask-cmdbox {
   left: -4px;
   right: -4px;
