@@ -31,7 +31,7 @@ const props = defineProps({
   /** the draft hides the source: every token there is the goal itself */
   showSource: { type: Boolean, default: true },
 })
-const emit = defineEmits(['tick', 'update', 'remove', 'chat'])
+const emit = defineEmits(['tick', 'update', 'remove', 'chat', 'edit'])
 
 const editing = ref('')
 const value = ref('')
@@ -159,7 +159,17 @@ function setPriority(event) {
         <span v-else class="pri" :data-p="task.priority">{{ priorityWord(task.priority) }}</span>
       </span>
 
-      <button v-if="editable" class="tx" type="button" :title="task.title" @click="start('title')">
+      <input
+        v-if="editing === 'title'"
+        :ref="fields.title"
+        v-model="value"
+        type="text"
+        class="tx tx-input"
+        :aria-label="`Title of “${task.title || 'this task'}”`"
+        @keydown="onFieldKey"
+        @blur="commit"
+      />
+      <button v-else-if="editable" class="tx" type="button" :title="task.title" @click="start('title')">
         {{ task.title || 'Untitled task' }}
       </button>
       <span v-else class="tx" :title="task.title">{{ task.title || 'Untitled task' }}</span>
@@ -242,6 +252,9 @@ function setPriority(event) {
         @click="menuOpen = !menuOpen"
       >⋯</button>
       <span v-if="menuOpen" class="tmenu-pop" role="menu">
+        <button type="button" role="menuitem" @click="menuOpen = false; emit('edit')">
+          Edit task
+        </button>
         <button
           v-if="task.entity"
           type="button"

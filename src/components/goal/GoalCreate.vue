@@ -20,6 +20,7 @@ import { call, onRunEvent } from '@/composables/localBridge'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import DraftCalendar from '@/components/goal/DraftCalendar.vue'
 import GoalFields from '@/components/goal/GoalFields.vue'
+import TaskEditDialog from '@/components/goal/TaskEditDialog.vue'
 import TaskDialog from '@/components/goal/TaskDialog.vue'
 import DraftShape from '@/components/goal/DraftShape.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
@@ -76,6 +77,7 @@ const keys = {
   privacy: shortcutLabel('goal-privacy'),
 }
 const draftKey = shortcutLabel('goal-draft')
+const adjustKey = shortcutLabel('goal-adjust')
 const elapsedLabel = computed(() => {
   const seconds = Math.max(0, Math.round(draftElapsed.value / 1000))
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
@@ -146,6 +148,8 @@ const revising = ref(false)
 const taskOpen = ref(false)
 const replanNote = ref('')
 const replanError = ref('')
+/* the row's own dialog: editing it is a local write, unlike adding or removing */
+const editingTask = ref(null)
 const deadline = ref('')
 const privacy = ref('private')
 const touched = ref({ sentence: false, date: false })
@@ -169,6 +173,7 @@ const addDays = (days) => {
 
 const pills = computed(() => [
   { label: 'Today', value: today() },
+  { label: 'Today + 1 w', value: addDays(7) },
   { label: 'Today + 2 w', value: addDays(14) },
   { label: 'Today + 1 m', value: addDays(30) },
 ])
@@ -227,6 +232,34 @@ const createWhy = computed(() => {
   return ''
 })
 
+const stats = computed(() => [
+  {
+    label: 'Tasks',
+    value: tasks.value.length,
+    tip: 'Every task in the draft. Adding or removing one re-plans the rest around it.',
+  },
+  {
+    label: 'Critical',
+    value: criticalCount.value,
+    tip: 'Tasks at the worst priority — the work the plan has to protect first.',
+  },
+  {
+    label: 'Entities',
+    value: entitiesUsed.value,
+    tip: 'How many different entities the plan hands work to.',
+  },
+  {
+    label: 'Effort',
+    value: effortPoints.value,
+    tip: 'Small 1 · Medium 2 · Large 3, added up. A relative size, not hours.',
+  },
+  {
+    label: 'Days',
+    value: days.value,
+    tip: 'Calendar days from today to the deadline — the window every date has to fit in.',
+  },
+])
+
 const days = computed(() => {
   if (!deadline.value) return 0
   const start = new Date()
@@ -271,6 +304,11 @@ function onKey(event) {
   if (matchesShortcut('goal-draft', event)) {
     event.preventDefault()
     runStep()
+    return
+  }
+  if (step.value === 2 && matchesShortcut('goal-adjust', event)) {
+    event.preventDefault()
+    openAdjust('adjust')
     return
   }
   if (step.value !== 1) return
@@ -384,7 +422,7 @@ async function draft() {
       sentence: sentence.value,
       deadline: deadline.value,
       context: attachments.value,
-      entities: entityOptions.value.map((option) => option.id),
+      entities: entityOptions.value.map((option) => option.label),
     })
     const tasks = Array.isArray(answer?.tasks) ? answer.tasks : []
     if (!tasks.length) throw new Error('The harness answered with no task list.')
@@ -423,14 +461,16 @@ function addTask() {
  * planner re-fits the whole plan around it. If the turn fails the row stays and
  * says so; a refused re-plan never takes the task back out.
  */
-function submitTask(text) {
+function submitTask(text, entityName) {
   taskOpen.value = false
   const title = String(text || '').trim()
   if (!title) return
-  tasks.value = [...tasks.value, { ...blankTask('normal'), title }]
+  const owner = String(entityName || '').trim()
+  tasks.value = [...tasks.value, { ...blankTask('normal'), title, entity: owner }]
   replanNote.value = ''
   revisePlan(
-    `Add this task: “${title}”. Give it a date, an entity and an effort, and re-date anything else that no longer fits.`,
+    `Add this task${owner ? ` for ${owner}` : ''}: “${title}”. ` +
+      `Give it a date and an effort${owner ? '' : ' and an entity'}, and re-date anything else that no longer fits.`,
     'Added — the planner did not answer, so the rest of the plan was left as it was.',
   )
 }
@@ -451,7 +491,7 @@ async function revisePlan(instruction, fallback) {
       sentence: sentence.value,
       deadline: deadline.value,
       context: attachments.value,
-      entities: entityOptions.value.map((option) => option.id),
+      entities: entityOptions.value.map((option) => option.label),
       tasks: tasks.value,
       instruction,
       draftId: draftId.value,
@@ -472,6 +512,17 @@ async function revisePlan(instruction, fallback) {
     draftId.value = ''
     stopClock()
   }
+}
+
+function openTaskEdit(task) {
+  if (revising.value || drafting.value || !task) return
+  editingTask.value = task
+}
+
+function saveTask(patch) {
+  if (!editingTask.value) return
+  updateTask(editingTask.value, patch)
+  editingTask.value = null
 }
 
 function updateTask(task, patch) {
@@ -639,7 +690,7 @@ async function create() {
       <div class="head-actions">
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">
-          Adjust goal
+          Adjust goal<span class="btn-kbd">{{ adjustKey }}</span>
         </button>
         <button v-if="step === 1" class="btn" type="button" @click="cancel()">Cancel</button>
         <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust">
@@ -743,18 +794,21 @@ async function create() {
           <p v-else class="dsh-body dsh-empty">
             The plan came back without a paragraph. The tasks below are the whole of it.
           </p>
-          <dl class="dsh-stats">
-            <div><dt>Tasks</dt><dd>{{ tasks.length }}</dd></div>
-            <div><dt>Critical</dt><dd>{{ criticalCount }}</dd></div>
-            <div><dt>Entities</dt><dd>{{ entitiesUsed }}</dd></div>
-            <div><dt>Effort</dt><dd>{{ effortPoints }}</dd></div>
-            <div><dt>Days</dt><dd>{{ days }}</dd></div>
-          </dl>
         </div>
 
         <div class="dbrief-side">
           <DraftShape :tasks="tasks" />
         </div>
+
+        <!-- full width: the numbers are the plan's floor, not a footnote to the
+             paragraph. Each one says what it counts on hover and on focus. -->
+        <dl class="dsh-stats">
+          <div v-for="stat in stats" :key="stat.label" tabindex="0">
+            <dt>{{ stat.label }}</dt>
+            <dd>{{ stat.value }}</dd>
+            <span class="stat-tip" role="tooltip">{{ stat.tip }}</span>
+          </div>
+        </dl>
       </section>
 
       <section class="panel draft-plan">
@@ -807,6 +861,7 @@ async function create() {
                 :show-source="false"
                 @tick="toggle(task, $event)"
                 @update="updateTask(task, $event)"
+                @edit="openTaskEdit(task)"
                 @remove="removeTask(task)"
               />
             </ul>
@@ -825,12 +880,22 @@ async function create() {
       <div class="plan-foot">
         <span class="why">{{ createWhy || 'Nothing is written until you create the goal.' }}</span>
         <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">Adjust goal</button>
+        <button class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">
+          Adjust goal<span class="btn-kbd">{{ adjustKey }}</span>
+        </button>
         <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust()">
           Create goal<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </template>
+
+    <TaskEditDialog
+      :open="Boolean(editingTask)"
+      :task="editingTask"
+      :entity-options="entityOptions"
+      @close="editingTask = null"
+      @save="saveTask"
+    />
 
     <TaskDialog
       :open="taskOpen"
@@ -838,6 +903,8 @@ async function create() {
       :harness="harness"
       :plan-size="tasks.length"
       :deadline="deadline"
+      :entity="entity"
+      :entity-options="entityOptions"
       @close="taskOpen = false"
       @submit="submitTask"
     />
@@ -867,7 +934,7 @@ async function create() {
               due {{ day(deadline) }}. Adjust anything below — nothing is written until you create it.
             </template>
           </p>
-          <button class="mo-x" type="button" aria-label="Close" @click="adjustOpen = false">
+          <button class="x mo-x" type="button" aria-label="Close" @click="adjustOpen = false">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path d="M2 2l8 8M10 2l-8 8" />
             </svg>

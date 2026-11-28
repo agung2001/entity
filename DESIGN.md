@@ -803,6 +803,12 @@ became a 1080 px slab.
   one labelled column and gives the body its only scroller; `min-width: 0` and
   `overflow-wrap: anywhere` stay on every cell. A second scrollbar at 390 px is
   the failure, not a clipped line.
+- **The close control is the shell's, never the dialog's.** A close is
+  `<button class="x mo-x">` — `.x` draws the 28 px hit, the hover fill and the
+  focus ring; `.mo-x` only says *top-right*. A bare `<button class="mo-x">` gets
+  the user agent's border, which is what the goal dialogs shipped: an X in a box
+  that belonged to no design system. If a dialog needs a different X, the shell
+  changes for every dialog.
 - **`scrim-dialog` is the one dialog variant**, next to `.scrim` in
   `surfaces.css`: deeper (42%) and blurred. Drawers keep the base scrim. Do not
   fork one variant per dialog — `EntityLearnDialog` is the surface that paid for
@@ -871,6 +877,11 @@ turn:
   Never re-date locally as a fallback.
 - **The turn is visible.** `re-planning with {entity}` with the same `m:ss`
   clock as the draft, and after it lands, one line: `Re-planned · 6 tasks`.
+- **Editing one row is local; adding or removing one is a turn.** The row's
+  menu opens `Edit task` — the same dialog grammar as `Add a task`, with the
+  fields the planner sets (title, priority, entity, effort, due, source). It
+  writes the row and nothing else: a re-plan here would silently re-date the
+  work the person just confirmed.
 - **`+ Task` opens a composer, not a form.** Title, priority, entity, effort and
   date are the planner's answer; a modal that asks for them first asks the person
   to do the planning. The dialog says what it will do (`Add and re-plan`) before

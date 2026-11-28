@@ -937,6 +937,7 @@ test('creating a goal is confirmed on the goal\'s own fields', () => {
     'the head and the foot both open the review, for create and for adjust',
   )
   assert.match(create, /class="modal goaladjust"/, 'the review is a dialog')
+  assert.match(create, /class="x mo-x"/, 'the close control is the shell\'s, not a bare .mo-x')
   assert.match(create, /openAdjust\('adjust'\)/, 'Adjust goal is its own verb, not a hidden consequence')
   assert.match(create, /useDialogDismiss\(\{[\s\S]{0,120}?adjustOpen/, 'the review closes on Esc')
   assert.match(create, /nothing is written until you create it/i, 'the dialog says the write is not done yet')
@@ -957,6 +958,53 @@ test('a plan edit is re-planned, not spliced into the list', () => {
   assert.match(create, /@click="addTask"/, '+ Task opens the composer')
   assert.match(dialog, /SlashComposer/, 'the new task is written in the app\'s composer, not a form')
   assert.match(dialog, /Add and re-plan/, 'the dialog says what pressing it does')
+  /* the task's entity is picked with the app's picker, the same one the goal's
+     own form uses — not a native select and not the planner's guess alone */
+  assert.match(dialog, /<PickMenu[\s\S]{0,220}?icons="entity"/, 'the entity is the app\'s picker')
+  assert.match(dialog, /class="x mo-x"/, 'the close control is the shell\'s')
+})
+
+test('a task can be edited where it is read, and in full from its menu', () => {
+  const edit = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskEditDialog.vue'), 'utf8')
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+
+  assert.match(edit, /<PickMenu[\s\S]{0,220}?icons="entity"/, 'the entity is the app\'s picker')
+  for (const field of ['taskedit-title', 'taskedit-date', 'taskedit-source']) {
+    assert.match(edit, new RegExp(`id="${field}"`), `the edit dialog owns ${field}`)
+  }
+  assert.match(edit, /class="x mo-x"/, 'the close control is the shell\'s')
+  assert.match(edit, /role="group" aria-label="Priority"/, 'priority is a group of words, not a code field')
+  assert.match(create, /<TaskEditDialog/, 'the page mounts it')
+  assert.match(create, /@edit="openTaskEdit\(task\)"/, 'the row menu opens it')
+})
+
+test('a task title swaps into a field in its own cell', () => {
+  const row = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskRow.vue'), 'utf8')
+  const css = fs.readFileSync(path.join(SRC, 'styles', 'goals.css'), 'utf8')
+
+  /* the row's words are a button that swaps into a field in the same cell; a
+     `start('title')` with no input behind it is an edit that silently does
+     nothing (that shipped once) */
+  assert.match(row, /v-if="editing === 'title'"/, 'the title has an editing branch')
+  assert.match(row, /class="tx tx-input"/, 'the field keeps the row\'s own type')
+  assert.match(row, /@click="start\('title'\)"/, 'the button opens the field')
+  assert.match(css, /\.goals-page \.task \.tx-input/, 'the field is styled, not a user-agent input')
+})
+
+test('every verb on step 2 has a shortcut and renders its hint', () => {
+  const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+
+  assert.match(catalog, /id: 'goal-adjust'/, 'Adjust the goal is in the one catalog')
+  assert.match(create, /matchesShortcut\('goal-adjust'/, 'the key is handled')
+  assert.ok(
+    (create.match(/shortcutLabel\('goal-adjust'\)/g) || []).length >= 1,
+    'the button renders the label from the catalog, not a literal',
+  )
+  assert.ok(
+    (create.match(/\{\{ adjustKey \}\}/g) || []).length >= 2,
+    'both Adjust buttons show the same hint',
+  )
 })
 
 test('a page draft is per-tab and expires', () => {

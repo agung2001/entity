@@ -8,8 +8,9 @@
  * The footer names the plan the task joins, so this reads as an edit to that
  * plan and not as a blank form floating over it.
  */
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import EntityMark from '@/components/EntityMark.vue'
+import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { day } from '@/lib/goals'
@@ -20,6 +21,10 @@ const props = defineProps({
   harness: { type: String, default: '' },
   planSize: { type: Number, default: 0 },
   deadline: { type: String, default: '' },
+  /* the same entity picker the goal's own form uses — an entity is an identity,
+     so it is the app's picker, not a native select */
+  entity: { type: String, default: '' },
+  entityOptions: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close', 'submit'])
 
@@ -30,7 +35,12 @@ const EXAMPLES = [
 ]
 
 const text = ref('')
+const picked = ref(props.entity)
 const composer = ref(null)
+
+const pickedName = computed(
+  () => props.entityOptions.find((option) => option.id === picked.value)?.label || '',
+)
 
 useDialogDismiss({
   active: () => props.open,
@@ -39,6 +49,7 @@ useDialogDismiss({
 
 async function focusComposer() {
   text.value = ''
+  picked.value = props.entity
   await nextTick()
   composer.value?.focus?.()
 }
@@ -54,7 +65,7 @@ function useExample(example) {
 function submit() {
   const value = text.value.trim()
   if (!value) return
-  emit('submit', value)
+  emit('submit', value, pickedName.value)
 }
 </script>
 
@@ -75,7 +86,7 @@ function submit() {
           One job, said plainly. It joins the plan and the planner fits it in — entity, effort, date —
           re-dating whatever no longer holds.
         </p>
-        <button class="mo-x" type="button" aria-label="Close" @click="emit('close')">
+        <button class="x mo-x" type="button" aria-label="Close" @click="emit('close')">
           <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M2 2l8 8M10 2l-8 8" />
           </svg>
@@ -105,14 +116,29 @@ function submit() {
             {{ example }}
           </button>
         </div>
+
+        <div class="taskwho">
+          <div class="taskwho-fld">
+            <label class="tasklbl">Assign to</label>
+            <PickMenu
+              class="field-select"
+              head="Entity"
+              icons="entity"
+              :options="entityOptions"
+              :model-value="picked"
+              @update:model-value="picked = $event"
+            />
+          </div>
+          <span class="taskwho-hint">The planner still sets its priority, effort and date.</span>
+        </div>
       </div>
 
       <div class="mo-foot">
         <span class="taskctx">
-          <EntityMark v-if="agent.name" mini :entity="agent.name" />
+          <EntityMark v-if="pickedName" mini :entity="pickedName" />
           <span>
-            planned by <b>{{ agent.name || 'the entity' }}</b>
-            <template v-if="planSize"> · {{ planSize }} {{ planSize === 1 ? 'task' : 'tasks' }}</template>
+            for <b>{{ pickedName || 'the planner to choose' }}</b>
+            <template v-if="planSize"> · joins {{ planSize }} {{ planSize === 1 ? 'task' : 'tasks' }}</template>
             <template v-if="deadline"> · due {{ day(deadline) }}</template>
           </span>
         </span>
