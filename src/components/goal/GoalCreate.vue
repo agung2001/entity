@@ -28,7 +28,6 @@ import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
 import { pickableHarnesses } from '@/stores/harnesses'
 import { hub, toast } from '@/stores/hub'
-import { workspaces } from '@/stores/workspaces'
 
 const props = defineProps({
   /** the write, owned by the view: a promise, so a refusal lands beside the button */
@@ -82,11 +81,6 @@ const harnessOptions = computed(() =>
     label: item.label,
     meta: item.installed ? 'installed' : 'not found',
   })),
-)
-const mcpOptions = computed(() =>
-  Object.keys(workspaces.mcp?.servers || {})
-    .sort()
-    .map((name) => ({ id: name, label: name, meta: 'MCP server' })),
 )
 const enhanceOpen = ref(false)
 const titleField = ref(null)
@@ -217,15 +211,6 @@ async function runStep() {
 
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-
-/** An MCP server is a mention in the sentence, the same token `@mcp:` inserts;
-    picking it here only saves typing the name. */
-function addMcp(name) {
-  if (!name) return
-  const body = sentence.value.trimEnd()
-  sentence.value = `${body}${body ? ' ' : ''}@mcp:${name} `
-  nextTick(() => composer.value?.focus?.())
-}
 
 function openEnhance() {
   if (!sentence.value.trim()) return
@@ -382,18 +367,8 @@ async function create() {
             @update:model-value="harness = $event"
           />
         </div>
-        <div class="fld-solo">
-          <label class="fld-head">MCP</label>
-          <PickMenu
-            class="field-select"
-            head="MCP"
-            :options="mcpOptions"
-            :model-value="''"
-            @update:model-value="addMcp"
-          />
-        </div>
       </div>
-      <span class="hint fld-row-hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers; MCP inserts an <code class="mono">@mcp:</code> token into the sentence.</span>
+      <span class="hint fld-row-hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers; its harness is the one the goal is planned with.</span>
 
       <div class="fld-solo">
         <label class="fld-head">Goal <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.sentence }}</kbd></label>
@@ -404,6 +379,7 @@ async function create() {
           <SlashComposer
             ref="composer"
             :agent="agent"
+            :show-send="false"
             machine="local"
             base-dir=""
             placeholder="Describe the outcome you want by the deadline — / skills · @ mentions"

@@ -175,8 +175,11 @@ watch(
     }
     reset()
     owner.value = hub.chat.active
+    /* A caller that hands its own text (`seed`) is rewriting for a page that is
+       not a thread — the goal composer — so it must not be seeded from an
+       unrelated conversation's draft. */
     draft.value =
-      props.from === 'plan'
+      props.from === 'plan' || props.seed
         ? String(props.seed || '')
         : String(hub.chat.drafts[hub.chat.active] || '')
     nextTick(() => generateBtn.value?.focus())
@@ -237,7 +240,9 @@ async function generate() {
   try {
     const data = await call('chat.enhance', {
       workspace: hub.workspace,
-      threadId: owner.value,
+      /* with an explicit harness there is no thread to read: a stale active
+         thread would otherwise win and rewrite with the wrong context */
+      threadId: props.harness ? '' : owner.value,
       harness: props.harness,
       model: props.model,
       draft: text,

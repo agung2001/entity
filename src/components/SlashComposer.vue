@@ -42,6 +42,10 @@ const props = defineProps({
   /* What the box is, for a screen reader. The chat says "Message"; a page that
      docks the same composer for another job says what that job is. */
   label: { type: String, default: 'Message' },
+  /* A page whose real action is its own button does not need a second "send" in
+     the rail: the attach and enhance controls stay, the arrow and its hint go.
+     Cmd+Enter still emits `send` (the shortcut is the composer's). */
+  showSend: { type: Boolean, default: true },
 })
 const emit = defineEmits(['send', 'stop', 'enhance', 'dismiss', 'update:attachments', 'update:draft'])
 
@@ -1013,10 +1017,12 @@ defineExpose({ focus, addFiles, addDrop, restore })
           <template v-if="stopping">Stopping…</template>
           <template v-else-if="sending">Working…</template>
           <template v-else-if="!canEnhance">
-            <kbd>{{ sendShortcut }}</kbd> to send
-            <template v-if="terminalShortcut">
-              <span class="slash-hint-sep" aria-hidden="true">·</span>
-              <span class="slash-hint-term"><kbd>{{ terminalShortcut }}</kbd> terminal</span>
+            <template v-if="showSend">
+              <kbd>{{ sendShortcut }}</kbd> to send
+              <template v-if="terminalShortcut">
+                <span class="slash-hint-sep" aria-hidden="true">·</span>
+                <span class="slash-hint-term"><kbd>{{ terminalShortcut }}</kbd> terminal</span>
+              </template>
             </template>
           </template>
           <button
@@ -1048,7 +1054,7 @@ defineExpose({ focus, addFiles, addDrop, restore })
           </svg>
         </button>
         <button
-          v-else
+          v-else-if="showSend"
           class="go"
           type="submit"
           data-sfx="off"
