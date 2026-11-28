@@ -933,8 +933,8 @@ test('creating a goal is confirmed on the goal\'s own fields', () => {
 
   /* the plan buttons open the review; the dialog's primary is the only writer */
   assert.ok(
-    (create.match(/@click="openAdjust"/g) || []).length >= 2,
-    'the head and the foot both open the review',
+    (create.match(/@click="openAdjust/g) || []).length >= 4,
+    'the head and the foot both open the review, for create and for adjust',
   )
   assert.match(create, /class="modal goaladjust"/, 'the review is a dialog')
   assert.match(create, /openAdjust\('adjust'\)/, 'Adjust goal is its own verb, not a hidden consequence')
