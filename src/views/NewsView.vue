@@ -771,7 +771,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                       rank {{ row.rank }} · volume
                       <span class="vol" :data-none="row.volume ? undefined : '1'">{{ row.volume || '—' }}</span>
                     </template>
-                    <template v-else>{{ row.feed }} · {{ row.provenance }}</template>
+                    <!-- The store's `provenance` is the feed's own label on an RSS
+                         row, so printing both read `BBC World · BBC World`. The
+                         kind is what the second slot is for (spec §5). -->
+                    <template v-else>{{ row.feed }} · rss</template>
                   </p>
                 </component>
               </li>
@@ -804,7 +807,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                       {{ row.feed }} · rank {{ row.rank }} ·
                       <span class="vol" :data-none="row.volume ? undefined : '1'">{{ row.volume || '—' }}</span>
                     </template>
-                    <template v-else>{{ row.feed }} · {{ row.provenance }}</template>
+                    <template v-else>{{ row.feed }} · rss</template>
                   </p>
                 </div>
                 <span class="tm">{{ ago(row.published) }}</span>
