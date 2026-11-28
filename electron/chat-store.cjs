@@ -31,6 +31,7 @@ const auth = require('./auth-store.cjs')
 const platform = require('./platform-brief.cjs')
 const turnTimeout = require('./turn-timeout-store.cjs')
 const { createParser } = require('./chat-transcript.cjs')
+const { digestSteps } = require('./mention-digest.cjs')
 const { expandHome } = require('./frontmatter.cjs')
 
 /* a generous cap: the renderer only paints the newest turns, but the file is
@@ -234,6 +235,27 @@ function threadFile(record, id) {
   return path.join(chatsDir(record), `${assertThreadId(id)}.json`)
 }
 
+/**
+ * A mention as the *transcript* keeps it: the record, and a digest of the trace.
+ *
+ * The full trace is passed around in memory while the turn runs — the session
+ * `spawnMentionSession` writes is the child's own conversation and needs it — so
+ * the digest belongs here, at the moment the parent's file is built, and not on
+ * the object the resolver returns.
+ */
+function transcriptMention(mention) {
+  const out = { ...mention }
+  const digest = digestSteps(mention.steps)
+  if (digest.steps.length) out.steps = digest.steps
+  else delete out.steps
+  if (digest.paths.length) out.paths = digest.paths
+  return out
+}
+
+function transcriptMentions(mentions) {
+  return Array.isArray(mentions) ? mentions.map(transcriptMention) : []
+}
+
 function normaliseStep(raw, index) {
   if (!raw || typeof raw !== 'object') return null
   const type = ['thinking', 'text', 'tool_use', 'tool_result', 'error'].includes(raw.type)
@@ -262,6 +284,11 @@ function normaliseMention(raw) {
   const kind = ['entity', 'orca', 'artifact', 'maka', 'youtrack', 'thread'].includes(raw.kind)
     ? raw.kind
     : 'unknown'
+  /* A delegated run's trace lives in the session it spawned; the parent keeps a
+     digest of it (`mention-digest.cjs`). Bounding here as well as at write time
+     is what compacts a transcript written before the digest existed: the next
+     rename, pin or turn rewrites the file from what this returns. */
+  const trace = digestSteps(raw.steps)
   return {
     kind,
     ...(typeof raw.raw === 'string' ? { raw: raw.raw } : {}),
@@ -280,9 +307,16 @@ function normaliseMention(raw) {
     ...(raw.execution && typeof raw.execution === 'object'
       ? { execution: { ...raw.execution } }
       : {}),
-    ...(Array.isArray(raw.steps)
-      ? { steps: raw.steps.map(normaliseStep).filter(Boolean) }
+    ...(trace.steps.length
+      ? { steps: trace.steps.map(normaliseStep).filter(Boolean) }
       : {}),
+    /* the paths the dropped trace named: the worktree chip reads them without
+       holding the megabytes that named them */
+    ...(Array.isArray(raw.paths) && raw.paths.length
+      ? { paths: raw.paths.filter((entry) => typeof entry === 'string').slice(0, 8) }
+      : trace.paths.length
+        ? { paths: trace.paths }
+        : {}),
   }
 }
 
@@ -535,8 +569,11 @@ function saveTurn(record, thread, baseline) {
 }
 
 function writeThread(record, thread) {
-  windowCache.delete(record.id)
+  /* only this file changed: dropping the whole workspace would throw away every
+     sibling's windows and re-read the history on the next open */
+  forgetWindows(record.id, thread.id)
   artifactIndexCache.delete(record.id)
+  forgetShelf(record.id)
   const file = threadFile(record, thread.id)
   const tmp = `${file}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -621,14 +658,40 @@ function summarise(thread) {
   }
 }
 
+/* ── the history list, without re-reading the history ─────────────────
+ *
+ * A summary is a row, and a row is rebuilt from the file it came from. What
+ * must not happen is rebuilding every row on every call: a working workspace is
+ * a few hundred conversations and, once entities delegate, hundreds of
+ * megabytes of JSON — and the rail refreshes after every send, pin, rename and
+ * delete. That read used to block the main process for over a second per
+ * refresh, which the person felt as a whole app that had gone slow.
+ *
+ * The cache is keyed on each file's own signature, `mtimeMs:size`. A file that
+ * changed is read again — a rename, a pin, a landed turn — and a file that did
+ * not is not touched. Nothing volatile is cached: `working` is asked of the live
+ * `sending` map on the way out, and the owner and entity filters run per call,
+ * so two accounts and a deleted entity still see the history they should.
+ */
+const listCache = new Map()
+
+function listCacheFor(workspace) {
+  let cache = listCache.get(workspace)
+  if (!cache) {
+    cache = new Map()
+    listCache.set(workspace, cache)
+  }
+  return cache
+}
+
 function list({ workspace }) {
   const record = workspaces.open(workspace)
+  const dir = chatsDir(record)
   let files = []
   try {
-    files = fs
-      .readdirSync(chatsDir(record))
-      .filter((file) => file.endsWith('.json') && !file.startsWith('.'))
+    files = fs.readdirSync(dir).filter((file) => file.endsWith('.json') && !file.startsWith('.'))
   } catch {
+    listCache.delete(record.id)
     return []
   }
 
@@ -645,33 +708,52 @@ function list({ workspace }) {
   const newest = files
     .map((file) => {
       try {
-        return { file, mtime: fs.statSync(path.join(chatsDir(record), file)).mtimeMs }
+        const stat = fs.statSync(path.join(dir, file))
+        return { file, mtime: stat.mtimeMs, size: stat.size }
       } catch {
-        return { file, mtime: 0 }
+        return { file, mtime: 0, size: -1 }
       }
     })
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, MAX_THREADS_SCANNED)
-    .map((entry) => entry.file)
 
-  return newest
-    .map((file) => {
+  const cache = listCacheFor(record.id)
+  /* One owner for all of them: `currentUser()` reads the account file. */
+  const user = currentUser()
+  const rows = []
+  const live = new Set(files)
+  for (const { file, mtime, size } of newest) {
+    const sig = `${mtime}:${size}`
+    let entry = cache.get(file)
+    if (!entry || entry.sig !== sig) {
+      entry = null
       try {
-        const raw = JSON.parse(fs.readFileSync(path.join(chatsDir(record), file), 'utf8'))
-        const thread = normaliseThread(raw, record)
-        if (!thread || !canAccess(thread)) return null
-        if (known && !known.has(thread.entity)) return null
-        return summarise(thread)
+        const raw = fs.readFileSync(path.join(dir, file), 'utf8')
+        const parsed = normaliseThread(JSON.parse(raw), record)
+        if (parsed) {
+          entry = { sig, user: parsed.user, entity: parsed.entity, row: summarise(parsed) }
+        }
       } catch {
-        return null
+        /* a file mid-write is not a reason to fail the whole list */
       }
-    })
-    .filter(Boolean)
-    .sort(
-      (a, b) =>
-        Number(b.pinned) - Number(a.pinned) ||
-        String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
-    )
+      if (entry) cache.set(file, entry)
+      else cache.delete(file)
+    }
+    if (!entry) continue
+    if (known && !known.has(entry.entity)) continue
+    if (user && entry.user !== user) continue
+    /* the one field a file cannot answer: this window's own live turns */
+    const working = sending.has(entry.row.id)
+    rows.push(working === entry.row.working ? entry.row : { ...entry.row, working })
+  }
+  /* a thread that is gone must not keep a row alive in a cache */
+  for (const file of cache.keys()) if (!live.has(file)) cache.delete(file)
+
+  return rows.sort(
+    (a, b) =>
+      Number(b.pinned) - Number(a.pinned) ||
+      String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')),
+  )
 }
 
 function read({ workspace, id }) {
@@ -1006,7 +1088,9 @@ function eraseAll({ workspace } = {}) {
   }
 
   windowCache.delete(record.id)
+  listCache.delete(record.id)
   artifactIndexCache.delete(record.id)
+  forgetShelf(record.id)
   return { removed: targets.length, bytes }
 }
 
@@ -1170,7 +1254,19 @@ function writeEvidence(window, cache) {
 const isSyncCopy = (id) => /^conflicts\//.test(String(id))
 
 function wroteArtifact(window, item, cache) {
+  /* The answer is the expensive part — a long turn's prose is scanned per item,
+     and the same pair is asked about twice (once to decide whether the siblings
+     are needed at all, once to attach). The answer is memoised with the
+     evidence it came from. */
+  const key = `a:${window.threadId}:${window.seq}:${item.id}`
+  if (cache?.has(key)) return cache.get(key)
   const evidence = writeEvidence(window, cache)
+  const found = namesArtifact(evidence, item)
+  cache?.set(key, found)
+  return found
+}
+
+function namesArtifact(evidence, item) {
   if (
     evidence.answer.includes(`artifact://${item.id}`) ||
     evidence.answer.includes(`artifact://${item.name}`) ||
@@ -1182,9 +1278,12 @@ function wroteArtifact(window, item, cache) {
      one. Match the path when there is one, and the basename only for a file at
      the shelf root. */
   const needle = item.id.includes('/') ? item.id : item.name
-  return evidence.writes.some(
-    (snippet) => snippet.includes(needle) || snippet.includes(`artifacts/${needle}`),
-  )
+  /* One string, one scan: a long turn's evidence is a list of hundreds of
+     snippets, and asking each of them is the hot loop on a big shelf. Joining
+     them is the same question — no id or path contains a newline. */
+  if (!evidence.writes) return false
+  if (evidence.haystack === undefined) evidence.haystack = evidence.writes.join('\n')
+  return evidence.haystack.includes(needle) || evidence.haystack.includes(`artifacts/${needle}`)
 }
 
 function threadWindows(thread) {
@@ -1233,46 +1332,94 @@ function threadWindows(thread) {
  * The shelf belongs to the workspace, not to a conversation: while one turn
  * runs, another thread in the same room may be writing files too. Splitting a
  * shared shelf needs to know about those, so attribution reads the siblings.
+ *
+ * Reading them means parsing every thread file, which is why this is cached per
+ * file rather than per workspace: a conversation that has not changed cannot
+ * have new windows, so its file is parsed once and then only stat-ed. Keyed on
+ * `mtimeMs:size`, the same signature `list` uses — a turn that lands, a rename
+ * or a pin changes it, and nothing else does. The old cache held one entry per
+ * workspace behind a one-second timer, and filling it took longer than the
+ * timer: a workspace of a few hundred megabytes of JSON re-read *everything* on
+ * every open, and opening a two-line thread cost a second and a half.
+ *
+ * What is kept is only what a rival test needs — id, sequence and the window's
+ * boundaries. The messages themselves are dropped, so the cache costs kilobytes
+ * instead of holding the whole history in memory.
  */
 const windowCache = new Map()
 /* Thread id → how many artifacts it saved. Filled by the attribution pass below
    and read by chat retention's protection ③. */
 const artifactIndexCache = new Map()
 const ARTIFACT_INDEX_MS = 5000
-const WINDOW_CACHE_MS = 1000
+
+/** The fields of a window that attribution asks a sibling about. */
+function compactWindow(window) {
+  return {
+    threadId: window.threadId,
+    seq: window.seq,
+    start: window.start,
+    end: window.end,
+    hard: window.hard,
+  }
+}
+
+function windowCacheFor(workspace) {
+  let cache = windowCache.get(workspace)
+  if (!cache) {
+    cache = new Map()
+    windowCache.set(workspace, cache)
+  }
+  return cache
+}
+
+/** A file this window rewrote: its entry is stale whatever the clock says. */
+function forgetWindows(workspace, id) {
+  windowCache.get(workspace)?.delete(`${id}.json`)
+}
 
 function workspaceWindows(thread) {
-  const key = thread.workspace
-  const hit = windowCache.get(key)
-  const now = Date.now()
-  if (hit && now - hit.at < WINDOW_CACHE_MS) return hit.windows
-
-  const windows = []
-  let record
+  const record = workspaces.open(thread.workspace)
+  const dir = chatsDir(record)
   let files = []
   try {
-    record = workspaces.open(thread.workspace)
-    files = fs
-      .readdirSync(chatsDir(record))
-      .filter((file) => file.endsWith('.json') && !file.startsWith('.'))
+    files = fs.readdirSync(dir).filter((file) => file.endsWith('.json') && !file.startsWith('.'))
   } catch {
+    windowCache.delete(thread.workspace)
     return []
   }
+
+  const cache = windowCacheFor(thread.workspace)
+  const windows = []
+  const live = new Set(files)
   for (const file of files) {
+    let stat
     try {
-      const other = normaliseThread(
-        JSON.parse(fs.readFileSync(path.join(chatsDir(record), file), 'utf8')),
-        record,
-      )
-      if (!other) continue
-      windows.push(...threadWindows(other))
+      stat = fs.statSync(path.join(dir, file))
+    } catch {
+      continue
+    }
+    const sig = `${stat.mtimeMs}:${stat.size}`
+    const hit = cache.get(file)
+    if (hit && hit.sig === sig) {
+      windows.push(...hit.windows)
+      continue
+    }
+    try {
+      const other = normaliseThread(JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')), record)
+      if (!other) {
+        cache.delete(file)
+        continue
+      }
+      const made = threadWindows(other).map(compactWindow)
+      cache.set(file, { sig, windows: made })
+      windows.push(...made)
     } catch {
       /* a thread that cannot be read cannot claim a file */
+      cache.delete(file)
     }
   }
-  /* Attribution runs on every read; a second of staleness costs nothing and
-     saves parsing every thread file on each message. */
-  windowCache.set(key, { at: now, windows })
+  /* a deleted conversation keeps no windows */
+  for (const file of cache.keys()) if (!live.has(file)) cache.delete(file)
   return windows
 }
 
@@ -1414,12 +1561,70 @@ function claimsFor(
   return owned
 }
 
+/**
+ * Could this conversation own anything on the shelf at all?
+ *
+ * Attribution reads the siblings to answer exactly one question — "could
+ * another turn have written this file too?" — and that question is only ever
+ * asked about a file that falls inside one of *this* thread's windows, or that
+ * this thread stamps or names. A conversation that saved nothing has no such
+ * file, so there is nothing to ask: reading the rest of the workspace to prove
+ * it is how opening a two-line thread came to cost a second and a half.
+ *
+ * The evidence tested here is the same evidence `claimsFor` uses, in the same
+ * order, so `true` only ever means "run the full pass" and `false` means the
+ * full pass would have found nothing. It never decides an attachment.
+ */
+function couldOwn(windows, items, stamped, remote, evidence = new Map()) {
+  if (!windows.length || !items.length) return false
+  for (const item of items) {
+    for (const window of windows) {
+      if (stampOwner(stamped, item.id) === window.threadId) return true
+      /* the turn's own words: an `artifact://`, an id, a write it ran */
+      if (wroteArtifact(window, item, evidence)) return true
+      if (remote) continue
+      if (item.ms >= window.start && item.ms < window.end && unclaimed(stamped, window)(item)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+/*
+ * The shelf, read once per burst of opens.
+ *
+ * Attribution runs on every read, and it needs the whole shelf and every
+ * origin stamp to answer. On a working profile that is a walk of a thousand
+ * files, paid again for each thread a person clicks. Nothing on it changes
+ * between two opens a second apart, and every path that can change it — a turn
+ * saving a file, a share, an erase — rewrites the thread or clears this cache
+ * (`writeThread`, `eraseAll`), so a file a turn just saved is never missing
+ * from the answer that reports it.
+ */
+const shelfCache = new Map()
+const SHELF_MS = 2000
+
+function shelfOf(workspace) {
+  const nowMs = Date.now()
+  const hit = shelfCache.get(workspace)
+  if (hit && nowMs - hit.at < SHELF_MS) return hit
+  const shelf = artifacts.list({ workspace }).items || []
+  const stamped = artifacts.origins({ workspace }) || {}
+  const entry = { at: nowMs, shelf, stamped }
+  shelfCache.set(workspace, entry)
+  return entry
+}
+
+function forgetShelf(workspace) {
+  shelfCache.delete(workspace)
+}
+
 function attachArtifactsByTurn(thread) {
   let shelf = []
   let stamped = {}
   try {
-    shelf = artifacts.list({ workspace: thread.workspace }).items || []
-    stamped = artifacts.origins({ workspace: thread.workspace }) || {}
+    ;({ shelf, stamped } = shelfOf(thread.workspace))
   } catch {
     /* an unreadable shelf must not erase what the transcript already says */
     return thread
@@ -1432,12 +1637,19 @@ function attachArtifactsByTurn(thread) {
   if (!shelf.length) return thread
 
   const remote = Boolean(thread.machine && thread.machine !== 'local')
-  const windows = [...threadWindows(thread), ...otherWindows(thread)]
-  const evidence = new Map()
   const available = shelf
     .map((item) => ({ ...artifactSummary(item), ms: timeOf(item.modifiedAt) }))
     .filter((item) => item.ms > 0)
     .filter((item) => !isSyncCopy(item.id))
+
+  const mine = threadWindows(thread)
+  /* one evidence cache for both passes: the answer scan is what costs */
+  const evidence = new Map()
+  if (!couldOwn(mine, available, stamped, remote, evidence)) return thread
+
+  /* A remote turn reads only the window it is given — `claimsFor` returns before
+     the rival test — so its siblings are never part of the answer. */
+  const windows = remote ? mine : [...mine, ...otherWindows(thread)]
   const claimed = new Set()
 
   for (const window of windows) {
@@ -2147,7 +2359,7 @@ async function send({
     ...(skillApplied?.ref || skillApplied?.skill || resolved?.mentions?.length
       ? { sent: resolved?.text || message }
       : {}),
-    ...(resolved?.mentions?.length ? { mentions: resolved.mentions } : {}),
+    ...(resolved?.mentions?.length ? { mentions: transcriptMentions(resolved.mentions) } : {}),
     ...(resolvedAttachments.length ? { attachments: resolvedAttachments } : {}),
     ...(skillApplied?.skill ? { skill: skillApplied.skill } : {}),
   })
@@ -2384,7 +2596,7 @@ async function send({
           startedAt: pendingRow?.at || at,
           endedAt: at,
           ms: Math.max(0, Date.parse(at) - Date.parse(pendingRow?.at || at)),
-          mentions: mentioned.mentions,
+          mentions: transcriptMentions(mentioned.mentions),
         },
       }
       thread.messages.push(answered)
@@ -2513,7 +2725,17 @@ async function send({
     } catch {
       /* the inference below is the fallback, never the other way round */
     }
-    const execution = { ...run.execution, id: messageId, harness: thread.harness }
+    /* The answer carries the same record the question does — the cards read it
+       from here — so it gets the same digest rather than a second full copy of
+       every child run's tool output. */
+    const execution = {
+      ...run.execution,
+      id: messageId,
+      harness: thread.harness,
+      ...(Array.isArray(run.execution?.mentions)
+        ? { mentions: transcriptMentions(run.execution.mentions) }
+        : {}),
+    }
     turnMessage = run.canceled
       ? {
           who: 'sys',

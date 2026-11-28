@@ -121,7 +121,13 @@ onMounted(async () => {
     const state = await call('mention.worktree', {
       cwd: props.mention.execution?.cwd || '',
       ticket: ticket(),
-      record: { steps: props.mention.steps || [], answer: props.mention.answer || '' },
+      record: {
+        steps: props.mention.steps || [],
+        answer: props.mention.answer || '',
+        /* the transcript keeps a digest of the trace, so the paths the dropped
+           steps named travel with the card — see `mention-digest.cjs` */
+        paths: props.mention.paths || [],
+      },
     })
     if (!state?.state || ['none', 'unknown'].includes(state.state)) return
     worktree.value = state

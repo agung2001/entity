@@ -223,8 +223,24 @@ function worktreeName(worktree) {
 }
 
 /** Every `…/orca/workspaces/<repo>/<name>` path a run's record names. */
+/**
+ * The paths a run's record names, as absolute paths.
+ *
+ * A record is `{ steps, answer }`, and now also `paths`: the digest a transcript
+ * keeps (`electron/mention-digest.cjs`) drops all but the last few steps, so the
+ * places the dropped ones named are carried forward as text. All three are
+ * scanned by the same rule — only a path shaped like an Orca workspace counts,
+ * and only a path Orca itself lists is ever used.
+ */
 function recordPaths(record) {
-  const text = typeof record === 'string' ? record : JSON.stringify(record || '')
+  const named = Array.isArray(record?.paths)
+    ? record.paths.filter((entry) => typeof entry === 'string')
+    : []
+  const text =
+    typeof record === 'string'
+      ? record
+      : `${named.join('\n')}\n${JSON.stringify({ steps: record?.steps, answer: record?.answer })}
+`
   const out = []
   for (const [raw] of String(text || '').matchAll(ORCA_WORKSPACE_PATH)) {
     /* a report writes its paths in prose: "…/card, then merged" */
