@@ -24,7 +24,7 @@ import TaskEditDialog from '@/components/goal/TaskEditDialog.vue'
 import TaskDialog from '@/components/goal/TaskDialog.vue'
 import DraftShape from '@/components/goal/DraftShape.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
-import { EFFORT_WEIGHT, PRIORITY_ORDER, blankTask, day, draftFrom, mergeTasks, priorityWord, today } from '@/lib/goals'
+import { EFFORT_WEIGHT, PRIORITY_ORDER, blankTask, day, draftFrom, pinLocked, priorityWord, today } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { clearDraft, readDraft, saveDraft, sweepDrafts } from '@/lib/draftCache'
 import { dialogDepth, useDialogDismiss } from '@/composables/useDialog'
@@ -149,7 +149,6 @@ function setScope(mode) {
 }
 
 const draftKey = shortcutLabel('goal-draft')
-const adjustKey = shortcutLabel('goal-adjust')
 const taskKey = shortcutLabel('goal-task')
 const elapsedLabel = computed(() => {
   const seconds = Math.max(0, Math.round(draftElapsed.value / 1000))
@@ -210,9 +209,9 @@ let stopDraftEvents = null
 const CACHE_KEY = `goals-new:${hub.workspace}`
 let saveTimer = null
 const fields = ref(null)
+/* the confirmation: a summary of what will be stored, not a second form. The
+   goal's fields are edited in step 1, which is where `Back` goes. */
 const adjustOpen = ref(false)
-/* the same dialog, opened by two verbs: create is a confirmation, adjust is an edit */
-const adjustIntent = ref('create')
 /* list is the plan; calendar is the same plan where it lands */
 const planView = ref('list')
 /* A plan edit is a local write: adding, editing and removing never buy a
@@ -230,8 +229,6 @@ const draftError = ref('')
 const draftSource = ref('')
 const draftSummary = ref('')
 const draftModel = ref('')
-const merged = ref([])
-const backup = ref(null)
 const creating = ref(false)
 const refused = ref('')
 
@@ -319,6 +316,26 @@ const signature = () =>
   })
 const planStale = computed(() => tasks.value.length > 0 && draftSignature.value !== signature())
 
+const lockedCount = computed(() => tasks.value.filter((task) => task.locked).length)
+/** Locked rows survive a new deadline or scope by design, so the consequence is
+    said out loud instead of being rewritten behind the lock. */
+const lockedIssues = computed(() => {
+  const issues = []
+  for (const task of tasks.value.filter((entry) => entry.locked)) {
+    if (deadline.value && task.date && task.date > deadline.value) {
+      issues.push(`“${task.title}” is locked and lands after the deadline.`)
+    }
+    if (
+      effectiveScope.value.mode === 'only' &&
+      task.entity &&
+      !effectiveScope.value.entities.some((name) => name.toLowerCase() === String(task.entity).toLowerCase())
+    ) {
+      issues.push(`“${task.title}” is locked and assigned outside the scope.`)
+    }
+  }
+  return issues
+})
+
 const stats = computed(() => [
   {
     label: 'Tasks',
@@ -369,13 +386,17 @@ useDialogDismiss({
 
 /** `Create goal` never writes from a button that is not a confirmation: it
     reopens the goal's own fields, with the plan it is about to store. */
-async function openAdjust(intent = 'create') {
-  if (intent === 'create' && !canCreate.value) return
+function openAdjust() {
+  if (!canCreate.value) return
   refused.value = ''
-  adjustIntent.value = intent === 'adjust' ? 'adjust' : 'create'
   adjustOpen.value = true
+}
+
+/** The editor for the goal is step 1; this dialog only confirms the plan. */
+async function editGoal() {
+  adjustOpen.value = false
+  step.value = 1
   await nextTick()
-  /* the first thing the person may want to change is the title */
   document.getElementById('goal-title')?.focus()
 }
 
@@ -391,11 +412,6 @@ function onKey(event) {
   if (matchesShortcut('goal-draft', event)) {
     event.preventDefault()
     runStep()
-    return
-  }
-  if (step.value === 2 && matchesShortcut('goal-adjust', event)) {
-    event.preventDefault()
-    openAdjust('adjust')
     return
   }
   if (step.value === 2 && matchesShortcut('goal-task', event)) {
@@ -495,11 +511,10 @@ function onSend(text) {
 /* the page widens for step 2: the plan, its charts and its columns need the band */
 watch(step, (value) => emit('update:step', value), { immediate: true })
 
+/** A new plan replaces the old one; the locked rows are the only survivors. */
 function applyDraft(proposed, source) {
-  const answer = mergeTasks(tasks.value, proposed)
-  backup.value = tasks.value.map((task) => ({ ...task }))
-  tasks.value = answer.tasks
-  merged.value = answer.merged
+  const pinned = tasks.value.filter((task) => task.locked)
+  tasks.value = pinLocked(proposed, pinned)
   draftSource.value = source
   step.value = 2
 }
@@ -519,6 +534,7 @@ async function draft() {
   draftSteps.value = []
   startClock()
   try {
+    const pinned = tasks.value.filter((task) => task.locked)
     const answer = await call('goals.draft', {
       workspace: hub.workspace,
       draftId: draftId.value,
@@ -529,13 +545,17 @@ async function draft() {
       context: attachments.value,
       entities: allowedEntities.value,
       scope: effectiveScope.value.mode,
+      /* the planner plans around these; they are not its rows to rewrite */
+      locked: pinned,
     })
-    const tasks = Array.isArray(answer?.tasks) ? answer.tasks : []
-    if (!tasks.length) throw new Error('The harness answered with no task list.')
+    /* `planned`, not `tasks`: the function must not shadow the page's ref it
+       pinned from a few lines above (a TDZ error the catch reported as "no answer") */
+    const planned = Array.isArray(answer?.tasks) ? answer.tasks : []
+    if (!planned.length) throw new Error('The harness answered with no task list.')
     draftSummary.value = String(answer?.summary || '')
     draftModel.value = String(answer?.model || '')
     draftSignature.value = signature()
-    applyDraft(tasks, 'harness')
+    applyDraft(planned, 'harness')
   } catch (problem) {
     draftError.value = problem?.message || 'The draft did not answer.'
   } finally {
@@ -549,9 +569,7 @@ function draftLocally() {
   if (!canDraft.value) return
   draftError.value = ''
   const answer = draftFrom(sentence.value, deadline.value, tasks.value)
-  backup.value = tasks.value.map((task) => ({ ...task }))
-  tasks.value = answer.tasks
-  merged.value = answer.merged
+  tasks.value = pinLocked(answer.tasks, tasks.value)
   draftSource.value = 'local'
   draftSignature.value = signature()
   draftSummary.value = ''
@@ -606,15 +624,6 @@ function toggle(task, done) {
   updateTask(task, { done })
 }
 
-/** The banner offers the real alternative: put back the rows the merge joined. */
-function keepSeparate() {
-  if (!backup.value) return
-  const mergedTitles = new Set(merged.value.map((value) => value.trim().toLowerCase()))
-  const kept = tasks.value.filter((task) => !mergedTitles.has(String(task.title).trim().toLowerCase()))
-  tasks.value = [...kept, ...backup.value.filter((task) => mergedTitles.has(String(task.title).trim().toLowerCase()))]
-  merged.value = []
-}
-
 /** What this tab remembers while the person is away from the page. */
 function snapshot() {
   return {
@@ -626,7 +635,6 @@ function snapshot() {
     plannedBy: plannedBy.value,
     harness: harness.value,
     tasks: tasks.value,
-    merged: merged.value,
     draftSource: draftSource.value,
     summary: draftSummary.value,
     /* a local file's bytes are not a draft: they are what the quota cannot hold,
@@ -662,7 +670,6 @@ function restore() {
   plannedBy.value = RESTORE_ENTITY(value.plannedBy ?? value.entity)
   harness.value = RESTORE_HARNESS(value.harness)
   tasks.value = Array.isArray(value.tasks) ? value.tasks.filter(RESTORE_TASK) : []
-  merged.value = Array.isArray(value.merged) ? value.merged.map(String) : []
   if (value.draftSource === 'local' || value.draftSource === 'harness') draftSource.value = value.draftSource
   draftSummary.value = typeof value.summary === 'string' ? value.summary : ''
   attachments.value = Array.isArray(value.attachments) ? value.attachments : []
@@ -687,8 +694,6 @@ function startOver() {
   deadline.value = ''
   privacy.value = 'private'
   tasks.value = []
-  merged.value = []
-  backup.value = null
   attachments.value = []
   draftSource.value = ''
   draftSummary.value = ''
@@ -711,7 +716,6 @@ watch(
     plannedBy,
     harness,
     tasks,
-    merged,
     draftSource,
     attachments,
   ],
@@ -766,9 +770,6 @@ async function create() {
       </div>
       <div class="head-actions">
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">
-          Adjust goal<span class="btn-kbd">{{ adjustKey }}</span>
-        </button>
         <button v-if="step === 1" class="btn" type="button" @click="cancel()">Cancel</button>
         <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust">
           Create goal<span class="btn-kbd">{{ draftKey }}</span>
@@ -923,17 +924,15 @@ async function create() {
           </button>
         </div>
 
+        <p v-if="lockedIssues.length" class="plan-warn">
+          <b>Locked:</b> {{ lockedIssues.join(' ') }}
+        </p>
+
         <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Drafting the tasks">
           <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${72 - n * 5}%`, height: '10px' }"></span></div>
         </div>
 
         <template v-else>
-          <div v-if="merged.length" class="dedupe">
-            <span class="lbl">Merged</span>
-            <span><b>{{ merged.length }}</b> of the {{ tasks.length }} tasks were already on the list — <b>{{ merged.map((value) => `“${value}”`).join(', ') }}</b> kept the earliest date.</span>
-            <button class="lnk" type="button" @click="keepSeparate">Keep them separate</button>
-          </div>
-
           <DraftCalendar v-if="planView === 'calendar'" :tasks="tasks" :deadline="deadline" />
 
           <div v-if="tasks.length && planView === 'list'" class="dtable">
@@ -972,9 +971,6 @@ async function create() {
       <div class="plan-foot">
         <span class="why">{{ createWhy || 'Nothing is written until you create the goal.' }}</span>
         <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">
-          Adjust goal<span class="btn-kbd">{{ adjustKey }}</span>
-        </button>
         <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust()">
           Create goal<span class="btn-kbd">{{ draftKey }}</span>
         </button>
@@ -1003,31 +999,21 @@ async function create() {
       @submit="submitTask"
     />
 
-    <!-- ── the confirmation: the goal's own fields, reopened ────────────── -->
-    <!-- mounted only while open: a closed dialog that stays in the document keeps
-         its fields' ids, and a second `#goal-title` is a label pointing at nothing -->
+    <!-- ── the confirmation: a summary, not a second copy of step 1 ──────── -->
     <Teleport v-if="adjustOpen" to="body">
       <div class="scrim scrim-dialog" data-open="1" @click="adjustOpen = false" />
       <div
-        class="modal goaladjust"
+        class="modal goalconfirm"
         data-open="1"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="goaladjust-t"
+        aria-labelledby="goalconfirm-t"
         tabindex="-1"
       >
         <div class="mo-head">
-          <h2 id="goaladjust-t">{{ adjustIntent === 'adjust' ? 'Adjust this goal' : 'Create this goal?' }}</h2>
+          <h2 id="goalconfirm-t">Create this goal?</h2>
           <p class="galede">
-            <template v-if="adjustIntent === 'adjust'">
-              Change the sentence, the deadline or who plans it. The plan below is already this goal's —
-              editing here does not store anything.
-            </template>
-            <template v-else>
-              {{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical ·
-              {{ plural(entitiesUsed, 'entity', 'entities') }} · due {{ day(deadline) }}. Adjust anything
-              below — nothing is written until you create it.
-            </template>
+            Nothing is written until you press Create. The goal's own fields are edited in step 1.
           </p>
           <button class="x mo-x" type="button" aria-label="Close" @click="adjustOpen = false">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -1036,32 +1022,27 @@ async function create() {
           </button>
         </div>
 
-        <div class="mo-body goals-page goaladjust-body">
-          <GoalFields
-            v-model:title="title"
-            v-model:plannedBy="plannedBy"
-            :scope="scopeMode"
-            :entities="mentionedEntities"
-            @update:scope="setScope"
-            @toggle-scope="toggleScope"
-            @clear-scope="clearScope"
-            :mentioned="mentionedEntities"
-            v-model:harness="harness"
-            v-model:sentence="sentence"
-            v-model:deadline="deadline"
-            v-model:privacy="privacy"
-            v-model:attachments="attachments"
-            :entity-options="entityOptions"
-            :harness-options="harnessOptions"
-            :agent="agent"
-            :pills="pills"
-            :title-placeholder="titleOf"
-            :sentence-why="sentenceWhy"
-            :date-why="dateWhy"
-            @enhance="openEnhance"
-            @send="onSend"
-            @touch="onTouch"
-          />
+        <div class="mo-body goals-page goalconfirm-body">
+          <dl class="conf-facts">
+            <div><dt>Title</dt><dd>{{ titleOf }}</dd></div>
+            <div>
+              <dt>Plan</dt>
+              <dd>{{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical · {{ effortPoints }} effort points</dd>
+            </div>
+            <div>
+              <dt>Work goes to</dt>
+              <dd>{{ effectiveScope.mode === 'only' ? effectiveScope.entities.join(', ') : 'Any entity that fits' }}</dd>
+            </div>
+            <div><dt>Deadline</dt><dd>{{ day(deadline) }} · {{ days }} days</dd></div>
+            <div><dt>Planned by</dt><dd>{{ agent.name || 'the entity' }}</dd></div>
+            <div><dt>Who can see it</dt><dd>{{ privacy === 'workspace' ? 'The workspace' : 'Only me' }}</dd></div>
+          </dl>
+
+          <p v-if="lockedCount" class="conf-note">
+            <b>{{ plural(lockedCount, 'locked task') }}</b> kept exactly as they are.
+          </p>
+          <p v-for="issue in lockedIssues" :key="issue" class="conf-note danger">{{ issue }}</p>
+          <p v-if="createWhy" class="ctx-note">{{ createWhy }}</p>
 
           <div v-if="refused" class="errbar" role="status">
             <b>Could not create the goal.</b>
@@ -1070,8 +1051,9 @@ async function create() {
         </div>
 
         <div class="mo-foot">
-          <span class="galfoot-why">{{ createWhy || 'Stored in this workspace' }}</span>
-          <button class="btn" type="button" :disabled="creating" @click="adjustOpen = false">Back to tasks</button>
+          <button class="btn" type="button" :disabled="creating" @click="editGoal">Edit the goal</button>
+          <span class="sp"></span>
+          <button class="btn" type="button" :disabled="creating" @click="adjustOpen = false">Cancel</button>
           <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
             {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
           </button>

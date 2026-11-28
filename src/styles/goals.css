@@ -1557,6 +1557,18 @@
   -webkit-box-orient: vertical;
   line-height: 1.3;
 }
+.goals-page .plan-warn {
+  margin: 0;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--danger-soft) 45%, var(--bg));
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--danger);
+}
+.goals-page .plan-warn b {
+  font-weight: 500;
+}
 .goals-page .dph .add .add-kbd {
   margin-left: 6px;
   padding-left: 6px;
@@ -1937,26 +1949,59 @@
   }
 }
 
-/* the review dialog: step 1's form, over the plan */
-.modal.goaladjust {
-  width: min(680px, 94vw);
-  max-height: min(90vh, 760px);
+/* the confirmation: a summary of what will be stored */
+.modal.goalconfirm {
+  width: min(540px, 94vw);
 }
-.goaladjust .galede {
-  max-width: 54ch;
+.goalconfirm .galede {
+  max-width: 52ch;
 }
-.goaladjust-body {
-  padding: 14px 18px 6px;
+.goalconfirm-body {
+  padding: 14px 20px 10px;
 }
-.goaladjust .errbar {
-  margin: 4px 0 10px;
+.goalconfirm .conf-facts {
+  margin: 0;
+  border-top: 1px solid var(--border);
 }
-.goaladjust .galfoot-why {
-  margin-right: auto;
-  align-self: center;
+.goalconfirm .conf-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.goalconfirm .conf-facts dt {
+  flex: none;
   font-family: var(--mono);
   font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
+}
+.goalconfirm .conf-facts dd {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.goalconfirm .conf-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.goalconfirm .conf-note.danger {
+  color: var(--danger);
+}
+.goalconfirm .conf-note b {
+  font-weight: 500;
+}
+.goalconfirm .mo-foot {
+  align-items: center;
+}
+.goalconfirm .mo-foot .sp {
+  flex: 1;
 }
 
 /* the foot of step 2: nothing writes itself */
@@ -2407,41 +2452,6 @@
   margin-top: 1px;
   font-size: var(--fs-secondary);
   color: var(--muted);
-}
-.goals-page .dedupe {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  font-size: var(--fs-secondary);
-  color: var(--ink-2);
-}
-.goals-page .dedupe b {
-  color: var(--ink);
-  font-weight: 500;
-}
-.goals-page .dedupe .lbl {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.goals-page .dedupe .lnk {
-  margin-left: auto;
-  min-height: 24px;
-  padding: 5px 2px;
-  border: 0;
-  background: none;
-  color: var(--accent-ink);
-  font-size: var(--fs-meta);
-  text-decoration: underline;
-  cursor: pointer;
 }
 .goals-page .skel-list {
   display: flex;

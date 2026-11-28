@@ -54,7 +54,9 @@ const locked = computed(() => props.task.locked === true)
 const editable = computed(() => props.editable && !props.readonly && !locked.value)
 const tickLabel = computed(() => {
   if (props.lockable) {
-    return `${locked.value ? 'Unlock' : 'Lock'} “${props.task.title || 'this task'}”`
+    return `${locked.value ? 'Unlock' : 'Lock'} “${props.task.title || 'this task'}”${
+      locked.value ? '' : ' — kept when you draft again'
+    }`
   }
   if (props.readonly) return `${props.task.title || 'This task'} — read only`
   return `Mark “${props.task.title || 'this task'}” ${props.task.done ? 'not done' : 'done'}`

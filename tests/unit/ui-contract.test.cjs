@@ -919,28 +919,22 @@ test("a goal's selector and its mark come from the shared components", () => {
    about. Both are the same mistake: the surface skipped the thing that owns the
    consequence. */
 
-test('creating a goal is confirmed on the goal\'s own fields', () => {
+test('creating a goal is confirmed by a summary, not a second form', () => {
   const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
   const fields = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalFields.vue'), 'utf8')
 
-  /* one form, two mounts: step 1 and the review dialog render the same component */
-  assert.ok(
-    (create.match(/<GoalFields/g) || []).length >= 2,
-    'the confirmation is the goal\'s fields, not a second design of them',
-  )
+  /* one form, one mount: step 1 edits the goal. The dialog is a confirmation of
+     what is about to be stored, not a second copy of the fields. */
+  assert.equal((create.match(/<GoalFields/g) || []).length, 1, 'the fields live in step 1 only')
   assert.match(fields, /id="goal-title"/, 'the fields keep their ids, so the shortcuts still find them')
-  assert.match(fields, /defineExpose\(\{ focus, toggleEntity \}\)/, 'the page asks the form for focus')
-
-  /* the plan buttons open the review; the dialog's primary is the only writer */
-  assert.ok(
-    (create.match(/@click="openAdjust/g) || []).length >= 4,
-    'the head and the foot both open the review, for create and for adjust',
-  )
-  assert.match(create, /class="modal goaladjust"/, 'the review is a dialog')
-  assert.match(create, /class="x mo-x"/, 'the close control is the shell\'s, not a bare .mo-x')
-  assert.match(create, /openAdjust\('adjust'\)/, 'Adjust goal is its own verb, not a hidden consequence')
-  assert.match(create, /useDialogDismiss\(\{[\s\S]{0,120}?adjustOpen/, 'the review closes on Esc')
-  assert.match(create, /nothing is written until you create it/i, 'the dialog says the write is not done yet')
+  assert.match(create, /class="modal goalconfirm"/, 'the confirmation is its own dialog')
+  assert.match(create, /class="conf-facts"/, 'it reads the plan back as facts')
+  assert.match(create, /Edit the goal/, 'the way to change the goal is step 1')
+  assert.match(create, /step\.value = 1/, 'Edit the goal returns there')
+  assert.match(create, /@click="openAdjust"/, 'Create opens the confirmation')
+  assert.match(create, /class="x mo-x"/, 'the close control is the shell\'s')
+  assert.match(create, /useDialogDismiss\(\{[\s\S]{0,120}?adjustOpen/, 'the confirmation closes on Esc')
+  assert.doesNotMatch(create, /Adjust goal/, 'there is no second editing surface')
 })
 
 test('on the draft, a row\'s tick is a lock', () => {
@@ -1124,18 +1118,23 @@ test('every verb on step 2 has a shortcut and renders its hint', () => {
   const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
   const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
 
-  assert.match(catalog, /id: 'goal-adjust'/, 'Adjust the goal is in the one catalog')
-  assert.match(catalog, /id: 'goal-task'/, 'Add a task is in the same catalog')
+  assert.match(catalog, /id: 'goal-task'/, 'Add a task is in the one catalog')
   assert.match(create, /matchesShortcut\('goal-task'/, 'the add key is handled')
-  assert.match(create, /matchesShortcut\('goal-adjust'/, 'the key is handled')
-  assert.ok(
-    (create.match(/shortcutLabel\('goal-adjust'\)/g) || []).length >= 1,
-    'the button renders the label from the catalog, not a literal',
-  )
-  assert.ok(
-    (create.match(/\{\{ adjustKey \}\}/g) || []).length >= 2,
-    'both Adjust buttons show the same hint',
-  )
+  assert.doesNotMatch(catalog, /id: 'goal-adjust'/, 'a removed verb leaves no dead key behind')
+  assert.match(catalog, /id: 'goal-draft'/, 'create still has its key')
+})
+
+test('a re-draft keeps the rows somebody locked', () => {
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+  const lib = fs.readFileSync(path.join(SRC, 'lib', 'goals.js'), 'utf8')
+  const planner = fs.readFileSync(path.join(ROOT, 'electron', 'goal-draft.cjs'), 'utf8')
+
+  assert.match(lib, /export function pinLocked/, 'the pin is one function')
+  assert.match(create, /pinLocked\(proposed, pinned\)/, 'a new plan keeps them')
+  assert.match(create, /locked: pinned/, 'the planner is told what not to touch')
+  assert.match(planner, /These tasks are locked\. Do not rewrite, duplicate, drop or re-date them/, 'the brief says so')
+  assert.match(create, /const lockedIssues = computed/, 'a locked row outside a new deadline is flagged')
+  assert.match(create, /lockedIssues/, 'the confirmation shows the consequence')
 })
 
 test('a page draft is per-tab and expires', () => {

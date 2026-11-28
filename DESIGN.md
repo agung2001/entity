@@ -850,28 +850,25 @@ read. The scope is the thing a person is paying for, so it is chosen first.
   (`gives up after 5 minutes`) from a constant that mirrors `TIMEOUT_MS`; there
   is no streaming for `entity.learn`, so a clock is what the wait has.
 
-### A write is confirmed on the form that owns it
+### A write is confirmed by a summary; the goal is edited in step 1
 
-`Create goal` used to store on click, from a button that showed a count. The
-confirmation is not a second dialog with a summary of a summary: it is the goal's
-own five fields, reopened over the plan.
+`Create goal` used to store on click, then briefly opened a second copy of step 1's
+form. Both were wrong: a count confirms nothing, and a form in a dialog is not a
+confirmation — it is the same form twice, with two validation states to keep in
+sync. Editing the goal belongs in the step that owns it.
 
-- **One form, two mounts.** The fields live in `components/goal/GoalFields.vue`;
-  step 1 renders it inline and the review renders the same component inside the
-  modal. A copied form is the version that drifts — the review would keep asking
-  for a field the page had dropped.
-- **The confirmation names what it will write.** `5 tasks · 2 critical · 4
-  entities · due 12 Dec 2026` above the fields, and `Nothing is written until you
-  create it` beside the scrim. The primary says the verb, not "OK".
-- **Adjust is a verb of its own.** Step 2 offers `Adjust goal` beside `Create
-  goal`, and both open the same dialog. A form you can only reach by pressing the
-  write button makes every edit look like a commitment; the review must be
-  reachable to *edit*, not only to confirm.
-- **Refusals land in the dialog.** A `save` that throws prints in the surface
-  that asked; closing it to read the error moves the person away from the fix.
-- **A review is dismissible like any surface.** `useDialogDismiss`, the
-  `scrim-dialog` variant, and the footer's `Back to tasks` — the same three
-  exits a dialog already owes (see above).
+- **One form, one mount.** `GoalFields` is rendered by step 1 and nothing else.
+  Step 2's `Back` returns there; if the fields still match the plan the primary is
+  `Back to the tasks`, and if they changed it is `Draft again`. That button, not a
+  dialog, is the explicit act that changes the plan's shape.
+- **The confirmation reads the plan back as facts.** `Title · Plan · Work goes to
+  · Deadline · Planned by · Who can see it`, then `Edit the goal` (closes and
+  returns to step 1), `Cancel`, `Create goal`. No fields, no second step.
+- **Nothing is written until the primary says so**, and a refusal lands in the
+  dialog that asked — closing it to read the error moves the person away from the
+  fix.
+- **A confirmation is dismissible like any surface.** `useDialogDismiss`, the
+  `scrim-dialog` variant, and the `x mo-x` shell control.
 
 ## A goal has a planner and a scope, and they are not one picker
 
@@ -920,6 +917,12 @@ tokens and time per keystroke. It is not the answer:
   with the draft (a reload keeps it) and dropped when the goal is created — it
   protects the plan while it is being arranged, it is not a permission on the
   stored goal.
+- **A lock is a pin across a re-draft, not just a disabled row.** `Draft again`
+  replaces the plan with the planner's new one, except the locked rows: they are
+  kept verbatim (id, title, date, entity), named to the planner as untouchable,
+  and a planned row with the same title yields to them (`pinLocked`). A locked
+  row outside a *new* deadline or scope is kept and **flagged**, never silently
+  moved or reassigned — the plan's confirmation prints those consequences.
 - **A plan may be dirty.** Dates that no longer fit after a removal are visible
   as dates, not silently re-dated under you. Drift is the accepted price of
   cheap edits; a re-plan, when it exists, is an explicit action in the plan's

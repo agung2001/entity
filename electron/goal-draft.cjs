@@ -400,6 +400,7 @@ async function draft({
   context,
   entities = [],
   scope = 'auto',
+  locked = [],
   draftId = '',
   emit = () => {},
 } = {}) {
@@ -440,6 +441,7 @@ async function draft({
     .map((entry) => trim(entry, 200))
     .filter(Boolean)
     .slice(0, 40)
+  const pins = planOf(locked)
   const prompt = [
     `Entity planning this goal: ${planner || '(none)'}`,
     scopeLine(available, scope),
@@ -453,6 +455,16 @@ async function draft({
     '',
     'The context the goal names:',
     contextBlock || '(none provided)',
+    ...(pins.length
+      ? [
+          '',
+          'These tasks are locked. Do not rewrite, duplicate, drop or re-date them;',
+          'plan the rest around them:',
+          '```json',
+          JSON.stringify({ tasks: pins }, null, 1),
+          '```',
+        ]
+      : []),
   ].join('\n')
 
   let answer

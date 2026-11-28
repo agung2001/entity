@@ -226,6 +226,18 @@ const newId = () =>
  * the accepted row keeps its id, so a retry — an agent's second answer or a local
  * re-draft — can never merge twice. Returns what merged so the banner can say so.
  */
+/**
+ * A re-draft replaces the plan, except for the rows the person locked: those
+ * keep their id, title, date and entity exactly. A planned row with the same
+ * title yields to the lock — the person's row is the one that exists.
+ */
+export function pinLocked(proposed, locked) {
+  const pins = (locked || []).filter((task) => task && task.locked)
+  if (!pins.length) return [...(proposed || [])]
+  const pinned = new Set(pins.map((task) => mergeKey(task.title)))
+  return [...pins, ...(proposed || []).filter((task) => !pinned.has(mergeKey(task.title)))]
+}
+
 export function mergeTasks(accepted, proposed) {
   const byTitle = new Map((accepted || []).map((task) => [mergeKey(task.title), task]))
   const merged = []

@@ -310,15 +310,6 @@ export const SHORTCUT_GROUPS = [
         desktop: ['mod', 'shift', 'T'],
         browser: ['alt', 'shift', 'T'],
       },
-      {
-        id: 'goal-adjust',
-        label: 'Adjust the goal',
-        desc: 'On step 2: reopen the goal’s own fields to change the sentence, the deadline or who plans it.',
-        /* the artifact preview uses the same pair on its own page; the two are
-           never mounted together, and an Option letter would be a dead key */
-        desktop: ['mod', 'shift', 'A'],
-        browser: ['alt', 'shift', 'A'],
-      },
     ],
   },
   {
