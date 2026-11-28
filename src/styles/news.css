@@ -273,11 +273,16 @@
 
 /* The card is the anchor — like `.ash-card`, nothing inside it is interactive,
    so one hit target and one tab stop are the whole truth about it. `--hue` is the
-   feed's family colour: the mark's tint, the top edge and the floor wash all read
-   it, so a shelf of cards is colour-coded by source before a word is read. */
+   feed's family colour: the mark's tint and the floor both read it, so a shelf of
+   cards is colour-coded by source before a word is read.
+
+   The hue is painted as a soft gate at the top-left, not as a hard edge. A 2 px
+   rule cannot follow a 12 px radius — a strip that tall is rounded to 1 px at its
+   own ends and, with the card's overflow visible, its corners sat outside the
+   card's corner curve, so every card grew two little nubs. A background layer is
+   clipped by the radius for free, and needs no pseudo-element to be there. */
 .nv-card {
   --hue: var(--accent);
-  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -286,18 +291,10 @@
   padding: 14px 15px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: linear-gradient(180deg, var(--bg) 50%, color-mix(in oklab, var(--hue) 6%, var(--bg)));
+  background:
+    radial-gradient(115% 88% at 0% 0%, color-mix(in oklab, var(--hue) 13%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--bg) 55%, color-mix(in oklab, var(--hue) 5%, var(--bg)));
   transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out, transform 0.14s ease-out;
-}
-.nv-card::before {
-  content: '';
-  position: absolute;
-  inset: 1px 1px auto;
-  height: 2px;
-  border-radius: var(--r-md) var(--r-md) 0 0;
-  background: color-mix(in oklab, var(--hue) 60%, var(--border));
-  opacity: 0.8;
-  transition: opacity 0.14s ease-out;
 }
 .nv-card:has(.nv-gl[data-s='gt']) {
   --hue: #4285f4;
@@ -309,9 +306,6 @@
   border-color: var(--border-strong);
   box-shadow: 0 8px 22px color-mix(in oklab, var(--ink) 7%, transparent);
   transform: translateY(-1px);
-}
-.nv-card:hover::before {
-  opacity: 1;
 }
 /* The mark and the card are one surface: on hover the chip takes the family hue
    the rest of the card is already wearing, so the card answers as a whole. */
