@@ -37,11 +37,12 @@ module.exports = {
     timeoutMs: 90_000,
     /* What installing writes into this workspace's `mcp.json`, as the server publishes
        it: `--autoConnect` takes the Chrome the person already has open, and it carries
-       no address of its own, which is what keeps the definition portable. `--channel`
-       picks which Chrome channel the server looks for; without it, stable. */
+       no address of its own, which is what keeps the definition portable. No `--channel`
+       either: stable Chrome is the browser a person has open, and a beta or canary one
+       is a single arg away on the row. */
     server: {
       command: 'npx',
-      args: ['chrome-devtools-mcp@latest', '--autoConnect', '--channel=beta'],
+      args: ['chrome-devtools-mcp@latest', '--autoConnect'],
     },
     work: {
       resolves: 'the browser this machine already has open — its tabs, console, network log and a screenshot',

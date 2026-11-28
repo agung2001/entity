@@ -2,7 +2,7 @@
 
 # Chrome DevTools
 
-<img src="../assets/connectors/chrome-devtools.webp" alt="The Chrome DevTools connector page before installing: the command row reading npx chrome-devtools-mcp@latest --autoConnect --channel=beta with its Copy command button, a Tools card marked not probed because installing is what puts the server in the pool, the In the chat card saying no resolver is shipped and naming the @chrome-devtools: form it therefore does not offer, and the rail listing the local stdio transport, the npx command, the website, no token and an Install button" width="820" />
+<img src="../assets/connectors/chrome-devtools.webp" alt="The Chrome DevTools connector page before installing: the command row reading npx chrome-devtools-mcp@latest --autoConnect with its Copy command button, a Tools card marked not probed because installing is what puts the server in the pool, the In the chat card saying no resolver is shipped and naming the @chrome-devtools: form it therefore does not offer, and the rail listing the local stdio transport, the npx command, the website, no token and an Install button" width="820" />
 
 Google's own `chrome-devtools-mcp` server, which drives the Chrome this machine already has
 open: its tabs, its console, its network log, and a screenshot of whatever is on screen.
@@ -18,7 +18,7 @@ folder here creates one. What it ships instead is the server's own command, whic
 **Install** writes into `mcp.json` as the definition — once, and never over one you edited:
 
 ```json
-{ "command": "npx", "args": ["chrome-devtools-mcp@latest", "--autoConnect", "--channel=beta"] }
+{ "command": "npx", "args": ["chrome-devtools-mcp@latest", "--autoConnect"] }
 ```
 
 Nothing in that line is a path on this machine, so the definition travels. Read on for what
@@ -37,16 +37,16 @@ The first two are the same browser reached two ways, and they need the browser s
 remote debugging on. `--autoConnect` is the path with no port at all, and it is the one the
 shipped definition passes: it has two requirements that are not this app's to satisfy,
 Chrome 144 or later and the person turning it on at `chrome://inspect/#remote-debugging`.
-`--channel=beta` is the second flag the definition passes, and it only says which channel of
-Chrome the server looks for — the beta channel rather than the stable one it uses when the
-flag is absent.
+The definition passes nothing else — no address and no channel — so it looks for the stable
+Chrome a person is most likely looking at.
 
 With no flag the server launches its own Chrome on a profile of its own. That is a clean
 browser with none of your tabs or sign-ins, which is the right shape for a scripted run and
 the wrong one for "look at the page I have open" — the whole point of the two attach paths
 above. The flags that change which browser runs (`--headless`, `--isolated`,
 `--executablePath`, `--userDataDir`, and which channel `--channel` names) are the server's
-own; this row sets none of them beyond the two in the definition.
+own; this row sets none of them, so a run against a beta or canary Chrome is one arg added
+on the row.
 
 A browser that goes away is not an error that outlives it. The server has an idle timeout,
 and with a remote endpoint it disconnects when that runs out and leaves the browser open,
