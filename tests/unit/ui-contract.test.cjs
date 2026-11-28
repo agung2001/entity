@@ -896,6 +896,24 @@ test("a goal's selector and its mark come from the shared components", () => {
   assert.match(blank, /<NavIcon name="goal"\s*\/>/, "the empty state wears the rail's glyph")
 })
 
+test('a page draft is per-tab and expires', () => {
+  const source = fs.readFileSync(path.join(SRC, 'lib', 'draftCache.js'), 'utf8')
+  const cache = source.replace(/\/\*[\s\S]*?\*\//g, '') /* a comment is not storage */
+  /* a draft belongs to the tab it was written in; localStorage would hand it to
+     a second window and keep it for ever */
+  assert.match(cache, /sessionStorage/, 'a draft is per-tab')
+  assert.doesNotMatch(cache, /localStorage/, 'a draft is not a preference')
+  assert.match(cache, /expiresAt/, 'every entry carries its own expiry')
+  assert.match(cache, /export const DRAFT_TTL_MS/, 'the TTL is one declared number')
+  assert.match(cache, /Date\.now\(\) - \+ ttl|expiresAt: Date\.now\(\) \+ ttl|Date\.now\(\) \+ ttl/, 'the write stamps an expiry')
+  assert.match(cache, /expiresAt\) > Date\.now\(\)|Number\(entry\.expiresAt\) > Date\.now\(\)/, 'the read enforces it')
+  assert.match(cache, /removeItem/, 'an expired entry is removed, not merely ignored')
+  /* the goal form is the caller, and it clears on both exits */
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+  assert.match(create, /clearDraft\(CACHE_KEY\)/, 'the draft is cleared when the goal is created or cancelled')
+  assert.match(create, /restored-bar/, 'a restored draft says so, with a way out')
+})
+
 /* ── one ladder each ─────────────────────────────────────────────────────
    A radius is a step on the scale in tokens.css, and so is an absolute type
    size. Twenty-six raw radii and forty-seven raw sizes used to live in the

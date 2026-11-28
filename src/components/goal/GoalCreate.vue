@@ -23,11 +23,12 @@ import SlashComposer from '@/components/SlashComposer.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import { today, PRIORITY_ORDER, draftFrom, blankTask, mergeTasks, priorityWord } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
+import { clearDraft, readDraft, saveDraft, sweepDrafts } from '@/lib/draftCache'
 import { dialogDepth } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
 import { pickableHarnesses } from '@/stores/harnesses'
-import { hub, toast } from '@/stores/hub'
+import { ago, hub, toast } from '@/stores/hub'
 
 const props = defineProps({
   /** the write, owned by the view: a promise, so a refusal lands beside the button */
@@ -83,6 +84,9 @@ const harnessOptions = computed(() =>
   })),
 )
 const enhanceOpen = ref(false)
+const restoredAt = ref(0)
+const CACHE_KEY = `goals-new:${hub.workspace}`
+let saveTimer = null
 const titleField = ref(null)
 const entityPick = ref(null)
 const composer = ref(null)
@@ -319,6 +323,100 @@ function keepSeparate() {
   merged.value = []
 }
 
+/** What this tab remembers while the person is away from the page. */
+function snapshot() {
+  return {
+    step: step.value,
+    title: title.value,
+    sentence: sentence.value,
+    deadline: deadline.value,
+    privacy: privacy.value,
+    entity: entity.value,
+    harness: harness.value,
+    tasks: tasks.value,
+    merged: merged.value,
+    draftSource: draftSource.value,
+    /* a local file's bytes are not a draft: they are what the quota cannot hold,
+       and the goal keeps the reference anyway */
+    attachments: attachments.value.map(({ data, ...rest }) => rest),
+  }
+}
+
+const RESTORE_ENTITY = (value) =>
+  entityOptions.value.some((option) => option.id === value) ? String(value) : entity.value
+const RESTORE_HARNESS = (value) =>
+  harnessOptions.value.some((option) => option.id === value) ? String(value) : harness.value
+const RESTORE_TASK = (task) =>
+  task && typeof task === 'object' && typeof task.id === 'string' && typeof task.title === 'string'
+
+function restore() {
+  sweepDrafts()
+  const hit = readDraft(CACHE_KEY)
+  const value = hit?.value
+  if (!value || typeof value !== 'object') return
+  const meaningful =
+    value.step === 2 ||
+    Boolean(String(value.title || '').trim() || String(value.sentence || '').trim() || value.deadline)
+  if (!meaningful) {
+    clearDraft(CACHE_KEY)
+    return
+  }
+  if (value.step === 2) step.value = 2
+  title.value = typeof value.title === 'string' ? value.title : ''
+  sentence.value = typeof value.sentence === 'string' ? value.sentence : ''
+  deadline.value = typeof value.deadline === 'string' ? value.deadline : ''
+  if (value.privacy === 'workspace' || value.privacy === 'private') privacy.value = value.privacy
+  entity.value = RESTORE_ENTITY(value.entity)
+  harness.value = RESTORE_HARNESS(value.harness)
+  tasks.value = Array.isArray(value.tasks) ? value.tasks.filter(RESTORE_TASK) : []
+  merged.value = Array.isArray(value.merged) ? value.merged.map(String) : []
+  if (value.draftSource === 'local' || value.draftSource === 'harness') draftSource.value = value.draftSource
+  attachments.value = Array.isArray(value.attachments) ? value.attachments : []
+  restoredAt.value = hit.savedAt
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    saveDraft(CACHE_KEY, snapshot())
+  }, 350)
+}
+
+function startOver() {
+  clearDraft(CACHE_KEY)
+  restoredAt.value = 0
+  step.value = 1
+  title.value = ''
+  sentence.value = ''
+  deadline.value = ''
+  privacy.value = 'private'
+  tasks.value = []
+  merged.value = []
+  backup.value = null
+  attachments.value = []
+  draftSource.value = ''
+  draftError.value = ''
+}
+
+function cancel() {
+  clearDraft(CACHE_KEY)
+  emit('cancel')
+}
+
+restore()
+watch(
+  [step, title, sentence, deadline, privacy, entity, harness, tasks, merged, draftSource, attachments],
+  scheduleSave,
+  { deep: true },
+)
+onBeforeUnmount(() => {
+  if (saveTimer) clearTimeout(saveTimer)
+  if (step.value === 2 || sentence.value.trim() || title.value.trim() || deadline.value) {
+    saveDraft(CACHE_KEY, snapshot())
+  }
+})
+
 async function create() {
   if (!canCreate.value) return
   creating.value = true
@@ -334,6 +432,9 @@ async function create() {
       context: attachments.value,
       tasks: tasks.value.map((task) => ({ ...task, title: String(task.title).trim() })),
     })
+    /* the write landed and the view is leaving: the tab has nothing to restore */
+    clearDraft(CACHE_KEY)
+    restoredAt.value = 0
   } catch (problem) {
     refused.value = problem?.message || 'The goal could not be created.'
   } finally {
@@ -354,7 +455,7 @@ async function create() {
       </div>
       <div class="head-actions">
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button v-if="step === 1" class="btn" type="button" @click="emit('cancel')">Cancel</button>
+        <button v-if="step === 1" class="btn" type="button" @click="cancel()">Cancel</button>
         <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
           {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>
@@ -371,6 +472,17 @@ async function create() {
       </span>
       <span class="ln"></span>
       <span class="st"><span class="num">3</span><span class="lb">Work the goal</span></span>
+    </div>
+
+    <!-- the tab's own draft, with the day it expires -->
+    <div v-if="restoredAt" class="notebar restored-bar">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" /><path d="M8 4.6V8l2.4 1.6" stroke-linecap="round" />
+      </svg>
+      <p>
+        <b>Draft restored.</b> Saved {{ ago(new Date(restoredAt).toISOString()) }} — this tab keeps it for
+        24 hours. <button class="lnk" type="button" @click="startOver">Start over</button>
+      </p>
     </div>
 
     <!-- ── step 1 ─────────────────────────────────────────────────────── -->
@@ -491,7 +603,7 @@ async function create() {
 
       <div class="wiz-foot">
         <span class="why">{{ required }} of 2 required</span>
-        <button class="btn" type="button" :disabled="drafting" @click="emit('cancel')">Cancel</button>
+        <button class="btn" type="button" :disabled="drafting" @click="cancel()">Cancel</button>
         <button class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
           {{ drafting ? 'Drafting…' : 'Draft tasks' }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>

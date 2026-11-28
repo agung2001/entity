@@ -905,6 +905,19 @@
   flex-wrap: wrap;
   margin-top: 8px;
 }
+.goals-page .restored-bar {
+  margin: 0 0 18px;
+}
+.goals-page .restored-bar .lnk {
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font-size: var(--fs-meta);
+  text-decoration: underline;
+  cursor: pointer;
+}
 .goals-page .draft-note {
   margin: 2px 4px 8px;
 }
