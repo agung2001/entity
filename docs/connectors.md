@@ -53,7 +53,7 @@ page below.
 
 The catalog is the one list of what the app ships, and every surface reads it: the
 Built-in pane, the add sheet's cards and the composer's mention menu are three doors on
-one table. Entity ships thirteen — `gmail`, `google-drive`, `youtube`,
+one table. Entity ships fourteen — `gmail`, `google-drive`, `youtube`,
 `youtube-studio`, `x` and `habitify` account-bearing (`habitify` reads through its
 provider's remote MCP server, and signs in with a client it registers itself); `orca`,
 `youtrack` and `github` the three the composer offered before connectors existed
@@ -63,7 +63,9 @@ its definition travels; `clockify`, whose credential is one API key pasted once 
 an OAuth account, with its workspace id and timezone kept as workspace state beside it;
 and `tailscale`, a `cli` row that behaves like none of the others — it authenticates
 nothing, stores no token, and reads one machine-local daemon, so it carries no `@` form
-and gates one web server instead. A custom row is whatever a person adds: real, working, and
+and gates one web server instead; and `chrome-devtools`, an `mcp` row that drives the
+Chrome this machine already has open, which carries no `@` form either. A custom row is
+whatever a person adds: real, working, and
 shipping no resolver — so it offers no `@` form either.
 
 **Installing records a definition, never a credential.** An `mcp` entry writes a
@@ -182,6 +184,7 @@ and the mention it answers:
 | [Google Drive](connectors/google-drive.md) · `@drive:` | [YouTube](connectors/youtube.md) · `@youtube:` | [YouTube Studio](connectors/youtube-studio.md) · `@youtube-studio:` |
 | [Habitify](connectors/habitify.md) · `@habitify:` | [Clockify](connectors/clockify.md) · `@clockify:` | [X](connectors/x.md) · `@x:` |
 | [Tailscale](connectors/tailscale.md) · no `@` form, one server gated | | |
+| [Chrome DevTools](connectors/chrome-devtools.md) · no `@` form, the browser you already have open | | |
 
 ## What it deliberately does not do
 

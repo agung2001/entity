@@ -1288,7 +1288,11 @@ watch(name, async () => {
                the row cannot silently disappear. -->
           <section class="cxn-card cxn-work mcpp-chat">
             <h2>In the chat</h2>
-            <template v-if="work">
+            <!-- The card is the mention card only when there is a mention to show.
+                 A shipped `mcp` row may carry `work` prose with no `work.mention`
+                 (Chrome DevTools), and a card that keyed on `work` alone printed
+                 “Type” with nothing after it and named an undefined resolver. -->
+            <template v-if="work?.mention">
               <p class="cxn-work-lead">
                 Type <code class="mono">{{ work.mention }}</code> and Entity resolves
                 <strong>{{ work.resolves }}</strong> before the turn starts.
