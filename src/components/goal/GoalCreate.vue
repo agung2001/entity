@@ -1,0 +1,347 @@
+<script setup>
+/**
+ * The create flow, steps 1 and 2 in one `.wiz` (§1 F2–F4a, §2.2).
+ *
+ * Step 1 is three inputs and two radio cards: `Draft tasks` is disabled until the
+ * sentence is non-empty **and** a date is chosen, no date is pre-filled, and a
+ * refusal prints beside the field that caused it while the button keeps its label.
+ * Step 2 is the drafted list — every row editable — and `Create goal` is the only
+ * thing that writes.
+ *
+ * `ponytail:` the drafting step is deterministic and local: one task per clause of
+ * the sentence, an even spread of dates, priority from the clause's own words.
+ * There is no agent round-trip and no `@` context picker, because both exist to
+ * feed one and shipping a picker that feeds nothing is a control that lies. The
+ * ceiling is reasoning, not the data: `draftFrom` already returns the task objects
+ * a harness answer would have to arrive in, and the merge below is the rule that
+ * answer must keep.
+ */
+import { computed, ref } from 'vue'
+import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
+import { plural } from '@/lib/transfer'
+import TaskRow from '@/components/goal/TaskRow.vue'
+
+const props = defineProps({
+  /** the write, owned by the view: a promise, so a refusal lands beside the button */
+  save: { type: Function, required: true },
+  initialSentence: { type: String, default: '' },
+  initialTitle: { type: String, default: '' },
+})
+const emit = defineEmits(['cancel'])
+
+const step = ref(1)
+const title = ref(props.initialTitle)
+const sentence = ref(props.initialSentence)
+const deadline = ref('')
+const privacy = ref('private')
+const touched = ref({ sentence: false, date: false })
+const tasks = ref([])
+const drafting = ref(false)
+const merged = ref([])
+const backup = ref(null)
+const creating = ref(false)
+const refused = ref('')
+
+const pad = (value) => String(value).padStart(2, '0')
+const addDays = (days) => {
+  const now = new Date()
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days)
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
+}
+
+const pills = computed(() => [
+  { label: 'Today', value: today() },
+  { label: 'Today + 2 w', value: addDays(14) },
+  { label: 'Today + 1 m', value: addDays(30) },
+])
+
+const required = computed(() => (sentence.value.trim() ? 1 : 0) + (deadline.value ? 1 : 0))
+const canDraft = computed(() => required.value === 2)
+const sentenceWhy = computed(() =>
+  touched.value.sentence && !sentence.value.trim()
+    ? 'Write one sentence. Draft tasks stays disabled.'
+    : '',
+)
+const dateWhy = computed(() => (touched.value.date && !deadline.value ? 'No date yet' : ''))
+
+const titleOf = computed(() => {
+  const typed = title.value.trim()
+  if (typed) return typed
+  const first = sentence.value.trim().split(/[.;\n]/)[0].replace(/\s+/g, ' ').trim()
+  return (first || 'A new goal').slice(0, 90)
+})
+
+const groups = computed(() =>
+  PRIORITY_ORDER.map((priority) => ({
+    priority,
+    tasks: tasks.value.filter((task) => task.priority === priority),
+  })).filter((group) => group.tasks.length),
+)
+
+const openCount = computed(() => tasks.value.filter((task) => !task.done).length)
+const broken = computed(
+  () => tasks.value.length > 0 && tasks.value.some((task) => !String(task.title || '').trim()),
+)
+const canCreate = computed(() => tasks.value.length > 0 && !broken.value && !creating.value)
+const createWhy = computed(() => {
+  if (!tasks.value.length) return 'Draft at least one task.'
+  if (broken.value) return 'Every task needs a title before it can be stored.'
+  return ''
+})
+
+const days = computed(() => {
+  if (!deadline.value) return 0
+  const start = new Date()
+  const [year, month, date] = deadline.value.split('-').map(Number)
+  return Math.max(0, Math.round((Date.UTC(year, month - 1, date) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86_400_000))
+})
+
+function pick(value) {
+  deadline.value = value
+  touched.value.date = true
+}
+
+/** One short delay, so the skeleton is never a bare spinner over empty space. */
+function draft() {
+  touched.value.sentence = true
+  touched.value.date = true
+  if (!canDraft.value || drafting.value) return
+  drafting.value = true
+  window.setTimeout(() => {
+    const answer = draftFrom(sentence.value, deadline.value, tasks.value)
+    backup.value = tasks.value.map((task) => ({ ...task }))
+    tasks.value = answer.tasks
+    merged.value = answer.merged
+    drafting.value = false
+    step.value = 2
+  }, 450)
+}
+
+function addTask(priority) {
+  tasks.value = [...tasks.value, blankTask(priority)]
+}
+
+function updateTask(task, patch) {
+  tasks.value = tasks.value.map((entry) => (entry.id === task.id ? { ...entry, ...patch } : entry))
+}
+
+function removeTask(task) {
+  tasks.value = tasks.value.filter((entry) => entry.id !== task.id)
+}
+
+function toggle(task, done) {
+  updateTask(task, { done })
+}
+
+/** The banner offers the real alternative: put back the rows the merge joined. */
+function keepSeparate() {
+  if (!backup.value) return
+  const mergedTitles = new Set(merged.value.map((value) => value.trim().toLowerCase()))
+  const kept = tasks.value.filter((task) => !mergedTitles.has(String(task.title).trim().toLowerCase()))
+  tasks.value = [...kept, ...backup.value.filter((task) => mergedTitles.has(String(task.title).trim().toLowerCase()))]
+  merged.value = []
+}
+
+async function create() {
+  if (!canCreate.value) return
+  creating.value = true
+  refused.value = ''
+  try {
+    await props.save({
+      title: titleOf.value,
+      sentence: sentence.value.trim(),
+      deadline: deadline.value,
+      privacy: privacy.value,
+      tasks: tasks.value.map((task) => ({ ...task, title: String(task.title).trim() })),
+    })
+  } catch (problem) {
+    refused.value = problem?.message || 'The goal could not be created.'
+  } finally {
+    creating.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="goal-wiz">
+    <header class="page-head">
+      <div>
+        <div class="board-eyebrow">
+          Goals <b aria-hidden="true">·</b> new
+          <template v-if="step === 2"><b aria-hidden="true">·</b> step 2 of 3 <b aria-hidden="true">·</b> draft</template>
+        </div>
+        <h1>{{ step === 2 ? titleOf : 'New goal' }}</h1>
+      </div>
+      <div class="head-actions">
+        <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
+        <button v-if="step === 1" class="btn" type="button" @click="emit('cancel')">Cancel</button>
+        <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
+          {{ creating ? 'Creating…' : 'Create goal' }}
+        </button>
+      </div>
+    </header>
+
+    <div class="steps" :aria-label="`Step ${step} of 3`">
+      <span class="st" :data-done="step === 2 ? '1' : undefined" :data-on="step === 1 ? '1' : undefined" :aria-current="step === 1 ? 'step' : undefined">
+        <span class="num">{{ step === 2 ? '✓' : '1' }}</span><span class="lb">Describe</span>
+      </span>
+      <span class="ln"></span>
+      <span class="st" :data-on="step === 2 ? '1' : undefined" :aria-current="step === 2 ? 'step' : undefined">
+        <span class="num">2</span><span class="lb">Draft the tasks</span>
+      </span>
+      <span class="ln"></span>
+      <span class="st"><span class="num">3</span><span class="lb">Work the goal</span></span>
+    </div>
+
+    <!-- ── step 1 ─────────────────────────────────────────────────────── -->
+    <div v-if="step === 1" class="wiz">
+      <div class="fld-solo">
+        <label for="goal-title">Title</label>
+        <input id="goal-title" v-model="title" type="text" :placeholder="titleOf" />
+        <span class="hint">The line the backlog and the calendar will print. Left empty, it takes the first line of the sentence.</span>
+      </div>
+
+      <div class="fld-solo">
+        <label for="goal-sentence">Goal <b aria-hidden="true">·</b> required</label>
+        <div class="cm" :data-state="sentenceWhy ? 'error' : undefined">
+          <textarea
+            id="goal-sentence"
+            v-model="sentence"
+            rows="3"
+            placeholder="Describe the outcome you want by the deadline…"
+            @blur="touched.sentence = true"
+          ></textarea>
+          <div class="cm-acts">
+            <span class="cm-hint" :class="{ danger: sentenceWhy }">
+              {{ sentenceWhy || 'One sentence. The draft reasons from it and nothing else.' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="fld-solo">
+        <label for="goal-due">Deadline <b aria-hidden="true">·</b> required</label>
+        <div class="dates">
+          <button
+            v-for="pill in pills"
+            :key="pill.label"
+            type="button"
+            :aria-pressed="deadline === pill.value ? 'true' : 'false'"
+            @click="pick(pill.value)"
+          >{{ pill.label }}</button>
+          <span class="own">
+            <input id="goal-due" type="date" :value="deadline" @change="pick($event.target.value); $event.target.blur()" />
+            <span class="hint" :class="{ danger: Boolean(dateWhy) }">{{ dateWhy || 'or a date' }}</span>
+          </span>
+        </div>
+        <span class="hint">No default. A goal without a date is a wish; the field stays empty until you pick one.</span>
+      </div>
+
+      <div class="fld-solo" role="radiogroup" aria-label="Who can see this goal">
+        <label class="fld-head">Who can see it</label>
+        <div class="priv">
+          <label :data-on="privacy === 'private' ? '1' : undefined">
+            <input v-model="privacy" type="radio" value="private" name="goal-privacy" />
+            <span class="rd"></span>
+            <span class="t"><b>Only me</b><span>Not in Wake Space, not in anyone else's backlog.</span></span>
+          </label>
+          <label :data-on="privacy === 'workspace' ? '1' : undefined">
+            <input v-model="privacy" type="radio" value="workspace" name="goal-privacy" />
+            <span class="rd"></span>
+            <span class="t"><b>The workspace</b><span>Visible to everyone here. They can read it; only you can edit the tasks.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="wiz-foot">
+        <span class="why">{{ required }} of 2 required</span>
+        <button class="btn" type="button" @click="emit('cancel')">Cancel</button>
+        <button class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
+          {{ drafting ? 'Drafting…' : 'Draft tasks' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- ── step 2 ─────────────────────────────────────────────────────── -->
+    <div v-else class="split">
+      <div>
+        <div v-if="merged.length" class="dedupe">
+          <span class="lbl">Merged</span>
+          <span><b>{{ merged.length }}</b> of the {{ tasks.length }} tasks were already on the list — <b>{{ merged.map((value) => `“${value}”`).join(', ') }}</b> kept the earliest date.</span>
+          <button class="lnk" type="button" @click="keepSeparate">Keep them separate</button>
+        </div>
+
+        <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Drafting the tasks">
+          <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${72 - n * 5}%`, height: '10px' }"></span></div>
+        </div>
+
+        <div v-for="group in groups" v-else :key="group.priority" class="tgroup">
+          <div class="tgh">
+            <span :data-p="group.priority">{{ priorityWord(group.priority) }}</span>
+            <span class="c">{{ plural(group.tasks.length, 'task') }}</span>
+            <span class="sp"></span>
+            <button class="add" type="button" @click="addTask(group.priority)">+ task</button>
+          </div>
+          <ul class="tasks">
+            <TaskRow
+              v-for="task in group.tasks"
+              :key="task.id"
+              :task="task"
+              editable
+              @tick="toggle(task, $event)"
+              @update="updateTask(task, $event)"
+              @remove="removeTask(task)"
+            />
+          </ul>
+        </div>
+
+        <div v-if="!drafting && !tasks.length" class="blank">
+          <h3>No task came back</h3>
+          <p>
+            The sentence produced no clause to work from. Write the sentence as a few clauses — one job
+            each — and draft again. Nothing was created.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div class="panel-h"><span class="t">What the draft used</span></div>
+          <div class="panel-body">
+            <div v-for="group in groups" :key="`bar-${group.priority}`" class="prow">
+              <span class="lb"><span class="pri" :data-p="group.priority">{{ priorityWord(group.priority) }}</span></span>
+              <span class="bar" aria-hidden="true">
+                <span class="fill" :style="{ width: `${Math.round((group.tasks.length / Math.max(1, tasks.length)) * 100)}%` }"></span>
+              </span>
+              <span class="ct">{{ group.tasks.length }}</span>
+            </div>
+            <p class="ctx-note">
+              {{ plural(tasks.length, 'task') }} over {{ days }} {{ days === 1 ? 'day' : 'days' }}, drafted
+              from the sentence. The dates are an even spread to the deadline — no tracker was read.
+            </p>
+          </div>
+        </div>
+
+        <div class="notebar">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" /><path d="M8 7.4v4M8 5.2v.2" />
+          </svg>
+          <p><b>No figures yet.</b> Progress on this screen is a count of tasks. The read appears after the first Refresh on the goal.</p>
+        </div>
+
+        <div v-if="refused" class="errbar" role="status">
+          <b>Could not create the goal.</b>
+          <p>{{ refused }}</p>
+        </div>
+      </div>
+
+      <div class="wiz-foot split-foot">
+        <span class="why">{{ createWhy || `${plural(openCount, 'open task')} · nothing is stored until you press Create goal` }}</span>
+        <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
+        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
+          {{ creating ? 'Creating…' : 'Create goal' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
