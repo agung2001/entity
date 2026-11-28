@@ -546,6 +546,30 @@ function parseMention(raw) {
       : { kind: 'opendesign', target: '', query: whole.split('\n')[0].trim(), local }
   }
 
+  /* `@pexels:[videos:|id:]<query>` — the whole line is the search, and the reader
+     words change the endpoint rather than filter it. `photos`/`photo` are accepted
+     and mean the default, so a word typed out of habit is not searched for; `id`
+     keeps its meaning only in front of a number, because `@pexels:id:white sand` is
+     a search for exactly that line and a photo called "white sand" is a 404 that
+     reads as a bug in this file. */
+  if (head === 'pexels') {
+    const readers = new Set(['photo', 'photos', 'video', 'videos', 'id'])
+    const reader = readers.has(word.toLowerCase()) ? word.toLowerCase() : ''
+    const line = String(structured ? tail : prose).split('\n')[0].trim()
+    if (!reader) return { kind: 'pexels', target: '', query: whole.split('\n')[0].trim(), local }
+    if (reader === 'id') {
+      return /^\d+$/.test(line)
+        ? { kind: 'pexels', target: 'id', query: line, local }
+        : { kind: 'pexels', target: '', query: whole.split('\n')[0].trim(), local }
+    }
+    return {
+      kind: 'pexels',
+      target: reader === 'video' || reader === 'videos' ? 'videos' : '',
+      query: line,
+      local,
+    }
+  }
+
   /* github: everything after the colon is the query — `owner/repo` names one
      repository, anything else is a search. The slash is inside the word, so a
      `:` does not scope it. */
@@ -630,6 +654,30 @@ function parseMention(raw) {
     return structured && readers.has(word.toLowerCase())
       ? { kind: 'opendesign', target: word.toLowerCase(), query: tail.split('\n')[0].trim(), local }
       : { kind: 'opendesign', target: '', query: whole.split('\n')[0].trim(), local }
+  }
+
+  /* `@pexels:[videos:|id:]<query>` — the whole line is the search, and the reader
+     words change the endpoint rather than filter it. `photos`/`photo` are accepted
+     and mean the default, so a word typed out of habit is not searched for; `id`
+     keeps its meaning only in front of a number, because `@pexels:id:white sand` is
+     a search for exactly that line and a photo called "white sand" is a 404 that
+     reads as a bug in this file. */
+  if (head === 'pexels') {
+    const readers = new Set(['photo', 'photos', 'video', 'videos', 'id'])
+    const reader = readers.has(word.toLowerCase()) ? word.toLowerCase() : ''
+    const line = String(structured ? tail : prose).split('\n')[0].trim()
+    if (!reader) return { kind: 'pexels', target: '', query: whole.split('\n')[0].trim(), local }
+    if (reader === 'id') {
+      return /^\d+$/.test(line)
+        ? { kind: 'pexels', target: 'id', query: line, local }
+        : { kind: 'pexels', target: '', query: whole.split('\n')[0].trim(), local }
+    }
+    return {
+      kind: 'pexels',
+      target: reader === 'video' || reader === 'videos' ? 'videos' : '',
+      query: line,
+      local,
+    }
   }
 
   /* github: everything after the colon is the query — `owner/repo` names one
@@ -718,6 +766,9 @@ function tokenOf(segment) {
   }
   if (segment.kind === 'clockify') {
     return `${at}clockify:${segment.target}${segment.week ? `:${segment.week}` : ''}`
+  }
+  if (segment.kind === 'pexels') {
+    return `${at}pexels:${segment.target ? `${segment.target}:` : ''}${segment.query}`
   }
   if (segment.kind === 'maka') {
     return segment.vault
@@ -1451,6 +1502,22 @@ async function fetchPage(ctx, kind, fields, limit, offset) {
       record: ctx.record,
       limit: offset + limit + 1,
     })
+    return {
+      items: rows.slice(offset, offset + limit).map((row) => ({
+        insert: row.mention,
+        label: row.label,
+        detail: row.detail,
+      })),
+      more: rows.length > offset + limit,
+    }
+  }
+
+  if (kind === 'pexels') {
+    /* Two reader words and no request: the composer asks on nearly every keystroke,
+       and 200 requests an hour is the key's whole budget. */
+    const preview = connectorRegistry.previewFor('pexels')
+    if (!preview) return { items: [], more: false }
+    const rows = await preview(fields, { limit: offset + limit + 1 })
     return {
       items: rows.slice(offset, offset + limit).map((row) => ({
         insert: row.mention,
@@ -2335,6 +2402,18 @@ async function resolveOne(ctx, segment) {
       })
       segment.mention = { kind: 'clockify', raw: segment.raw, token: tokenOf(segment), items, note: '' }
       if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no tracked hours`)
+      return
+    }
+
+    if (segment.kind === 'pexels') {
+      /* One pasted key and no account segment, like Clockify: the registry dispatches
+         the resolver, and the row ceiling is the mention module's own. */
+      const resolve = connectorRegistry.resolverFor('pexels')
+      const items = await resolve(ctx, segment, {
+        limit: ctx.rowLimit || connectorRegistry.rowCeiling('pexels', MAX_PER_SOURCE),
+      })
+      segment.mention = { kind: 'pexels', raw: segment.raw, token: tokenOf(segment), items, note: '' }
+      if (!items.length) ctx.notes.push(`${tokenOf(segment)} found no photo`)
       return
     }
 

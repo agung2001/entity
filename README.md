@@ -246,15 +246,16 @@ binary or a signed-out CLI is reported as a failed turn, not a friendly fake ans
 
 Everything a workspace can reach lives in one roster at **Workspace settings →
 Connectors**: an MCP server, a CLI binary and a REST service are three *kinds* of one
-row, and the old bulk MCP list is a permanent redirect into it. Entity ships fifteen —
-`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x`, `habitify` and `threads`
-account-bearing (`threads`' token is pasted rather than consented); `orca`, `youtrack` and
-`github` the three the composer offered before connectors existed
+row, and the old bulk MCP list is a permanent redirect into it. Entity ships twenty-one —
+`gmail`, `google-drive`, `google-calendar`, `youtube`, `youtube-studio`, `x`, `habitify`,
+`threads` and `fitbit` account-bearing (`threads`' token is pasted rather than consented);
+`orca`, `youtrack` and `github` the three the composer offered before connectors existed
 (`orca` and `github` are `cli` rows, `youtrack` is an `mcp` row); `maka` and `open-design`
-the MCP-backed ones; `clockify`, whose credential is one API key you paste once;
-`tailscale`, a `cli` row that authenticates nothing at all — it reads this machine's
-daemon and gates one command; and `chrome-devtools`, an `mcp` row that drives the Chrome
-this machine already has open. Installing one records a *definition* in the workspace's
+the MCP-backed ones; `clockify` and `pexels`, whose credentials are one API key you paste
+once; `google-trends` and `reddit`, the credentialless feeds News reads; `tailscale`, a `cli`
+row that authenticates nothing at all — it reads this machine's daemon and gates one
+command; and `chrome-devtools`, an `mcp` row that drives the Chrome this machine already
+has open. Installing one records a *definition* in the workspace's
 `connectors.json`, never a credential. An account-bearing connector gets its accounts
 from a browser consent round-trip, one refresh token per account, kept beside
 `integrations.json` in `~/.entity/` at `0600` and never returned by any read — and a
@@ -274,6 +275,7 @@ the configuration cards held back until there is a binding for them to write to.
   <a href="https://orca.dev"><kbd><img src="docs/assets/connectors/orca.svg" alt="" width="16" valign="middle" /> Orca · <code>@orca:</code></kbd></a> &nbsp;
   <a href="https://maka.agungsundoro.com"><kbd><img src="docs/assets/connectors/maka.svg" alt="" width="16" valign="middle" /> Maka · <code>@maka:</code></kbd></a> &nbsp;
   <a href="https://clockify.me"><kbd><img src="docs/assets/connectors/clockify.svg" alt="" width="16" valign="middle" /> Clockify · <code>@clockify:</code></kbd></a> &nbsp;
+  <a href="https://www.pexels.com"><kbd><img src="docs/assets/connectors/pexels.svg" alt="" width="16" valign="middle" /> Pexels · <code>@pexels:</code></kbd></a> &nbsp;
   <a href="https://habitify.me"><kbd><img src="docs/assets/connectors/habitify.svg" alt="" width="16" valign="middle" /> Habitify · <code>@habitify:</code></kbd></a> &nbsp;
   <a href="https://open-design.ai/"><kbd><img src="docs/assets/connectors/open-design.svg" alt="" width="16" valign="middle" /> Open Design · <code>@opendesign:</code></kbd></a> &nbsp;
   <a href="https://tailscale.com"><kbd><img src="docs/assets/connectors/tailscale.svg" alt="" width="16" valign="middle" /> Tailscale · no <code>@</code> form</kbd></a> &nbsp;
@@ -291,7 +293,8 @@ it drives the Chrome this machine already has open, on
 [Drive](docs/connectors/google-drive.md), [YouTube](docs/connectors/youtube.md),
 [YouTube Studio](docs/connectors/youtube-studio.md),
 [Habitify](docs/connectors/habitify.md), [Clockify](docs/connectors/clockify.md),
-[Threads](docs/connectors/threads.md), [X](docs/connectors/x.md) and
+[Pexels](docs/connectors/pexels.md), [Threads](docs/connectors/threads.md),
+[X](docs/connectors/x.md) and
 [Chrome DevTools](docs/connectors/chrome-devtools.md) — with
 the detail page, what it reaches and the mention it answers.
 

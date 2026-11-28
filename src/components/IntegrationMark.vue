@@ -346,6 +346,25 @@ const showOrcaIcon = computed(() => !failed.value)
     />
   </svg>
 
+  <!-- Pexels is the same source again, and it brings its own palette: a filled tile
+       with a knocked-out P, so it paints itself on the accent wash and needs no
+       `--mk-ground`. Clockify's blue sits beside it, which is the point — two
+       paste-once keys must not read as the same tile. -->
+  <svg
+    v-else-if="name === 'pexels'"
+    class="int-mark-svg int-mark-brand"
+    :width="size"
+    :height="size"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <title>Pexels</title>
+    <path
+      fill="#05A081"
+      d="M1.5 0A1.5 1.5 0 0 0 0 1.5v21A1.5 1.5 0 0 0 1.5 24h21a1.5 1.5 0 0 0 1.5-1.5v-21A1.5 1.5 0 0 0 22.5 0h-21zm6.75 6.75h5.2715a3.843 3.843 0 0 1 .627 7.6348V17.25H8.25V6.75zm1.5 1.5v7.5h2.8984v-2.8145h.873a2.343 2.343 0 1 0 0-4.6855H9.75Z"
+    />
+  </svg>
+
   <!-- Threads is the mono `@` from `thesvg.org`, inlined like the marks above: one
        path on a 192 grid, `currentColor`, so the row mutes it like GitHub's rather
        than carrying a second palette. The thread glyph is the app's own mark, so the
