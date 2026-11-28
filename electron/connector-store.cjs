@@ -86,6 +86,23 @@ function fileOf(record) {
   return path.join(record.path, FILE)
 }
 
+/**
+ * The definition a shipped `mcp` entry installs, as the catalog declares it, or null.
+ *
+ * A command and its args, nothing else: a `url` or an `env` block is a credential's
+ * business, never the catalog's. `chrome-devtools` is the shape this exists for — the
+ * server's own `npx` line, which names no home directory, so the definition syncs and
+ * still means the same thing on the second machine.
+ */
+function shippedServer(entry) {
+  const command = text(entry?.server?.command, 120)
+  if (!command) return null
+  const args = Array.isArray(entry.server.args)
+    ? entry.server.args.map((value) => text(value, 200)).filter(Boolean)
+    : []
+  return { command, ...(args.length ? { args } : {}) }
+}
+
 /** Missing file reads as an empty index: a workspace that never adopted anything
  *  simply has no rows of its own, which is not an error. */
 function readIndex(record) {
@@ -402,12 +419,14 @@ function list({ workspace } = {}) {
            *before* installing had only a binding sentence to introduce it, which
            is the one thing they have not decided on yet. */
         summary: entry.summary || '',
-        /* The provider a not-yet-installed entry signs in with, and the launcher a
-           shipped MCP entry would write. Both are already catalog data; the detail
-           page needs them to describe the entry *before* installing it, and the
-           renderer must not re-derive either from an id. */
+        /* The provider a not-yet-installed entry signs in with, and the definition a
+           shipped MCP entry would write — a launcher script, or the server's own
+           published command (`chrome-devtools`). Both are already catalog data; the
+           detail page needs them to describe the entry *before* installing it, and
+           the renderer must not re-derive either from an id. */
         provider: entry.provider || '',
         launcher: entry.launcher || '',
+        server: shippedServer(entry) || null,
         binding: bindingFor({
           kind: entry.kind,
           oauth: entry.oauth === true,
@@ -574,17 +593,26 @@ function install({ workspace, id } = {}) {
      it writes the pool definition, because the workspace is where that program
      lives. The path is workspace-relative — `skills/**` syncs, so a definition
      written this way works on the second machine too, and the id comes from the
-     record rather than a home directory. Nothing else is invented. */
+     record rather than a home directory. Nothing else is invented.
+
+     An entry with no launcher may still ship the server's own command
+     (`entry.server`, Chrome DevTools' `npx` line). That lands in the pool the same
+     way — once, and only when the workspace has no definition for the name — because
+     a row that installs and then has nothing to dial is a row a person has to finish
+     by hand. */
   const launcher = entry.kind === 'mcp' ? text(entry.launcher, 200) : ''
-  if (launcher) {
+  const shipped =
+    entry.kind !== 'mcp'
+      ? null
+      : launcher
+        ? { command: `$HOME/.entity/workspaces/${record.id}/skills/${launcher}` }
+        : shippedServer(entry)
+  if (shipped) {
     const pool = workspaces.mcp(record.id)
     if (!pool.servers?.[name] && !pool.disabled?.[name]) {
       workspaces.writeMcp({
         id: record.id,
-        servers: {
-          ...(pool.servers || {}),
-          [name]: { command: `$HOME/.entity/workspaces/${record.id}/skills/${launcher}` },
-        },
+        servers: { ...(pool.servers || {}), [name]: shipped },
         disabled: pool.disabled || {},
       })
     }

@@ -187,6 +187,11 @@ const inPool = computed(
 )
 const enabled = computed(() => Boolean(poolServers.value[name.value]))
 const poolEntry = computed(() => poolServers.value[name.value] || poolDisabled.value[name.value] || null)
+/* A definition this page only *previews* — the command installing would write — is not
+   something to dial: `mcp.tools` reads the workspace's pool and the harness copies, and
+   a name in neither answers “No MCP server called …”. So the probe, and the sentences
+   about its answer, follow what this machine actually has. */
+const dialable = computed(() => Boolean(poolEntry.value || globalRow.value?.definition))
 /* Set when sync parked it: the definition points at the machine that shared
    it, so enabling it here would offer a server that cannot answer. */
 const parkedReason = computed(() =>
@@ -210,11 +215,13 @@ const globalRow = ref(null)
 
 /* What this page is about: the pool's own binding, a harness copy on this
    machine, or — for an entry the catalog ships and this workspace has not
-   installed — the launcher it would write. The launcher is a real field on the
-   catalog entry, so this is a shape the app declares, not a guess at one. */
+   installed — the definition installing it would write. Both shapes are real
+   fields on the catalog entry (`launcher`, or the server's own `server` command),
+   so this is a shape the app declares, not a guess at one. */
 const definition = computed(() => {
   if (poolEntry.value) return poolEntry.value
   if (globalRow.value?.definition) return globalRow.value.definition
+  if (row.value?.server?.command) return row.value.server
   const launcher = String(row.value?.launcher || '')
   if (!launcher) return null
   return { command: `$HOME/.entity/workspaces/<id>/skills/${launcher}` }
@@ -550,10 +557,14 @@ const visibleTools = computed(() =>
    exactly like a server that exposes nothing. */
 const toolsNote = computed(() => {
   if (tools.value.loading || tools.value.error || toolRows.value.length) return ''
-  if (!definition.value) {
-    return globalLoading.value
-      ? 'Still looking for a definition of this server on this machine.'
-      : 'No definition to read: no harness here declares this server, so there is nothing to ask for a tool list.'
+  if (!dialable.value) {
+    if (globalLoading.value) return 'Still looking for a definition of this server on this machine.'
+    /* A shipped command this workspace has not installed yet: the definition is on
+       screen, the server is not here, so the honest answer is about installing. */
+    if (definition.value) {
+      return 'Not installed yet. Installing writes this definition, and the tool list is whatever the server reports once it is in the pool.'
+    }
+    return 'No definition to read: no harness here declares this server, so there is nothing to ask for a tool list.'
   }
   return 'This server reported no tools. An HTTP server that needs a token will answer empty when the token is missing.'
 })
@@ -607,7 +618,7 @@ async function loadGlobal() {
 }
 
 async function loadTools(force = false) {
-  if (!definition.value) {
+  if (!dialable.value) {
     tools.value = { loading: false, error: '', list: [], readAt: '' }
     return
   }
@@ -1055,9 +1066,10 @@ watch(name, async () => {
               <p class="eyebrow">MCP · {{ hub.workspaceLabel || hub.workspace }}</p>
               <h1>{{ title }}</h1>
               <!-- An entry this workspace has not installed and the catalog gives no
-                   launcher for (Maka is installed through its own server, not a script)
-                   has no definition to show, so there is no command to copy and no
-                   shape to print. Both rows stand down rather than dereferencing it. -->
+                   definition for (Maka is installed through its own server, not a
+                   command) has no definition to show, so there is no command to copy
+                   and no shape to print. Both rows stand down rather than
+                   dereferencing it. -->
               <div v-if="definition" class="mcpp-cmd-row">
                 <code class="mcpp-cmd" :title="command">{{ command }}</code>
                 <button

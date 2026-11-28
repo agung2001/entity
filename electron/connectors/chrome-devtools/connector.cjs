@@ -9,9 +9,14 @@
  *
  * There is no resolver, no mention and no account. `@chrome-devtools:` would have
  * nothing to put in a prompt that the turn cannot read itself, so the composer never
- * offers it. There is no `launcher` either: what this row binds is the *server's*
- * definition in `mcp.json`, installed through the server's own setup, so a workspace
- * that has not installed it shows a page with no command to copy — the Maka shape.
+ * offers it.
+ *
+ * There is no `launcher` either, because a launcher is a script this app would have to
+ * ship and no folder of this repo creates one. What the row declares instead is `server`:
+ * the server's own published command, which `connector-store.install()` writes into the
+ * workspace's `mcp.json` verbatim. No absolute path and no version pinned to a home
+ * directory, so the definition syncs and still means the same thing on the second
+ * machine — the browser it attaches to is whichever machine runs it.
  *
  * `entry` is the catalog entry verbatim.
  */
@@ -30,16 +35,24 @@ module.exports = {
     /* A first `npx -y chrome-devtools-mcp@latest` downloads the package before it
        answers, so a cold start gets a long deadline. */
     timeoutMs: 90_000,
+    /* What installing writes into this workspace's `mcp.json`, as the server publishes
+       it: `--autoConnect` takes the Chrome the person already has open, and it carries
+       no address of its own, which is what keeps the definition portable. `--channel`
+       picks which Chrome channel the server looks for; without it, stable. */
+    server: {
+      command: 'npx',
+      args: ['chrome-devtools-mcp@latest', '--autoConnect', '--channel=beta'],
+    },
     work: {
       resolves: 'the browser this machine already has open — its tabs, console, network log and a screenshot',
       returns: 'what the page said: a tab list, console and network entries, a snapshot of the DOM, or a PNG',
-      needs: 'Chrome’s remote-debugging endpoint, or `--autoConnect` enabled in Chrome 144+',
+      needs: 'Chrome 144+ with `--autoConnect` enabled at `chrome://inspect/#remote-debugging`',
       page: 'mcp.json',
       how: [
         'An attach needs a browser already listening: `--browserUrl http://127.0.0.1:9222` (or `--browser-url` / `-u`). The ws form is `--wsEndpoint`, read out of `http://127.0.0.1:9222/json/version`.',
-        '`--autoConnect` (`--auto-connect`) attaches without the port, but it needs Chrome 144+ and the person enabling it at `chrome://inspect/#remote-debugging`.',
+        '`--autoConnect` (`--auto-connect`) attaches without the port, but it needs Chrome 144+ and the person enabling it at `chrome://inspect/#remote-debugging`. That is the flag the shipped definition passes.',
         'With none of those flags the server launches its own Chrome on a dedicated profile, which is a clean browser rather than the one the person has open.',
-        'This row reads *this* machine’s browser, so its definition is machine-bound on purpose: a teammate’s workspace shows the row and no binding.',
+        'The definition names no address, so it travels: a teammate installs the same row and it attaches to *their* Chrome. Pin `--browserUrl` to a loopback port and it names this machine instead — which is why a teammate’s workspace lands that version parked.',
         'A browser that closes goes away on the server’s own idle timeout. With a remote endpoint that disconnects and leaves the browser open.',
       ],
       samples: [],

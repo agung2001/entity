@@ -201,8 +201,9 @@ and the mention it answers:
   between the agent and the provider there is nothing of ours.
 - **No webview sign-in.** The consent screen is the system browser, at the provider's
   real address, with the provider's own address bar above it.
-- **No guessing at a definition.** Installing an `mcp` entry the workspace has no
-  binding for writes a placeholder, not an endpoint.
+- **No guessing at a definition.** Installing an `mcp` entry the workspace has no binding
+  for writes a placeholder, not an endpoint — unless the catalog ships the server's own
+  command (`chrome-devtools`), and then exactly that command is what lands.
 
 ## Related
 

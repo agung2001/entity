@@ -103,9 +103,12 @@ const CATALOG = {
 
   /* ── the browser this machine already has open ───────────────────────────
      Chrome DevTools is an MCP server Google ships, not one a workspace owns, so
-     this entry carries no `launcher`: installing it writes the row and leaves the
-     definition in `mcp.json` to the server's own setup. It answers no `@` form — a
-     browser is something a turn drives, not something typed in a composer. */
+     there is no `launcher` — nothing in the workspace holds the program. What the
+     entry carries instead is `server`: the server's own `npx` line, which
+     `connector-store.install()` writes into `mcp.json` as-is. It names no home
+     directory, so it syncs and still means the same thing on the second machine.
+     It answers no `@` form — a browser is something a turn drives, not something
+     typed in a composer. */
   'chrome-devtools': CONNECTORS['chrome-devtools'],
 
   /* ── a shipped server that lives in the workspace ────────────────────────
