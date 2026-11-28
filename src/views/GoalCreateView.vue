@@ -6,7 +6,7 @@
  * from `goals.create` lands beside the button that caused it and nothing is
  * created twice.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GoalBackdrop from '@/components/goal/GoalBackdrop.vue'
 import GoalCreate from '@/components/goal/GoalCreate.vue'
@@ -20,6 +20,7 @@ const router = useRouter()
 const workspace = computed(() => String(route.params.workspace || hub.workspace || ''))
 const initialSentence = computed(() => String(route.query.sentence || ''))
 const initialTitle = computed(() => String(route.query.title || ''))
+const step = ref(1)
 
 async function save(payload) {
   const answer = await createGoal(
@@ -38,12 +39,13 @@ function cancel() {
   <div class="view detail-view goals-new">
     <GoalsSubnav />
     <GoalBackdrop />
-    <div class="goals-page goals-create">
+    <div class="goals-page goals-create" :class="{ 'goals-wide': step === 2 }">
       <GoalCreate
         :save="save"
         :initial-sentence="initialSentence"
         :initial-title="initialTitle"
         @cancel="cancel"
+        @update:step="step = $event"
       />
     </div>
   </div>

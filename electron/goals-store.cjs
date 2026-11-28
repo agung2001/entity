@@ -24,6 +24,7 @@ const runner = require('./goal-runner.cjs')
 
 const FILE = 'goals.json'
 const PRIORITIES = ['critical', 'major', 'normal', 'minor']
+const EFFORTS = ['small', 'medium', 'large']
 const PRIVACY = ['private', 'workspace']
 const TOKEN_KINDS = ['connector', 'file', 'artifact', 'note', 'issue', 'draft']
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -94,6 +95,10 @@ function taskOf(raw) {
     token: tokenOf(raw.token),
     date: day(raw.date),
     done: raw.done === true,
+    /* which entity this job is for, and how big it is — both chosen by the
+       planner and kept on the task so the goal page can act on them */
+    entity: text(raw.entity, 200),
+    effort: EFFORTS.includes(String(raw.effort)) ? String(raw.effort) : '',
   }
 }
 

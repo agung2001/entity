@@ -973,6 +973,232 @@
 .goals-page .draft-steps li[data-type='error'] span {
   color: var(--danger);
 }
+/* step 2 is a decision screen: the plan, its charts and its columns take the
+   whole band instead of the 820 px a form needs. */
+/* beat the view's own 820 px column, which is a four-class selector */
+.view.detail-view.goals-new > .goals-page.goals-wide {
+  width: min(100% - (2 * var(--view-pad)), 1180px);
+}
+
+.goals-page .draft-summary {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+}
+.goals-page .dsh-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.goals-page .dsh-t {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.goals-page .dsh-by {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.goals-page .dsh-body {
+  margin: 7px 0 0;
+  max-width: 110ch;
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--ink);
+}
+.goals-page .dsh-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+.goals-page .dsh-stats b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.goals-page .draft-split {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+/* the planner's two extra cells */
+.goals-page .task.task-wide {
+  grid-template-columns: 13px max-content minmax(0, 1fr) 132px 64px auto 78px 26px;
+}
+.goals-page .te {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.goals-page .te .l {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goals-page .eff {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.goals-page .eff[data-e='large'] {
+  color: var(--accent-ink);
+}
+.goals-page .eff[data-e='medium'] {
+  color: var(--ink-2);
+}
+
+/* the charts */
+.goals-page .dch-donut {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.goals-page .dch-donut svg {
+  width: 108px;
+  height: 108px;
+  flex: none;
+  transform: rotate(-90deg);
+}
+.goals-page .dch-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 12;
+}
+.goals-page .dch-slice {
+  fill: none;
+  stroke-width: 12;
+}
+.goals-page .dch-slice[data-p='critical'] {
+  stroke: var(--danger);
+}
+.goals-page .dch-slice[data-p='major'] {
+  stroke: var(--accent);
+}
+.goals-page .dch-slice[data-p='normal'] {
+  stroke: var(--ink-2);
+}
+.goals-page .dch-slice[data-p='minor'] {
+  stroke: var(--muted);
+}
+.goals-page .dch-legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.goals-page .dch-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: var(--r-2xs);
+}
+.goals-page .dch-legend i[data-p='critical'] {
+  background: var(--danger);
+}
+.goals-page .dch-legend i[data-p='major'] {
+  background: var(--accent);
+}
+.goals-page .dch-legend i[data-p='normal'] {
+  background: var(--ink-2);
+}
+.goals-page .dch-legend i[data-p='minor'] {
+  background: var(--muted);
+}
+.goals-page .dch-legend b {
+  margin-left: 3px;
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--muted);
+}
+.goals-page .dch-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.goals-page .dch-sub span {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.goals-page .dch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.goals-page .dch-bar .nm {
+  width: 96px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goals-page .dch-bar .track {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.goals-page .dch-bar .track i {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--accent) 75%, var(--bg));
+  border-radius: var(--r-pill);
+}
+.goals-page .dch-bar b {
+  width: 24px;
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--muted);
+  text-align: right;
+}
+.goals-page .dch-pace svg {
+  width: 100%;
+  height: 86px;
+}
+.goals-page .dch-target {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 4;
+}
+.goals-page .dch-plan {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
 .goals-page .draft-note {
   margin: 2px 4px 8px;
 }
@@ -1759,7 +1985,8 @@
   }
 }
 @media (max-width: 980px) {
-  .goals-page .split {
+  .goals-page .split,
+  .goals-page .draft-split {
     grid-template-columns: minmax(0, 1fr);
   }
   .goals-page .stats {
@@ -1842,6 +2069,24 @@
   }
   .goals-page .task .tk {
     grid-column: 3 / 4;
+  }
+  .goals-page .task.task-wide {
+    grid-template-columns: 13px max-content minmax(0, 1fr) 26px;
+  }
+  .goals-page .task.task-wide .te {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .goals-page .task.task-wide .eff {
+    display: none;
+  }
+  .goals-page .task.task-wide .tk {
+    display: none;
+  }
+  .goals-page .task.task-wide .tdate {
+    grid-column: 3;
+    grid-row: 3;
+    justify-self: start;
   }
   .goals-page .task .tdate {
     grid-column: 3 / 4;

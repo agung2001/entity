@@ -12,8 +12,9 @@
  * a menu that can do nothing is a control that lies.
  */
 import { computed, nextTick, ref } from 'vue'
+import EntityMark from '@/components/EntityMark.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
-import { PRIORITY_ORDER, day, priorityWord, taskState } from '@/lib/goals'
+import { PRIORITY_ORDER, day, effortWord, priorityWord, taskState } from '@/lib/goals'
 
 const props = defineProps({
   task: { type: Object, required: true },
@@ -24,8 +25,11 @@ const props = defineProps({
   goalTitle: { type: String, default: '' },
   /** the agenda's title + priority/goal subline, no token column */
   compact: { type: Boolean, default: false },
+  /** the planner's two extra columns: who the job is for, and how big it is */
+  showEntity: { type: Boolean, default: false },
+  showEffort: { type: Boolean, default: false },
 })
-const emit = defineEmits(['tick', 'update', 'remove'])
+const emit = defineEmits(['tick', 'update', 'remove', 'chat'])
 
 const editing = ref('')
 const value = ref('')
@@ -110,7 +114,7 @@ function setPriority(event) {
 <template>
   <li
     class="task"
-    :class="{ 'bt-row': showGoal, 'task-compact': compact }"
+    :class="{ 'bt-row': showGoal, 'task-compact': compact, 'task-wide': showEntity || showEffort }"
     :data-state="state"
   >
     <button
@@ -150,6 +154,13 @@ function setPriority(event) {
         {{ task.title || 'Untitled task' }}
       </button>
       <span v-else class="tx" :title="task.title">{{ task.title || 'Untitled task' }}</span>
+
+      <span v-if="showEntity" class="te" :title="task.entity || 'No entity assigned'">
+        <EntityMark v-if="task.entity" mini animate :entity="task.entity" />
+        <span class="l">{{ task.entity || '—' }}</span>
+      </span>
+
+      <span v-if="showEffort" class="eff" :data-e="task.effort || undefined">{{ effortWord(task.effort) || '—' }}</span>
 
       <span v-if="showGoal" class="gl" :title="goalTitle">{{ goalTitle }}</span>
 
@@ -222,6 +233,14 @@ function setPriority(event) {
         @click="menuOpen = !menuOpen"
       >⋯</button>
       <span v-if="menuOpen" class="tmenu-pop" role="menu">
+        <button
+          v-if="task.entity"
+          type="button"
+          role="menuitem"
+          @click="menuOpen = false; emit('chat')"
+        >
+          Chat with {{ task.entity }}
+        </button>
         <button type="button" role="menuitem" @click="menuOpen = false; emit('remove')">
           Remove task
         </button>

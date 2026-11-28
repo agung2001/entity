@@ -20,8 +20,8 @@ import NavIcon from '@/components/NavIcon.vue'
 import GoalsSubnav from '@/components/goal/GoalsSubnav.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import UiIcon from '@/components/UiIcon.vue'
-import { ago, hub } from '@/stores/hub'
-import { PRIORITY_ORDER, barOf, blankTask, countsOf, day, priorityWord } from '@/lib/goals'
+import { ago, createThread, hub, setChatDraft } from '@/stores/hub'
+import { PRIORITY_ORDER, barOf, blankTask, countsOf, day, effortWord, priorityWord } from '@/lib/goals'
 import { plural } from '@/lib/transfer'
 import { archiveGoal, goals, loadGoals, refreshGoal, tickTask, updateGoal } from '@/stores/goals'
 
@@ -47,6 +47,8 @@ const groups = computed(() =>
   })).filter((group) => group.tasks.length),
 )
 const ownerName = computed(() => String(goal.value?.owner || '').split('@')[0] || 'Its owner')
+const hasEntities = computed(() => (goal.value?.tasks || []).some((task) => task.entity))
+const hasEffort = computed(() => (goal.value?.tasks || []).some((task) => task.effort))
 
 onMounted(() => {
   if (!goals.loaded || goals.workspace !== workspace.value) loadGoals(workspace.value)
@@ -81,6 +83,36 @@ async function removeTask(task) {
 async function addTask(priority) {
   if (!editable.value) return
   await save({ tasks: [...(goal.value?.tasks || []), blankTask(priority)] })
+}
+
+/**
+ * A task's own entity is the one that should do it, so the row can open that
+ * conversation with the task already written into its composer. The thread is a
+ * normal one in the rail: this seeds a draft, it does not start a turn.
+ */
+async function chatAbout(task) {
+  if (!task?.entity || !goal.value) return
+  busy.value = true
+  pageError.value = ''
+  try {
+    const thread = await createThread({ entity: task.entity })
+    const lines = [
+      `About “${task.title}” — one task in the goal “${goal.value.title}”.`,
+      '',
+      `${priorityWord(task.priority)}${task.effort ? ` · ${effortWord(task.effort)}` : ''}${
+        task.date ? ` · due ${day(task.date)}` : ''
+      }`,
+      `The goal: ${goal.value.sentence}`,
+      '',
+      'How would you do this, and what do you need from me first?',
+    ]
+    setChatDraft(lines.join('\n'), thread.id)
+    router.push({ name: 'chat', params: { workspace: workspace.value }, query: { thread: thread.id } })
+  } catch (problem) {
+    pageError.value = problem?.message || 'The chat could not be started.'
+  } finally {
+    busy.value = false
+  }
 }
 
 async function tick(task, done) {
@@ -207,6 +239,9 @@ async function archive() {
                   :task="task"
                   :editable="editable"
                   :readonly="readOnly"
+                  :show-entity="hasEntities"
+                  :show-effort="hasEffort"
+                  @chat="chatAbout(task)"
                   @tick="tick(task, $event)"
                   @update="patchTask(task, $event)"
                   @remove="removeTask(task)"

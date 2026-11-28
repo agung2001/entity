@@ -20,8 +20,9 @@ import { call, onRunEvent } from '@/composables/localBridge'
 import PickMenu from '@/components/PickMenu.vue'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
+import GoalDraftCharts from '@/components/goal/GoalDraftCharts.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
-import { today, PRIORITY_ORDER, draftFrom, blankTask, mergeTasks, priorityWord } from '@/lib/goals'
+import { EFFORT_WEIGHT, PRIORITY_ORDER, blankTask, draftFrom, mergeTasks, priorityWord, today } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { clearDraft, readDraft, saveDraft, sweepDrafts } from '@/lib/draftCache'
 import { dialogDepth } from '@/composables/useDialog'
@@ -36,7 +37,7 @@ const props = defineProps({
   initialSentence: { type: String, default: '' },
   initialTitle: { type: String, default: '' },
 })
-const emit = defineEmits(['cancel'])
+const emit = defineEmits(['cancel', 'update:step'])
 
 const step = ref(1)
 const title = ref(props.initialTitle)
@@ -144,6 +145,8 @@ const tasks = ref([])
 const drafting = ref(false)
 const draftError = ref('')
 const draftSource = ref('')
+const draftSummary = ref('')
+const draftModel = ref('')
 const merged = ref([])
 const backup = ref(null)
 const creating = ref(false)
@@ -300,6 +303,9 @@ function onSend(text) {
 }
 
 /** The agent's answer lands in the list with the same merge a retry keeps. */
+/* the page widens for step 2: the plan, its charts and its columns need the band */
+watch(step, (value) => emit('update:step', value), { immediate: true })
+
 function applyDraft(proposed, source) {
   const answer = mergeTasks(tasks.value, proposed)
   backup.value = tasks.value.map((task) => ({ ...task }))
@@ -332,9 +338,12 @@ async function draft() {
       sentence: sentence.value,
       deadline: deadline.value,
       context: attachments.value,
+      entities: entityOptions.value.map((option) => option.id),
     })
     const tasks = Array.isArray(answer?.tasks) ? answer.tasks : []
     if (!tasks.length) throw new Error('The harness answered with no task list.')
+    draftSummary.value = String(answer?.summary || '')
+    draftModel.value = String(answer?.model || '')
     applyDraft(tasks, 'harness')
   } catch (problem) {
     draftError.value = problem?.message || 'The draft did not answer.'
@@ -353,6 +362,7 @@ function draftLocally() {
   tasks.value = answer.tasks
   merged.value = answer.merged
   draftSource.value = 'local'
+  draftSummary.value = ''
   step.value = 2
 }
 
@@ -394,6 +404,7 @@ function snapshot() {
     tasks: tasks.value,
     merged: merged.value,
     draftSource: draftSource.value,
+    summary: draftSummary.value,
     /* a local file's bytes are not a draft: they are what the quota cannot hold,
        and the goal keeps the reference anyway */
     attachments: attachments.value.map(({ data, ...rest }) => rest),
@@ -429,6 +440,7 @@ function restore() {
   tasks.value = Array.isArray(value.tasks) ? value.tasks.filter(RESTORE_TASK) : []
   merged.value = Array.isArray(value.merged) ? value.merged.map(String) : []
   if (value.draftSource === 'local' || value.draftSource === 'harness') draftSource.value = value.draftSource
+  draftSummary.value = typeof value.summary === 'string' ? value.summary : ''
   attachments.value = Array.isArray(value.attachments) ? value.attachments : []
   restoredAt.value = hit.savedAt
 }
@@ -454,6 +466,7 @@ function startOver() {
   backup.value = null
   attachments.value = []
   draftSource.value = ''
+  draftSummary.value = ''
   draftError.value = ''
 }
 
@@ -679,7 +692,22 @@ async function create() {
     </div>
 
     <!-- ── step 2 ─────────────────────────────────────────────────────── -->
-    <div v-else class="split">
+    <template v-else>
+      <section v-if="draftSummary" class="draft-summary" aria-labelledby="draft-summary-t">
+        <div class="dsh-head">
+          <span class="dsh-t" id="draft-summary-t">The plan, in a paragraph</span>
+          <span class="dsh-by">{{ draftSource === 'local' ? 'written locally' : `planned by ${entity || 'the entity'}` }}</span>
+        </div>
+        <p class="dsh-body">{{ draftSummary }}</p>
+        <div class="dsh-stats">
+          <span><b>{{ tasks.length }}</b> tasks</span>
+          <span><b>{{ criticalCount }}</b> critical</span>
+          <span><b>{{ new Set(tasks.map((task) => task.entity).filter(Boolean)).size }}</b> entities</span>
+          <span><b>{{ effortPoints }}</b> effort points over {{ days }} days</span>
+        </div>
+      </section>
+
+    <div class="split draft-split">
       <div>
         <div v-if="merged.length" class="dedupe">
           <span class="lbl">Merged</span>
@@ -704,6 +732,8 @@ async function create() {
               :key="task.id"
               :task="task"
               editable
+              show-entity
+              show-effort
               @tick="toggle(task, $event)"
               @update="updateTask(task, $event)"
               @remove="removeTask(task)"
@@ -723,23 +753,7 @@ async function create() {
       </div>
 
       <div>
-        <div class="panel">
-          <div class="panel-h"><span class="t">What the draft used</span></div>
-          <div class="panel-body">
-            <div v-for="group in groups" :key="`bar-${group.priority}`" class="prow">
-              <span class="lb"><span class="pri" :data-p="group.priority">{{ priorityWord(group.priority) }}</span></span>
-              <span class="bar" aria-hidden="true">
-                <span class="fill" :style="{ width: `${Math.round((group.tasks.length / Math.max(1, tasks.length)) * 100)}%` }"></span>
-              </span>
-              <span class="ct">{{ group.tasks.length }}</span>
-            </div>
-            <p class="ctx-note">
-              {{ plural(tasks.length, 'task') }} over {{ days }} {{ days === 1 ? 'day' : 'days' }}.
-              <template v-if="draftSource === 'local'">Written locally, one per clause — no harness was asked.</template>
-              <template v-else>Planned by {{ entity || 'the entity' }} from the sentence and the context it names; every row is editable.</template>
-            </p>
-          </div>
-        </div>
+        <GoalDraftCharts :tasks="tasks" :deadline="deadline" />
 
         <div class="notebar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
@@ -754,6 +768,7 @@ async function create() {
         </div>
       </div>
     </div>
+    </template>
 
     <PromptEnhanceDialog
       :open="enhanceOpen"

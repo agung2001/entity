@@ -9,6 +9,12 @@
  */
 const PRIORITY_WORDS = { critical: 'Critical', major: 'Major', normal: 'Normal', minor: 'Minor' }
 
+/** How big a job is, in the same three steps everywhere (the chats' S/M/L). */
+export const EFFORT_WORDS = { small: 'Small', medium: 'Medium', large: 'Large' }
+export const EFFORT_WEIGHT = { small: 1, medium: 2, large: 3 }
+export const effortWord = (value) => EFFORT_WORDS[String(value)] || ''
+export const effortWeight = (value) => EFFORT_WEIGHT[String(value)] || 0
+
 /** Worst first: the order a group is drawn in, and the tie-break in "next". */
 export const PRIORITY_ORDER = ['critical', 'major', 'normal', 'minor']
 
@@ -270,4 +276,6 @@ export const blankTask = (priority) => ({
   token: { kind: 'draft', label: '' },
   date: '',
   done: false,
+  entity: '',
+  effort: '',
 })

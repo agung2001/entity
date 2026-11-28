@@ -32,6 +32,7 @@ const MAX_DOC = 6_000
 const MAX_DOCS = 8
 const MAX_DIGEST = 48_000
 const PRIORITIES = new Set(['critical', 'major', 'normal', 'minor'])
+const EFFORTS = new Set(['small', 'medium', 'large'])
 
 const trim = (value, limit) => {
   const text = String(value ?? '').trim()
@@ -302,15 +303,21 @@ const INSTRUCTION = [
   '- Order the tasks in the order the work has to happen.',
   '- "priority" is exactly one of: Critical, Major, Normal, Minor.',
   '- "date" is YYYY-MM-DD, between today and the deadline, in that order.',
+  '- "entity" is exactly one of the entity names provided, the one best suited to',
+  '  the job. Do not invent an entity. Omit it only when no entity fits.',
+  '- "effort" is Small, Medium or Large — the size of the job, not its urgency.',
   '- "token" is the project or file the task was reasoned from, short.',
   '- 3 to 20 tasks. If the sentence only supports one job, return one.',
+  '- "summary" is 2–4 sentences for the person deciding whether to pursue the goal:',
+  '  what the plan covers, which entity carries the load, and the one risk or gap',
+  '  that is easiest to miss. No marketing, no restating the tasks one by one.',
   '',
   'Answer with JSON only, no prose and no code fences:',
-  '{"tasks":[{"title":"…","priority":"Major","date":"YYYY-MM-DD","token":"@orca:One"}]}',
+  '{"summary":"…","tasks":[{"title":"…","priority":"Major","date":"YYYY-MM-DD","entity":"…","effort":"Medium","token":"@orca:One"}]}',
 ].join('\n')
 
 /** The answer, field by field. Anything outside the window is dropped, not clamped. */
-function cleanTasks(list, { today, deadline }) {
+function cleanTasks(list, { today, deadline, entities = [] }) {
   if (!Array.isArray(list)) return []
   const seen = new Set()
   const tasks = []
@@ -323,6 +330,11 @@ function cleanTasks(list, { today, deadline }) {
     const priority = String(item?.priority || '').toLowerCase()
     let date = dayOf(item?.date)
     if (date && ((today && date < today) || (deadline && date > deadline))) date = ''
+    /* the model may answer with a name this workspace does not have; only one
+       the caller listed is stored, so a row can never point at nobody */
+    const wanted = String(item?.entity || '').trim().toLowerCase()
+    const entity = entities.find((entry) => String(entry).toLowerCase() === wanted) || ''
+    const effort = String(item?.effort || '').toLowerCase()
     tasks.push({
       id: crypto.randomUUID(),
       priority: PRIORITIES.has(priority) ? priority : 'normal',
@@ -330,6 +342,8 @@ function cleanTasks(list, { today, deadline }) {
       token: { kind: 'draft', label: trim(item?.token, 120) || 'from the plan' },
       date,
       done: false,
+      entity,
+      effort: EFFORTS.has(effort) ? effort : '',
     })
     if (tasks.length >= MAX_TASKS) break
   }
@@ -344,6 +358,7 @@ async function draft({
   sentence,
   deadline,
   context,
+  entities = [],
   draftId = '',
   emit = () => {},
 } = {}) {
@@ -379,8 +394,13 @@ async function draft({
       detail: `${named.length} ${named.length === 1 ? 'project' : 'projects'} · ${Math.round(contextBlock.length / 1024)} kB`,
     })
   }
+  const available = (Array.isArray(entities) ? entities : [])
+    .map((entry) => trim(entry, 200))
+    .filter(Boolean)
+    .slice(0, 40)
   const prompt = [
-    `Entity: ${trim(entity, 200) || '(none)'}`,
+    `Entity planning this goal: ${trim(entity, 200) || '(none)'}`,
+    `Entities available for the tasks: ${available.length ? available.join(', ') : '(none listed)'}`,
     `Today: ${today}`,
     `Deadline: ${due || '(none)'}`,
     '',
@@ -409,13 +429,14 @@ async function draft({
   }
 
   const parsed = lastJson(answer.text)
-  const tasks = cleanTasks(parsed?.tasks, { today, deadline: due })
+  const summary = trim(parsed?.summary, 1_400)
+  const tasks = cleanTasks(parsed?.tasks, { today, deadline: due, entities: available })
   if (!tasks.length) {
     throw new Error(
       `${answer.harness || id} answered with no task list. Nothing was created — retry, or write the tasks yourself.`,
     )
   }
-  return { tasks, harness: answer.harness, model: answer.model }
+  return { summary, tasks, harness: answer.harness, model: answer.model }
 }
 
 module.exports = { draft, runStreaming, cleanTasks, digest, stepLabel }
