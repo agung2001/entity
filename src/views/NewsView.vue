@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import UiIcon from '@/components/UiIcon.vue'
+import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import ViewToggle from '@/components/ViewToggle.vue'
 import { call } from '@/composables/localBridge'
 import { matchesQuery } from '@/composables/search'
@@ -487,24 +488,44 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <div class="news-band">
-      <div class="pg-id">
-        <p class="eyebrow">{{ eyebrow }}</p>
-        <h1>{{ tab === 'trends' ? 'Trends' : 'News' }}</h1>
-        <p class="sub">
-          <template v-if="tab === 'trends' && trendFeeds.length">
-            The <b>{{ trendFeeds[0].label }}</b> feed only — what is being searched right now, ordered by
-            the volume it prints. Every other feed is in <b>General</b>.
-          </template>
-          <template v-else-if="tab === 'trends'">
-            Trends reads exactly one feed — <b>the Google Trends connector</b> — and it is not installed in
-            this workspace.
-          </template>
-          <template v-else>
-            Every news feed installed in this workspace, newest first. The feeds are installed in
-            <b>Connectors</b> and read once for the whole workspace, so this page is identical for every
-            member.
-          </template>
-        </p>
+      <!-- The hero is the app's own material (`.entp-hero` in `backdrops.css`,
+           `PixelBackdrop` at `variant="hero"`), not a new one. The pixels are
+           `aria-hidden` and carry no text: what a screen reader hears here is the
+           eyebrow, the h1 and the one paragraph. -->
+      <div class="nv-banner">
+        <PixelBackdrop variant="hero" :count="18" />
+        <div class="nv-banner-in">
+          <svg class="nv-mark" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2" y="3" width="12" height="10" rx="1" fill="#f8b956" />
+            <rect x="2" y="3" width="12" height="2.2" rx="1" fill="#fdd79a" />
+            <rect x="4" y="7" width="5" height="1.4" rx=".7" fill="#7a5005" />
+            <rect x="4" y="10" width="8" height="1.4" rx=".7" fill="#c98f22" />
+            <rect x="10.6" y="6.6" width="2" height="2" rx=".4" fill="#7a5005" />
+          </svg>
+          <div class="nv-id">
+            <!-- The dot is the one truth the banner can add: green while every
+                 feed is readable, and absent the moment one is not. -->
+            <p class="eyebrow nv-eyebrow">
+              <span v-if="!skel && !loadError && !failing.length" class="st" aria-hidden="true"></span>{{ eyebrow }}
+            </p>
+            <h1>{{ tab === 'trends' ? 'Trends' : 'News' }}</h1>
+            <p class="nv-sub">
+              <template v-if="tab === 'trends' && trendFeeds.length">
+                The <b>{{ trendFeeds[0].label }}</b> feed only — what is being searched right now, ordered by
+                the volume it prints. Every other feed is in <b>General</b>.
+              </template>
+              <template v-else-if="tab === 'trends'">
+                Trends reads exactly one feed — <b>the Google Trends connector</b> — and it is not installed in
+                this workspace.
+              </template>
+              <template v-else>
+                Every news feed installed in this workspace, newest first. The feeds are installed in
+                <b>Connectors</b> and read once for the whole workspace, so this page is identical for every
+                member.
+              </template>
+            </p>
+          </div>
+        </div>
       </div>
 
       <div class="sk-tabs" role="tablist" aria-label="News sections" @keydown="onTabKey">
