@@ -44,9 +44,10 @@ const emit = defineEmits(['cancel', 'update:step'])
 const step = ref(1)
 const title = ref(props.initialTitle)
 const sentence = ref(props.initialSentence)
-/* The entity that plans this goal. It is a real choice, not decoration: the
-   composer's `/` menu offers that entity's preferred skills, and the record
-   keeps the name so the goal page can say who it was planned by. */
+/* Who plans this goal. It is a real choice, not decoration: the composer's `/`
+   menu offers that entity's preferred skills, and the record keeps the name so
+   the goal page can say who it was planned by. It is not who the tasks are for —
+   that is the scope below. */
 const entities = computed(() => hub.agents || [])
 /* The chat's own entity picker: the same mark, the same rows, the same search. */
 const entityOptions = computed(() =>
@@ -57,27 +58,99 @@ const entityOptions = computed(() =>
     glyph: moodGlyph(markFor(hub.workspace, entry.id || entry.name, entry.mark).mood),
   })),
 )
-const entity = ref(String(entities.value[0]?.id || entities.value[0]?.name || ''))
+const plannedBy = ref(String(entities.value[0]?.id || entities.value[0]?.name || ''))
 const agent = computed(
-  () => entities.value.find((entry) => (entry.id || entry.name) === entity.value) || entities.value[0] || { name: 'Goal' },
+  () => entities.value.find((entry) => (entry.id || entry.name) === plannedBy.value) || entities.value[0] || { name: 'Goal' },
 )
 /* A harness is the entity's default until the person picks another one; the
    choice rides with the goal so the plan can be run with it later. */
-watch(entity, () => {
+watch(plannedBy, () => {
   const next = String(agent.value?.harness || '')
   if (next) harness.value = next
 })
 /* One digit per field, from the catalog, so the key on the label and the
    handler below cannot drift — the same contract the New-thread dialog keeps. */
-const keys = {
-  title: shortcutLabel('goal-title'),
-  entity: shortcutLabel('goal-entity'),
-  sentence: shortcutLabel('goal-sentence'),
-  deadline: shortcutLabel('goal-deadline'),
-  privacy: shortcutLabel('goal-privacy'),
+/* Who may be given a task. Automatic is the default; the sentence's `@entity`
+   mentions narrow it without asking, because a mention is already a statement. */
+const scopeMode = ref('auto')
+const mentionedEntities = computed(() => {
+  const known = new Map(entityOptions.value.map((option) => [String(option.label).toLowerCase(), option.label]))
+  const found = new Set()
+  /* no dot in the name: a mention before a full stop would otherwise swallow it */
+  for (const hit of sentence.value.matchAll(/(^|[\s(\[])@([A-Za-z0-9_-]+)/g)) {
+    const name = known.get(hit[2].toLowerCase())
+    if (name) found.add(name)
+  }
+  return [...found]
+})
+/* The sentence is the scope: an `@entity` mention is the same fact the chips
+   write, so there is no second list to drift from it. */
+watch(mentionedEntities, (names) => {
+  if (names.length) scopeMode.value = 'only'
+})
+const effectiveScope = computed(() =>
+  mentionedEntities.value.length
+    ? { mode: 'only', entities: mentionedEntities.value }
+    : { mode: 'auto', entities: [] },
+)
+const allowedEntities = computed(() =>
+  effectiveScope.value.mode === 'only'
+    ? effectiveScope.value.entities
+    : entityOptions.value.map((option) => option.label),
+)
+const taskEntityOptions = computed(() =>
+  entityOptions.value.filter((option) => allowedEntities.value.includes(option.label)),
+)
+
+/* one name, one mention: the chip and the sentence are the same control */
+const escapeRe = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const mentionRe = (name) => new RegExp(`(^|[\\s(\\[])@${escapeRe(name)}(?![\\w-])`, 'i')
+const hasMention = (name) => mentionRe(name).test(sentence.value)
+/** Taking a mention out must not leave a space before the full stop. */
+const tidySentence = (value) =>
+  value
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+([.,!?;:])/g, '$1')
+    .trim()
+
+/** A chip writes or unwrites `@name`; punctuation stays at the end of the line. */
+function toggleScope(name) {
+  if (hasMention(name)) {
+    sentence.value = tidySentence(sentence.value.replace(mentionRe(name), '$1'))
+    return
+  }
+  const base = sentence.value.trim()
+  const tail = base.match(/[.!?]+$/)
+  const head = tail ? base.slice(0, -tail[0].length).trimEnd() : base
+  sentence.value = `${head ? `${head} ` : ''}@${name}${tail ? tail[0] : ''}`
+  scopeMode.value = 'only'
 }
+
+/** Automatic is a sentence with no entity mentions, with the one step back. */
+function clearScope() {
+  const before = sentence.value
+  let next = before
+  for (const name of mentionedEntities.value) next = next.replace(mentionRe(name), '$1')
+  next = tidySentence(next)
+  scopeMode.value = 'auto'
+  if (next === before) return
+  sentence.value = next
+  toast('Entity mentions taken out of the sentence', {
+    actionLabel: 'Undo',
+    onAction: () => {
+      sentence.value = before
+    },
+  })
+}
+
+function setScope(mode) {
+  if (mode === 'auto') clearScope()
+  else scopeMode.value = 'only'
+}
+
 const draftKey = shortcutLabel('goal-draft')
 const adjustKey = shortcutLabel('goal-adjust')
+const taskKey = shortcutLabel('goal-task')
 const elapsedLabel = computed(() => {
   const seconds = Math.max(0, Math.round(draftElapsed.value / 1000))
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
@@ -142,12 +215,10 @@ const adjustOpen = ref(false)
 const adjustIntent = ref('create')
 /* list is the plan; calendar is the same plan where it lands */
 const planView = ref('list')
-/* a plan edit is a planning turn: the person sees it running and the list that
-   comes back, never a row that was silently re-dated */
-const revising = ref(false)
+/* A plan edit is a local write: adding, editing and removing never buy a
+   planning turn. The dates were reasoned together, so a hand-edited plan can
+   drift — that is a deliberate trade for not paying per keystroke. */
 const taskOpen = ref(false)
-const replanNote = ref('')
-const replanError = ref('')
 /* the row's own dialog: editing it is a local write, unlike adding or removing */
 const editingTask = ref(null)
 const deadline = ref('')
@@ -232,6 +303,22 @@ const createWhy = computed(() => {
   return ''
 })
 
+/* What the plan was drafted from. `Back` keeps the plan; step 1 knows whether
+   the fields still say what the plan was made of, so it can offer the way back
+   instead of asking for another (paid) planning turn. */
+const draftSignature = ref('')
+const signature = () =>
+  JSON.stringify({
+    sentence: sentence.value.trim(),
+    deadline: deadline.value,
+    plannedBy: plannedBy.value,
+    harness: harness.value,
+    scope: effectiveScope.value.mode,
+    entities: effectiveScope.value.entities,
+    context: attachments.value.map((entry) => entry.value || entry.label || ''),
+  })
+const planStale = computed(() => tasks.value.length > 0 && draftSignature.value !== signature())
+
 const stats = computed(() => [
   {
     label: 'Tasks',
@@ -311,6 +398,11 @@ function onKey(event) {
     openAdjust('adjust')
     return
   }
+  if (step.value === 2 && matchesShortcut('goal-task', event)) {
+    event.preventDefault()
+    addTask()
+    return
+  }
   if (step.value !== 1) return
   if (matchesShortcut('enhance-prompt', event) && sentence.value.trim()) {
     event.preventDefault()
@@ -320,6 +412,7 @@ function onKey(event) {
   const targets = {
     'goal-title': 'title',
     'goal-entity': 'entity',
+    'goal-scope': 'scope',
     'goal-sentence': 'sentence',
     'goal-deadline': 'deadline',
     'goal-privacy': 'privacy',
@@ -336,10 +429,22 @@ function onKey(event) {
 
 /* Cmd+Enter takes the step: draft on step 1, create on step 2. Blur first, so a
    row that is mid-edit commits before the goal is stored from the task list. */
+function backToTasks() {
+  if (!tasks.value.length) return
+  step.value = 2
+}
+
+/** Step 1's primary: a plan that still matches the fields is one click away;
+    a plan the fields have outgrown is a new planning turn. */
+function draftOrReturn() {
+  if (tasks.value.length && !planStale.value) backToTasks()
+  else draft()
+}
+
 async function runStep() {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   await nextTick()
-  if (step.value === 1) draft()
+  if (step.value === 1) draftOrReturn()
   else if (adjustOpen.value) await create()
   else openAdjust()
 }
@@ -417,17 +522,19 @@ async function draft() {
     const answer = await call('goals.draft', {
       workspace: hub.workspace,
       draftId: draftId.value,
-      entity: entity.value,
+      plannedBy: plannedBy.value,
       harness: harness.value,
       sentence: sentence.value,
       deadline: deadline.value,
       context: attachments.value,
-      entities: entityOptions.value.map((option) => option.label),
+      entities: allowedEntities.value,
+      scope: effectiveScope.value.mode,
     })
     const tasks = Array.isArray(answer?.tasks) ? answer.tasks : []
     if (!tasks.length) throw new Error('The harness answered with no task list.')
     draftSummary.value = String(answer?.summary || '')
     draftModel.value = String(answer?.model || '')
+    draftSignature.value = signature()
     applyDraft(tasks, 'harness')
   } catch (problem) {
     draftError.value = problem?.message || 'The draft did not answer.'
@@ -446,76 +553,36 @@ function draftLocally() {
   tasks.value = answer.tasks
   merged.value = answer.merged
   draftSource.value = 'local'
+  draftSignature.value = signature()
   draftSummary.value = ''
   step.value = 2
 }
 
 function addTask() {
-  if (revising.value || drafting.value) return
-  replanError.value = ''
+  if (drafting.value) return
   taskOpen.value = true
 }
 
-/**
- * The row appears at once — you asked for a task, so it is on the list — and the
- * planner re-fits the whole plan around it. If the turn fails the row stays and
- * says so; a refused re-plan never takes the task back out.
- */
-function submitTask(text, entityName) {
+/** Local by design: the row is on the list before the dialog has closed, and no
+    harness turn is spent. Priority, effort and date are the row's to edit. */
+function submitTask(text, entityName, attached = []) {
   taskOpen.value = false
   const title = String(text || '').trim()
   if (!title) return
   const owner = String(entityName || '').trim()
-  tasks.value = [...tasks.value, { ...blankTask('normal'), title, entity: owner }]
-  replanNote.value = ''
-  revisePlan(
-    `Add this task${owner ? ` for ${owner}` : ''}: “${title}”. ` +
-      `Give it a date and an effort${owner ? '' : ' and an entity'}, and re-date anything else that no longer fits.`,
-    'Added — the planner did not answer, so the rest of the plan was left as it was.',
-  )
-}
-
-/** A planning turn, with the current plan as its input and the new plan as its
-    only output. `fallback` is what the page says when the turn refuses. */
-async function revisePlan(instruction, fallback) {
-  if (revising.value || drafting.value) return
-  revising.value = true
-  replanError.value = ''
-  draftId.value = `revise-${Date.now()}`
-  startClock()
-  try {
-    const answer = await call('goals.revise', {
-      workspace: hub.workspace,
-      entity: entity.value,
-      harness: harness.value,
-      sentence: sentence.value,
-      deadline: deadline.value,
-      context: attachments.value,
-      entities: entityOptions.value.map((option) => option.label),
-      tasks: tasks.value,
-      instruction,
-      draftId: draftId.value,
-    })
-    if (!Array.isArray(answer?.tasks) || !answer.tasks.length) {
-      throw new Error('The planner returned no task list.')
-    }
-    tasks.value = answer.tasks
-    if (answer.summary) draftSummary.value = answer.summary
-    replanNote.value = `Re-planned · ${answer.tasks.length} ${answer.tasks.length === 1 ? 'task' : 'tasks'}`
-  } catch (problem) {
-    /* a dropped connection is not a reason to print a stack-trace sentence; the
-       fallback already says what the page now holds */
-    const why = String(problem?.message || '')
-    replanError.value = /fetch|network|socket/i.test(why) ? fallback : `${why} ${fallback}`.trim()
-  } finally {
-    revising.value = false
-    draftId.value = ''
-    stopClock()
-  }
+  const first = Array.isArray(attached) ? attached[0] : null
+  const token = first
+    ? {
+        kind: String(first.kind || 'file'),
+        label: String(first.name || first.value || first.label || ''),
+        value: String(first.value || ''),
+      }
+    : { kind: 'draft', label: '', value: '' }
+  tasks.value = [...tasks.value, { ...blankTask('normal'), title, entity: owner, token }]
 }
 
 function openTaskEdit(task) {
-  if (revising.value || drafting.value || !task) return
+  if (drafting.value || !task || task.locked) return
   editingTask.value = task
 }
 
@@ -529,16 +596,10 @@ function updateTask(task, patch) {
   tasks.value = tasks.value.map((entry) => (entry.id === task.id ? { ...entry, ...patch } : entry))
 }
 
+/** A locked row is exactly that: plan edits leave it alone. */
 function removeTask(task) {
+  if (task.locked) return
   tasks.value = tasks.value.filter((entry) => entry.id !== task.id)
-  replanNote.value = ''
-  if (revising.value) return
-  /* nothing left to balance: the empty state is the answer */
-  if (!tasks.value.length) return
-  revisePlan(
-    `The task “${task.title}” was removed. Keep it out of the plan and re-date the rest so the work still finishes by the deadline.`,
-    'Removed — the planner did not answer, so the rest of the plan was left as it was.',
-  )
 }
 
 function toggle(task, done) {
@@ -562,7 +623,7 @@ function snapshot() {
     sentence: sentence.value,
     deadline: deadline.value,
     privacy: privacy.value,
-    entity: entity.value,
+    plannedBy: plannedBy.value,
     harness: harness.value,
     tasks: tasks.value,
     merged: merged.value,
@@ -575,7 +636,7 @@ function snapshot() {
 }
 
 const RESTORE_ENTITY = (value) =>
-  entityOptions.value.some((option) => option.id === value) ? String(value) : entity.value
+  entityOptions.value.some((option) => option.id === value) ? String(value) : plannedBy.value
 const RESTORE_HARNESS = (value) =>
   harnessOptions.value.some((option) => option.id === value) ? String(value) : harness.value
 const RESTORE_TASK = (task) =>
@@ -598,7 +659,7 @@ function restore() {
   sentence.value = typeof value.sentence === 'string' ? value.sentence : ''
   deadline.value = typeof value.deadline === 'string' ? value.deadline : ''
   if (value.privacy === 'workspace' || value.privacy === 'private') privacy.value = value.privacy
-  entity.value = RESTORE_ENTITY(value.entity)
+  plannedBy.value = RESTORE_ENTITY(value.plannedBy ?? value.entity)
   harness.value = RESTORE_HARNESS(value.harness)
   tasks.value = Array.isArray(value.tasks) ? value.tasks.filter(RESTORE_TASK) : []
   merged.value = Array.isArray(value.merged) ? value.merged.map(String) : []
@@ -606,6 +667,7 @@ function restore() {
   draftSummary.value = typeof value.summary === 'string' ? value.summary : ''
   attachments.value = Array.isArray(value.attachments) ? value.attachments : []
   restoredAt.value = hit.savedAt
+  if (tasks.value.length) draftSignature.value = signature()
 }
 
 function scheduleSave() {
@@ -640,7 +702,19 @@ function cancel() {
 
 restore()
 watch(
-  [step, title, sentence, deadline, privacy, entity, harness, tasks, merged, draftSource, attachments],
+  [
+    step,
+    title,
+    sentence,
+    deadline,
+    privacy,
+    plannedBy,
+    harness,
+    tasks,
+    merged,
+    draftSource,
+    attachments,
+  ],
   scheduleSave,
   { deep: true },
 )
@@ -661,10 +735,13 @@ async function create() {
       sentence: sentence.value.trim(),
       deadline: deadline.value,
       privacy: privacy.value,
-      entity: entity.value,
+      plannedBy: plannedBy.value,
+      scope: effectiveScope.value.mode,
+      entities: effectiveScope.value.entities,
       harness: harness.value,
       context: attachments.value,
-      tasks: tasks.value.map((task) => ({ ...task, title: String(task.title).trim() })),
+      /* the lock is a draft promise, not a permission on the stored goal */
+      tasks: tasks.value.map(({ locked, ...task }) => ({ ...task, title: String(task.title).trim() })),
     })
     /* the write landed and the view is leaving: the tab has nothing to restore */
     clearDraft(CACHE_KEY)
@@ -727,7 +804,7 @@ async function create() {
       <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Planning the tasks">
         <div class="draft-live" role="status">
           <span class="model-spin" aria-hidden="true"></span>
-          <span class="draft-live-t">Planning with {{ entity || 'the entity' }}</span>
+          <span class="draft-live-t">Planning with {{ agent.name || 'the entity' }}</span>
           <b class="draft-live-clock">{{ elapsedLabel }}</b>
         </div>
         <ol v-if="draftSteps.length" class="draft-steps" aria-live="polite">
@@ -743,7 +820,13 @@ async function create() {
         v-if="!drafting"
         ref="fields"
         v-model:title="title"
-        v-model:entity="entity"
+        v-model:plannedBy="plannedBy"
+        :scope="scopeMode"
+        :entities="mentionedEntities"
+        @update:scope="setScope"
+        @toggle-scope="toggleScope"
+        @clear-scope="clearScope"
+        :mentioned="mentionedEntities"
         v-model:harness="harness"
         v-model:sentence="sentence"
         v-model:deadline="deadline"
@@ -773,10 +856,25 @@ async function create() {
       </div>
 
       <div class="wiz-foot">
-        <span class="why">{{ required }} of 2 required</span>
+        <span class="why">
+          <template v-if="tasks.length && !planStale">
+            Your plan is still here — {{ plural(tasks.length, 'task') }}.
+          </template>
+          <template v-else-if="tasks.length">The fields changed, so this drafts again.</template>
+          <template v-else>{{ required }} of 2 required</template>
+        </span>
         <button class="btn" type="button" :disabled="drafting" @click="cancel()">Cancel</button>
-        <button class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
-          {{ drafting ? `Drafting… ${elapsedLabel}` : 'Draft tasks' }}<span class="btn-kbd">{{ draftKey }}</span>
+        <button
+          v-if="tasks.length && !planStale"
+          class="btn btn-primary"
+          type="button"
+          @click="backToTasks"
+        >
+          Back to the tasks<span class="btn-kbd">{{ draftKey }}</span>
+        </button>
+        <button v-else class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
+          {{ drafting ? `Drafting… ${elapsedLabel}` : tasks.length ? 'Draft again' : 'Draft tasks'
+          }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </div>
@@ -820,18 +918,10 @@ async function create() {
             <button type="button" role="tab" :aria-selected="planView === 'calendar' ? 'true' : 'false'" @click="planView = 'calendar'">Calendar</button>
           </span>
           <span class="sp"></span>
-          <button class="add" type="button" :disabled="drafting || revising" @click="addTask">+ Task</button>
+          <button class="add" type="button" :disabled="drafting" @click="addTask">
+            + Task<kbd class="add-kbd">{{ taskKey }}</kbd>
+          </button>
         </div>
-
-        <div v-if="revising" class="replan-bar" role="status">
-          <span class="model-spin" aria-hidden="true"></span>
-          <span class="replan-t">Re-planning with {{ agent.name || 'the entity' }}</span>
-          <b class="replan-clock">{{ elapsedLabel }}</b>
-          <span class="sp"></span>
-          <span class="replan-hint">Every date and title comes back from the planner.</span>
-        </div>
-        <p v-else-if="replanNote" class="replan-note">{{ replanNote }}</p>
-        <p v-if="replanError && !revising" class="replan-note danger">{{ replanError }}</p>
 
         <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Drafting the tasks">
           <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${72 - n * 5}%`, height: '10px' }"></span></div>
@@ -855,10 +945,12 @@ async function create() {
                 v-for="task in sortedTasks"
                 :key="task.id"
                 :task="task"
-                :editable="!revising"
+                editable
+                lockable
                 show-entity
                 show-effort
                 :show-source="false"
+                @lock="updateTask(task, { locked: $event })"
                 @tick="toggle(task, $event)"
                 @update="updateTask(task, $event)"
                 @edit="openTaskEdit(task)"
@@ -867,7 +959,7 @@ async function create() {
             </ul>
           </div>
 
-          <div v-else class="blank">
+          <div v-if="!tasks.length" class="blank">
             <h3>No task came back</h3>
             <p>
               The sentence produced no clause to work from. Write the sentence as a few clauses — one job
@@ -892,7 +984,9 @@ async function create() {
     <TaskEditDialog
       :open="Boolean(editingTask)"
       :task="editingTask"
-      :entity-options="entityOptions"
+      :entity-options="taskEntityOptions"
+      :harness="harness"
+      :agent="agent"
       @close="editingTask = null"
       @save="saveTask"
     />
@@ -903,8 +997,8 @@ async function create() {
       :harness="harness"
       :plan-size="tasks.length"
       :deadline="deadline"
-      :entity="entity"
-      :entity-options="entityOptions"
+      :entity="plannedBy"
+      :entity-options="taskEntityOptions"
       @close="taskOpen = false"
       @submit="submitTask"
     />
@@ -930,8 +1024,9 @@ async function create() {
               editing here does not store anything.
             </template>
             <template v-else>
-              {{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical · {{ entitiesUsed }} entities ·
-              due {{ day(deadline) }}. Adjust anything below — nothing is written until you create it.
+              {{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical ·
+              {{ plural(entitiesUsed, 'entity', 'entities') }} · due {{ day(deadline) }}. Adjust anything
+              below — nothing is written until you create it.
             </template>
           </p>
           <button class="x mo-x" type="button" aria-label="Close" @click="adjustOpen = false">
@@ -944,7 +1039,13 @@ async function create() {
         <div class="mo-body goals-page goaladjust-body">
           <GoalFields
             v-model:title="title"
-            v-model:entity="entity"
+            v-model:plannedBy="plannedBy"
+            :scope="scopeMode"
+            :entities="mentionedEntities"
+            @update:scope="setScope"
+            @toggle-scope="toggleScope"
+            @clear-scope="clearScope"
+            :mentioned="mentionedEntities"
             v-model:harness="harness"
             v-model:sentence="sentence"
             v-model:deadline="deadline"

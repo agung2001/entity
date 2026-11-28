@@ -11,6 +11,8 @@
  */
 import { computed, ref, watch } from 'vue'
 import PickMenu from '@/components/PickMenu.vue'
+import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
+import SlashComposer from '@/components/SlashComposer.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
 import { EFFORT_WORDS, PRIORITY_ORDER, priorityWord } from '@/lib/goals'
 
@@ -18,6 +20,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   task: { type: Object, default: null },
   entityOptions: { type: Array, default: () => [] },
+  harness: { type: String, default: '' },
+  agent: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['close', 'save'])
 
@@ -26,7 +30,10 @@ const priority = ref('normal')
 const entity = ref('')
 const effort = ref('')
 const date = ref('')
-const source = ref('')
+/* the composer's attachments are the task's context. The first one is its
+   source, which is why this dialog has no separate Source field. */
+const attachments = ref([])
+const enhanceOpen = ref(false)
 
 const priorities = PRIORITY_ORDER
 const efforts = Object.entries(EFFORT_WORDS)
@@ -47,10 +54,33 @@ watch(
     entity.value = String(props.task.entity || '')
     effort.value = String(props.task.effort || '')
     date.value = String(props.task.date || '')
-    source.value = String(props.task.token?.label || '')
+    /* a `draft` token is the planner's reasoning label ("goal"), not a source
+       anybody attached — it does not become a chip */
+    const token = props.task.token || {}
+    const linked = Boolean(token.value) || (token.kind && token.kind !== 'draft')
+    attachments.value = linked
+      ? [{ kind: String(token.kind || 'file'), name: String(token.label || token.value || ''), value: String(token.value || '') }]
+      : []
   },
   { immediate: true },
 )
+
+function applyEnhance(answer) {
+  title.value = String(answer?.text || title.value)
+  enhanceOpen.value = false
+}
+
+/** The first attachment is the source. Only its reference travels with the task:
+    the bytes the composer read are this turn's, not the goal's. */
+function tokenOfAttachments() {
+  const first = attachments.value[0]
+  if (!first) return { kind: 'draft', label: '', value: '' }
+  return {
+    kind: String(first.kind || 'file'),
+    label: String(first.name || first.value || first.label || ''),
+    value: String(first.value || ''),
+  }
+}
 
 function save() {
   const next = title.value.trim()
@@ -61,7 +91,7 @@ function save() {
     entity: entity.value,
     effort: effort.value,
     date: date.value,
-    token: { ...(props.task?.token || { kind: 'draft' }), label: source.value.trim() },
+    token: tokenOfAttachments(),
   })
 }
 </script>
@@ -80,8 +110,8 @@ function save() {
       <div class="mo-head">
         <h2 id="taskedit-t">Edit task</h2>
         <p class="tasklede">
-          Change the row you are looking at. Nothing here re-plans the rest — adding and removing tasks
-          are what ask the planner for a new version.
+          Change the row you are looking at. It writes this task only — no other row is re-dated and no
+          planning turn is spent.
         </p>
         <button class="x mo-x" type="button" aria-label="Close" @click="emit('close')">
           <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -92,8 +122,39 @@ function save() {
 
       <div class="mo-body goals-page taskedit-body">
         <div class="fld-solo">
-          <label for="taskedit-title">Task</label>
-          <input id="taskedit-title" v-model="title" type="text" placeholder="What has to happen" />
+          <div class="tasklbl-row">
+            <span class="fld-head">Task</span>
+            <button
+              class="task-enh"
+              type="button"
+              title="Enhance this task with the planner"
+              :disabled="!title.trim()"
+              @click="enhanceOpen = true"
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 1.8l1.5 4.7L14.2 8l-4.7 1.5L8 14.2l-1.5-4.7L1.8 8l4.7-1.5z" />
+                <path d="M12.6 2.2l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z" opacity=".55" />
+              </svg>
+              Enhance
+            </button>
+          </div>
+          <!-- the same box as step 1: `/` a skill, `@` a mention, so a title can
+               point at the entity or project it is about -->
+          <div class="cm cm-composer task-title">
+            <SlashComposer
+              :agent="agent"
+              :show-send="false"
+              :show-enhance="false"
+              machine="local"
+              base-dir=""
+              placeholder="What has to happen — / skills · @ mentions"
+              label="Task — / for a skill, @ to mention"
+              :draft="title"
+              v-model:attachments="attachments"
+              @update:draft="title = $event"
+              @send="canSave && save()"
+            />
+          </div>
         </div>
 
         <!-- priority's four words need the whole width; effort, entity and the
@@ -138,16 +199,11 @@ function save() {
           </div>
         </div>
 
-        <div class="fld-row">
-          <div class="fld-solo">
-            <label for="taskedit-date">Due</label>
-            <input id="taskedit-date" v-model="date" type="date" />
-          </div>
-          <div class="fld-solo">
-            <label for="taskedit-source">Source <span class="opt">optional</span></label>
-            <input id="taskedit-source" v-model="source" type="text" placeholder="The project or file it came from" />
-          </div>
+        <div class="fld-solo">
+          <label for="taskedit-date">Due</label>
+          <input id="taskedit-date" v-model="date" type="date" />
         </div>
+
       </div>
 
       <div class="mo-foot">
@@ -158,5 +214,15 @@ function save() {
         </button>
       </div>
     </div>
+
+    <PromptEnhanceDialog
+      :open="enhanceOpen"
+      :seed="title"
+      :harness="harness"
+      from="plan"
+      scope="the task"
+      @close="enhanceOpen = false"
+      @apply="applyEnhance"
+    />
   </Teleport>
 </template>

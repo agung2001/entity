@@ -494,6 +494,29 @@
   cursor: default;
 }
 
+/* On the draft the same box is a lock: open when the row may be edited, closed
+   when a plan edit has to leave it alone. */
+.goals-page .chk.chk-lock {
+  color: var(--muted);
+}
+.goals-page .chk.chk-lock .lock-glyph {
+  display: block;
+}
+.goals-page .chk.chk-lock[aria-checked='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.goals-page .chk.chk-lock[aria-checked='true']::before {
+  content: none;
+}
+.goals-page .task.task-locked {
+  background: color-mix(in oklab, var(--surface) 60%, var(--bg));
+}
+.goals-page .task.task-locked:hover {
+  background: color-mix(in oklab, var(--surface) 85%, var(--bg));
+}
+
 /* Priority: a word plus a 5 px mark — colour is never the only signal. */
 .goals-page .pri {
   display: inline-flex;
@@ -1467,6 +1490,82 @@
   padding-right: 11px;
 }
 
+/* who may be given a task: two cards, then the entities themselves */
+.goals-page .scope-fld {
+  margin-top: 2px;
+}
+.goals-page .scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.goals-page .scope-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px 0 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  font-size: var(--fs-secondary);
+  color: var(--muted);
+  cursor: pointer;
+}
+/* the mark is the entity, mood badge and all. Same size as a task row's mark:
+   at 16–24 px the badge was unreadable, which is why these chips looked faceless. */
+.goals-page .scope-chips button .mark {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+.goals-page .scope-chips button:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.goals-page .scope-chips button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+}
+.goals-page .scope-chips button:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.goals-page .scope-fld .hint b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.goals-page .scope-fld .hint code {
+  padding: 1px 4px;
+  border-radius: var(--r-2xs);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+/* a week is one row of taller days: the place "what lands now" is read */
+.goals-page .dcal-grid[data-view='week'] .dcal-cell {
+  min-height: 156px;
+}
+.goals-page .dcal-grid[data-view='week'] .dcal-chip {
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+}
+.goals-page .dph .add .add-kbd {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
 /* the plan's two readings: the table, or the month it lands on */
 .goals-page .pview {
   display: inline-flex;
@@ -1593,42 +1692,7 @@
   color: var(--muted);
 }
 
-/* a plan edit is a turn, and it says so while it runs */
-.goals-page .replan-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in oklab, var(--accent-soft) 34%, var(--bg));
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--ink-2);
-}
-.goals-page .replan-bar .sp {
-  flex: 1;
-}
-.goals-page .replan-clock {
-  font-weight: 400;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.goals-page .replan-hint {
-  color: var(--muted);
-}
-.goals-page .replan-note {
-  margin: 0;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--border);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--muted);
-}
-.goals-page .replan-note.danger {
-  color: var(--danger);
-}
-
-/* the edit dialog's segmented words: priority and effort are the app's, not codes */
+/* segmented words: priority and effort are the app's four/three words, not codes */
 .goals-page .seg {
   display: flex;
   flex-wrap: wrap;
@@ -1675,9 +1739,54 @@
   background: var(--muted);
 }
 
+/* a dialog's quiet action, the same grammar as the composer's Enhance */
+.taskdlg .tasklbl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.taskdlg .tasklbl-row .tasklbl,
+.taskdlg .tasklbl-row .fld-head {
+  margin: 0;
+}
+.taskdlg .task-enh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.taskdlg .task-enh:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+.taskdlg .task-enh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.taskdlg .task-enh svg {
+  color: var(--muted);
+}
+.taskdlg .task-enh:hover:not(:disabled) svg {
+  color: var(--accent-ink);
+}
+
 /* the add-task dialog: one field, then what joining the plan means */
 .modal.taskdlg {
   width: min(600px, 94vw);
+}
+.modal.taskdlg:focus {
+  outline: none;
 }
 .taskdlg .mo-head {
   padding: 20px 20px 0;
@@ -1701,19 +1810,11 @@
   text-transform: uppercase;
   color: var(--muted);
 }
+/* exactly the goal form's composer: the border is `.cm`'s, the textarea has
+   none, and it is as tall as the one on step 1 */
 .taskdlg .taskfld {
   border-radius: var(--r);
-  background: var(--bg);
 }
-.taskdlg .taskfld .cm {
-  border-radius: var(--r);
-  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 4%, transparent);
-}
-.taskdlg .taskfld .cm:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
-}
-.taskdlg .taskfld :deep(.cm-in),
 .taskdlg .taskfld .slash-input {
   min-height: 64px;
 }
@@ -1749,9 +1850,8 @@
 }
 .taskdlg .taskwho {
   display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 14px;
   padding-top: 13px;
   border-top: 1px solid var(--border);
@@ -1767,8 +1867,6 @@
   margin: 0;
 }
 .taskdlg .taskwho-hint {
-  flex: 1 1 170px;
-  padding-bottom: 8px;
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--muted);
@@ -1792,6 +1890,14 @@
 }
 .taskdlg .taskedit-body .fld-solo {
   margin-bottom: 14px;
+}
+.taskdlg .task-title {
+  min-height: 0;
+}
+.taskdlg .task-title .slash-input {
+  min-height: 44px;
+  padding: 0;
+  font-size: var(--fs-small);
 }
 .taskdlg .taskedit-body .fld-row {
   gap: 12px;
@@ -1932,14 +2038,15 @@
 }
 
 /* ── the create flow ──────────────────────────────────────────────────── */
+/* the head, the step track and the plan take the page's full band; step 1's
+   form keeps its own 820 px reading column inside it */
 .goals-page .goal-wiz {
-  max-width: 1020px;
+  max-width: none;
 }
 .goals-page .steps {
   display: flex;
   align-items: center;
   gap: 0;
-  max-width: 620px;
   margin: 0 0 20px;
 }
 .goals-page .steps .st {

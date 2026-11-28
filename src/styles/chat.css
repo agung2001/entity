@@ -1277,43 +1277,8 @@
   opacity: 1;
 }
 .cp-dock .slash-hint kbd,
-.cp-dock .slash-enh kbd {
-  display: inline-block;
-  padding: 1px 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-xs);
-  background: var(--surface);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  line-height: 1.4;
-  color: var(--ink-2);
-}
 .cp-dock .slash-hint-sep {
   opacity: 0.55;
-}
-/* an enhance carries text, so it is always visible once there is a draft */
-.cp-dock .slash-enh {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 22px;
-  margin: 0 0 0 2px;
-  padding: 0 6px 0 4px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-xs);
-  background: none;
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: var(--fs-label);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: border-color 0.14s ease-out, color 0.14s ease-out;
-  opacity: 1;
-}
-.cp-dock .slash-enh:hover {
-  border-style: solid;
-  border-color: var(--muted);
-  color: var(--ink);
 }
 /* The send is the card's only filled shape and is pinned to the rail's trailing
    edge, so its position never depends on draft length. Only the geometry is
@@ -1410,8 +1375,7 @@
   .cp-dock .cp-picks .cp-icon,
   .cp-dock .slash-actions .attach-btn,
   .cp-dock .slash-actions .go,
-  .cp-dock .slash-hint,
-  .cp-dock .slash-enh {
+  .cp-dock .slash-hint {
     transition: none;
   }
   .cp-picks .pulse,

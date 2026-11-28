@@ -26,6 +26,7 @@ const FILE = 'goals.json'
 const PRIORITIES = ['critical', 'major', 'normal', 'minor']
 const EFFORTS = ['small', 'medium', 'large']
 const PRIVACY = ['private', 'workspace']
+const SCOPES = ['auto', 'only']
 const TOKEN_KINDS = ['connector', 'file', 'artifact', 'note', 'issue', 'draft']
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -80,6 +81,9 @@ function tokenOf(raw) {
   return {
     kind: TOKEN_KINDS.includes(String(raw?.kind)) ? String(raw.kind) : 'draft',
     label: text(raw?.label, 120),
+    /* where the source actually is: a path a person picked (revealed in the
+       desktop app) or a URL. A model-written label has none, and that is fine. */
+    value: text(raw?.value, 1000),
   }
 }
 
@@ -95,11 +99,30 @@ function taskOf(raw) {
     token: tokenOf(raw.token),
     date: day(raw.date),
     done: raw.done === true,
+    /* a draft-only lock: a locked row is not edited or removed by plan edits.
+       It is stored so the promise survives a reload of the draft. */
+    locked: raw.locked === true,
     /* which entity this job is for, and how big it is — both chosen by the
        planner and kept on the task so the goal page can act on them */
     entity: text(raw.entity, 200),
     effort: EFFORTS.includes(String(raw.effort)) ? String(raw.effort) : '',
   }
+}
+
+/** Entity names, deduplicated: a scope is a set, and a repeated name is one. */
+function namesOf(value) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set()
+  const names = []
+  for (const entry of value) {
+    const name = text(entry, 200)
+    const key = name.toLowerCase()
+    if (!name || seen.has(key)) continue
+    seen.add(key)
+    names.push(name)
+    if (names.length >= 40) break
+  }
+  return names
 }
 
 function goalOf(raw) {
@@ -113,10 +136,13 @@ function goalOf(raw) {
     sentence: text(raw.sentence, 4000),
     deadline: day(raw.deadline),
     privacy: PRIVACY.includes(String(raw.privacy)) ? String(raw.privacy) : 'private',
-    /* Which entity plans this goal. A name, because an entity is a file in the
-       workspace and its name is the identity — renaming the agent is a rename of
-       the file, which a goal cannot follow. */
-    entity: text(raw.entity, 200),
+    /* Two different things, and the picker used to conflate them:
+       `plannedBy` is the entity whose harness and skills run the draft, and
+       `scope` is who may be given a task. `entity` is how older records stored
+       the planner; it is read here and never written again. */
+    plannedBy: text(raw.plannedBy ?? raw.entity, 200),
+    scope: SCOPES.includes(String(raw.scope)) ? String(raw.scope) : 'auto',
+    entities: namesOf(raw.entities),
     harness: text(raw.harness, 80),
     context: contextOf(raw.context),
     /* The identity, not a display name: the read-only rule compares this with the
@@ -219,7 +245,9 @@ function create({ workspace, goal } = {}) {
     sentence,
     deadline,
     privacy: PRIVACY.includes(String(goal?.privacy)) ? String(goal.privacy) : 'private',
-    entity: text(goal?.entity, 200),
+    plannedBy: text(goal?.plannedBy ?? goal?.entity, 200),
+    scope: SCOPES.includes(String(goal?.scope)) ? String(goal.scope) : 'auto',
+    entities: namesOf(goal?.entities),
     harness: text(goal?.harness, 80),
     context: contextOf(goal?.context),
     owner: text(goal?.owner, 200),

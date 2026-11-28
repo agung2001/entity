@@ -30,8 +30,12 @@ const props = defineProps({
   showEffort: { type: Boolean, default: false },
   /** the draft hides the source: every token there is the goal itself */
   showSource: { type: Boolean, default: true },
+  /** a conversation needs a stored task, so only the goal page offers one */
+  allowChat: { type: Boolean, default: false },
+  /** on the draft, the box is a lock: a locked row cannot be edited or removed */
+  lockable: { type: Boolean, default: false },
 })
-const emit = defineEmits(['tick', 'update', 'remove', 'chat', 'edit'])
+const emit = defineEmits(['tick', 'update', 'remove', 'chat', 'edit', 'lock'])
 
 const editing = ref('')
 const value = ref('')
@@ -46,8 +50,12 @@ const due = computed(() => {
   const found = taskState(props.task)
   return { late: found === 'overdue', soon: found === 'soon', none: found === 'none' }
 })
-const editable = computed(() => props.editable && !props.readonly)
+const locked = computed(() => props.task.locked === true)
+const editable = computed(() => props.editable && !props.readonly && !locked.value)
 const tickLabel = computed(() => {
+  if (props.lockable) {
+    return `${locked.value ? 'Unlock' : 'Lock'} “${props.task.title || 'this task'}”`
+  }
   if (props.readonly) return `${props.task.title || 'This task'} — read only`
   return `Mark “${props.task.title || 'this task'}” ${props.task.done ? 'not done' : 'done'}`
 })
@@ -60,7 +68,13 @@ useDialogDismiss({
   },
 })
 
-function tick() {
+/** The same box, two readings: on the goal it completes a task; on the draft it
+    locks the row so a plan edit can leave it alone. */
+function hit() {
+  if (props.lockable) {
+    emit('lock', !locked.value)
+    return
+  }
   if (props.readonly || props.task.done === undefined) return
   emit('tick', !props.task.done)
 }
@@ -121,18 +135,27 @@ function setPriority(event) {
       'task-compact': compact,
       'task-wide': showEntity || showEffort,
       'task-no-source': !showSource,
+      'task-locked': locked,
     }"
     :data-state="state"
+    :data-locked="locked ? '1' : undefined"
   >
     <button
       class="chk"
+      :class="{ 'chk-lock': lockable }"
       type="button"
-      role="checkbox"
-      :aria-checked="task.done ? 'true' : 'false'"
-      :aria-disabled="readonly ? 'true' : undefined"
+      :role="lockable ? 'switch' : 'checkbox'"
+      :aria-checked="lockable ? (locked ? 'true' : 'false') : task.done ? 'true' : 'false'"
+      :aria-disabled="!lockable && readonly ? 'true' : undefined"
       :aria-label="tickLabel"
-      @click="tick"
-    ></button>
+      @click="hit"
+    >
+      <svg v-if="lockable" class="lock-glyph" width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <path v-if="locked" d="M3.4 5.3V3.9a2.6 2.6 0 0 1 5.2 0v1.4" />
+        <path v-else d="M3.4 5.3V3.9a2.6 2.6 0 0 1 4.9-1.3" />
+        <rect x="2.2" y="5.3" width="7.6" height="5" rx="1" />
+      </svg>
+    </button>
 
     <template v-if="compact">
       <span class="tx">
@@ -242,7 +265,7 @@ function setPriority(event) {
       :data-none="due.none ? '1' : undefined"
     >{{ day(task.date) }}</span>
 
-    <span v-if="!compact && !readonly" class="tmenu-wrap">
+    <span v-if="!compact && !readonly && !locked" class="tmenu-wrap">
       <button
         class="tmenu"
         type="button"
@@ -256,7 +279,7 @@ function setPriority(event) {
           Edit task
         </button>
         <button
-          v-if="task.entity"
+          v-if="task.entity && allowChat"
           type="button"
           role="menuitem"
           @click="menuOpen = false; emit('chat')"

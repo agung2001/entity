@@ -284,6 +284,7 @@ export const blankTask = (priority) => ({
   token: { kind: 'draft', label: '' },
   date: '',
   done: false,
+  locked: false,
   entity: '',
   effort: '',
 })

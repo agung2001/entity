@@ -47,6 +47,12 @@ const groups = computed(() =>
   })).filter((group) => group.tasks.length),
 )
 const ownerName = computed(() => String(goal.value?.owner || '').split('@')[0] || 'Its owner')
+/** A constraint worth printing in the eyebrow; automatic needs no sentence. */
+const scopeLabel = computed(() => {
+  if (goal.value?.scope !== 'only') return ''
+  const names = (goal.value.entities || []).join(', ')
+  return names ? `only ${names}` : 'nobody assigned'
+})
 const hasEntities = computed(() => (goal.value?.tasks || []).some((task) => task.entity))
 const hasEffort = computed(() => (goal.value?.tasks || []).some((task) => task.effort))
 
@@ -163,11 +169,9 @@ async function archive() {
         <header class="page-head">
           <div>
             <div class="board-eyebrow">
-              Goal <b aria-hidden="true">·</b>
-              {{ goal.privacy === 'workspace' ? 'shared with the workspace' : 'private to you' }}
-              <template v-if="goal.entity"><b aria-hidden="true">·</b> planned by {{ goal.entity }}</template>
-              <b aria-hidden="true">·</b>
-              {{ counts.done }} of {{ counts.total }} dated tasks
+              Goal<b class="sep" aria-hidden="true">·</b>{{ goal.privacy === 'workspace' ? 'shared with the workspace' : 'private to you' }}<template
+                v-if="goal.plannedBy"
+              ><b class="sep" aria-hidden="true">·</b>planned by {{ goal.plannedBy }}</template><template v-if="scopeLabel"><b class="sep" aria-hidden="true">·</b>{{ scopeLabel }}</template><b class="sep" aria-hidden="true">·</b>{{ counts.done }} of {{ counts.total }} dated tasks
             </div>
             <h1>{{ goal.title }}</h1>
             <p class="page-sub">{{ goal.sentence }}</p>
@@ -241,6 +245,7 @@ async function archive() {
                   :readonly="readOnly"
                   :show-entity="hasEntities"
                   :show-effort="hasEffort"
+                  allow-chat
                   @chat="chatAbout(task)"
                   @tick="tick(task, $event)"
                   @update="patchTask(task, $event)"

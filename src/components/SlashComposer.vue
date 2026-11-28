@@ -46,6 +46,9 @@ const props = defineProps({
      the rail: the attach and enhance controls stay, the arrow and its hint go.
      Cmd+Enter still emits `send` (the shortcut is the composer's). */
   showSend: { type: Boolean, default: true },
+  /* a page that draws its own enhance next to the field turns this off, so the
+     same action is not offered twice in one box */
+  showEnhance: { type: Boolean, default: true },
 })
 const emit = defineEmits(['send', 'stop', 'enhance', 'dismiss', 'update:attachments', 'update:draft'])
 
@@ -885,6 +888,14 @@ useDialogDismiss({
   close: () => (attachMenu.value = false),
 })
 
+/* The `/` and `@` menu is a surface of its own: Escape closes the menu, not the
+   dialog that is hosting the composer. Registered here because the composer is
+   the thing that opened it, and the stack closes what opened last first. */
+useDialogDismiss({
+  active: () => open.value,
+  close: () => settle(),
+})
+
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
@@ -1026,7 +1037,7 @@ defineExpose({ focus, addFiles, addDrop, restore })
             </template>
           </template>
           <button
-            v-if="canEnhance"
+            v-if="canEnhance && showEnhance"
             class="slash-enh"
             type="button"
             :title="`Enhance this prompt (${enhanceShortcut})`"
@@ -1034,7 +1045,11 @@ defineExpose({ focus, addFiles, addDrop, restore })
             aria-haspopup="dialog"
             @click="emit('enhance')"
           >
-            <kbd>{{ enhanceShortcut }}</kbd> enhance
+            <svg class="enh-spark" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 1.8l1.5 4.7L14.2 8l-4.7 1.5L8 14.2l-1.5-4.7L1.8 8l4.7-1.5z" />
+              <path d="M12.6 2.2l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z" opacity=".55" />
+            </svg>
+            Enhance
           </button>
         </span>
         <span class="slash-grow"></span>
@@ -1178,6 +1193,40 @@ defineExpose({ focus, addFiles, addDrop, restore })
 /* Everything else on this card lives with the dock: `.cp-dock` in `chat.css`
    styles the bands as one card, the field, the rail, the chips and the alert.
    What stays here is the part that belongs to the component alone. */
+/* An enhance carries text, so it is always visible once there is a draft. It is
+   a quiet action, not a keycap: a sparkle and a word, with the shortcut in the
+   tooltip — a key hint inside a bordered button read like a key inside a key.
+   It lives here, not in `.cp-dock`: the same composer is docked on the goal page,
+   where a dock-scoped rule would leave it looking like a raw `<button>`. */
+.slash-enh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin: 0 0 0 2px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: background-color 0.14s ease-out, border-color 0.14s ease-out, color 0.14s ease-out;
+}
+.slash-enh:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink);
+}
+.slash-enh .enh-spark {
+  flex: none;
+  color: var(--muted);
+}
+.slash-enh:hover .enh-spark {
+  color: var(--accent-ink);
+}
 @media (prefers-reduced-motion: reduce) {
   .slash-enh {
     transition: none;

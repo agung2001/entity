@@ -54,6 +54,12 @@ inside that element, which is exactly the bug this file was written for.
 **Do not** add a per-component `document.addEventListener('keydown')` for
 Escape; two layers then fight, or close together.
 
+The composer's `/` and `@` menu is a surface in that stack too: it registers with
+`useDialogDismiss` while open, so one Escape closes the menu and leaves the
+dialog that hosts the composer standing. Before that it listened only on its own
+textarea, the capture-phase dialog listener ran first, and the first Escape threw
+the dialog away with the menu.
+
 ### 2. Every shortcut lives in one catalog
 
 `src/lib/shortcuts.js` is the single source. It holds the action id, the label,
@@ -174,6 +180,13 @@ The message box is for the prompt. Attachments belong in a tray below it.
   focus out of that window, so the key never arrives. A frame that hosts page
   content forwards Escape itself (`@escape`), and any picker inside it registers
   with `useDialogDismiss` so one Escape still closes one layer.
+- **A control belongs to the composer, not to the page that hosts it.** The
+  composer is mounted in the chat dock and, unchanged, on the goal form. Its
+  controls' CSS therefore lives in `SlashComposer.vue`, scoped to the component
+  — `.slash-enh` was styled under `.cp-dock`, so on the goal page the same
+  button rendered as a raw `<button>` with a bevel and a `⌥⇧↵` keycap inside it.
+  A host styles the host; it does not own the box's buttons. The shortcut for a
+  control goes in its tooltip, never as a second keycap inside it.
 - **A draft belongs to the thread it was typed in.** The composer is one box for
   every conversation, so the text is keyed by thread in the store and persisted
   in `localStorage` (`src/lib/drafts.js`) — never in the workspace files, which
@@ -860,32 +873,76 @@ own five fields, reopened over the plan.
   `scrim-dialog` variant, and the footer's `Back to tasks` — the same three
   exits a dialog already owes (see above).
 
-### A planned list is re-planned, not spliced
+## A goal has a planner and a scope, and they are not one picker
+
+Step 1 asked one `Entity` control to mean two things: whose harness and skills run
+the draft, and who the tasks are for. It only ever did the first; the second was
+already "any entity that fits", decided by the model with no way to say
+otherwise. One label, two questions, and the wrong one seemed answered.
+
+- **`Planned by` is the technical answer.** It is a single entity because a
+  harness turn has one harness: it decides the skills the composer offers and
+  the model that plans. Its hint says so — *who writes the plan, not who the
+  tasks are for*.
+- **`Work goes to` is the product answer.** Two cards: `Automatic` (the default —
+  each task goes to whichever entity fits) and `Only these`, a row of entity
+  chips. Automatic is not a fallback for a missing selection; it is the honest
+  default, because the planner has the whole roster.
+- **A mention is a structured fact, not prose.** `@reviewer` is already a token
+  the composer writes, so the sentence is the scope. Choosing an entity chip
+  **writes the mention into the sentence** (before the final full stop), and
+  choosing it again takes it out; `Automatic` removes the entity mentions with
+  one undo. The chips are a shortcut for the sentence, not a second list — a
+  selection the sentence does not say is a selection nobody can read. Do not
+  parse names out of prose: a mention is a token, which is why it can win.
+- **A scope is enforced at the draft boundary.** The brief lists only the scoped
+  names and says `Work goes to: only …`; `cleanTasks` assigns a one-entity scope
+  to any row that omitted or invented another. The prompt is a request — the
+  closed set is the rule. An empty scope is `automatic`, never "plan nothing".
+- **The record says `plannedBy`, not `entity`.** Old records are read as
+  `plannedBy`; a new write never produces `entity` again. The goal page prints
+  the constraint only when there is one: `… · planned by broken-dir · only
+  reviewer`.
+
+### A plan edit is local; coherence is bought, not charged per click
 
 A drafted plan is dates, entities and efforts the planner reasoned about
-together. Adding a row by hand makes every later date a lie, so the edit is a
-turn:
+together — so a hand edit can leave it incoherent. The answer used to be a
+planning turn on every add and remove, which made arranging your own list cost
+tokens and time per keystroke. It is not the answer:
 
-- **`goals.draft` plans; `goals.revise` adjusts.** Revise is handed the current
-  plan as JSON and returns the whole list, not a diff; its instruction says
-  *keep titles the change does not touch* and *a removed task must not come
-  back*. Two prompts exist because a model told to "plan again" quietly rewrites
-  rows it was not asked about.
-- **The row can appear at once, the dates may not.** An added task shows
-  immediately (that is what you asked for) and the table is read-only while the
-  turn runs; a failed turn keeps the row and says the plan was not re-balanced.
-  Never re-date locally as a fallback.
-- **The turn is visible.** `re-planning with {entity}` with the same `m:ss`
-  clock as the draft, and after it lands, one line: `Re-planned · 6 tasks`.
-- **Editing one row is local; adding or removing one is a turn.** The row's
-  menu opens `Edit task` — the same dialog grammar as `Add a task`, with the
-  fields the planner sets (title, priority, entity, effort, due, source). It
-  writes the row and nothing else: a re-plan here would silently re-date the
-  work the person just confirmed.
+- **Adding, editing and removing are local writes.** The row is on the list
+  immediately, the table stays editable, and no harness is called. A row's menu
+  edits it in full; `+ Task` writes what you typed.
+- **On the draft, the row's tick is a lock.** A task cannot be "done" before the
+  goal exists, so the box toggles a lock instead: a locked row keeps its edit
+  menu hidden, its title unclickable and its remove refused. The lock is stored
+  with the draft (a reload keeps it) and dropped when the goal is created — it
+  protects the plan while it is being arranged, it is not a permission on the
+  stored goal.
+- **A plan may be dirty.** Dates that no longer fit after a removal are visible
+  as dates, not silently re-dated under you. Drift is the accepted price of
+  cheap edits; a re-plan, when it exists, is an explicit action in the plan's
+  header — never a consequence of a click.
+- **The planner is still the author of the first plan.** `goals.draft` plans;
+  `goals.revise` (kept in the main process) is instructed as a change — keep
+  titles the change does not touch, a removed task must not come back — for the
+  day the explicit button ships. It is not wired to add or remove.
+- **A task's source is an attachment, not a second field.** The composer already
+  carries the paperclip; the first attachment becomes the task's token
+  (`kind`/`label`/`value`), and only the reference is stored — the bytes belong
+  to the turn, not the goal. A separate `Source` input asked the person to type a
+  path the box could already keep, and a planner's `draft` label is not a file,
+  so it does not become one.
+- **An enhance belongs to the field it rewrites.** Both task dialogs offer
+  `Enhance` next to the field and reuse `PromptEnhanceDialog`; the answer applies
+  to that one field. Where a dialog draws its own Enhance, the composer's copy
+  stands down (`show-enhance="false"`) — two buttons for one verb is a bug.
 - **`+ Task` opens a composer, not a form.** Title, priority, entity, effort and
-  date are the planner's answer; a modal that asks for them first asks the person
-  to do the planning. The dialog says what it will do (`Add and re-plan`) before
-  it does it.
+  date are set in the row or its edit dialog; a modal that asks for all of them
+  first asks the person to do the planning. The dialog says `Add task`, not
+  "and re-plan".
+
 
 ## Common mistakes
 

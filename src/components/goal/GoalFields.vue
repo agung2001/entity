@@ -10,14 +10,20 @@
  * never reaches into another component's refs.
  */
 import { ref } from 'vue'
+import EntityMark from '@/components/EntityMark.vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import { shortcutLabel } from '@/lib/shortcuts'
 
 const props = defineProps({
   title: { type: String, default: '' },
-  entity: { type: String, default: '' },
+  /* who runs the planning turn — not who the tasks are for */
+  plannedBy: { type: String, default: '' },
   harness: { type: String, default: '' },
+  /* who may be given a task: 'auto' or 'only'. A mention in the sentence is the
+     scope; the cards are the two readings of that sentence. */
+  scope: { type: String, default: 'auto' },
+  entities: { type: Array, default: () => [] },
   sentence: { type: String, default: '' },
   deadline: { type: String, default: '' },
   privacy: { type: String, default: 'private' },
@@ -32,8 +38,11 @@ const props = defineProps({
 })
 const emit = defineEmits([
   'update:title',
-  'update:entity',
+  'update:plannedBy',
   'update:harness',
+  'update:scope',
+  'toggle-scope',
+  'clear-scope',
   'update:sentence',
   'update:deadline',
   'update:privacy',
@@ -46,6 +55,7 @@ const emit = defineEmits([
 const keys = {
   title: shortcutLabel('goal-title'),
   entity: shortcutLabel('goal-entity'),
+  scope: shortcutLabel('goal-scope'),
   sentence: shortcutLabel('goal-sentence'),
   deadline: shortcutLabel('goal-deadline'),
   privacy: shortcutLabel('goal-privacy'),
@@ -56,10 +66,18 @@ const entityPick = ref(null)
 const composer = ref(null)
 const dateField = ref(null)
 const privacyField = ref(null)
+const scopeAuto = ref(null)
+const scopeOnly = ref(null)
 
 /** The page's digits: one target per field, and the picker opens rather than
     focusing (its rows are the thing the key is for). */
 function focus(field) {
+  if (field === 'scope') {
+    /* the checked card, so the arrow keys land on the current answer */
+    const card = props.scope === 'only' ? scopeOnly : scopeAuto
+    card?.value?.focus?.()
+    return
+  }
   const target = { title: titleField, sentence: composer, deadline: dateField, privacy: privacyField }[field]
   target?.value?.focus?.()
 }
@@ -67,6 +85,8 @@ function focus(field) {
 function toggleEntity() {
   entityPick.value?.toggle?.()
 }
+
+const inScope = (name) => props.entities.some((entry) => String(entry).toLowerCase() === String(name).toLowerCase())
 
 defineExpose({ focus, toggleEntity })
 </script>
@@ -87,15 +107,15 @@ defineExpose({ focus, toggleEntity })
 
   <div class="fld-row">
     <div class="fld-solo">
-      <label class="fld-head">Entity <kbd class="fld-key">{{ keys.entity }}</kbd></label>
+      <label class="fld-head">Planned by <kbd class="fld-key">{{ keys.entity }}</kbd></label>
       <PickMenu
         ref="entityPick"
         class="field-select"
-        head="Entity"
+        head="Planned by"
         icons="entity"
         :options="entityOptions"
-        :model-value="entity"
-        @update:model-value="emit('update:entity', $event)"
+        :model-value="plannedBy"
+        @update:model-value="emit('update:plannedBy', $event)"
       />
     </div>
     <div class="fld-solo">
@@ -110,7 +130,64 @@ defineExpose({ focus, toggleEntity })
       />
     </div>
   </div>
-  <span class="hint fld-row-hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers; its harness is the one the goal is planned with.</span>
+  <span class="hint fld-row-hint">Who writes the plan. Its harness runs the draft and its skills are the ones the composer offers — not who the tasks are for.</span>
+
+  <!-- The second question, and the one that is about the work: who may be given
+       a task. Automatic is the honest default; a mention in the sentence wins. -->
+  <div class="fld-solo scope-fld">
+    <label class="fld-head">Work goes to <kbd class="fld-key">{{ keys.scope }}</kbd></label>
+    <div class="priv scope" role="radiogroup" aria-label="Which entities may be given a task">
+      <label :data-on="scope === 'auto' ? '1' : undefined">
+        <input
+          ref="scopeAuto"
+          :checked="scope === 'auto'"
+          type="radio"
+          name="goal-scope"
+          value="auto"
+          @change="emit('update:scope', 'auto')"
+        />
+        <span class="rd"></span>
+        <span class="t"><b>Automatic</b><span>The planner gives each task to whichever entity fits.</span></span>
+      </label>
+      <label :data-on="scope === 'only' ? '1' : undefined">
+        <input
+          ref="scopeOnly"
+          :checked="scope === 'only'"
+          type="radio"
+          name="goal-scope"
+          value="only"
+          @change="emit('update:scope', 'only')"
+        />
+        <span class="rd"></span>
+        <span class="t"><b>Only these</b><span>Each entity you pick is written into the sentence as <code>@name</code>.</span></span>
+      </label>
+    </div>
+
+    <!-- a chip is a shortcut for the mention: the sentence stays the one truth -->
+    <div v-if="scope === 'only'" class="scope-chips" role="group" aria-label="Entities a task may be given to">
+      <button
+        v-for="option in entityOptions"
+        :key="option.id"
+        type="button"
+        :aria-pressed="inScope(option.label) ? 'true' : 'false'"
+        @click="emit('toggle-scope', option.label)"
+      >
+        <EntityMark mini animate :entity="option.label" />
+        {{ option.label }}
+      </button>
+    </div>
+
+    <span v-if="scope === 'only' && !entities.length" class="hint">
+      Pick an entity — it is added to the sentence as <code>@name</code>. With none picked, work stays
+      automatic.
+    </span>
+    <span v-else-if="scope === 'only'" class="hint">
+      In the sentence: <b>{{ entities.join(', ') }}</b>. Click a selected entity to take its mention back out.
+    </span>
+    <span v-else class="hint">
+      Any entity that fits. Pick <b>Only these</b> to name them — each becomes an <code>@mention</code>.
+    </span>
+  </div>
 
   <div class="fld-solo">
     <label class="fld-head">Goal <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.sentence }}</kbd></label>

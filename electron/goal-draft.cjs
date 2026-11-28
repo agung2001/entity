@@ -341,9 +341,22 @@ const REVISE_INSTRUCTION = [
   '{"summary":"…","tasks":[{"title":"…","priority":"Major","date":"YYYY-MM-DD","entity":"…","effort":"Medium","token":"…"}]}',
 ].join('\n')
 
+/**
+ * Who may be given a task, as one line in the brief. A scope of one is also a
+ * fallback: the model omitting the entity still lands on the only allowed one.
+ */
+function scopeLine(entities, scope) {
+  if (!entities.length) return 'Work goes to: (any entity)'
+  if (scope === 'only') return `Work goes to: only ${entities.join(', ')}`
+  return `Work goes to: any entity that fits — ${entities.join(', ')}`
+}
+
 /** The answer, field by field. Anything outside the window is dropped, not clamped. */
-function cleanTasks(list, { today, deadline, entities = [] }) {
+function cleanTasks(list, { today, deadline, entities = [], scope = 'auto' }) {
   if (!Array.isArray(list)) return []
+  const allowed = entities.filter(Boolean)
+  /* one allowed entity is a closed set, not a suggestion */
+  const fallback = scope === 'only' && allowed.length === 1 ? allowed[0] : ''
   const seen = new Set()
   const tasks = []
   for (const item of list) {
@@ -358,13 +371,13 @@ function cleanTasks(list, { today, deadline, entities = [] }) {
     /* the model may answer with a name this workspace does not have; only one
        the caller listed is stored, so a row can never point at nobody */
     const wanted = String(item?.entity || '').trim().toLowerCase()
-    const entity = entities.find((entry) => String(entry).toLowerCase() === wanted) || ''
+    const entity = allowed.find((entry) => String(entry).toLowerCase() === wanted) || fallback
     const effort = String(item?.effort || '').toLowerCase()
     tasks.push({
       id: crypto.randomUUID(),
       priority: PRIORITIES.has(priority) ? priority : 'normal',
       title,
-      token: { kind: 'draft', label: trim(item?.token, 120) || 'from the plan' },
+      token: { kind: 'draft', label: trim(item?.token, 120) || 'from the plan', value: '' },
       date,
       done: false,
       entity,
@@ -377,6 +390,8 @@ function cleanTasks(list, { today, deadline, entities = [] }) {
 
 async function draft({
   workspace,
+  /* `entity` is the old name for the planner; `plannedBy` says what it is */
+  plannedBy,
   entity,
   harness,
   model,
@@ -384,10 +399,12 @@ async function draft({
   deadline,
   context,
   entities = [],
+  scope = 'auto',
   draftId = '',
   emit = () => {},
 } = {}) {
   workspaces.open(workspace)
+  const planner = trim(plannedBy || entity, 200)
   const text = trim(sentence, 8_000)
   if (!text) throw new Error('Write the sentence first. Nothing was planned.')
   const id = String(harness || '').trim()
@@ -424,8 +441,8 @@ async function draft({
     .filter(Boolean)
     .slice(0, 40)
   const prompt = [
-    `Entity planning this goal: ${trim(entity, 200) || '(none)'}`,
-    `Entities available for the tasks: ${available.length ? available.join(', ') : '(none listed)'}`,
+    `Entity planning this goal: ${planner || '(none)'}`,
+    scopeLine(available, scope),
     `Today: ${today}`,
     `Deadline: ${due || '(none)'}`,
     '',
@@ -455,7 +472,7 @@ async function draft({
 
   const parsed = lastJson(answer.text)
   const summary = trim(parsed?.summary, 1_400)
-  const tasks = cleanTasks(parsed?.tasks, { today, deadline: due, entities: available })
+  const tasks = cleanTasks(parsed?.tasks, { today, deadline: due, entities: available, scope })
   if (!tasks.length) {
     throw new Error(
       `${answer.harness || id} answered with no task list. Nothing was created — retry, or write the tasks yourself.`,
@@ -483,6 +500,7 @@ function planOf(tasks, limit = MAX_TASKS) {
 
 async function revise({
   workspace,
+  plannedBy,
   entity,
   harness,
   model,
@@ -491,11 +509,13 @@ async function revise({
   context,
   entities = [],
   tasks = [],
+  scope = 'auto',
   instruction,
   draftId = '',
   emit = () => {},
 } = {}) {
   workspaces.open(workspace)
+  const planner = trim(plannedBy || entity, 200)
   const text = trim(sentence, 8_000)
   if (!text) throw new Error('The goal has no sentence. Nothing was planned.')
   const change = trim(instruction, 2_000)
@@ -520,8 +540,8 @@ async function revise({
     .filter(Boolean)
     .slice(0, 40)
   const prompt = [
-    `Entity planning this goal: ${trim(entity, 200) || '(none)'}`,
-    `Entities available for the tasks: ${available.length ? available.join(', ') : '(none listed)'}`,
+    `Entity planning this goal: ${planner || '(none)'}`,
+    scopeLine(available, scope),
     `Today: ${today}`,
     `Deadline: ${due || '(none)'}`,
     '',
@@ -560,7 +580,7 @@ async function revise({
 
   const parsed = lastJson(answer.text)
   const summary = trim(parsed?.summary, 1_400)
-  const next = cleanTasks(parsed?.tasks, { today, deadline: due, entities: available })
+  const next = cleanTasks(parsed?.tasks, { today, deadline: due, entities: available, scope })
   if (!next.length) {
     throw new Error(
       `${answer.harness || id} answered with no task list. The plan was not changed — retry, or add the task yourself.`,

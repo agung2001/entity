@@ -943,25 +943,74 @@ test('creating a goal is confirmed on the goal\'s own fields', () => {
   assert.match(create, /nothing is written until you create it/i, 'the dialog says the write is not done yet')
 })
 
-test('a plan edit is re-planned, not spliced into the list', () => {
+test('on the draft, a row\'s tick is a lock', () => {
+  const row = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskRow.vue'), 'utf8')
   const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
-  const planner = fs.readFileSync(path.join(ROOT, 'electron', 'goal-draft.cjs'), 'utf8')
-  const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
+  const store = fs.readFileSync(path.join(ROOT, 'electron', 'goals-store.cjs'), 'utf8')
+
+  assert.match(row, /lockable: \{ type: Boolean, default: false \}/, 'only the draft asks for a lock')
+  assert.match(row, /emit\('lock', !locked\.value\)/, 'the box toggles the lock')
+  assert.match(row, /props\.editable && !props\.readonly && !locked\.value/, 'a locked row is not editable')
+  assert.match(row, /!compact && !readonly && !locked/, 'a locked row has no menu')
+  assert.match(create, /lockable/, 'the draft turns the box into a lock')
+  assert.match(create, /if \(task\.locked\) return/, 'a locked row cannot be removed')
+  assert.match(create, /\(\{ locked, \.\.\.task \}\)/, 'the lock does not become a permission on the stored goal')
+  assert.match(store, /locked: raw\.locked === true/, 'a reload of the draft keeps the lock')
+})
+
+test('a plan edit is local, not a planning turn', () => {
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
   const dialog = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskDialog.vue'), 'utf8')
 
-  assert.match(rpc, /'goals\.revise':/, 'the adjust turn has its own call')
-  assert.match(planner, /REVISE_INSTRUCTION/, 'revise is instructed as a change, not a new plan')
-  assert.match(planner, /planOf\(tasks\)/, 'the turn is handed the plan as it stands')
-  assert.match(create, /submitTask[\s\S]{0,600}?revisePlan\(/, 'adding a task re-plans around it')
-  assert.match(create, /removeTask[\s\S]{0,700}?revisePlan\(/, 'removing a task re-plans the rest')
-  assert.match(create, /:editable="!revising"/, 'the list is read-only while the plan is being re-planned')
+  /* adding, editing and removing are writes to the list. Dates were reasoned
+     together, but buying a whole re-plan per keystroke is the thing that made
+     the step expensive; a hand-edited plan may drift, and that is the trade. */
+  assert.doesNotMatch(create, /revisePlan\(/, 'no planning turn on an edit')
+  assert.match(create, /function submitTask[\s\S]{0,500}?tasks\.value = \[\.\.\.tasks\.value/, 'adding appends')
+  assert.match(create, /function removeTask[\s\S]{0,200}?tasks\.value = tasks\.value\.filter/, 'removing filters')
+  assert.doesNotMatch(create, /revising/, 'there is no busy list for a turn that does not run')
   assert.match(create, /@click="addTask"/, '+ Task opens the composer')
-  assert.match(dialog, /SlashComposer/, 'the new task is written in the app\'s composer, not a form')
-  assert.match(dialog, /Add and re-plan/, 'the dialog says what pressing it does')
+  assert.match(dialog, /SlashComposer/, "the new task is written in the app's composer, not a form")
+  assert.match(dialog, /Add task/, 'the dialog says what pressing it does')
+  assert.match(dialog, /no planning\s+turn is spent/, 'the copy says the turn is not spent')
   /* the task's entity is picked with the app's picker, the same one the goal's
      own form uses — not a native select and not the planner's guess alone */
-  assert.match(dialog, /<PickMenu[\s\S]{0,220}?icons="entity"/, 'the entity is the app\'s picker')
-  assert.match(dialog, /class="x mo-x"/, 'the close control is the shell\'s')
+  assert.match(dialog, /<PickMenu[\s\S]{0,220}?icons="entity"/, "the entity is the app's picker")
+  assert.match(dialog, /class="x mo-x"/, "the close control is the shell's")
+})
+
+test("a task's source is an attachment, not a second field", () => {
+  const store = fs.readFileSync(path.join(ROOT, 'electron', 'goals-store.cjs'), 'utf8')
+  const add = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskDialog.vue'), 'utf8')
+  const edit = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskEditDialog.vue'), 'utf8')
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+
+  /* the composer already carries attachments; a second Source input asked the
+     person to type a path the box could have kept */
+  assert.doesNotMatch(edit, /Source <span class="opt">/, 'there is no separate Source field')
+  assert.doesNotMatch(edit, /file\.reveal/, 'nothing asks the OS to reveal a source')
+  assert.match(add, /v-model:attachments="attachments"/, 'the add dialog keeps them')
+  assert.match(edit, /v-model:attachments="attachments"/, 'the edit dialog keeps them')
+  assert.match(create, /submitTask\(text, entityName, attached/, 'the attachment list reaches the page')
+  assert.match(create, /attached\[0\]/, 'the first one is the source')
+  /* only the reference is stored: the bytes belong to the turn, not the goal */
+  assert.match(store, /value: text\(raw\?\.value, 1000\)/, 'a token keeps its location, not its data')
+})
+
+test('a task can be enhanced in place, once', () => {
+  const add = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskDialog.vue'), 'utf8')
+  const edit = fs.readFileSync(path.join(SRC, 'components', 'goal', 'TaskEditDialog.vue'), 'utf8')
+  const composer = fs.readFileSync(path.join(SRC, 'components', 'SlashComposer.vue'), 'utf8')
+
+  for (const dialog of [add, edit]) {
+    assert.match(dialog, /class="task-enh"/, 'the dialog offers Enhance')
+    assert.match(dialog, /<PromptEnhanceDialog/, 'it reuses the enhance dialog')
+    assert.match(dialog, /@apply="applyEnhance"/, 'the answer replaces the field')
+  }
+  /* the add dialog draws Enhance next to its label, so the composer's own copy of
+     the same action is turned off — two buttons for one verb */
+  assert.match(add, /:show-enhance="false"/, 'one Enhance, not two')
+  assert.match(composer, /showEnhance: \{ type: Boolean, default: true \}/, 'the composer can stand down')
 })
 
 test('a task can be edited where it is read, and in full from its menu', () => {
@@ -969,9 +1018,11 @@ test('a task can be edited where it is read, and in full from its menu', () => {
   const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
 
   assert.match(edit, /<PickMenu[\s\S]{0,220}?icons="entity"/, 'the entity is the app\'s picker')
-  for (const field of ['taskedit-title', 'taskedit-date', 'taskedit-source']) {
-    assert.match(edit, new RegExp(`id="${field}"`), `the edit dialog owns ${field}`)
-  }
+  assert.match(edit, /id="taskedit-date"/, 'the edit dialog owns the due date')
+  assert.doesNotMatch(edit, /id="taskedit-source"/, 'the source is the composer\'s attachments')
+  /* the title is step 1's composer, so a task can carry `@` and `/` too */
+  assert.match(edit, /<SlashComposer[\s\S]{0,400}?label="Task — \/ for a skill, @ to mention"/, 'the title is the shared composer')
+  assert.match(edit, /:show-enhance="false"/, 'the composer does not duplicate the dialog\'s Enhance')
   assert.match(edit, /class="x mo-x"/, 'the close control is the shell\'s')
   assert.match(edit, /role="group" aria-label="Priority"/, 'priority is a group of words, not a code field')
   assert.match(create, /<TaskEditDialog/, 'the page mounts it')
@@ -991,11 +1042,91 @@ test('a task title swaps into a field in its own cell', () => {
   assert.match(css, /\.goals-page \.task \.tx-input/, 'the field is styled, not a user-agent input')
 })
 
+test('going back from the plan keeps the plan', () => {
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+
+  /* Back is navigation, not discard: step 1 offers the way back to the drafted
+     list until the fields the plan was made from change, and only then asks for
+     another planning turn */
+  assert.match(create, /const draftSignature/, 'the plan remembers what it was drafted from')
+  assert.match(create, /const planStale/, 'step 1 knows whether the plan still fits')
+  assert.match(create, /function backToTasks/, 'the plan is one click away')
+  assert.match(create, /function draftOrReturn/, 'the primary chooses between returning and drafting')
+  assert.match(create, /Back to the tasks/, 'the button says what it does')
+  assert.match(create, /Draft again/, 'a stale plan is re-drafted, and says so')
+  assert.match(create, /draftSignature\.value = signature\(\)/, 'a landed draft stamps its signature')
+})
+
+test('the goal form numbers its fields in the order they appear', () => {
+  const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
+  const fields = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalFields.vue'), 'utf8')
+
+  /* digits follow the form: a new field between two others takes its number, and
+     the ones after it move, so the hint never points at the wrong box */
+  const order = ['goal-title', 'goal-entity', 'goal-scope', 'goal-sentence', 'goal-deadline', 'goal-privacy']
+  const numbers = order.map((id) => {
+    const block = catalog.split(`id: '${id}'`)[1]?.slice(0, 400) || ''
+    const hit = block.match(/'alt', 'shift', '(\d)'/)
+    return hit ? Number(hit[1]) : null
+  })
+  assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6], 'the catalog counts the form in reading order')
+  assert.match(fields, /keys\.scope/, 'the scope label prints its own digit')
+  assert.match(fields, /if \(field === 'scope'\)/, 'the digit lands on the checked scope card')
+})
+
+test('a goal has a planner and a scope, and they are separate answers', () => {
+  const store = fs.readFileSync(path.join(ROOT, 'electron', 'goals-store.cjs'), 'utf8')
+  const planner = fs.readFileSync(path.join(ROOT, 'electron', 'goal-draft.cjs'), 'utf8')
+  const fields = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalFields.vue'), 'utf8')
+  const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
+  const view = fs.readFileSync(path.join(SRC, 'views', 'GoalView.vue'), 'utf8')
+
+  /* one picker used to be asked to mean both "who runs the draft" and "who may be
+     given a task"; the record keeps them apart, and old records keep the planner */
+  assert.match(store, /plannedBy: text\(raw\.plannedBy \?\? raw\.entity/, 'old records keep their planner')
+  assert.match(store, /const SCOPES = \['auto', 'only'\]/, 'the scope is a closed set')
+  assert.match(store, /entities: namesOf\(/, 'scope names are deduplicated')
+
+  assert.match(fields, /Planned by <kbd/, 'the planner is named what it is')
+  assert.match(fields, /Work goes to/, 'the scope is its own question')
+  assert.match(fields, /Automatic/, 'automatic is offered')
+  assert.match(fields, /Only these/, 'a closed scope is offered')
+  assert.match(fields, /emit\('toggle-scope'/, 'a chip toggles the mention, it does not keep a second list')
+  assert.match(fields, /written into the sentence as/, 'the copy says where a pick lands')
+
+  assert.match(create, /const mentionedEntities/, 'the sentence can set the scope')
+  assert.match(create, /function toggleScope/, 'a pick writes the mention')
+  assert.match(create, /function clearScope/, 'automatic takes the mentions out')
+  assert.match(create, /tidySentence/, 'taking a mention out does not leave a space before a full stop')
+  assert.match(create, /watch\(mentionedEntities/, 'the card follows the sentence')
+  assert.match(create, /scope: effectiveScope\.value\.mode/, 'the draft turn is told the scope')
+  assert.match(create, /taskEntityOptions/, 'the task dialogs only offer entities in scope')
+  assert.match(planner, /function scopeLine/, 'the brief states the scope')
+  assert.match(
+    planner,
+    /scope === 'only' && allowed\.length === 1/,
+    'a one-entity scope is closed, not a suggestion the model may ignore',
+  )
+  assert.match(view, /goal\.plannedBy/, 'the goal page prints the planner')
+})
+
+test('the plan can be read by month or by week', () => {
+  const calendar = fs.readFileSync(path.join(SRC, 'components', 'goal', 'DraftCalendar.vue'), 'utf8')
+
+  assert.match(calendar, /const view = ref\('month'\)/, 'the month is the default')
+  assert.match(calendar, /role="tab"[^>]*@click="setView\('week'\)"/, 'the week is a tab, not a second page')
+  assert.match(calendar, /const weekCells = computed/, 'a week is its own seven cells')
+  assert.match(calendar, /shiftDay\(weekOf\.value, delta \* 7\)/, 'stepping in week view moves seven days')
+  assert.match(calendar, /data-view="view"/, 'the grid knows which reading it is')
+})
+
 test('every verb on step 2 has a shortcut and renders its hint', () => {
   const catalog = fs.readFileSync(path.join(SRC, 'lib', 'shortcuts.js'), 'utf8')
   const create = fs.readFileSync(path.join(SRC, 'components', 'goal', 'GoalCreate.vue'), 'utf8')
 
   assert.match(catalog, /id: 'goal-adjust'/, 'Adjust the goal is in the one catalog')
+  assert.match(catalog, /id: 'goal-task'/, 'Add a task is in the same catalog')
+  assert.match(create, /matchesShortcut\('goal-task'/, 'the add key is handled')
   assert.match(create, /matchesShortcut\('goal-adjust'/, 'the key is handled')
   assert.ok(
     (create.match(/shortcutLabel\('goal-adjust'\)/g) || []).length >= 1,

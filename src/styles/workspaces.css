@@ -103,9 +103,11 @@
 }
 .wiz input[type='text'],
 .wiz select,
+/* A modal's form fields get a border; the composer is not a form field — it is
+   the chat's box, with its own `.cm` frame, and it is mounted in dialogs too. */
 .modal input[type='text'],
 .modal select,
-.modal textarea {
+.modal textarea:not(.slash-input) {
   width: 100%;
   height: 36px;
   padding: 0 10px;
@@ -117,7 +119,7 @@
   border-radius: var(--r);
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
-.modal textarea {
+.modal textarea:not(.slash-input) {
   height: auto;
   min-height: 84px;
   padding: 9px 10px;
@@ -128,7 +130,7 @@
 .wiz select:focus,
 .modal input[type='text']:focus,
 .modal select:focus,
-.modal textarea:focus {
+.modal textarea:not(.slash-input):focus {
   outline: none;
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
