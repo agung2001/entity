@@ -32,6 +32,10 @@ import habitifyMark from '@/assets/connectors/habitify.png'
  * `thesvg.org` — one path, `currentColor`, muted by the row like GitHub's. A
  * generic terminal tile on two different built-ins read as "connector nobody
  * ships", which is the one thing a built-in must never look like.
+ *
+ * Chrome DevTools wears Chrome's own mono mark for the same reason: the row drives
+ * the browser the person already has open, and a terminal tile beside a label that
+ * says Chrome is the one thing this row is not.
  */
 defineProps({
   name: { type: String, default: '' },
@@ -391,6 +395,24 @@ const showOrcaIcon = computed(() => !failed.value)
     <path
       fill="currentColor"
       d="M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"
+    />
+  </svg>
+
+  <!-- Chrome's own mono mark, one path and `currentColor`: the row mutes it like
+       GitHub's. The row drives the browser this machine already has open, so it
+       wears that browser's mark rather than the fallback terminal glyph. -->
+  <svg
+    v-else-if="name === 'chrome-devtools'"
+    class="int-mark-svg int-mark-mono"
+    :width="size"
+    :height="size"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <title>Chrome DevTools</title>
+    <path
+      fill="currentColor"
+      d="M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364zM12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728Z"
     />
   </svg>
 

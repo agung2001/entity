@@ -57,6 +57,10 @@ const FOLDERS = [
      is a connector like the rest, with its calls and its catalog entry in its own
      folder. Listed here with the credentialless ones, because it needs no account. */
   'tailscale',
+  /* And the browser this machine already has open, driven through Google's own
+     DevTools MCP server. It authenticates nothing — the credential is Chrome's
+     own — and offers no mention, so it sits with the credentialless ones too. */
+  'chrome-devtools',
   'github',
   'youtrack',
   'lynk',

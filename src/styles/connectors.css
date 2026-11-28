@@ -245,8 +245,9 @@ a.ct-who:hover .ct-name {
   color: var(--accent-ink);
 }
 /* ── a one-colour mark is a knockout on its own ground ─────────────────────
-   Six of the shipped marks are ONE path drawn with `currentColor`: GitHub, X,
-   Threads, Reddit, Tailscale, Open Design. A mark with no palette of its own
+   Seven of the shipped marks are ONE path drawn with `currentColor`: GitHub, X,
+   Threads, Reddit, Tailscale, Open Design, Chrome DevTools. A mark with no palette
+   of its own
    carried none of its brand either, so every one of them read as "no colour" on
    the neutral accent wash beside Gmail's red and Clockify's blue — twice, because
    the first fix only recoloured the glyph and left the tile blank.
@@ -278,6 +279,13 @@ a.ct-who:hover .ct-name {
 .ct-mk[data-mk='tailscale'],
 .ct-mk[data-mk='open-design'] {
   --mk-ground: #1f1f1f;
+  --mk-ink: #fff;
+}
+/* Chrome DevTools' mark is black-on-white in its own kit, like the two above, but
+the browser has a product colour and it is the one thing that reads as Chrome at
+18 px — a third grey knockout would have said "unbranded" three times in a row. */
+.ct-mk[data-mk='chrome-devtools'] {
+  --mk-ground: #4285f4;
   --mk-ink: #fff;
 }
 /* The ground, only where a brand is set: a custom row's tile is its initial, and it

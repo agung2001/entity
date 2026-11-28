@@ -101,6 +101,16 @@ const CATALOG = {
      (`connectors/tailscale/connector.cjs`) like every other connector's. */
   tailscale: CONNECTORS.tailscale,
 
+  /* ── the browser this machine already has open ───────────────────────────
+     Chrome DevTools is an MCP server Google ships, not one a workspace owns, so
+     there is no `launcher` — nothing in the workspace holds the program. What the
+     entry carries instead is `server`: the server's own `npx` line, which
+     `connector-store.install()` writes into `mcp.json` as-is. It names no home
+     directory, so it syncs and still means the same thing on the second machine.
+     It answers no `@` form — a browser is something a turn drives, not something
+     typed in a composer. */
+  'chrome-devtools': CONNECTORS['chrome-devtools'],
+
   /* ── a shipped server that lives in the workspace ────────────────────────
      Open Design is an MCP server, and unlike Maka it is not something a person
      installs on their own computer: the workspace's own `skills/opendesign/` holds

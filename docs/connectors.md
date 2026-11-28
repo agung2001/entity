@@ -53,9 +53,11 @@ page below.
 
 The catalog is the one list of what the app ships, and every surface reads it: the
 Built-in pane, the add sheet's cards and the composer's mention menu are three doors on
-one table. Entity ships thirteen — `gmail`, `google-drive`, `youtube`,
-`youtube-studio`, `x` and `habitify` account-bearing (`habitify` reads through its
-provider's remote MCP server, and signs in with a client it registers itself); `orca`,
+one table. Entity ships fifteen — `gmail`, `google-drive`, `youtube`,
+`youtube-studio`, `x`, `habitify` and `threads` account-bearing (`habitify` reads
+through its provider's remote MCP server, and signs in with a client it registers
+itself; `threads’` token is pasted rather than consented); `orca`,
+`youtrack` and `github` the three the composer offered before connectors existed
 `youtrack` and `github` the three the composer offered before connectors existed
 (`youtrack` is an `mcp` row, the other two are `cli` rows); `maka` and `open-design`, the
 MCP-backed ones — `open-design` launches from the workspace's own `skills/` directory, so
@@ -63,7 +65,9 @@ its definition travels; `clockify`, whose credential is one API key pasted once 
 an OAuth account, with its workspace id and timezone kept as workspace state beside it;
 and `tailscale`, a `cli` row that behaves like none of the others — it authenticates
 nothing, stores no token, and reads one machine-local daemon, so it carries no `@` form
-and gates one web server instead. A custom row is whatever a person adds: real, working, and
+and gates one web server instead; and `chrome-devtools`, an `mcp` row that drives the
+Chrome this machine already has open, which carries no `@` form either. A custom row is
+whatever a person adds: real, working, and
 shipping no resolver — so it offers no `@` form either.
 
 **Installing records a definition, never a credential.** An `mcp` entry writes a
@@ -184,6 +188,7 @@ and the mention it answers:
 | [Habitify](connectors/habitify.md) · `@habitify:` | [Clockify](connectors/clockify.md) · `@clockify:` | [X](connectors/x.md) · `@x:` |
 | [Threads](connectors/threads.md) · `@threads:` | | |
 | [Tailscale](connectors/tailscale.md) · no `@` form, one server gated | | |
+| [Chrome DevTools](connectors/chrome-devtools.md) · no `@` form, the browser you already have open | | |
 
 ## What it deliberately does not do
 
@@ -196,8 +201,9 @@ and the mention it answers:
   between the agent and the provider there is nothing of ours.
 - **No webview sign-in.** The consent screen is the system browser, at the provider's
   real address, with the provider's own address bar above it.
-- **No guessing at a definition.** Installing an `mcp` entry the workspace has no
-  binding for writes a placeholder, not an endpoint.
+- **No guessing at a definition.** Installing an `mcp` entry the workspace has no binding
+  for writes a placeholder, not an endpoint — unless the catalog ships the server's own
+  command (`chrome-devtools`), and then exactly that command is what lands.
 
 ## Related
 

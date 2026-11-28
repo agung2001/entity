@@ -139,9 +139,9 @@ workspace. A thread can be pinned there, terminal included.
 <tr>
 <td width="50%" valign="middle">
 
-### Thirteen connectors, one roster
+### Fifteen connectors, one roster
 
-Thirteen rows, one table. The Gmail, Drive, YouTube Studio and Habitify accounts sit
+Fifteen rows, one table. The Gmail, Drive, YouTube Studio and Habitify accounts sit
 beside the MCP servers, the CLI binaries this machine already had, and one row that is
 neither — Tailscale, which reads a local daemon and gates one command instead of storing
 a credential. One row per connector, not one per mailbox — and each row states its kind,
@@ -193,7 +193,7 @@ assistant gets its own calendar and bill.
 </tr>
 </table>
 
-**Also in the box:** fourteen shipped connectors with per-account OAuth and a
+**Also in the box:** fifteen shipped connectors with per-account OAuth and a
 `read` → `write` → `full` tier per workspace · the harness inventory at **Account →
 Harnesses**, with the profile, sound and notification pages beside it · **Learning**
 with a scope you choose before it spends a run · a rebuilt composer dock and
@@ -246,13 +246,15 @@ binary or a signed-out CLI is reported as a failed turn, not a friendly fake ans
 
 Everything a workspace can reach lives in one roster at **Workspace settings →
 Connectors**: an MCP server, a CLI binary and a REST service are three *kinds* of one
-row, and the old bulk MCP list is a permanent redirect into it. Entity ships thirteen —
-`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x` and `habitify` account-bearing;
-`orca`, `youtrack` and `github` the three the composer offered before connectors existed
+row, and the old bulk MCP list is a permanent redirect into it. Entity ships fifteen —
+`gmail`, `google-drive`, `youtube`, `youtube-studio`, `x`, `habitify` and `threads`
+account-bearing (`threads`' token is pasted rather than consented); `orca`, `youtrack` and
+`github` the three the composer offered before connectors existed
 (`orca` and `github` are `cli` rows, `youtrack` is an `mcp` row); `maka` and `open-design`
-the MCP-backed ones; `clockify`, whose credential is one API key you paste once; and
+the MCP-backed ones; `clockify`, whose credential is one API key you paste once;
 `tailscale`, a `cli` row that authenticates nothing at all — it reads this machine's
-daemon and gates one command. Installing one records a *definition* in the workspace's
+daemon and gates one command; and `chrome-devtools`, an `mcp` row that drives the Chrome
+this machine already has open. Installing one records a *definition* in the workspace's
 `connectors.json`, never a credential. An account-bearing connector gets its accounts
 from a browser consent round-trip, one refresh token per account, kept beside
 `integrations.json` in `~/.entity/` at `0600` and never returned by any read — and a
@@ -274,20 +276,24 @@ the configuration cards held back until there is a binding for them to write to.
   <a href="https://clockify.me"><kbd><img src="docs/assets/connectors/clockify.svg" alt="" width="16" valign="middle" /> Clockify · <code>@clockify:</code></kbd></a> &nbsp;
   <a href="https://habitify.me"><kbd><img src="docs/assets/connectors/habitify.svg" alt="" width="16" valign="middle" /> Habitify · <code>@habitify:</code></kbd></a> &nbsp;
   <a href="https://open-design.ai/"><kbd><img src="docs/assets/connectors/open-design.svg" alt="" width="16" valign="middle" /> Open Design · <code>@opendesign:</code></kbd></a> &nbsp;
-  <a href="https://tailscale.com"><kbd><img src="docs/assets/connectors/tailscale.svg" alt="" width="16" valign="middle" /> Tailscale · no <code>@</code> form</kbd></a>
+  <a href="https://tailscale.com"><kbd><img src="docs/assets/connectors/tailscale.svg" alt="" width="16" valign="middle" /> Tailscale · no <code>@</code> form</kbd></a> &nbsp;
+  <a href="https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session"><kbd><img src="docs/assets/connectors/chrome-devtools.svg" alt="" width="16" valign="middle" /> Chrome DevTools · no <code>@</code> form</kbd></a>
 </p>
 
-Tailscale is the thirteenth row and the one that answers no `@` form: it stores no
-credential, reads this machine's daemon and puts the tailnet address in a QR, on
-[its own page](docs/connectors/tailscale.md). Every connector has one —
+Two rows answer no `@` form, on purpose. Tailscale stores no credential, reads this
+machine's daemon and puts the tailnet address in a QR, on
+[its own page](docs/connectors/tailscale.md). Chrome DevTools stores no credential either:
+it drives the Chrome this machine already has open, on
+[its own page](docs/connectors/chrome-devtools.md). Every connector has one —
 [Orca](docs/connectors/orca.md), [GitHub](docs/connectors/github.md),
 [YouTrack](docs/connectors/youtrack.md), [Maka](docs/connectors/maka.md),
 [Open Design](docs/connectors/open-design.md), [Gmail](docs/connectors/gmail.md),
 [Drive](docs/connectors/google-drive.md), [YouTube](docs/connectors/youtube.md),
 [YouTube Studio](docs/connectors/youtube-studio.md),
-[Habitify](docs/connectors/habitify.md), [Clockify](docs/connectors/clockify.md) and
-[X](docs/connectors/x.md) — with the detail page, what it reaches and the mention it
-answers.
+[Habitify](docs/connectors/habitify.md), [Clockify](docs/connectors/clockify.md),
+[Threads](docs/connectors/threads.md), [X](docs/connectors/x.md) and
+[Chrome DevTools](docs/connectors/chrome-devtools.md) — with
+the detail page, what it reaches and the mention it answers.
 
 **[Connectors →](docs/connectors.md)** · **[MCP servers →](docs/mcp.md)**
 
