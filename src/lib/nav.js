@@ -1,8 +1,9 @@
 import { artifacts } from '@/stores/artifacts'
+import { openGoalCount } from '@/stores/goals'
 import { hub, liveSummaries } from '@/stores/hub'
 
 /**
- * The six destinations, in order, for both the rail and the phone tab bar.
+ * The seven destinations, in order, for both the rail and the phone tab bar.
  *
  * One of them is a panel rather than a route: Artifacts opens the second tier
  * where it was opened from, so it carries `panel` instead of `name`. Entities
@@ -26,15 +27,30 @@ export const NAV = [
      carries no count and no route in CONFIG_ROUTES. */
   { name: 'news', view: 'news', label: 'News', icon: 'news' },
   {
+    name: 'goals',
+    view: 'goals',
+    label: 'Goals',
+    icon: 'goal',
+    /* The only count in the rail that counts *goals*: a met one keeps its row
+       until it is archived, and 0 until the store has read (§2.7). */
+    count: () => openGoalCount(),
+  },
+  {
     name: 'workspace',
     view: 'configurations',
     label: 'Configurations',
-    /* Six cells share a 360 px thumb bar; `Configurations` there is an
-       ellipsis and nothing else. The short word is the tab bar's alone. */
+    /* Seven cells share a 360 px thumb bar at 51 px each; `Configurations`
+       there is an ellipsis and nothing else. The short word is the tab
+       bar's alone. */
     short: 'Config',
     icon: 'sliders',
   },
 ]
+
+/** Goals is one destination with four child routes: the index, one goal, the
+    create step, the backlog and the calendar. All five keep the rail cell
+    pressed — a goal page that released it would read as a different section. */
+const GOAL_ROUTES = new Set(['goals', 'goal', 'goal-new', 'goals-backlog', 'goals-calendar'])
 
 /** Everything that belongs to the workspace settings drawer, not to a destination. */
 export const CONFIG_ROUTES = new Set([
@@ -73,6 +89,7 @@ export function isActive(item, route) {
   if (panelOpen) return item.panel ? hub.rail[item.panel] : false
   if (item.name === 'entities') return route.name === 'entities' || route.name === 'entity'
   if (item.panel === 'artifacts') return route.name === 'artifact' || route.name === 'artifacts'
+  if (item.name === 'goals') return GOAL_ROUTES.has(String(route.name || ''))
   if (item.view === 'configurations') return CONFIG_ROUTES.has(String(route.name || ''))
   return route.name === item.name
 }

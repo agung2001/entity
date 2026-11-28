@@ -40,6 +40,13 @@ defineProps({ name: { type: String, default: 'pulse' } })
     <path d="M5 7h6M5 9.4h4M5 4.2h1.4" />
     <path d="M11.4 2.6a1.6 1.6 0 0 1 1.6 1.6M11.4 2.6v1.6" />
   </svg>
+  <!-- the goal mark: a flag on a pole, the accent dot its own fill. Copied
+       verbatim from the design's rail cell. -->
+  <svg v-else-if="name === 'goal'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+    <path d="M8 2.4v11.2M4.6 13.6L8 10.2l3.4 3.4" />
+    <circle cx="8" cy="5.4" r="3" />
+    <circle cx="8" cy="5.4" r="1.1" fill="var(--accent)" />
+  </svg>
   <svg v-else-if="name === 'screen'" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
     <rect x="1.6" y="2.6" width="12.8" height="8.2" rx="1.6" />
     <path d="M5.4 13.6h5.2" />

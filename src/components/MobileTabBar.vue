@@ -1,6 +1,6 @@
 <script setup>
 /**
- * The phone tab bar — the six destinations the rail carries on a desktop
+ * The phone tab bar — the seven destinations the rail carries on a desktop
  * window, in the thumb zone. Two of them (Entities, Artifacts) are panels, not
  * routes: tapping one opens its list in the drawer, the same way the rail opens
  * it beside the page.
@@ -51,7 +51,7 @@ function openPanel(item) {
           <NavIcon :name="item.icon" />
           <span class="tab-lb">
             <span class="tab-lb-full">{{ item.label }}</span>
-            <!-- Six cells share 360 px: `Configurations` would only ever reach
+            <!-- Seven cells share 360 px: `Configurations` would only ever reach
                  its ellipsis there, so the thumb bar says `Config`. -->
             <span class="tab-lb-short">{{ item.short || item.label }}</span>
           </span>
@@ -67,7 +67,7 @@ function openPanel(item) {
           <NavIcon :name="item.icon" />
           <span class="tab-lb">
             <span class="tab-lb-full">{{ item.label }}</span>
-            <!-- Six cells share 360 px: `Configurations` would only ever reach
+            <!-- Seven cells share 360 px: `Configurations` would only ever reach
                  its ellipsis there, so the thumb bar says `Config`. -->
             <span class="tab-lb-short">{{ item.short || item.label }}</span>
           </span>
