@@ -228,7 +228,7 @@ async function archive() {
           </div>
 
           <div>
-            <GoalSources :goal="goal" :refresh-error="refreshingError" />
+            <GoalSources :goal="goal" />
             <GoalNext :goal="goal" />
             <div class="notebar">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">

@@ -342,10 +342,13 @@
 .goals-page .goalbar .top .pace[data-late='1'] {
   color: var(--danger);
 }
+.goals-page .goalbar .bar,
+.goals-page .grow .bar {
+  overflow: visible;
+}
 .goals-page .goalbar .bar {
   height: 6px;
   margin: 0 0 9px;
-  overflow: visible;
 }
 .goals-page .goalbar .bar .tick {
   top: -3px;
@@ -1661,36 +1664,35 @@
     display: none;
   }
   .goals-page .bt-row {
-    grid-template-columns: 18px max-content minmax(0, 1fr) 26px;
+    grid-template-columns: 18px max-content minmax(0, 1fr) 92px 26px;
     row-gap: 2px;
     padding-block: 8px;
   }
-  .goals-page .bt-row .tt,
-  .goals-page .bt-row .tx {
-    grid-column: 3;
+  .goals-page .bt-row .chk {
+    grid-column: 1;
     grid-row: 1;
   }
   .goals-page .bt-row .pri {
     grid-column: 2;
     grid-row: 1;
   }
-  .goals-page .bt-row .chk {
-    grid-column: 1;
+  .goals-page .bt-row .tx {
+    grid-column: 3;
     grid-row: 1;
   }
-  .goals-page .bt-row .tmenu-wrap {
+  .goals-page .bt-row .tdate {
     grid-column: 4;
+    grid-row: 1;
+    text-align: right;
+  }
+  .goals-page .bt-row .tmenu-wrap {
+    grid-column: 5;
     grid-row: 1;
   }
   .goals-page .bt-row .src,
   .goals-page .bt-row .tk {
-    grid-column: 2 / 4;
+    grid-column: 2 / 5;
     grid-row: 2;
-  }
-  .goals-page .bt-row .tdate {
-    grid-column: 4;
-    grid-row: 2;
-    text-align: right;
   }
   .goals-page .bt-row .tmenu {
     opacity: 1;
@@ -1703,14 +1705,12 @@
     row-gap: 4px;
   }
   .goals-page .task .tk {
-    grid-column: 3 / 5;
-    grid-row: 2;
+    grid-column: 3 / 4;
   }
   .goals-page .task .tdate {
-    grid-column: 3 / 5;
-    grid-row: 2;
+    grid-column: 3 / 4;
     text-align: left;
-    justify-self: end;
+    justify-self: start;
   }
   .goals-page .task .tmenu-wrap {
     grid-column: 4;

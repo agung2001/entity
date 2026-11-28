@@ -194,7 +194,7 @@ async function tick(row, done) {
             >
               <div class="d"><b>{{ cell.date }}</b><span v-if="cell.due.length" class="due">due</span></div>
               <router-link
-                v-for="row in visible(cell)"
+                v-for="row in cell.out ? [] : visible(cell)"
                 :key="row.task.id"
                 class="cal-chip"
                 :data-p="row.task.priority"
@@ -203,14 +203,14 @@ async function tick(row, done) {
                 :to="{ name: 'goal', params: { workspace, id: row.goal.id } }"
               ><span class="l">{{ row.task.title }}</span></router-link>
               <router-link
-                v-for="goal in cell.due"
+                v-for="goal in cell.out ? [] : cell.due"
                 :key="`due-${goal.id}`"
                 class="cal-chip cal-chip-due"
                 :title="`${goal.title} — deadline`"
                 :to="{ name: 'goal', params: { workspace, id: goal.id } }"
               ><span class="l">{{ goal.title }} — deadline</span></router-link>
               <button
-                v-if="cell.tasks.length > 2"
+                v-if="!cell.out && cell.tasks.length > 2"
                 class="cal-more"
                 type="button"
                 :aria-expanded="isOpen(cell.key) ? 'true' : 'false'"

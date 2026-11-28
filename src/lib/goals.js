@@ -200,6 +200,13 @@ const clauseTitle = (clause) =>
 
 const mergeKey = (title) => String(title || '').trim().toLowerCase()
 
+/** A row id. `randomUUID` is the browser's; the fallback keeps a task usable on a
+    page served from an origin Chromium does not treat as secure. */
+const newId = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+
 /**
  * Draft tasks from the sentence: one per clause, dated evenly between today and
  * the deadline, and **merged by title** against what is already accepted — the
@@ -222,7 +229,7 @@ export function draftFrom(sentence, deadline, accepted = []) {
   }
 
   const proposed = clauses.map((clause, index) => ({
-    id: crypto.randomUUID(),
+    id: newId(),
     priority: priorityOf(clause),
     title: clauseTitle(clause),
     token: { kind: 'draft', label: 'from the sentence' },
@@ -250,7 +257,7 @@ export function draftFrom(sentence, deadline, accepted = []) {
 
 /** A new empty row in a group. The store refuses an empty title on save. */
 export const blankTask = (priority) => ({
-  id: crypto.randomUUID(),
+  id: newId(),
   priority,
   title: '',
   token: { kind: 'draft', label: '' },

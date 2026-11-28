@@ -8,10 +8,7 @@ import { computed } from 'vue'
 import { ago } from '@/stores/hub'
 import { day } from '@/lib/goals'
 
-const props = defineProps({
-  goal: { type: Object, required: true },
-  refreshError: { type: String, default: '' },
-})
+const props = defineProps({ goal: { type: Object, required: true } })
 
 const sources = computed(() => (Array.isArray(props.goal.read?.sources) ? props.goal.read.sources : []))
 const stamp = computed(() => (props.goal.readAt ? `read ${ago(props.goal.readAt)}` : 'not read yet'))
@@ -49,10 +46,7 @@ const lineOf = (source) => {
         </span>
       </div>
     </div>
-    <div v-if="refreshError" class="panel-note">
-      <p class="ctx-note">Refresh changed no figure: {{ refreshError }}</p>
-    </div>
-    <div v-else-if="goal.read && goal.read.total === 0" class="panel-note">
+    <div v-if="goal.read && goal.read.total === 0" class="panel-note">
       <p class="ctx-note">No task carries a date yet, so the goal has nothing to be ahead or behind of. {{ day(goal.deadline) }} is the deadline either way.</p>
     </div>
   </div>
