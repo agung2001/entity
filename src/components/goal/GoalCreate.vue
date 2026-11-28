@@ -20,7 +20,8 @@ import { call, onRunEvent } from '@/composables/localBridge'
 import PickMenu from '@/components/PickMenu.vue'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
-import GoalDraftCharts from '@/components/goal/GoalDraftCharts.vue'
+import DraftWeeks from '@/components/goal/DraftWeeks.vue'
+import DraftShape from '@/components/goal/DraftShape.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import { EFFORT_WEIGHT, PRIORITY_ORDER, blankTask, draftFrom, mergeTasks, priorityWord, today } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
@@ -188,12 +189,26 @@ const titleOf = computed(() => {
   return (first || 'A new goal').slice(0, 90)
 })
 
-const groups = computed(() =>
-  PRIORITY_ORDER.map((priority) => ({
-    priority,
-    tasks: tasks.value.filter((task) => task.priority === priority),
-  })).filter((group) => group.tasks.length),
+const criticalCount = computed(() => tasks.value.filter((task) => task.priority === 'critical').length)
+const effortPoints = computed(() =>
+  tasks.value.reduce((sum, task) => sum + (EFFORT_WEIGHT[task.effort] || 1), 0),
 )
+
+/* one table, priority as a column: a stack of four cards for four priorities
+   reads as four lists, and the plan is one plan */
+const sortedTasks = computed(() => {
+  const rank = (priority) => {
+    const index = PRIORITY_ORDER.indexOf(priority)
+    return index === -1 ? PRIORITY_ORDER.length : index
+  }
+  return [...tasks.value].sort(
+    (a, b) =>
+      rank(a.priority) - rank(b.priority) ||
+      String(a.date || '9999').localeCompare(String(b.date || '9999')) ||
+      String(a.title).localeCompare(String(b.title)),
+  )
+})
+const entitiesUsed = computed(() => new Set(tasks.value.map((task) => task.entity).filter(Boolean)).size)
 
 const broken = computed(
   () => tasks.value.length > 0 && tasks.value.some((task) => !String(task.title || '').trim()),
@@ -696,81 +711,94 @@ async function create() {
 
     <!-- ── step 2 ─────────────────────────────────────────────────────── -->
     <template v-else>
-      <section v-if="draftSummary" class="draft-summary" aria-labelledby="draft-summary-t">
-        <div class="dsh-head">
-          <span class="dsh-t" id="draft-summary-t">The plan, in a paragraph</span>
-          <span class="dsh-by">{{ draftSource === 'local' ? 'written locally' : `planned by ${entity || 'the entity'}` }}</span>
+      <!-- the verdict first: the paragraph, then what the plan is made of -->
+      <section class="panel draft-brief">
+        <div class="dbrief-main">
+          <div class="dsh-head">
+            <span class="dsh-t">The plan</span>
+            <span class="dsh-by">{{ draftSource === 'local' ? 'written locally' : `planned by ${agent.name}` }}</span>
+          </div>
+          <p v-if="draftSummary" class="dsh-body">{{ draftSummary }}</p>
+          <p v-else class="dsh-body dsh-empty">
+            The plan came back without a paragraph. The tasks below are the whole of it.
+          </p>
+          <dl class="dsh-stats">
+            <div><dt>Tasks</dt><dd>{{ tasks.length }}</dd></div>
+            <div><dt>Critical</dt><dd>{{ criticalCount }}</dd></div>
+            <div><dt>Entities</dt><dd>{{ entitiesUsed }}</dd></div>
+            <div><dt>Effort</dt><dd>{{ effortPoints }}</dd></div>
+            <div><dt>Days</dt><dd>{{ days }}</dd></div>
+          </dl>
         </div>
-        <p class="dsh-body">{{ draftSummary }}</p>
-        <div class="dsh-stats">
-          <span><b>{{ tasks.length }}</b> tasks</span>
-          <span><b>{{ criticalCount }}</b> critical</span>
-          <span><b>{{ new Set(tasks.map((task) => task.entity).filter(Boolean)).size }}</b> entities</span>
-          <span><b>{{ effortPoints }}</b> effort points over {{ days }} days</span>
+
+        <div class="dbrief-side">
+          <DraftShape :tasks="tasks" />
         </div>
       </section>
 
-    <div class="split draft-split">
-      <div>
-        <div v-if="merged.length" class="dedupe">
-          <span class="lbl">Merged</span>
-          <span><b>{{ merged.length }}</b> of the {{ tasks.length }} tasks were already on the list — <b>{{ merged.map((value) => `“${value}”`).join(', ') }}</b> kept the earliest date.</span>
-          <button class="lnk" type="button" @click="keepSeparate">Keep them separate</button>
+      <section class="panel draft-plan">
+        <div class="dph">
+          <h2>The tasks</h2>
+          <span class="c">{{ plural(tasks.length, 'task') }}</span>
+          <span class="sp"></span>
+          <button class="add" type="button" :disabled="drafting" @click="addTask('normal')">+ Task</button>
         </div>
 
         <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Drafting the tasks">
           <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${72 - n * 5}%`, height: '10px' }"></span></div>
         </div>
 
-        <div v-for="group in groups" v-else :key="group.priority" class="tgroup">
-          <div class="tgh">
-            <span :data-p="group.priority">{{ priorityWord(group.priority) }}</span>
-            <span class="c">{{ plural(group.tasks.length, 'task') }}</span>
-            <span class="sp"></span>
-            <button class="add" type="button" @click="addTask(group.priority)">+ task</button>
+        <template v-else>
+          <div v-if="merged.length" class="dedupe">
+            <span class="lbl">Merged</span>
+            <span><b>{{ merged.length }}</b> of the {{ tasks.length }} tasks were already on the list — <b>{{ merged.map((value) => `“${value}”`).join(', ') }}</b> kept the earliest date.</span>
+            <button class="lnk" type="button" @click="keepSeparate">Keep them separate</button>
           </div>
-          <ul class="tasks">
-            <TaskRow
-              v-for="task in group.tasks"
-              :key="task.id"
-              :task="task"
-              editable
-              show-entity
-              show-effort
-              @tick="toggle(task, $event)"
-              @update="updateTask(task, $event)"
-              @remove="removeTask(task)"
-            />
-          </ul>
-        </div>
 
-        <div v-if="!drafting && !tasks.length" class="blank">
-          <h3>No task came back</h3>
-          <p>
-            The sentence produced no clause to work from. Write the sentence as a few clauses — one job
-            each — and draft again. Nothing was created.
-          </p>
-        </div>
+          <div v-if="tasks.length" class="dtable">
+            <div class="dhead" aria-hidden="true">
+              <span></span><span>Priority</span><span>Task</span><span>Entity</span><span>Effort</span><span>Due</span><span></span>
+            </div>
+            <ul class="tasks">
+              <TaskRow
+                v-for="task in sortedTasks"
+                :key="task.id"
+                :task="task"
+                editable
+                show-entity
+                show-effort
+                :show-source="false"
+                @tick="toggle(task, $event)"
+                @update="updateTask(task, $event)"
+                @remove="removeTask(task)"
+              />
+            </ul>
+          </div>
 
-        <p v-if="createWhy" class="ctx-note danger">{{ createWhy }}</p>
+          <div v-else class="blank">
+            <h3>No task came back</h3>
+            <p>
+              The sentence produced no clause to work from. Write the sentence as a few clauses — one job
+              each — and draft again. Nothing was created.
+            </p>
+          </div>
+        </template>
+      </section>
+
+      <DraftWeeks :tasks="tasks" :deadline="deadline" />
+
+      <div v-if="refused" class="errbar" role="status">
+        <b>Could not create the goal.</b>
+        <p>{{ refused }}</p>
       </div>
 
-      <div>
-        <GoalDraftCharts :tasks="tasks" :deadline="deadline" />
-
-        <div class="notebar">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-            <circle cx="8" cy="8" r="6" /><path d="M8 7.4v4M8 5.2v.2" />
-          </svg>
-          <p><b>No figures yet.</b> Progress on this screen is a count of tasks. The read appears after the first Refresh on the goal.</p>
-        </div>
-
-        <div v-if="refused" class="errbar" role="status">
-          <b>Could not create the goal.</b>
-          <p>{{ refused }}</p>
-        </div>
+      <div class="plan-foot">
+        <span class="why">{{ createWhy || 'Nothing is written until you create the goal.' }}</span>
+        <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
+        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
+          {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
+        </button>
       </div>
-    </div>
     </template>
 
     <PromptEnhanceDialog

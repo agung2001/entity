@@ -973,32 +973,53 @@
 .goals-page .draft-steps li[data-type='error'] span {
   color: var(--danger);
 }
-/* step 2 is a decision screen: the plan, its charts and its columns take the
-   whole band instead of the 820 px a form needs. */
-/* beat the view's own 820 px column, which is a four-class selector */
+/* ── step 2: the report ──────────────────────────────────────────────────
+   A decision screen, so it reads like a report rather than a form: the
+   verdict (paragraph + shape) on one band, the plan as a single table, and the
+   schedule full-width underneath. Step 1 stays an 820 px form. */
 .view.detail-view.goals-new > .goals-page.goals-wide {
   width: min(100% - (2 * var(--view-pad)), 1180px);
 }
 
-.goals-page .draft-summary {
-  margin: 0 0 16px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--bg);
+.goals-page .draft-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 344px;
+  margin-bottom: 14px;
+}
+.goals-page .dbrief-main {
+  display: flex;
+  flex-direction: column;
+  padding: 15px 20px 16px;
+}
+.goals-page .dbrief-main .dsh-body {
+  margin-bottom: 18px;
+}
+.goals-page .dbrief-side {
+  padding: 14px 16px 10px;
+  border-left: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface) 55%, var(--bg));
 }
 .goals-page .dsh-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  flex-wrap: wrap;
 }
 .goals-page .dsh-t {
   font-family: var(--mono);
   font-size: var(--fs-micro);
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-2);
+}
+.goals-page .dsh-t::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 7px;
+  border-radius: var(--r-2xs);
+  background: var(--accent);
+  vertical-align: 2px;
 }
 .goals-page .dsh-by {
   margin-left: auto;
@@ -1007,32 +1028,316 @@
   color: var(--muted);
 }
 .goals-page .dsh-body {
-  margin: 7px 0 0;
-  max-width: 110ch;
+  margin: 9px 0 0;
+  max-width: 68ch;
   font-size: var(--fs-body);
-  line-height: 1.55;
+  line-height: 1.64;
   color: var(--ink);
+  text-wrap: pretty;
+}
+.goals-page .dsh-empty {
+  color: var(--muted);
 }
 .goals-page .dsh-stats {
   display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 10px;
+  gap: 0;
+  margin: auto 0 0;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+.goals-page .dsh-stats > div {
+  padding: 0 16px;
+  border-left: 1px solid var(--border);
+}
+.goals-page .dsh-stats > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.goals-page .dsh-stats dt {
   font-family: var(--mono);
-  font-size: var(--fs-meta);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-.goals-page .dsh-stats b {
-  color: var(--ink-2);
+.goals-page .dsh-stats dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-h5);
   font-weight: 500;
-}
-.goals-page .draft-split {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
-/* the planner's two extra cells */
+/* the shape side: priority ring, then who carries the plan */
+.goals-page .draft-shape {
+  display: flex;
+  flex-direction: column;
+}
+.goals-page .ds-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 10px;
+}
+.goals-page .ds-donut {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex: none;
+}
+.goals-page .ds-donut svg {
+  width: 88px;
+  height: 88px;
+  transform: rotate(-90deg);
+}
+.goals-page .ds-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 11;
+}
+.goals-page .ds-slice {
+  fill: none;
+  stroke-width: 11;
+}
+.goals-page .ds-slice[data-p='critical'] {
+  stroke: var(--danger);
+}
+.goals-page .ds-slice[data-p='major'] {
+  stroke: var(--accent);
+}
+.goals-page .ds-slice[data-p='normal'] {
+  stroke: var(--ink-2);
+}
+.goals-page .ds-slice[data-p='minor'] {
+  stroke: var(--muted);
+}
+.goals-page .ds-n {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.goals-page .ds-n b {
+  font-size: var(--fs-h4);
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.goals-page .ds-n small {
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.goals-page .ds-legend {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}
+.goals-page .ds-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.goals-page .ds-legend li[data-zero='1'] {
+  color: var(--muted);
+}
+.goals-page .ds-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-2xs);
+  flex: none;
+}
+.goals-page .ds-legend i[data-p='critical'] {
+  background: var(--danger);
+}
+.goals-page .ds-legend i[data-p='major'] {
+  background: var(--accent);
+}
+.goals-page .ds-legend i[data-p='normal'] {
+  background: var(--ink-2);
+}
+.goals-page .ds-legend i[data-p='minor'] {
+  background: var(--muted);
+}
+.goals-page .ds-legend b {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.goals-page .ds-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 5px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.goals-page .ds-sub span {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.goals-page .ds-bars {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.goals-page .ds-bars li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 72px 16px;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  font-size: var(--fs-secondary);
+  line-height: 1;
+  color: var(--ink-2);
+}
+.goals-page .ds-bars li .mark {
+  width: 16px;
+  height: 16px;
+}
+.goals-page .ds-bars li[data-empty='1'] {
+  color: var(--muted);
+}
+.goals-page .ds-dot {
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.goals-page .ds-bars .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goals-page .ds-bars .track {
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.goals-page .ds-bars .track i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--accent) 80%, var(--bg));
+}
+.goals-page .ds-bars b {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the plan card and its one head row */
+.goals-page .draft-plan {
+  margin-bottom: 14px;
+}
+.goals-page .dph {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.goals-page .dph h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.goals-page .dph .c {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.goals-page .dph .sp {
+  flex: 1;
+}
+.goals-page .dph .add {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xs);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.goals-page .dph .add:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.goals-page .dtable .tasks {
+  border: 0;
+  border-radius: 0;
+}
+.goals-page .dhead {
+  display: grid;
+  grid-template-columns: 13px max-content minmax(0, 1fr) 160px 70px 96px 26px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.goals-page .dhead span:nth-child(n + 4) {
+  justify-self: start;
+}
+.goals-page .dhead span:nth-child(3) {
+  padding-left: 5px;
+}
+
+/* the planner's two extra cells, and the row they sit in */
 .goals-page .task.task-wide {
-  grid-template-columns: 13px max-content minmax(0, 1fr) 132px 64px auto 78px 26px;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px 8px 10px;
+  grid-template-columns: 13px max-content minmax(0, 1fr) 150px 66px auto 84px 26px;
+}
+.goals-page .task.task-wide.task-no-source {
+  grid-template-columns: 13px max-content minmax(0, 1fr) 160px 70px 96px 26px;
+}
+.goals-page .task.task-wide .tx {
+  font-size: var(--fs-body);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: left;
 }
 .goals-page .te {
   display: inline-flex;
@@ -1060,143 +1365,197 @@
 .goals-page .eff[data-e='medium'] {
   color: var(--ink-2);
 }
+.goals-page .task.task-wide .tdate {
+  justify-self: start;
+  font-size: var(--fs-meta);
+}
 
-/* the charts */
-.goals-page .dch-donut {
-  display: flex;
+/* the priority is a word and a colour, not a form field on every row */
+.goals-page .pri-wrap {
+  position: relative;
+  display: inline-flex;
   align-items: center;
+}
+.goals-page .pri-wrap[data-edit='1']::after {
+  content: '';
+  width: 0;
+  height: 0;
+  margin-left: -9px;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 3px solid currentColor;
+  opacity: 0;
+  pointer-events: none;
+}
+.goals-page .pri-wrap[data-edit='1']:hover::after {
+  opacity: 0.6;
+}
+.goals-page .task .pri {
+  height: 20px;
+  padding: 0 5px;
+  border-color: transparent;
+  background: transparent;
+  letter-spacing: 0.05em;
+}
+.goals-page .task .pri:hover {
+  background: var(--surface-2);
+}
+.goals-page .task .pri[data-p='critical'] {
+  color: var(--danger);
+}
+.goals-page .task .pri[data-p='major'] {
+  color: var(--accent-ink);
+}
+.goals-page select.pri {
+  padding-right: 11px;
+}
+
+/* the schedule, full width where it can be read */
+.goals-page .draft-weeks {
+  margin-bottom: 14px;
+}
+.goals-page .dpw-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 272px;
+}
+.goals-page .dpw-plot {
+  position: relative;
+  padding: 18px 22px 12px;
+  border-right: 1px solid var(--border);
+}
+.goals-page .dpw-cols {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-evenly;
   gap: 12px;
 }
-.goals-page .dch-donut svg {
-  width: 108px;
-  height: 108px;
-  flex: none;
-  transform: rotate(-90deg);
-}
-.goals-page .dch-track {
-  fill: none;
-  stroke: var(--surface-2);
-  stroke-width: 12;
-}
-.goals-page .dch-slice {
-  fill: none;
-  stroke-width: 12;
-}
-.goals-page .dch-slice[data-p='critical'] {
-  stroke: var(--danger);
-}
-.goals-page .dch-slice[data-p='major'] {
-  stroke: var(--accent);
-}
-.goals-page .dch-slice[data-p='normal'] {
-  stroke: var(--ink-2);
-}
-.goals-page .dch-slice[data-p='minor'] {
-  stroke: var(--muted);
-}
-.goals-page .dch-legend {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.goals-page .dpw-col {
+  flex: 1 1 0;
+  max-width: 132px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: var(--fs-secondary);
-  color: var(--ink-2);
+  align-items: stretch;
+  gap: 5px;
 }
-.goals-page .dch-legend i {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: var(--r-2xs);
-}
-.goals-page .dch-legend i[data-p='critical'] {
-  background: var(--danger);
-}
-.goals-page .dch-legend i[data-p='major'] {
-  background: var(--accent);
-}
-.goals-page .dch-legend i[data-p='normal'] {
-  background: var(--ink-2);
-}
-.goals-page .dch-legend i[data-p='minor'] {
-  background: var(--muted);
-}
-.goals-page .dch-legend b {
-  margin-left: 3px;
-  font-family: var(--mono);
-  font-weight: 400;
-  color: var(--muted);
-}
-.goals-page .dch-sub {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 12px 0 6px;
+.goals-page .dpw-n {
   font-family: var(--mono);
   font-size: var(--fs-micro);
-  letter-spacing: 0.08em;
+  font-weight: 400;
+  color: var(--ink-2);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.goals-page .dpw-n[data-zero='1'] {
+  color: var(--muted);
+}
+.goals-page .dpw-bar {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  min-height: 3px;
+  border-radius: var(--r-2xs) var(--r-2xs) 0 0;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.goals-page .dpw-bar[data-empty='1'] {
+  background: var(--border);
+}
+.goals-page .dpw-bar i {
+  display: block;
+  width: 100%;
+}
+.goals-page .dpw-bar i[data-p='critical'] {
+  background: var(--danger);
+}
+.goals-page .dpw-bar i[data-p='major'] {
+  background: var(--accent);
+}
+.goals-page .dpw-bar i[data-p='normal'] {
+  background: var(--ink-2);
+}
+.goals-page .dpw-bar i[data-p='minor'] {
+  background: var(--muted);
+}
+.goals-page .dpw-lb {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+}
+.goals-page .dpw-avg {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  border-top: 1px dashed var(--border-strong);
+  pointer-events: none;
+}
+.goals-page .dpw-avg-l {
+  position: absolute;
+  right: 24px;
+  padding: 0 3px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  pointer-events: none;
+}
+.goals-page .dpw-facts {
+  margin: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.goals-page .dpw-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.goals-page .dpw-facts dt {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.goals-page .dch-sub span {
-  text-transform: none;
-  letter-spacing: 0;
+.goals-page .dpw-facts dd {
+  margin: 0;
+  font-size: var(--fs-h5);
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
-.goals-page .dch-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: var(--fs-secondary);
-  color: var(--ink-2);
-}
-.goals-page .dch-bar .nm {
-  width: 96px;
-  flex: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.goals-page .dch-bar .track {
-  flex: 1;
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
-  overflow: hidden;
-}
-.goals-page .dch-bar .track i {
-  display: block;
-  height: 100%;
-  background: color-mix(in oklab, var(--accent) 75%, var(--bg));
-  border-radius: var(--r-pill);
-}
-.goals-page .dch-bar b {
-  width: 24px;
-  flex: none;
+.goals-page .dpw-facts dd small {
   font-family: var(--mono);
   font-size: var(--fs-micro);
   font-weight: 400;
   color: var(--muted);
-  text-align: right;
 }
-.goals-page .dch-pace svg {
-  width: 100%;
-  height: 86px;
+.goals-page .dpw-note {
+  margin: 4px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-secondary);
+  line-height: 1.5;
+  color: var(--muted);
 }
-.goals-page .dch-target {
-  fill: none;
-  stroke: var(--border-strong);
-  stroke-width: 1.4;
-  stroke-dasharray: 4 4;
+
+/* the foot of step 2: nothing writes itself */
+.goals-page .plan-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px;
 }
-.goals-page .dch-plan {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
+.goals-page .plan-foot .why {
+  margin-right: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
 }
 
 .goals-page .draft-note {
@@ -1270,6 +1629,7 @@
   display: flex;
   align-items: center;
   gap: 0;
+  max-width: 620px;
   margin: 0 0 20px;
 }
 .goals-page .steps .st {
@@ -1985,9 +2345,15 @@
   }
 }
 @media (max-width: 980px) {
-  .goals-page .split,
-  .goals-page .draft-split {
+  .goals-page .split {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .goals-page .draft-brief {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .goals-page .dsh-stats {
+    flex-wrap: wrap;
+    gap: 12px 0;
   }
   .goals-page .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2087,6 +2453,27 @@
     grid-column: 3;
     grid-row: 3;
     justify-self: start;
+  }
+  .goals-page .dhead {
+    display: none;
+  }
+  .goals-page .task.task-wide,
+  .goals-page .task.task-wide.task-no-source {
+    grid-template-columns: 13px max-content minmax(0, 1fr) 26px;
+  }
+  .goals-page .dsh-stats dd {
+    font-size: var(--fs-h6);
+  }
+  .goals-page .dpw-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .goals-page .dpw-plot {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 16px 14px 10px;
+  }
+  .goals-page .dpw-cols {
+    height: 108px;
   }
   .goals-page .task .tdate {
     grid-column: 3 / 4;

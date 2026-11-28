@@ -62,6 +62,14 @@ const iso = (at) => `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getD
 /** The machine's own day, `YYYY-MM-DD`. */
 export const today = () => iso(new Date())
 
+/** `n` calendar days after a stored day — the week bucket's arithmetic. */
+export function shiftDay(value, n) {
+  const at = dayOf(value)
+  if (!at) return ''
+  at.setDate(at.getDate() + n)
+  return iso(at)
+}
+
 /** Whole days from `from` to `to`; both are calendar days, so no DST drift. */
 export function daysBetween(from, to) {
   const a = dayOf(from)

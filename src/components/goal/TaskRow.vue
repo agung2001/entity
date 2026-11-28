@@ -28,6 +28,8 @@ const props = defineProps({
   /** the planner's two extra columns: who the job is for, and how big it is */
   showEntity: { type: Boolean, default: false },
   showEffort: { type: Boolean, default: false },
+  /** the draft hides the source: every token there is the goal itself */
+  showSource: { type: Boolean, default: true },
 })
 const emit = defineEmits(['tick', 'update', 'remove', 'chat'])
 
@@ -114,7 +116,12 @@ function setPriority(event) {
 <template>
   <li
     class="task"
-    :class="{ 'bt-row': showGoal, 'task-compact': compact, 'task-wide': showEntity || showEffort }"
+    :class="{
+      'bt-row': showGoal,
+      'task-compact': compact,
+      'task-wide': showEntity || showEffort,
+      'task-no-source': !showSource,
+    }"
     :data-state="state"
   >
     <button
@@ -138,17 +145,19 @@ function setPriority(event) {
     </template>
 
     <template v-else>
-      <select
-        v-if="editable"
-        class="pri"
-        :data-p="task.priority"
-        :value="task.priority"
-        :aria-label="`Priority of “${task.title || 'this task'}”`"
-        @change="setPriority"
-      >
-        <option v-for="word in priorities" :key="word" :value="word">{{ priorityWord(word) }}</option>
-      </select>
-      <span v-else class="pri" :data-p="task.priority">{{ priorityWord(task.priority) }}</span>
+      <span class="pri-wrap" :data-edit="editable ? '1' : undefined">
+        <select
+          v-if="editable"
+          class="pri"
+          :data-p="task.priority"
+          :value="task.priority"
+          :aria-label="`Priority of “${task.title || 'this task'}”`"
+          @change="setPriority"
+        >
+          <option v-for="word in priorities" :key="word" :value="word">{{ priorityWord(word) }}</option>
+        </select>
+        <span v-else class="pri" :data-p="task.priority">{{ priorityWord(task.priority) }}</span>
+      </span>
 
       <button v-if="editable" class="tx" type="button" :title="task.title" @click="start('title')">
         {{ task.title || 'Untitled task' }}
@@ -164,7 +173,7 @@ function setPriority(event) {
 
       <span v-if="showGoal" class="gl" :title="goalTitle">{{ goalTitle }}</span>
 
-      <span class="tk">
+      <span v-if="showSource" class="tk">
         <input
           v-if="editing === 'token'"
           :ref="fields.token"
