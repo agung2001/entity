@@ -208,9 +208,31 @@ const newId = () =>
     : `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 
 /**
- * Draft tasks from the sentence: one per clause, dated evenly between today and
- * the deadline, and **merged by title** against what is already accepted — the
- * earlier date wins and the existing id stays, so a retry can never merge twice.
+ * Merge proposed tasks into the accepted list by title: the earlier date wins and
+ * the accepted row keeps its id, so a retry — an agent's second answer or a local
+ * re-draft — can never merge twice. Returns what merged so the banner can say so.
+ */
+export function mergeTasks(accepted, proposed) {
+  const byTitle = new Map((accepted || []).map((task) => [mergeKey(task.title), task]))
+  const merged = []
+  const tasks = [...(accepted || [])]
+  for (const task of proposed || []) {
+    const existing = byTitle.get(mergeKey(task.title))
+    if (!existing) {
+      tasks.push(task)
+      byTitle.set(mergeKey(task.title), task)
+      continue
+    }
+    merged.push(existing.title)
+    if (task.date && (!existing.date || task.date < existing.date)) existing.date = task.date
+  }
+  return { tasks, merged }
+}
+
+/**
+ * The harness-free draft: one task per clause of the sentence, dated evenly
+ * between today and the deadline. It is the "Write the tasks myself" exit, not
+ * the plan — the planning step is `goals.draft`.
  */
 export function draftFrom(sentence, deadline, accepted = []) {
   const clauses = String(sentence || '')
@@ -237,22 +259,7 @@ export function draftFrom(sentence, deadline, accepted = []) {
     done: false,
   }))
 
-  const byTitle = new Map(accepted.map((task) => [mergeKey(task.title), task]))
-  const merged = []
-  const tasks = [...accepted]
-  for (const task of proposed) {
-    const existing = byTitle.get(mergeKey(task.title))
-    if (!existing) {
-      tasks.push(task)
-      byTitle.set(mergeKey(task.title), task)
-      continue
-    }
-    merged.push(existing.title)
-    /* The earliest date wins, and the id is the accepted row's: a retry edits the
-       task the person already has instead of adding a second copy of it. */
-    if (task.date && (!existing.date || task.date < existing.date)) existing.date = task.date
-  }
-  return { tasks, merged }
+  return mergeTasks(accepted, proposed)
 }
 
 /** A new empty row in a group. The store refuses an empty title on save. */

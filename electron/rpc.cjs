@@ -28,6 +28,7 @@ const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const newsStore = require('./news-store.cjs')
 const goalsStore = require('./goals-store.cjs')
+const goalDraft = require('./goal-draft.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -401,6 +402,10 @@ function createRpc({
     /* The GOAL.js runner arrives with its own task; the verb is here so the
        surface has one address for `Refresh` and nothing else may add one. */
     'goals.refresh': (args) => goalsStore.refresh(args),
+    /* The planning step: one harness turn over the sentence and the context it
+       names (`@orca:` projects are read into the brief). The renderer keeps the
+       local split as the "Write the tasks myself" exit. */
+    'goals.draft': (args) => goalDraft.draft(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above

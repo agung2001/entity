@@ -899,6 +899,15 @@
   font-size: var(--fs-secondary);
   color: var(--ink-2);
 }
+.goals-page .err-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.goals-page .draft-note {
+  margin: 2px 4px 8px;
+}
 .goals-page .blank {
   display: flex;
   flex-direction: column;

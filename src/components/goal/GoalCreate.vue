@@ -8,20 +8,20 @@
  * Step 2 is the drafted list — every row editable — and `Create goal` is the only
  * thing that writes.
  *
- * `ponytail:` the drafting step is deterministic and local: one task per clause of
- * the sentence, an even spread of dates, priority from the clause's own words.
- * There is no agent round-trip and no `@` context picker, because both exist to
- * feed one and shipping a picker that feeds nothing is a control that lies. The
- * ceiling is reasoning, not the data: `draftFrom` already returns the task objects
- * a harness answer would have to arrive in, and the merge below is the rule that
- * answer must keep.
+ * `Draft tasks` is the planning step: the sentence and the context it names go
+ * to the chosen entity's harness (`goals.draft`), which reads the mentioned
+ * `@orca:` projects and answers with the task list. The skeleton is the screen
+ * while it runs. A failure says why and offers the two real exits — Retry, or
+ * `Write the tasks myself`, the harness-free clause split that keeps the goal
+ * creatable offline.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { call } from '@/composables/localBridge'
 import PickMenu from '@/components/PickMenu.vue'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
-import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
+import { today, PRIORITY_ORDER, draftFrom, blankTask, mergeTasks, priorityWord } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
 import { dialogDepth } from '@/composables/useDialog'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
@@ -93,6 +93,8 @@ const privacy = ref('private')
 const touched = ref({ sentence: false, date: false })
 const tasks = ref([])
 const drafting = ref(false)
+const draftError = ref('')
+const draftSource = ref('')
 const merged = ref([])
 const backup = ref(null)
 const creating = ref(false)
@@ -240,20 +242,56 @@ function onSend(text) {
   })
 }
 
-/** One short delay, so the skeleton is never a bare spinner over empty space. */
-function draft() {
+/** The agent's answer lands in the list with the same merge a retry keeps. */
+function applyDraft(proposed, source) {
+  const answer = mergeTasks(tasks.value, proposed)
+  backup.value = tasks.value.map((task) => ({ ...task }))
+  tasks.value = answer.tasks
+  merged.value = answer.merged
+  draftSource.value = source
+  step.value = 2
+}
+
+/**
+ * `Draft tasks` is a planning turn: the sentence plus the context it names go to
+ * the chosen entity's harness, and the tasks come back from it. The skeleton is
+ * the screen while it runs; a failure says why and offers the two real exits.
+ */
+async function draft() {
   touched.value.sentence = true
   touched.value.date = true
   if (!canDraft.value || drafting.value) return
   drafting.value = true
-  window.setTimeout(() => {
-    const answer = draftFrom(sentence.value, deadline.value, tasks.value)
-    backup.value = tasks.value.map((task) => ({ ...task }))
-    tasks.value = answer.tasks
-    merged.value = answer.merged
+  draftError.value = ''
+  try {
+    const answer = await call('goals.draft', {
+      workspace: hub.workspace,
+      entity: entity.value,
+      harness: harness.value,
+      sentence: sentence.value,
+      deadline: deadline.value,
+      context: attachments.value,
+    })
+    const tasks = Array.isArray(answer?.tasks) ? answer.tasks : []
+    if (!tasks.length) throw new Error('The harness answered with no task list.')
+    applyDraft(tasks, 'harness')
+  } catch (problem) {
+    draftError.value = problem?.message || 'The draft did not answer.'
+  } finally {
     drafting.value = false
-    step.value = 2
-  }, 450)
+  }
+}
+
+/** The F4b exit that never needs a harness: one task per clause, locally. */
+function draftLocally() {
+  if (!canDraft.value) return
+  draftError.value = ''
+  const answer = draftFrom(sentence.value, deadline.value, tasks.value)
+  backup.value = tasks.value.map((task) => ({ ...task }))
+  tasks.value = answer.tasks
+  merged.value = answer.merged
+  draftSource.value = 'local'
+  step.value = 2
 }
 
 function addTask(priority) {
@@ -337,6 +375,12 @@ async function create() {
 
     <!-- ── step 1 ─────────────────────────────────────────────────────── -->
     <div v-if="step === 1" class="wiz">
+      <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Planning the tasks">
+        <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${74 - n * 6}%`, height: '10px' }"></span></div>
+        <p class="ctx-note draft-note">Planning with {{ entity || 'the entity' }} — reading the sentence and the context it names…</p>
+      </div>
+
+      <template v-if="!drafting">
       <div class="fld-solo">
         <label for="goal-title">Title <kbd class="fld-key">{{ keys.title }}</kbd></label>
         <input id="goal-title" ref="titleField" v-model="title" type="text" :placeholder="titleOf" />
@@ -392,7 +436,7 @@ async function create() {
           />
           <div class="cm-acts">
             <span class="cm-hint" :class="{ danger: sentenceWhy }">
-              {{ sentenceWhy || 'One sentence. The draft reasons from it and nothing else.' }}
+              {{ sentenceWhy || 'One sentence, plus whatever you mention — the draft reads that context and plans from it.' }}
             </span>
           </div>
         </div>
@@ -432,9 +476,22 @@ async function create() {
         </div>
       </div>
 
+      </template>
+
+      <div v-if="draftError" class="errbar" role="status">
+        <b>The draft did not answer.</b>
+        <p>{{ draftError }}</p>
+        <div class="err-actions">
+          <button class="btn btn-sm" type="button" :disabled="!canDraft || drafting" @click="draft">Retry</button>
+          <button class="btn btn-sm" type="button" :disabled="!canDraft || drafting" @click="draftLocally">
+            Write the tasks myself
+          </button>
+        </div>
+      </div>
+
       <div class="wiz-foot">
         <span class="why">{{ required }} of 2 required</span>
-        <button class="btn" type="button" @click="emit('cancel')">Cancel</button>
+        <button class="btn" type="button" :disabled="drafting" @click="emit('cancel')">Cancel</button>
         <button class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
           {{ drafting ? 'Drafting…' : 'Draft tasks' }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>
@@ -497,8 +554,9 @@ async function create() {
               <span class="ct">{{ group.tasks.length }}</span>
             </div>
             <p class="ctx-note">
-              {{ plural(tasks.length, 'task') }} over {{ days }} {{ days === 1 ? 'day' : 'days' }}, drafted
-              from the sentence. The dates are an even spread to the deadline — no tracker was read.
+              {{ plural(tasks.length, 'task') }} over {{ days }} {{ days === 1 ? 'day' : 'days' }}.
+              <template v-if="draftSource === 'local'">Written locally, one per clause — no harness was asked.</template>
+              <template v-else>Planned by {{ entity || 'the entity' }} from the sentence and the context it names; every row is editable.</template>
             </p>
           </div>
         </div>
