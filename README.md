@@ -193,15 +193,15 @@ assistant gets its own calendar and bill.
 </tr>
 </table>
 
-**Also in the box:** thirteen shipped connectors with per-account OAuth and a
+**Also in the box:** fourteen shipped connectors with per-account OAuth and a
 `read` → `write` → `full` tier per workspace · the harness inventory at **Account →
 Harnesses**, with the profile, sound and notification pages beside it · **Learning**
 with a scope you choose before it spends a run · a rebuilt composer dock and
 delegation cards that fold into a session tree behind `spawn N` / `spawn per` · an
 execution timeline per answer · a links-and-paths drawer derived from each thread ·
 `@entity`, `@thread:`, `@artifact:`, `@maka:`, `@opendesign:`, `@youtrack:`, `@orca:`,
-`@github:`, `@gmail:`, `@drive:`, `@youtube:`, `@youtube-studio:`, `@x:`, `@clockify:`
-and `@habitify:` mentions resolved before the agent
+`@github:`, `@gmail:`, `@drive:`, `@youtube:`, `@youtube-studio:`, `@x:`, `@threads:`,
+`@clockify:` and `@habitify:` mentions resolved before the agent
 sees them · personal and shared artifact shelves with a two-clock archive sweep · a
 folder-per-thread base directory with `/project:` skills · a terminal beside the chat
 (``Ctrl+` ``) · voice with barge-in and read-aloud · ZIP backups on a rolling schedule ·

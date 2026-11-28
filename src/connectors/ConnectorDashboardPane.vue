@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import ConnectorDashboard from '@/connectors/github/GithubDashboard.vue'
 import LynkDashboard from '@/connectors/lynk/LynkDashboard.vue'
 import ConnectorClockifyDashboard from '@/connectors/clockify/ClockifyDashboard.vue'
+import ConnectorThreadsDashboard from '@/connectors/threads/ThreadsDashboard.vue'
 import ConnectorFitbitDashboard from '@/connectors/fitbit/FitbitDashboard.vue'
 import ConnectorHabitifyDashboard from '@/connectors/habitify/HabitifyDashboard.vue'
 import ConnectorStudioDashboard from '@/connectors/youtube-studio/StudioDashboard.vue'
@@ -33,8 +34,8 @@ import { readState as readClockifyState } from '@/connectors/clockify/useClockif
  */
 const props = defineProps({
   /** Which dashboard this is: `github` | `calendar` | `studio` | `clockify` |
-      `habitify` | `fitbit` | `lynk`. Empty is not a body, and the page does not
-      mount this component for it. */
+      `threads` | `habitify` | `fitbit` | `lynk`. Empty is not a body, and the page
+      does not mount this component for it. */
   kind: { type: String, default: '' },
   /** The civil day from the address, for Habitify's week. */
   day: { type: String, default: '' },
@@ -56,6 +57,7 @@ const body = computed(() => props.kind)
     @changed="readClockifyState"
   />
   <ConnectorDashboard v-else-if="body === 'github'" v-bind="$attrs" />
+  <ConnectorThreadsDashboard v-else-if="body === 'threads'" v-bind="$attrs" />
   <LynkDashboard v-else-if="body === 'lynk'" v-bind="$attrs" />
   <GoogleCalendarDashboard v-else-if="body === 'calendar'" v-bind="$attrs" @overview="emit('overview')" />
   <ConnectorStudioDashboard v-else-if="body === 'studio'" v-bind="$attrs" @overview="emit('overview')" />

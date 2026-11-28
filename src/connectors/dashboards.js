@@ -45,6 +45,7 @@ import {
   studioUsable,
 } from '@/connectors/youtube-studio/useStudio'
 import { clockify, readState as readClockifyState } from '@/connectors/clockify/useClockify'
+import { readState as readThreadsState, threads } from '@/connectors/threads/useThreads'
 import { connectors, loadConnectors } from '@/stores/connectors'
 import { OPEN, OPEN_GATE, UNREAD, toGate } from '@/connectors/gate'
 
@@ -66,6 +67,8 @@ export function dashboardKind(entry, rows) {
   if (builtIn === 'google-calendar' && shipped('google-calendar')) return 'calendar'
   if (builtIn === 'youtube-studio' && shipped('youtube-studio')) return 'studio'
   if (builtIn === 'clockify' && entry?.work) return 'clockify'
+  /* Threads ships a token, not a roster: its own `work` block is the whole gate. */
+  if (builtIn === 'threads' && entry?.work) return 'threads'
   /* Habitify's reader lives in this app, so its own `work` block is the whole
      gate — there is no roster to look up beside the row. */
   if (builtIn === 'habitify' && entry?.work) return 'habitify'
@@ -230,6 +233,30 @@ const DASHBOARDS = {
     read: null,
   },
 
+  threads: {
+    hint: 'What the last 30 days of threads reached',
+    /* One lock: no token on this machine. The tab cannot read without it and there is
+       no second half to pick — one Threads account per install. */
+    gate() {
+      if (!threads.loaded) return UNREAD
+      if (!threads.configured) {
+        return {
+          why: {
+            before: 'Connect Threads first — the tab needs a verified token.',
+            title: 'Needs a Threads access token on this machine',
+          },
+        }
+      }
+      return OPEN
+    },
+    answer({ force }) {
+      if (force || !threads.loaded) return readThreadsState()
+    },
+    /* The pane reads itself on mount: its band owns the window line, so a read here
+       would be a second read of the same thing. */
+    read: null,
+  },
+
   habitify: {
     hint: 'What a day was scheduled with, and the week around it',
     /* One lock: no account whose grant this machine holds. Read from the account
@@ -348,7 +375,7 @@ const DASHBOARDS = {
 /* The kinds whose lock is part of their render rather than only of their click: a
    dashboard reads on mount, so a body that is there while its lock is shut would
    spend an account's budget it has no grant for. */
-const RENDER_LOCKED = new Set(['fitbit', 'lynk'])
+const RENDER_LOCKED = new Set(['fitbit', 'lynk', 'threads'])
 
 /** What the tab offers, in the connector's own words. */
 export function dashboardHint(kind) {
@@ -397,9 +424,9 @@ export async function readPane(kind, { day = '', force = false } = {}) {
 /**
  * Whether the Dashboard tab's body belongs in the document.
  *
- * Two of the seven gate the *render*, not only the click — Fitbit and Lynk.id —
- * because a dashboard reads on mount. The page mounts one pane component on this
- * answer, and derives the strip's `aria-controls` from the same boolean, so the tab
+ * Three of the eight gate the *render*, not only the click — Fitbit, Lynk.id and
+ * Threads — because a dashboard reads on mount. The page mounts one pane component on
+ * this answer, and derives the strip's `aria-controls` from the same boolean, so the tab
  * and the document cannot disagree about which pane exists.
  */
 export function paneShown(kind, { tab = '', locked = false } = {}) {
