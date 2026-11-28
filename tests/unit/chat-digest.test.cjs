@@ -147,6 +147,41 @@ function fatParent(record, { steps = 40 } = {}) {
   return id
 }
 
+/** A transcript with nothing to digest: many messages, none of them a trace. */
+function wideParent(record) {
+  const id = `t_wide${String(++seq).padStart(4, '0')}`
+  const messages = []
+  for (let index = 0; index < 160; index += 1) {
+    messages.push({
+      who: index % 2 ? 'agent' : 'me',
+      id: `m_${index}`,
+      text: `${index}: ${'the nav is one row and the shelf is a grid. '.repeat(50)}`,
+      at: AT,
+    })
+  }
+  const file = path.join(record.path, 'chats', `${id}.json`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(
+    file,
+    JSON.stringify(
+      {
+        schema: 1,
+        id,
+        entity: 'designer',
+        machine: 'local',
+        harness: 'pi',
+        title: 'a long thread with nothing to digest',
+        createdAt: AT,
+        updatedAt: LATER,
+        messages,
+      },
+      null,
+      2,
+    ),
+  )
+  return id
+}
+
 const fileOf = (record, id) => path.join(record.path, 'chats', `${id}.json`)
 
 test('a read answers a digest of a trace written before the digest existed', () => {
@@ -184,6 +219,57 @@ test('the next rewrite of the file is the compaction, and nothing a card needs i
   assert.equal(mention.answer, 'It is a portfolio, and the nav is one row.')
   assert.equal(mention.steps.length, MAX_STEPS)
   assert.ok(mention.paths.some((entry) => entry.includes('orca/workspaces')))
+})
+
+/* ── the background sweep ───────────────────────────────────────────── */
+
+test('a sweep compacts the transcripts a previous build wrote fat, and leaves the rest', () => {
+  const record = workspace()
+  const fat = fatParent(record)
+  /* over the size floor but already as small as it can be: a sweep rewrites it
+     only if that would halve it, and there is nothing to halve */
+  const lean = wideParent(record)
+  const before = {
+    fat: fs.statSync(fileOf(record, fat)).size,
+    lean: fs.statSync(fileOf(record, lean)).size,
+  }
+  assert.ok(before.lean > 256 * 1024, `${before.lean} is over the size floor`)
+
+  const sweep = chats.compactLegacy({ workspace: record.id })
+  assert.equal(sweep.compacted, 1)
+  assert.ok(sweep.saved > before.fat / 2, `${sweep.saved} of ${before.fat}`)
+
+  assert.ok(fs.statSync(fileOf(record, fat)).size < before.fat / 4)
+  /* a file that would not shrink is not rewritten at all */
+  assert.equal(fs.statSync(fileOf(record, lean)).size, before.lean)
+
+  /* the compaction is a rewrite, not a deletion: the card still has everything */
+  const read = chats.read({ workspace: record.id, id: fat })
+  const mention = read.messages[0].mentions[0]
+  assert.equal(mention.answer, 'It is a portfolio, and the nav is one row.')
+  assert.equal(mention.status, 'ok')
+  assert.equal(mention.steps.length, MAX_STEPS)
+  assert.ok(mention.paths.some((entry) => entry.includes('orca/workspaces')))
+  /* and the history still lists it */
+  assert.ok(chats.list({ workspace: record.id }).some((row) => row.id === fat))
+})
+
+test('a sweep honours its limit, and the background one runs at most once per workspace', () => {
+  const record = workspace()
+  fatParent(record)
+  fatParent(record)
+  const one = chats.compactLegacy({ workspace: record.id, limit: 1 })
+  assert.equal(one.compacted, 1)
+  assert.ok(one.scanned >= 2)
+  const rest = chats.compactLegacy({ workspace: record.id })
+  assert.ok(rest.compacted >= 1)
+
+  /* fire-and-forget answers a boolean: true the first time, false afterwards */
+  const other = workspace()
+  fatParent(other)
+  assert.equal(chats.compactLegacySoon({ workspace: other.id }), true)
+  assert.equal(chats.compactLegacySoon({ workspace: other.id }), false)
+  assert.equal(chats.compactLegacySoon({}), false)
 })
 
 /* ── the caches ─────────────────────────────────────────────────────── */

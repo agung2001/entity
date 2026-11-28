@@ -568,6 +568,22 @@ function saveTurn(record, thread, baseline) {
   return writeThread(record, thread)
 }
 
+/**
+ * The document a thread file holds.
+ *
+ * Absent means active. A read answers `false`, but writing that back would put
+ * `"archived": false` into every thread a rename, a pin or a turn touches — the
+ * one shape ENTITY-18 promised never to produce.
+ */
+function documentOf(thread) {
+  const document = { ...thread }
+  if (!document.archived) {
+    delete document.archived
+    delete document.archivedAt
+  }
+  return document
+}
+
 function writeThread(record, thread) {
   /* only this file changed: dropping the whole workspace would throw away every
      sibling's windows and re-read the history on the next open */
@@ -577,15 +593,7 @@ function writeThread(record, thread) {
   const file = threadFile(record, thread.id)
   const tmp = `${file}.${process.pid}.tmp`
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  /* Absent means active. A read answers `false`, but writing that back would put
-     `"archived": false` into every thread a rename, a pin or a turn touches — the
-     one shape ENTITY-18 promised never to produce. */
-  const document = { ...thread }
-  if (!document.archived) {
-    delete document.archived
-    delete document.archivedAt
-  }
-  fs.writeFileSync(tmp, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+  fs.writeFileSync(tmp, `${JSON.stringify(documentOf(thread), null, 2)}\n`, 'utf8')
   fs.renameSync(tmp, file)
   return thread
 }
@@ -598,6 +606,137 @@ function readThread(record, id) {
     return null
   }
   return normaliseThread(raw, record)
+}
+
+/* ── legacy transcripts, compacted once ───────────────────────────────
+ *
+ * A transcript written before `mention-digest.cjs` carries every delegated
+ * run's tool output — and carried it twice — so a working workspace can be
+ * hundreds of megabytes of JSON that nothing needs. Reading such a file already
+ * answers a digest, and the next rename, pin or turn writes the small form; a
+ * conversation nobody touches again would stay fat for ever, and every launch
+ * would parse it again to answer a question about one file.
+ *
+ * So the first history read of a workspace starts one sweep: heaviest file
+ * first, one file per tick, and nothing that is already small is opened. Once
+ * the fat files are gone a sweep is a readdir and a stat per thread.
+ *
+ * Two rules keep it safe. A conversation with a harness running is skipped (its
+ * turn ends by writing the whole file), and a file whose signature moved while
+ * it was being read is abandoned rather than overwritten, so a rename or a pin
+ * that landed in that window is not undone. Writing goes through `writeThread`,
+ * the same atomic temp-and-rename every other write uses.
+ */
+const COMPACT_MIN_BYTES = 256 * 1024
+/* Only when it is worth the write: half the file is not a tidy-up, it is a
+   transcript that was written by a build that kept the whole trace twice. */
+const COMPACT_RATIO = 0.5
+/** Workspaces this process has already swept; one sweep per workspace. */
+const swept = new Set()
+
+/** The threads big enough to be worth looking at, heaviest first. */
+function heaviestFiles(dir) {
+  let files = []
+  try {
+    files = fs.readdirSync(dir).filter((file) => file.endsWith('.json') && !file.startsWith('.'))
+  } catch {
+    return []
+  }
+  const heavy = []
+  for (const file of files) {
+    try {
+      const stat = fs.statSync(path.join(dir, file))
+      if (stat.size < COMPACT_MIN_BYTES) continue
+      heavy.push({ file, sig: `${stat.mtimeMs}:${stat.size}`, size: stat.size })
+    } catch {
+      /* a file that vanished is not ours to compact */
+    }
+  }
+  return heavy.sort((a, b) => b.size - a.size)
+}
+
+/** Rewrite one thread in its small form; answers the bytes saved, 0 for a skip. */
+function compactFile(record, dir, { file, sig, size }) {
+  const id = file.replace(/\.json$/, '')
+  if (!THREAD_ID.test(id)) return 0
+  if (sending.has(id)) return 0
+  const thread = readThread(record, id)
+  if (!thread) return 0
+  const after = JSON.stringify(documentOf(thread), null, 2).length + 1
+  if (after >= size * COMPACT_RATIO) return 0
+  let now
+  try {
+    now = fs.statSync(path.join(dir, file))
+  } catch {
+    return 0
+  }
+  /* the file moved while it was open: a rename, a pin or a turn landed */
+  if (`${now.mtimeMs}:${now.size}` !== sig) return 0
+  writeThread(record, thread)
+  return size - after
+}
+
+/**
+ * One sweep, to completion or to `limit` files. Synchronous on purpose: it is
+ * what the tests pin, and what a maintenance caller would run.
+ */
+function compactLegacy({ workspace, limit = Infinity } = {}) {
+  const record = workspaces.open(workspace)
+  const dir = chatsDir(record)
+  const heavy = heaviestFiles(dir)
+  let compacted = 0
+  let saved = 0
+  for (const entry of heavy) {
+    if (compacted >= limit) break
+    let bytes = 0
+    try {
+      bytes = compactFile(record, dir, entry)
+    } catch {
+      /* a transcript this process cannot rewrite is one it can still read */
+    }
+    if (!bytes) continue
+    compacted += 1
+    saved += bytes
+  }
+  return { compacted, saved, scanned: heavy.length }
+}
+
+/**
+ * The same sweep, spread out, for a workspace the person just opened.
+ *
+ * Fire and forget, one file per tick with a pause between: this is maintenance,
+ * not something the rail waits for. `setImmediate` keeps even the first readdir
+ * off the `chat.list` that asked for it.
+ */
+function compactLegacySoon({ workspace } = {}) {
+  const key = String(workspace || '')
+  if (!key || swept.has(key)) return false
+  swept.add(key)
+  setImmediate(() => {
+    let record
+    let dir = ''
+    try {
+      record = workspaces.open(key)
+      dir = chatsDir(record)
+    } catch {
+      return
+    }
+    const heavy = heaviestFiles(dir)
+    let index = 0
+    const tick = () => {
+      const entry = heavy[index]
+      index += 1
+      if (!entry) return
+      try {
+        compactFile(record, dir, entry)
+      } catch {
+        /* skip it; the next tick is another file */
+      }
+      setTimeout(tick, 50)
+    }
+    tick()
+  })
+  return true
 }
 
 function stopProcess(child) {
@@ -2862,6 +3001,9 @@ module.exports = {
   setIdentityResolver,
   list,
   read,
+  /** Legacy transcripts, once per workspace; exported for the tests. */
+  compactLegacy,
+  compactLegacySoon,
   create,
   update,
   rename,

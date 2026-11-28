@@ -731,7 +731,16 @@ function createRpc({
     },
 
     /* conversations */
-    'chat.list': ({ workspace }) => chats.list({ workspace }),
+    /* The first history read of a workspace also starts one background sweep of
+       transcripts written before the mention digest (`compactLegacySoon`): the
+       rail is the point at which somebody is using this workspace, and those
+       files are read again on every launch until they are rewritten. It returns
+       before any of that work happens. */
+    'chat.list': ({ workspace }) => {
+      const rows = chats.list({ workspace })
+      chats.compactLegacySoon({ workspace })
+      return rows
+    },
     'chat.read': ({ workspace, id }) => chats.read({ workspace, id }),
     'chat.create': (args) => chats.create(args),
     'chat.update': (args) => chats.update(args),
