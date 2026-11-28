@@ -1,0 +1,339 @@
+/* Goals — the seventh destination.
+   Class hooks are ported verbatim from the design's `index.html` (§2); no colour,
+   radius or type step is introduced, because every value here resolves to a
+   declaration in `tokens.css`. This sheet carries the shell and the three data
+   states today; the bar, the task row and the backlog/calendar grids land with
+   their own tasks under the names the spec already fixes.
+
+   No `.subnav` bleed: `.directory.css` pays the page gutter on `.detail-view`'s
+   measure, so the band inside it has no horizontal padding to cancel. A `-14px`
+   here would push the rule past the panel on both sides — the exact 2 px defect
+   §6.1 records. A bleed must be `-1 ×` the padding it cancels, and that padding
+   is 0. */
+
+.subnav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+.subnav a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 33px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-decoration: none;
+  cursor: pointer;
+}
+.subnav a:hover {
+  color: var(--ink);
+}
+.subnav [aria-current='page'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.subnav [aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: var(--r-pill);
+}
+.subnav .n {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .subnav {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ── the page head ─────────────────────────────────────────────────────── */
+.board-eyebrow {
+  margin: 0 0 5px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.board-eyebrow b {
+  color: var(--muted);
+  font-weight: 400;
+  padding: 0 2px;
+}
+.page-sub {
+  margin: 4px 0 0;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  max-width: 68ch;
+}
+
+/* ── rows ────────────────────────────────────────────────────────────────
+   `.grow` is the index row (§2.1) and `.goals-row` is the interim task list the
+   goal page, the backlog and the calendar share. Both hold a bare string only
+   inside `.nm` / `.goals-nm`, which carries the ellipsis: `text-overflow` on the
+   grid parent never applies (§2.6). */
+.grow,
+.goals-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--ink);
+  text-decoration: none;
+}
+.grow {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+}
+.goals-row {
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+}
+.goals-list > :first-child {
+  border-top: 0;
+}
+.grow:hover,
+.goals-row:hover {
+  background: var(--surface);
+}
+.grow .nm,
+.goals-nm {
+  min-width: 0;
+}
+.grow .nm b,
+.goals-nm b {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grow .nm span,
+.goals-nm span {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grow .cnt {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.goals-row[data-done='1'] .goals-nm b {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.goals-list {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* A group heading: the goal page's task count and a calendar month. */
+.goals-band {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r) var(--r) 0 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.goals-band + .goals-list {
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+}
+.goals-band-t {
+  color: var(--ink-2);
+}
+.goals-band-n {
+  margin-left: auto;
+}
+.goals-month + .goals-month {
+  margin-top: 20px;
+}
+
+/* A date is mono and never wraps (§5); the three ways it can be wrong keep their
+   glyph as well as their colour (§4.1). */
+.tdate {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-align: right;
+}
+.tdate[data-late='1'] {
+  color: var(--danger);
+  font-weight: 500;
+}
+.tdate[data-late='1']::before {
+  content: '▲ ';
+  /* a glyph size that follows its row, not a ladder step (7 px in the drawing) */
+  font-size: 0.75em;
+  vertical-align: 1px;
+}
+.tdate[data-none='1'] {
+  color: var(--muted);
+  border-bottom: 1px dotted var(--border-strong);
+}
+
+/* Priority: the workspace's four words, a word plus a 5 px mark — never colour
+   alone, and never a P0…P3 dialect (§5). */
+.pri {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xs);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pri::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-2xs);
+  background: currentColor;
+  flex: none;
+  opacity: 0.75;
+}
+.pri[data-p='critical'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 500;
+}
+.pri[data-p='major'] {
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--bg));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.pri[data-p='normal'] {
+  color: var(--ink-2);
+  border-color: var(--border-strong);
+}
+.pri[data-p='minor'] {
+  color: var(--muted);
+  border-style: dashed;
+}
+
+/* ── empty / loading / refused ─────────────────────────────────────────── */
+.blank {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r);
+  padding: 34px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  background: var(--surface);
+}
+.blank svg {
+  width: 26px;
+  height: 26px;
+  color: var(--muted);
+}
+.blank h3 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-h6);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.blank p {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  max-width: 52ch;
+}
+.blank .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+/* Scoped: other surfaces already own a global `.skel`. */
+.goals-page .skel {
+  display: block;
+  background: var(--skel);
+  border-radius: var(--r-2xs);
+  animation: goal-pulse 1.4s ease-in-out infinite;
+}
+/* A loading row holds one bar, so it takes the whole line rather than the first
+   max-content track. */
+.goals-row > .skel:only-child {
+  grid-column: 1 / -1;
+}
+@keyframes goal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .goals-page .skel {
+    animation: none;
+  }
+}
+
+.errbar {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--bg));
+  background: var(--danger-soft);
+  border-radius: var(--r-sm);
+  margin-bottom: 14px;
+}
+.errbar b {
+  font-size: var(--fs-small);
+  color: var(--danger);
+}
+.errbar p {
+  margin: 0;
+  font-size: var(--fs-secondary);
+  color: var(--ink-2);
+}

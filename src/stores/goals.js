@@ -24,6 +24,21 @@ export const goals = reactive({
 /** A goal stops being open when it is archived, not when it is met (§F5). */
 export const openGoals = () => goals.items.filter((goal) => !goal.archivedAt)
 
+/**
+ * What a row counts: `done` of the **dated** tasks, which is the pair the bar
+ * will print — an undated task cannot be ahead or behind, so it is not in the
+ * fraction. `open` is every task still unticked, because the backlog lists those.
+ */
+export function taskCounts(goal) {
+  const tasks = Array.isArray(goal?.tasks) ? goal.tasks : []
+  const dated = tasks.filter((task) => task.date)
+  return {
+    done: dated.filter((task) => task.done).length,
+    total: dated.length,
+    open: tasks.filter((task) => !task.done).length,
+  }
+}
+
 /** The rail's number: 0 until a read lands, never a count of records. */
 export const openGoalCount = () => (goals.loaded ? openGoals().length : 0)
 

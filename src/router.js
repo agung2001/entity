@@ -20,6 +20,11 @@ const ArtifactsIndexView = () => import('@/views/ArtifactsIndexView.vue')
 const ArtifactDetailView = () => import('@/views/ArtifactDetailView.vue')
 const MachinesView = () => import('@/views/MachinesView.vue')
 const NewsView = () => import('@/views/NewsView.vue')
+const GoalsView = () => import('@/views/GoalsView.vue')
+const GoalView = () => import('@/views/GoalView.vue')
+const GoalCreateView = () => import('@/views/GoalCreateView.vue')
+const GoalsBacklogView = () => import('@/views/GoalsBacklogView.vue')
+const GoalsCalendarView = () => import('@/views/GoalsCalendarView.vue')
 const MachineDetailView = () => import('@/views/MachineDetailView.vue')
 const AccountView = () => import('@/views/AccountView.vue')
 const AccountProfileView = () => import('@/views/account/AccountProfileView.vue')
@@ -175,6 +180,42 @@ const router = createRouter({
              shell draws one and the rail falls back to a section — which is how
              the machine list ended up beside a list of headlines. */
           meta: { crumb: 'news', title: 'News · entity', rail: false },
+        },
+        {
+          /* Goals is one destination with five addresses: the index, one goal,
+             the create step, the backlog and the calendar. All five carry
+             `rail: false` for the same reason News does — the `.subnav` inside
+             the page is the second tier, and the shell must not draw another. */
+          path: ':workspace/goals',
+          name: 'goals',
+          component: GoalsView,
+          meta: { crumb: 'goals', title: 'Goals · entity', rail: false },
+        },
+        {
+          path: ':workspace/goals/backlog',
+          name: 'goals-backlog',
+          component: GoalsBacklogView,
+          meta: { crumb: 'goals', title: 'Backlog · entity', rail: false },
+        },
+        {
+          path: ':workspace/goals/calendar',
+          name: 'goals-calendar',
+          component: GoalsCalendarView,
+          meta: { crumb: 'goals', title: 'Calendar · entity', rail: false },
+        },
+        {
+          /* The create step is a static segment, so it is declared before the
+             goal detail route: `new` must never be read as a goal id. */
+          path: ':workspace/goals/new',
+          name: 'goal-new',
+          component: GoalCreateView,
+          meta: { crumb: 'goals', title: 'New goal · entity', rail: false },
+        },
+        {
+          path: ':workspace/goals/go/:id',
+          name: 'goal',
+          component: GoalView,
+          meta: { crumb: 'goals', title: 'Goal · entity', rail: false },
         },
         {
           /* The index is a sibling **above** the detail route: `:name` would
