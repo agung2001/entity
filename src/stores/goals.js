@@ -3,11 +3,12 @@
  *
  * One store because a task is one object seen in four places: the goal page, the
  * backlog, the calendar and the rail's count all read these rows, so a tick has
- * one target and no page has to be told what another one did.
+ * one target and no page has to be told what another one did. Every write answers
+ * with the whole list, which is what keeps those four views agreeing without a
+ * Refresh.
  *
- * The rail's number is a count of **open** goals, not of records: a met goal
- * keeps its row and its count until it is archived, which is why the count is
- * not `items.length`.
+ * The rail's number is a count of **open** goals, not of records: a met goal keeps
+ * its row and its count until it is archived.
  */
 import { reactive } from 'vue'
 import { call } from '@/composables/localBridge'
@@ -24,23 +25,14 @@ export const goals = reactive({
 /** A goal stops being open when it is archived, not when it is met (§F5). */
 export const openGoals = () => goals.items.filter((goal) => !goal.archivedAt)
 
-/**
- * What a row counts: `done` of the **dated** tasks, which is the pair the bar
- * will print — an undated task cannot be ahead or behind, so it is not in the
- * fraction. `open` is every task still unticked, because the backlog lists those.
- */
-export function taskCounts(goal) {
-  const tasks = Array.isArray(goal?.tasks) ? goal.tasks : []
-  const dated = tasks.filter((task) => task.date)
-  return {
-    done: dated.filter((task) => task.done).length,
-    total: dated.length,
-    open: tasks.filter((task) => !task.done).length,
-  }
-}
-
 /** The rail's number: 0 until a read lands, never a count of records. */
 export const openGoalCount = () => (goals.loaded ? openGoals().length : 0)
+
+/** Every open task across every open goal — the backlog and the calendar's rows. */
+export const openTasks = () =>
+  openGoals().flatMap((goal) =>
+    (goal.tasks || []).filter((task) => !task.done).map((task) => ({ goal, task })),
+  )
 
 export function resetGoals() {
   goals.loading = false
@@ -81,3 +73,39 @@ export async function loadGoals(workspace = hub.workspace) {
     goals.loading = false
   }
 }
+
+/* ── writes ────────────────────────────────────────────────────────────────
+   One door: the call, then the list the main process answered with. A refusal
+   carries `.code` and reaches the caller; what is on screen is untouched. */
+async function write(fn, args, workspace = hub.workspace) {
+  const answer = await call(fn, { workspace, ...args })
+  applyGoals(workspace, answer)
+  return answer
+}
+
+export const createGoal = (goal, workspace) => write('goals.create', { goal }, workspace)
+
+export const updateGoal = (id, patch, workspace) => write('goals.update', { id, ...patch }, workspace)
+
+/**
+ * A tick is one task and one boolean — and it lands in the row first, because the
+ * tick is the action the whole surface exists for. The answer replaces the list a
+ * moment later, so a failed write puts the row back exactly as the file has it.
+ */
+export async function tickTask(id, task, done, workspace = hub.workspace) {
+  const goal = goals.items.find((entry) => entry.id === id)
+  const row = goal?.tasks?.find((entry) => entry.id === task)
+  const previous = row?.done
+  if (row) row.done = done === true
+  try {
+    return await write('goals.tick', { id, task, done: done === true }, workspace)
+  } catch (error) {
+    if (row && previous !== undefined) row.done = previous
+    throw error
+  }
+}
+
+export const archiveGoal = (id, workspace) => write('goals.remove', { id }, workspace)
+
+/** The one call that may put a new figure on the page (§F5). */
+export const refreshGoal = (id, workspace) => write('goals.refresh', { id }, workspace)
