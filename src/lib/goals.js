@@ -6,7 +6,7 @@
  * two dialects, and `P0`…`P3` appear nowhere (§5). A date is `12 Dec 2025`, in
  * `Intl`, because a date library for one format would be a dependency.
  */
-export const PRIORITY_WORDS = {
+const PRIORITY_WORDS = {
   critical: 'Critical',
   major: 'Major',
   normal: 'Normal',
@@ -23,7 +23,7 @@ const PRINT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short',
  * `Date.parse`: that reads a bare date as UTC and prints the day before on every
  * machine west of Greenwich.
  */
-export function dayOf(value) {
+function dayOf(value) {
   const text = String(value || '')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null
   const [year, month, date] = text.split('-').map(Number)
