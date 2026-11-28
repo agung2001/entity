@@ -12,6 +12,7 @@ import { applyLibrary, applyScope, credentials, hub, toast } from '@/stores/hub'
 import { loadEntities } from '@/stores/entities'
 import { loadRuns, resetRuns, runs } from '@/stores/runs'
 import { loadArtifacts, resetArtifacts } from '@/stores/artifacts'
+import { loadGoals, resetGoals } from '@/stores/goals'
 
 const WORKSPACE_KEY = 'entity.workspace'
 
@@ -67,7 +68,7 @@ function persist(id) {
 
 /** Everything a workspace owns, in one read pass. */
 export async function loadScope(id) {
-  /* Seven independent reads. Every one of them is a file walk in the main
+  /* Eight independent reads. Every one of them is a file walk in the main
      process, so they all start together instead of in two waves. */
   const [machines, facts, skills, mcp] = await Promise.all([
     call('workspace.machines', { id }).catch(() => []),
@@ -77,6 +78,9 @@ export async function loadScope(id) {
     loadEntities(id),
     loadRuns(id),
     loadArtifacts(id),
+    /* The rail's Goals count is a count of open goals, and the rail paints
+       before any Goals page is opened — so the list is read with the scope. */
+    loadGoals(id),
   ])
 
   workspaces.machines = machines
@@ -202,6 +206,7 @@ export async function loadWorkspaces() {
       hub.workspaceLabel = ''
       resetRuns()
       resetArtifacts()
+      resetGoals()
       applyScope({})
       persist('')
       return items

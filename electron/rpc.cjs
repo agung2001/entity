@@ -27,6 +27,7 @@ const harnesses = require('./harness-store.cjs')
 const integrations = require('./integrations-store.cjs')
 const connectorStore = require('./connector-store.cjs')
 const newsStore = require('./news-store.cjs')
+const goalsStore = require('./goals-store.cjs')
 const accountStore = require('./oauth-accounts.cjs')
 const oauthSecrets = require('./oauth-secrets.cjs')
 const connectorTokens = require('./connector-tokens.cjs')
@@ -387,6 +388,19 @@ function createRpc({
        answer?" before a feed is installed; it reads nothing and stores nothing. */
     'news.read': (args) => newsStore.read(args),
     'news.probe': (args) => newsStore.probe(args),
+    /* Goals: one file in the workspace directory, six workspace-scoped verbs.
+       `goals.read` answers every open and archived goal; the five writes all
+       answer with the whole list, so a page never keeps a copy it has to guess
+       about. `goals.tick` is deliberately one task and one boolean — a tick is
+       the action the surface exists for, so it must not cost a goal rewrite. */
+    'goals.read': (args) => goalsStore.read(args),
+    'goals.create': (args) => goalsStore.create(args),
+    'goals.update': (args) => goalsStore.update(args),
+    'goals.tick': (args) => goalsStore.tick(args),
+    'goals.remove': (args) => goalsStore.remove(args),
+    /* The GOAL.js runner arrives with its own task; the verb is here so the
+       surface has one address for `Refresh` and nothing else may add one. */
+    'goals.refresh': (args) => goalsStore.refresh(args),
     'connector.remove': async (args) => {
       const answer = connectorStore.remove(args)
       /* An uninstalled connector takes its accounts with it. The removal above
