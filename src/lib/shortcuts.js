@@ -251,6 +251,54 @@ export const SHORTCUT_GROUPS = [
     ],
   },
   {
+    id: 'goals',
+    label: 'On the new goal page',
+    items: [
+      {
+        id: 'goal-title',
+        label: 'Focus the title',
+        desc: 'On New goal: put the caret in the title field.',
+        desktop: ['alt', 'shift', '1'],
+        browser: ['alt', 'shift', '1'],
+      },
+      {
+        id: 'goal-entity',
+        label: 'Pick the entity',
+        desc: 'On New goal: open the entity picker.',
+        desktop: ['alt', 'shift', '2'],
+        browser: ['alt', 'shift', '2'],
+      },
+      {
+        id: 'goal-sentence',
+        label: 'Focus the goal sentence',
+        desc: 'On New goal: put the caret in the sentence composer, where / and @ work.',
+        desktop: ['alt', 'shift', '3'],
+        browser: ['alt', 'shift', '3'],
+      },
+      {
+        id: 'goal-deadline',
+        label: 'Pick the deadline',
+        desc: 'On New goal: focus the date field. No date is ever pre-filled.',
+        desktop: ['alt', 'shift', '4'],
+        browser: ['alt', 'shift', '4'],
+      },
+      {
+        id: 'goal-privacy',
+        label: 'Choose who can see it',
+        desc: 'On New goal: focus the privacy cards; arrows move between them.',
+        desktop: ['alt', 'shift', '5'],
+        browser: ['alt', 'shift', '5'],
+      },
+      {
+        id: 'goal-draft',
+        label: 'Draft the tasks',
+        desc: 'On New goal: draft from the sentence; on step 2 it creates the goal.',
+        desktop: ['mod', 'enter'],
+        browser: ['mod', 'enter'],
+      },
+    ],
+  },
+  {
     id: 'artifact',
     label: 'In an artifact preview',
     items: [

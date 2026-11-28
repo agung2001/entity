@@ -1241,6 +1241,15 @@
   width: 0;
   height: 0;
 }
+/* the radios are visually hidden, so the visible ring has to be the label's —
+   otherwise a keyboard jump lands on a card with no sign it was focused */
+.goals-page .priv label:focus-within {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.goals-page .fld-key {
+  margin-left: 4px;
+}
 .goals-page .priv .rd {
   width: 13px;
   height: 13px;

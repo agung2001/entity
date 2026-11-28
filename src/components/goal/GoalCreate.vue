@@ -16,13 +16,14 @@
  * a harness answer would have to arrive in, and the merge below is the rule that
  * answer must keep.
  */
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
 import { markFor, moodGlyph } from '@/composables/entityMark'
-import { shortcutLabel } from '@/lib/shortcuts'
+import { dialogDepth } from '@/composables/useDialog'
+import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
 import { hub } from '@/stores/hub'
 
@@ -54,7 +55,21 @@ const entity = ref(String(entities.value[0]?.id || entities.value[0]?.name || ''
 const agent = computed(
   () => entities.value.find((entry) => (entry.id || entry.name) === entity.value) || entities.value[0] || { name: 'Goal' },
 )
-const sendKey = shortcutLabel('send')
+/* One digit per field, from the catalog, so the key on the label and the
+   handler below cannot drift — the same contract the New-thread dialog keeps. */
+const keys = {
+  title: shortcutLabel('goal-title'),
+  entity: shortcutLabel('goal-entity'),
+  sentence: shortcutLabel('goal-sentence'),
+  deadline: shortcutLabel('goal-deadline'),
+  privacy: shortcutLabel('goal-privacy'),
+}
+const draftKey = shortcutLabel('goal-draft')
+const titleField = ref(null)
+const entityPick = ref(null)
+const composer = ref(null)
+const dateField = ref(null)
+const privacyField = ref(null)
 const deadline = ref('')
 const privacy = ref('private')
 const touched = ref({ sentence: false, date: false })
@@ -122,6 +137,50 @@ function pick(value) {
   deadline.value = value
   touched.value.date = true
 }
+
+/* The page owns its keys at the window, like the thread dialog: focus moves
+   between a text input, a picker, a composer, a date field and two radios, and a
+   handler on one element would only work while that element had focus. The
+   composer's own send handler runs first on its textarea and prevents default,
+   so a Cmd+Enter inside it is not also handled here. */
+function onKey(event) {
+  if (event.defaultPrevented) return
+  /* a modal owns the keyboard while it is open (the guide, a picker's own stack) */
+  if (dialogDepth()) return
+  if (matchesShortcut('goal-draft', event)) {
+    event.preventDefault()
+    runStep()
+    return
+  }
+  if (step.value !== 1) return
+  const targets = {
+    'goal-title': titleField,
+    'goal-entity': entityPick,
+    'goal-sentence': composer,
+    'goal-deadline': dateField,
+    'goal-privacy': privacyField,
+  }
+  for (const [id, target] of Object.entries(targets)) {
+    if (!matchesShortcut(id, event)) continue
+    event.preventDefault()
+    /* the picker opens; a field or the composer takes the caret */
+    if (id === 'goal-entity') target.value?.toggle?.()
+    else target.value?.focus?.()
+    return
+  }
+}
+
+/* Cmd+Enter takes the step: draft on step 1, create on step 2. Blur first, so a
+   row that is mid-edit commits before the goal is stored from the task list. */
+async function runStep() {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  await nextTick()
+  if (step.value === 1) draft()
+  else await create()
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 /** The composer's send is this flow's `Draft tasks`: the sentence stays in the
     box (a goal is written once and edited, not sent away). */
@@ -208,7 +267,7 @@ async function create() {
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
         <button v-if="step === 1" class="btn" type="button" @click="emit('cancel')">Cancel</button>
         <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
-          {{ creating ? 'Creating…' : 'Create goal' }}
+          {{ creating ? 'Creating…' : 'Create goal' }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </header>
@@ -228,14 +287,15 @@ async function create() {
     <!-- ── step 1 ─────────────────────────────────────────────────────── -->
     <div v-if="step === 1" class="wiz">
       <div class="fld-solo">
-        <label for="goal-title">Title</label>
-        <input id="goal-title" v-model="title" type="text" :placeholder="titleOf" />
+        <label for="goal-title">Title <kbd class="fld-key">{{ keys.title }}</kbd></label>
+        <input id="goal-title" ref="titleField" v-model="title" type="text" :placeholder="titleOf" />
         <span class="hint">The line the backlog and the calendar will print. Left empty, it takes the first line of the sentence.</span>
       </div>
 
       <div class="fld-solo">
-        <label class="fld-head">Entity</label>
+        <label class="fld-head">Entity <kbd class="fld-key">{{ keys.entity }}</kbd></label>
         <PickMenu
+          ref="entityPick"
           class="field-select"
           head="Entity"
           icons="entity"
@@ -247,12 +307,13 @@ async function create() {
       </div>
 
       <div class="fld-solo">
-        <label class="fld-head">Goal <b aria-hidden="true">·</b> required</label>
+        <label class="fld-head">Goal <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.sentence }}</kbd></label>
         <!-- The thread composer, not a textarea: `/` inserts a skill and `@` a
              mention, and a picked item becomes a token in the sentence — the same
              box the chat uses, so a goal can be written the way a prompt is. -->
         <div class="cm cm-composer" :data-state="sentenceWhy ? 'error' : undefined" @focusout="touched.sentence = true">
           <SlashComposer
+            ref="composer"
             :agent="agent"
             machine="local"
             base-dir=""
@@ -267,13 +328,13 @@ async function create() {
               {{ sentenceWhy || 'One sentence. The draft reasons from it and nothing else.' }}
             </span>
             <span class="cm-grow"></span>
-            <span class="cm-hint"><kbd>{{ sendKey }}</kbd> drafts the tasks</span>
+            <span class="cm-hint"><kbd>{{ draftKey }}</kbd> drafts the tasks</span>
           </div>
         </div>
       </div>
 
       <div class="fld-solo">
-        <label for="goal-due">Deadline <b aria-hidden="true">·</b> required</label>
+        <label for="goal-due">Deadline <b aria-hidden="true">·</b> required <kbd class="fld-key">{{ keys.deadline }}</kbd></label>
         <div class="dates">
           <button
             v-for="pill in pills"
@@ -283,7 +344,7 @@ async function create() {
             @click="pick(pill.value)"
           >{{ pill.label }}</button>
           <span class="own">
-            <input id="goal-due" type="date" :value="deadline" @change="pick($event.target.value); $event.target.blur()" />
+            <input id="goal-due" ref="dateField" type="date" :value="deadline" @change="pick($event.target.value); $event.target.blur()" />
             <span class="hint" :class="{ danger: Boolean(dateWhy) }">{{ dateWhy || 'or a date' }}</span>
           </span>
         </div>
@@ -291,10 +352,10 @@ async function create() {
       </div>
 
       <div class="fld-solo" role="radiogroup" aria-label="Who can see this goal">
-        <label class="fld-head">Who can see it</label>
+        <label class="fld-head">Who can see it <kbd class="fld-key">{{ keys.privacy }}</kbd></label>
         <div class="priv">
           <label :data-on="privacy === 'private' ? '1' : undefined">
-            <input v-model="privacy" type="radio" value="private" name="goal-privacy" />
+            <input ref="privacyField" v-model="privacy" type="radio" value="private" name="goal-privacy" />
             <span class="rd"></span>
             <span class="t"><b>Only me</b><span>Not in Wake Space, not in anyone else's backlog.</span></span>
           </label>
@@ -310,7 +371,7 @@ async function create() {
         <span class="why">{{ required }} of 2 required</span>
         <button class="btn" type="button" @click="emit('cancel')">Cancel</button>
         <button class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
-          {{ drafting ? 'Drafting…' : 'Draft tasks' }}
+          {{ drafting ? 'Drafting…' : 'Draft tasks' }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </div>
