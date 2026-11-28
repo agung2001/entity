@@ -63,8 +63,8 @@ const counts = (row) => `${row.counts.done} of ${row.counts.total}`
 
 <template>
   <div class="view detail-view">
+    <GoalsSubnav />
     <div class="goals-page">
-      <GoalsSubnav />
 
       <header class="page-head">
         <div>

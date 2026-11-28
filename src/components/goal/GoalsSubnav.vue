@@ -6,6 +6,11 @@
  * strip is the second tier the shell does not draw for us. `aria-current` sits
  * on the one page you are on; a goal page keeps `Goals` current, because the
  * goal you opened is a page *inside* that tab.
+ *
+ * It is the page's own top edge, in the entity page's material: `.entp-bar` is
+ * sticky glass that pays `--view-pad` itself and spans the whole content area,
+ * so the band below keeps the reading measure. A strip inside the measure had a
+ * hairline that stopped short of the window and did not stick.
  */
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
@@ -20,7 +25,7 @@ const inGoals = computed(() => ['goals', 'goal', 'goal-new'].includes(at.value))
 </script>
 
 <template>
-  <nav class="subnav" aria-label="Goals pages">
+  <nav class="entp-bar subnav goals-subnav" aria-label="Goals pages">
     <router-link :to="link('goals')" :aria-current="inGoals ? 'page' : undefined">
       Goals<span class="n">{{ goals.loaded ? openGoalCount() : '—' }}</span>
     </router-link>

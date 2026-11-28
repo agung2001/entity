@@ -123,8 +123,8 @@ async function archive() {
 
 <template>
   <div class="view detail-view">
+    <GoalsSubnav />
     <div class="goals-page">
-      <GoalsSubnav />
 
       <div v-if="goal" class="goal-head-wrap">
         <header class="page-head">
@@ -232,7 +232,7 @@ async function archive() {
             <GoalNext :goal="goal" />
             <div class="notebar">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                <path d="M8 2.4v11.2M4.6 13.6L8 10.2l3.4 3.4" /><circle cx="8" cy="5.4" r="3" />
+                <circle cx="8" cy="8" r="5.4" /><circle cx="8" cy="8" r="2.2" />
               </svg>
               <p>
                 <b>{{ bar.percent === null ? '—' : `${bar.percent}%` }} is a count, not a judgement.</b>

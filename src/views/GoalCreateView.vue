@@ -8,6 +8,7 @@
  */
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import GoalBackdrop from '@/components/goal/GoalBackdrop.vue'
 import GoalCreate from '@/components/goal/GoalCreate.vue'
 import GoalsSubnav from '@/components/goal/GoalsSubnav.vue'
 import { hub } from '@/stores/hub'
@@ -35,8 +36,9 @@ function cancel() {
 
 <template>
   <div class="view detail-view">
-    <div class="goals-page">
-      <GoalsSubnav />
+    <GoalsSubnav />
+    <div class="goals-page goals-create">
+      <GoalBackdrop />
       <GoalCreate
         :save="save"
         :initial-sentence="initialSentence"

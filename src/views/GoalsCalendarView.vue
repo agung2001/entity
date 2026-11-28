@@ -136,8 +136,8 @@ async function tick(row, done) {
 
 <template>
   <div class="view detail-view">
+    <GoalsSubnav />
     <div class="goals-page">
-      <GoalsSubnav />
 
       <header class="page-head">
         <div>

@@ -97,8 +97,8 @@ async function remove(row) {
 
 <template>
   <div class="view detail-view">
+    <GoalsSubnav />
     <div class="goals-page">
-      <GoalsSubnav />
 
       <header class="page-head">
         <div>
