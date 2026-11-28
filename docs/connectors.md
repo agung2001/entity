@@ -53,17 +53,17 @@ page below.
 
 The catalog is the one list of what the app ships, and every surface reads it: the
 Built-in pane, the add sheet's cards and the composer's mention menu are three doors on
-one table. Entity ships fifteen — `gmail`, `google-drive`, `youtube`,
-`youtube-studio`, `x`, `habitify` and `threads` account-bearing (`habitify` reads
-through its provider's remote MCP server, and signs in with a client it registers
-itself; `threads’` token is pasted rather than consented); `orca`,
-`youtrack` and `github` the three the composer offered before connectors existed
-`youtrack` and `github` the three the composer offered before connectors existed
-(`youtrack` is an `mcp` row, the other two are `cli` rows); `maka` and `open-design`, the
-MCP-backed ones — `open-design` launches from the workspace's own `skills/` directory, so
-its definition travels; `clockify`, whose credential is one API key pasted once instead of
-an OAuth account, with its workspace id and timezone kept as workspace state beside it;
-and `tailscale`, a `cli` row that behaves like none of the others — it authenticates
+one table. Entity ships twenty-one — `gmail`, `google-drive`, `google-calendar`, `youtube`,
+`youtube-studio`, `x`, `habitify`, `threads`, `fitbit` and `lynk` account-bearing
+(`habitify` reads through its provider's remote MCP server, and signs in with a client it
+registers itself; `threads’` token is pasted rather than consented); `orca`, `youtrack` and
+`github` the three the composer offered before connectors existed (`youtrack` is an `mcp`
+row, the other two are `cli` rows); `maka` and `open-design`, the MCP-backed ones —
+`open-design` launches from the workspace's own `skills/` directory, so its definition
+travels; `clockify` and `pexels`, whose credentials are one API key pasted once instead of
+an OAuth account (`clockify` also keeps its workspace id and timezone as workspace state
+beside it); `google-trends` and `reddit`, the two credentialless feeds News reads; and
+`tailscale`, a `cli` row that behaves like none of the others — it authenticates
 nothing, stores no token, and reads one machine-local daemon, so it carries no `@` form
 and gates one web server instead; and `chrome-devtools`, an `mcp` row that drives the
 Chrome this machine already has open, which carries no `@` form either. A custom row is
@@ -159,6 +159,7 @@ no resolver is context-only and says so rather than promising an `@` to silence.
 | `@maka:[<vault>:]<query>` | notes, in one vault or across every vault |
 | `@opendesign:<artifact\|file\|search>:<query>` | an artifact, one file, or a search across the design workspace |
 | `@clockify:<project\|login>:<monday\|this week>` | the hours one project or one person logged in a week |
+| `@pexels:[videos:\|id:]<query>` | photos, or clips, as files an agent can read |
 | `@youtrack:[<PROJECT>:]<query>` | issues, scoped to a project key or searched |
 | `@orca:<project>[:<path>]` | a project's real path, or one file inside it |
 | `@github:<owner/repo> \| <query>` | one repository by full name, or a search across what the token can see |
@@ -186,7 +187,7 @@ and the mention it answers:
 | [Maka](connectors/maka.md) · `@maka:` | [Open Design](connectors/open-design.md) · `@opendesign:` | [Gmail](connectors/gmail.md) · `@gmail:` |
 | [Google Drive](connectors/google-drive.md) · `@drive:` | [YouTube](connectors/youtube.md) · `@youtube:` | [YouTube Studio](connectors/youtube-studio.md) · `@youtube-studio:` |
 | [Habitify](connectors/habitify.md) · `@habitify:` | [Clockify](connectors/clockify.md) · `@clockify:` | [X](connectors/x.md) · `@x:` |
-| [Threads](connectors/threads.md) · `@threads:` | | |
+| [Threads](connectors/threads.md) · `@threads:` | [Pexels](connectors/pexels.md) · `@pexels:` | |
 | [Tailscale](connectors/tailscale.md) · no `@` form, one server gated | | |
 | [Chrome DevTools](connectors/chrome-devtools.md) · no `@` form, the browser you already have open | | |
 
