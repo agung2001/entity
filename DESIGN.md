@@ -98,6 +98,18 @@ on the browser's Find.
   `Ctrl/Cmd+F`.
 - Long model lists stay inside a bounded scroll area; do not let the page grow
   by hundreds of rows.
+- **A shipped connector's mark always carries its own colour.**
+  `IntegrationMark` draws two kinds of mark: `int-mark-brand` brings its own
+  palette (Gmail, Drive, YouTube, Clockify, Fitbit, Lynk.id, YouTrack), and
+  `int-mark-mono` is one path drawn with `currentColor` (GitHub, X, Threads,
+  Reddit, Tailscale, Open Design). A mono mark has no palette of its own, so its
+  **tile is the brand**: `src/styles/connectors.css` gives every mono id a
+  `--mk-ground` and a `--mk-ink`, and the glyph is knocked out of that ground.
+  Drawing it as a flat glyph on the neutral tile made those six read as “no
+  colour” beside Gmail's red — and it was paid for twice, because the first fix
+  recoloured the glyph and left the tile blank. `tests/unit/ui-contract.test.cjs`
+  reads every `int-mark-mono` block and fails one with no ground, so a new
+  connector's mark cannot ship colourless.
 
 #### A capability read is two calls, and the cheap one paints first
 

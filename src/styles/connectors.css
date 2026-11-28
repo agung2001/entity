@@ -244,6 +244,48 @@ a.ct-who:hover .ct-name {
   background: color-mix(in oklab, var(--accent) 18%, var(--surface));
   color: var(--accent-ink);
 }
+/* ── a one-colour mark is a knockout on its own ground ─────────────────────
+   Six of the shipped marks are ONE path drawn with `currentColor`: GitHub, X,
+   Threads, Reddit, Tailscale, Open Design. A mark with no palette of its own
+   carried none of its brand either, so every one of them read as "no colour" on
+   the neutral accent wash beside Gmail's red and Clockify's blue — twice, because
+   the first fix only recoloured the glyph and left the tile blank.
+
+   So a mono mark's tile IS the brand: `--mk-ground` is the colour, `--mk-ink` the
+   glyph knocked out of it. A mark that brings its own palette (`int-mark-brand`)
+   has neither, keeps the accent wash, and paints itself.
+
+   The map is complete by contract: `tests/unit/ui-contract.test.cjs` reads every
+   `int-mark-mono` block out of `IntegrationMark.vue` and fails a mark with no
+   ground here. Adding a mono connector mark is two lines — the path, and its
+   colour. */
+.ct-mk[data-mk='github'] {
+  --mk-ground: #181717;
+  --mk-ink: #fff;
+}
+.ct-mk[data-mk='x'],
+.ct-mk[data-mk='threads'] {
+  --mk-ground: #0a0a0a;
+  --mk-ink: #fff;
+}
+.ct-mk[data-mk='reddit'] {
+  --mk-ground: #ff4500;
+  --mk-ink: #fff;
+}
+/* Tailscale and Open Design own no accent colour of their own — both marks are
+   black-on-white in their own kits — so their ground is the ink the glyph would
+   otherwise be drawn in, and the mark is knocked out of it. */
+.ct-mk[data-mk='tailscale'],
+.ct-mk[data-mk='open-design'] {
+  --mk-ground: #1f1f1f;
+  --mk-ink: #fff;
+}
+/* The ground, only where a brand is set: a custom row's tile is its initial, and it
+   keeps the neutral tile and the neutral letter it always had. */
+.ct-mk[data-mk][data-brand='1'] {
+  background: var(--mk-ground, color-mix(in oklab, var(--accent) 18%, var(--surface)));
+  color: var(--mk-ink, var(--accent-ink));
+}
 /* A brand mark keeps its own colours; only the mono one follows the row's tone.
    These three were drawn for the deleted integrations page and are reused, not
    redrawn. */
@@ -257,6 +299,13 @@ a.ct-who:hover .ct-name {
 .ct-mk .int-mark-svg {
   display: block;
   flex: none;
+}
+/* A mono mark IS `currentColor` — the whole glyph is that one value — so it takes
+   the tile's knocked-out ink when the mark has a ground, and the row's own ink
+   when it does not (a mono mark added without one fails the contract test above,
+   and still draws legibly until it is given its colour). */
+.ct-mk .int-mark-svg.int-mark-mono {
+  color: var(--mk-ink, var(--ink));
 }
 .ct-copy {
   min-width: 0;
