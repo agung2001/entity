@@ -250,6 +250,9 @@ const SECTION_TITLES = {
   artifact: 'Artifacts',
   artifacts: 'Artifacts',
   news: 'News',
+  /* all five goals routes carry `crumb: 'goals'`, so the detail and create
+     steps land here too */
+  goals: 'Goals',
   account: 'Account',
 }
 const sectionTitle = computed(() => {

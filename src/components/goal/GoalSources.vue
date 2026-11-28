@@ -33,8 +33,8 @@ const lineOf = (source) => {
       <div v-if="!sources.length" class="cxn">
         <span class="cxn-mk">—</span>
         <span class="cxn-b">
-          <b>No source read yet</b>
-          <span>This goal's own script counts the tasks. Refresh runs it.</span>
+          <b>{{ goal.read ? 'Counted from the tasks' : 'No source read yet' }}</b>
+          <span>{{ goal.read ? 'This goal’s script read no connector; the numbers are the tasks themselves.' : 'Refresh runs this goal’s script.' }}</span>
         </span>
       </div>
       <div v-for="source in sources" :key="`${source.kind}-${source.label}`" class="cxn" :data-state="source.state === 'off' ? 'off' : undefined">

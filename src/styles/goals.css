@@ -1353,7 +1353,10 @@
 .goals-page .bt-row,
 .goals-page .bt-head {
   display: grid;
-  grid-template-columns: 18px max-content minmax(0, 1fr) 200px 168px 92px 26px;
+  /* 74 px is the measured fit for `Critical` (69 px) — the one track in this
+     sheet that is fixed, because the head and every row are separate grids and a
+     `max-content` track would size per row and break the column alignment. */
+  grid-template-columns: 18px 74px minmax(0, 1fr) 200px 168px 92px 26px;
   align-items: center;
   gap: 10px;
   padding: 0 10px 0 8px;
@@ -1615,7 +1618,7 @@
 @media (max-width: 1180px) {
   .goals-page .bt-row,
   .goals-page .bt-head {
-    grid-template-columns: 18px max-content minmax(0, 1fr) 168px 92px 26px;
+    grid-template-columns: 18px 74px minmax(0, 1fr) 168px 92px 26px;
   }
   .goals-page .bt-head .h5,
   .goals-page .bt-row .gl {

@@ -67,7 +67,7 @@ const dateWhy = computed(() => (touched.value.date && !deadline.value ? 'No date
 const titleOf = computed(() => {
   const typed = title.value.trim()
   if (typed) return typed
-  const first = sentence.value.trim().split(/[.;\n]/)[0].replace(/\s+/g, ' ').trim()
+  const first = sentence.value.trim().split(/[.,;\n]/)[0].replace(/\s+/g, ' ').trim()
   return (first || 'A new goal').slice(0, 90)
 })
 
@@ -78,7 +78,6 @@ const groups = computed(() =>
   })).filter((group) => group.tasks.length),
 )
 
-const openCount = computed(() => tasks.value.filter((task) => !task.done).length)
 const broken = computed(
   () => tasks.value.length > 0 && tasks.value.some((task) => !String(task.title || '').trim()),
 )
@@ -302,6 +301,8 @@ async function create() {
             each — and draft again. Nothing was created.
           </p>
         </div>
+
+        <p v-if="createWhy" class="ctx-note danger">{{ createWhy }}</p>
       </div>
 
       <div>
@@ -333,14 +334,6 @@ async function create() {
           <b>Could not create the goal.</b>
           <p>{{ refused }}</p>
         </div>
-      </div>
-
-      <div class="wiz-foot split-foot">
-        <span class="why">{{ createWhy || `${plural(openCount, 'open task')} · nothing is stored until you press Create goal` }}</span>
-        <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="create">
-          {{ creating ? 'Creating…' : 'Create goal' }}
-        </button>
       </div>
     </div>
   </div>
