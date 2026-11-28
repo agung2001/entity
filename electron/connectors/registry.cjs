@@ -52,6 +52,7 @@ const FOLDERS = [
   'habitify',
   'fitbit',
   'open-design',
+  'pexels',
   /* The fourth kind: it reads a local daemon instead of a remote service, so it
      authenticates nothing, offers no mention and answers no dashboard tab — but it
      is a connector like the rest, with its calls and its catalog entry in its own

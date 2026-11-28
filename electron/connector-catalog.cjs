@@ -190,6 +190,13 @@ const CATALOG = {
      computed in the wrong zone is the bug the week math exists to avoid. */
   clockify: CONNECTORS.clockify,
 
+  /* ── the second paste-once key, for a different reason ───────────────────
+     Pexels is a public library rather than a workspace, so its key answers one
+     question and no report: there is no dashboard tab, no account row and no
+     setting to keep beside it. The entry is here because the mention is — the
+     library is only worth attaching if `@pexels:` can hand an agent a picture. */
+  pexels: CONNECTORS.pexels,
+
   /* ── a report made of a Drive folder, with no mention behind it ──────────
      Lynk.id ships no resolver on purpose. It is a **report**, not a lookup: the
      answer is one table computed from up to a hundred spreadsheets, and its only
@@ -278,7 +285,7 @@ const CATALOG = {
 const RESOLVERS = new Set([
   'orca', 'github', 'youtrack', 'maka',
   'gmail', 'drive', 'calendar', 'youtube', 'youtube-studio', 'x', 'threads',
-  'clockify', 'habitify', 'fitbit', 'opendesign',
+  'clockify', 'habitify', 'fitbit', 'opendesign', 'pexels',
   'artifact', 'thread',
 ])
 
