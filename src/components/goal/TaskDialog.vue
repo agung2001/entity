@@ -4,18 +4,30 @@
  * the box, and the planner decides the fields. Submitting does not append a row
  * and leave the plan stale — the page re-plans around it, which is why the copy
  * says so before you press the button.
+ *
+ * The footer names the plan the task joins, so this reads as an edit to that
+ * plan and not as a blank form floating over it.
  */
 import { nextTick, onMounted, ref, watch } from 'vue'
+import EntityMark from '@/components/EntityMark.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import { useDialogDismiss } from '@/composables/useDialog'
-import { shortcutLabel } from '@/lib/shortcuts'
+import { day } from '@/lib/goals'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   agent: { type: Object, default: () => ({}) },
   harness: { type: String, default: '' },
+  planSize: { type: Number, default: 0 },
+  deadline: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'submit'])
+
+const EXAMPLES = [
+  'Write the release notes',
+  'Add a rollback check',
+  'Schedule a review session',
+]
 
 const text = ref('')
 const composer = ref(null)
@@ -33,6 +45,11 @@ async function focusComposer() {
 
 onMounted(focusComposer)
 watch(() => props.open, (open) => open && focusComposer())
+
+function useExample(example) {
+  text.value = example
+  composer.value?.focus?.()
+}
 
 function submit() {
   const value = text.value.trim()
@@ -55,8 +72,8 @@ function submit() {
       <div class="mo-head">
         <h2 id="taskdlg-t">Add a task</h2>
         <p class="tasklede">
-          Say what has to happen. The planner fits it into the plan, gives it an entity, an effort and a
-          date, and re-dates whatever no longer fits.
+          One job, said plainly. It joins the plan and the planner fits it in — entity, effort, date —
+          re-dating whatever no longer holds.
         </p>
         <button class="mo-x" type="button" aria-label="Close" @click="emit('close')">
           <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -66,7 +83,8 @@ function submit() {
       </div>
 
       <div class="mo-body">
-        <div class="cm cm-composer">
+        <label class="tasklbl" for="taskdlg-input">The task</label>
+        <div class="taskfld">
           <SlashComposer
             ref="composer"
             :agent="agent"
@@ -80,13 +98,24 @@ function submit() {
             @send="submit"
           />
         </div>
-        <p class="ctx-note tasknote">
-          No title, priority or date to fill in: those are the planner's answer, and this dialog does not
-          pretend to know them first. <kbd>{{ shortcutLabel('goal-draft') }}</kbd> adds it.
-        </p>
+
+        <div class="taskex">
+          <span class="lbl">Try</span>
+          <button v-for="example in EXAMPLES" :key="example" class="taskex-btn" type="button" @click="useExample(example)">
+            {{ example }}
+          </button>
+        </div>
       </div>
 
       <div class="mo-foot">
+        <span class="taskctx">
+          <EntityMark v-if="agent.name" mini :entity="agent.name" />
+          <span>
+            planned by <b>{{ agent.name || 'the entity' }}</b>
+            <template v-if="planSize"> · {{ planSize }} {{ planSize === 1 ? 'task' : 'tasks' }}</template>
+            <template v-if="deadline"> · due {{ day(deadline) }}</template>
+          </span>
+        </span>
         <button class="btn" type="button" @click="emit('close')">Cancel</button>
         <button class="btn btn-primary" type="button" :disabled="!text.trim()" @click="submit">
           Add and re-plan

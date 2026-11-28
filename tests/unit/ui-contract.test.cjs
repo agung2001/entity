@@ -937,6 +937,7 @@ test('creating a goal is confirmed on the goal\'s own fields', () => {
     'the head and the foot both open the review',
   )
   assert.match(create, /class="modal goaladjust"/, 'the review is a dialog')
+  assert.match(create, /openAdjust\('adjust'\)/, 'Adjust goal is its own verb, not a hidden consequence')
   assert.match(create, /useDialogDismiss\(\{[\s\S]{0,120}?adjustOpen/, 'the review closes on Esc')
   assert.match(create, /nothing is written until you create it/i, 'the dialog says the write is not done yet')
 })

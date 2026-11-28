@@ -844,6 +844,10 @@ own five fields, reopened over the plan.
 - **The confirmation names what it will write.** `5 tasks · 2 critical · 4
   entities · due 12 Dec 2026` above the fields, and `Nothing is written until you
   create it` beside the scrim. The primary says the verb, not "OK".
+- **Adjust is a verb of its own.** Step 2 offers `Adjust goal` beside `Create
+  goal`, and both open the same dialog. A form you can only reach by pressing the
+  write button makes every edit look like a commitment; the review must be
+  reachable to *edit*, not only to confirm.
 - **Refusals land in the dialog.** A `save` that throws prints in the surface
   that asked; closing it to read the error moves the person away from the fix.
 - **A review is dismissible like any surface.** `useDialogDismiss`, the

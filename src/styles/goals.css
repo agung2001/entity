@@ -1571,22 +1571,108 @@
   color: var(--danger);
 }
 
-/* the add-task dialog */
+/* the add-task dialog: one field, then what joining the plan means */
 .modal.taskdlg {
-  width: min(560px, 94vw);
+  width: min(600px, 94vw);
+}
+.taskdlg .mo-head {
+  padding: 20px 20px 0;
 }
 .taskdlg .tasklede {
   max-width: 52ch;
 }
-.taskdlg .tasknote {
-  margin: 12px 0 0;
+.taskdlg .mo-body {
+  padding: 14px 20px 16px;
 }
-.taskdlg .tasknote kbd {
+.taskdlg .mo-foot {
+  padding: 12px 20px;
+  align-items: center;
+}
+.taskdlg .tasklbl {
+  display: block;
+  margin-bottom: 6px;
   font-family: var(--mono);
   font-size: var(--fs-micro);
-  padding: 1px 4px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.taskdlg .taskfld {
+  border-radius: var(--r);
+  background: var(--bg);
+}
+.taskdlg .taskfld .cm {
+  border-radius: var(--r);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 4%, transparent);
+}
+.taskdlg .taskfld .cm:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.taskdlg .taskfld :deep(.cm-in),
+.taskdlg .taskfld .slash-input {
+  min-height: 64px;
+}
+.taskdlg .taskex {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+.taskdlg .taskex .lbl {
+  margin-right: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.taskdlg .taskex-btn {
+  height: 23px;
+  padding: 0 9px;
   border: 1px solid var(--border);
-  border-radius: var(--r-2xs);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.taskdlg .taskex-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.taskdlg .taskctx {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.taskdlg .taskctx b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+/* the close button sits over the head's top-right corner; the lede has to end
+   before it, or a wrapped line runs under the X */
+.taskdlg .tasklede {
+  padding-right: 26px;
+}
+@media (max-width: 600px) {
+  .taskdlg .mo-foot {
+    flex-wrap: wrap;
+  }
+  .taskdlg .taskctx {
+    flex: 1 1 100%;
+    margin: 0 0 4px;
+  }
+  .taskdlg .taskex {
+    margin-top: 9px;
+  }
 }
 
 /* the review dialog: step 1's form, over the plan */

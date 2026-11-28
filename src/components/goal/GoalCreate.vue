@@ -136,6 +136,8 @@ const CACHE_KEY = `goals-new:${hub.workspace}`
 let saveTimer = null
 const fields = ref(null)
 const adjustOpen = ref(false)
+/* the same dialog, opened by two verbs: create is a confirmation, adjust is an edit */
+const adjustIntent = ref('create')
 /* list is the plan; calendar is the same plan where it lands */
 const planView = ref('list')
 /* a plan edit is a planning turn: the person sees it running and the list that
@@ -247,9 +249,10 @@ useDialogDismiss({
 
 /** `Create goal` never writes from a button that is not a confirmation: it
     reopens the goal's own fields, with the plan it is about to store. */
-async function openAdjust() {
-  if (!canCreate.value) return
+async function openAdjust(intent = 'create') {
+  if (intent === 'create' && !canCreate.value) return
   refused.value = ''
+  adjustIntent.value = intent === 'adjust' ? 'adjust' : 'create'
   adjustOpen.value = true
   await nextTick()
   /* the first thing the person may want to change is the title */
@@ -635,6 +638,9 @@ async function create() {
       </div>
       <div class="head-actions">
         <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
+        <button v-if="step === 2" class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">
+          Adjust goal
+        </button>
         <button v-if="step === 1" class="btn" type="button" @click="cancel()">Cancel</button>
         <button v-else class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust">
           Create goal<span class="btn-kbd">{{ draftKey }}</span>
@@ -819,7 +825,8 @@ async function create() {
       <div class="plan-foot">
         <span class="why">{{ createWhy || 'Nothing is written until you create the goal.' }}</span>
         <button class="btn" type="button" :disabled="creating" @click="step = 1">Back</button>
-        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust">
+        <button class="btn" type="button" :disabled="creating" @click="openAdjust('adjust')">Adjust goal</button>
+        <button class="btn btn-primary" type="button" :disabled="!canCreate" @click="openAdjust()">
           Create goal<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
@@ -829,6 +836,8 @@ async function create() {
       :open="taskOpen"
       :agent="agent"
       :harness="harness"
+      :plan-size="tasks.length"
+      :deadline="deadline"
       @close="taskOpen = false"
       @submit="submitTask"
     />
@@ -847,10 +856,16 @@ async function create() {
         tabindex="-1"
       >
         <div class="mo-head">
-          <h2 id="goaladjust-t">Create this goal?</h2>
+          <h2 id="goaladjust-t">{{ adjustIntent === 'adjust' ? 'Adjust this goal' : 'Create this goal?' }}</h2>
           <p class="galede">
-            {{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical · {{ entitiesUsed }} entities ·
-            due {{ day(deadline) }}. Adjust anything below — nothing is written until you create it.
+            <template v-if="adjustIntent === 'adjust'">
+              Change the sentence, the deadline or who plans it. The plan below is already this goal's —
+              editing here does not store anything.
+            </template>
+            <template v-else>
+              {{ plural(tasks.length, 'task') }} · {{ criticalCount }} critical · {{ entitiesUsed }} entities ·
+              due {{ day(deadline) }}. Adjust anything below — nothing is written until you create it.
+            </template>
           </p>
           <button class="mo-x" type="button" aria-label="Close" @click="adjustOpen = false">
             <svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
