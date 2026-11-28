@@ -72,6 +72,9 @@ export function isActive(item, route) {
      closed, the entry is current on the index and on one entity's page. */
   if (panelOpen) return item.panel ? hub.rail[item.panel] : false
   if (item.name === 'entities') return route.name === 'entities' || route.name === 'entity'
+  /* A trend's own page is still News: the row it was opened from stays current,
+     so leaving the child does not look like leaving the destination. */
+  if (item.name === 'news') return route.name === 'news' || route.name === 'news-item'
   if (item.panel === 'artifacts') return route.name === 'artifact' || route.name === 'artifacts'
   if (item.view === 'configurations') return CONFIG_ROUTES.has(String(route.name || ''))
   return route.name === item.name

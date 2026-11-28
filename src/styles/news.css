@@ -527,6 +527,79 @@
   margin-left: auto;
 }
 
+/* ── one trend, at reading size ───────────────────────────────────────────────
+   The child page a Trends card opens. It borrows the card's `--hue` idea and the
+   banner's typography, and adds only a head, a row of facts and the meter the
+   card has no room for. */
+.nvi {
+  --hue: var(--accent);
+}
+.nvi[data-s='gt'] {
+  --hue: #4285f4;
+}
+.nvi[data-s='rd'] {
+  --hue: #ff4500;
+}
+.nvi-head h1 {
+  margin: 6px 0 0;
+  max-width: 26ch;
+  font-family: var(--font);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.nvi-lede {
+  max-width: 68ch;
+}
+.nvi-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin: 22px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--border);
+}
+.nvi-fact {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-width: 0;
+  padding-right: 8px;
+}
+.nvi-fact .k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nvi-fact b {
+  font-family: var(--font);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.nvi-fact .s {
+  font-size: var(--fs-secondary);
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* The card's meter with room to be read, and the same `--hue` behind it. */
+.nvi-meter {
+  height: 8px;
+  margin: 8px 0 2px;
+  border-radius: var(--r-xs);
+}
+.nvi-foot {
+  margin: 16px 0 0;
+}
+
 /* ── an empty page that is not a broken one ───────────────────────────────────
    The grammar of `overview-crew.css`'s `.ovc-none`, which is scoped to Overview
    and cannot be borrowed: what News reads, where a feed is installed, and that it
@@ -636,6 +709,12 @@
 }
 
 @container newsband (max-width: 560px) {
+  .nvi-head h1 {
+    font-size: var(--fs-h2);
+  }
+  .nvi-fact b {
+    font-size: var(--fs-h5);
+  }
   .nv-sub {
     font-size: var(--fs-secondary);
   }

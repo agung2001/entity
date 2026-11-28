@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import UiIcon from '@/components/UiIcon.vue'
 import PixelBackdrop from '@/components/PixelBackdrop.vue'
 import FeedMark from '@/components/FeedMark.vue'
@@ -10,6 +10,7 @@ import { matchesQuery } from '@/composables/search'
 import { dialogDepth } from '@/composables/useDialog'
 import { cachedUntil } from '@/connectors/parts/readClock'
 import { isEditable } from '@/lib/dom'
+import { feedFamily } from '@/lib/newsFeed'
 import { matchesShortcut, shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
 import { ago, hub, toast } from '@/stores/hub'
@@ -341,11 +342,25 @@ const itemsHead = computed(
     `${skel.value ? '—' : filtered.value.length} ${tab.value === 'trends' ? 'trends' : 'headlines'}, ${orderLabel.value}, ${view.value} view`,
 )
 
-const feedMark = (item) => {
-  const feed = feedIndex.value.get(item.feedId)
-  if (!feed) return undefined
-  if (feed.trend) return 'gt'
-  return /reddit/i.test(`${feed.label} ${feed.url}`) ? 'rd' : undefined
+const feedMark = (item) => feedFamily(feedIndex.value.get(item.feedId))
+
+/* ── the card's own link ─────────────────────────────────────────────────────
+   A trend is a search, not a story: a Google Trends item's `<link>` is the feed's
+   own XML, so a Trends card is a link into this page's detail view. A headline
+   still goes straight to the story, which is the one thing a reader wants from
+   it. One pair of helpers, used by both drawings, so the card and the row can
+   never disagree about where a click goes. */
+const cardIs = (row) => (tab.value === 'trends' ? RouterLink : row.url ? 'a' : 'div')
+const cardLink = (row) => {
+  if (tab.value === 'trends') {
+    return {
+      to: {
+        name: 'news-item',
+        params: { workspace: workspace.value, feedId: row.feedId, rank: row.rank },
+      },
+    }
+  }
+  return row.url ? { href: row.url, target: '_blank', rel: 'noopener noreferrer' } : {}
 }
 
 /* ── acting ──────────────────────────────────────────────────────────────────
@@ -758,14 +773,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 </li>
               </template>
               <li v-for="row in skel ? [] : paged" :key="`${row.feedId}-${row.rank}`">
-                <component
-                  :is="row.url ? 'a' : 'div'"
-                  class="nv-card"
-                  :href="row.url || undefined"
-                  :title="row.title"
-                  :target="row.url ? '_blank' : undefined"
-                  :rel="row.url ? 'noopener noreferrer' : undefined"
-                >
+                <component :is="cardIs(row)" class="nv-card" v-bind="cardLink(row)" :title="row.title">
                   <p class="nv-top">
                     <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true"><FeedMark :family="feedMark(row)" /></i>
                     <span class="fl">{{ row.feed }}</span>
@@ -803,14 +811,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <li v-for="row in skel ? [] : paged" :key="`${row.feedId}-${row.rank}`" class="nv-row">
                 <i class="nv-gl" :data-s="feedMark(row)" aria-hidden="true"><FeedMark :family="feedMark(row)" /></i>
                 <div>
-                  <component
-                    :is="row.url ? 'a' : 'span'"
-                    class="nv-rt"
-                    :href="row.url || undefined"
-                    :title="row.title"
-                    :target="row.url ? '_blank' : undefined"
-                    :rel="row.url ? 'noopener noreferrer' : undefined"
-                  >{{ row.title }}</component>
+                  <component :is="cardIs(row)" class="nv-rt" v-bind="cardLink(row)" :title="row.title">{{ row.title }}</component>
                   <p class="nv-prov">
                     <template v-if="tab === 'trends'">
                       {{ row.feed }} · rank {{ row.rank }} ·
