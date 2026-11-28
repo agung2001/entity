@@ -91,12 +91,6 @@ async function get(path, token, params = {}) {
 
 /* ── the two upstream reads ─────────────────────────────────────────────── */
 
-/** The token's own account. The one call that proves a token, and `verify()` uses it. */
-async function me(token) {
-  const body = await get('/me', token, { fields: 'id,username' })
-  return { id: text(body.id, 60), username: text(body.username, 80) }
-}
-
 /**
  * The account's recent posts, newest first.
  *
@@ -188,6 +182,36 @@ function sumMetrics(posts) {
   return totals
 }
 
+/**
+ * One bucket per calendar day in the window, zero-filled, for the growth chart.
+ *
+ * **A post's counts are its own lifetime, not that day's** — Threads reports no
+ * per-day series for a post — so a bucket is "the posts published that day, and what
+ * they have reached since". That is the honest reading of the only numbers the API
+ * gives, it is what a person comparing weeks actually wants, and the chart says so in
+ * its own words rather than implying a daily delta nobody measured.
+ *
+ * Zero-filled because a gap is a fact: a day with no post is a bar of zero, not a
+ * missing column that makes two quiet days look like one busy one.
+ */
+function dailySeries(posts, { since, until } = {}) {
+  const start = text(since, 10)
+  const end = text(until, 10)
+  if (!start || !end) return []
+  const days = new Map()
+  for (let ms = Date.parse(`${start}T00:00:00Z`); ms <= Date.parse(`${end}T00:00:00Z`); ms += 86_400_000) {
+    const date = new Date(ms).toISOString().slice(0, 10)
+    days.set(date, { date, posts: 0, views: 0, likes: 0, replies: 0, reposts: 0 })
+  }
+  for (const post of Array.isArray(posts) ? posts : []) {
+    const row = days.get(text(post?.date, 10))
+    if (!row) continue
+    row.posts += 1
+    for (const key of ['views', 'likes', 'replies', 'reposts']) row[key] += numberOf(post?.[key])
+  }
+  return [...days.values()]
+}
+
 /** The three rates, each 0..1. No views is no rate — never a division by zero. */
 function rates(posts) {
   const totals = sumMetrics(posts)
@@ -210,11 +234,11 @@ module.exports = {
   numberOf,
   coded,
   get,
-  me,
   recentPosts,
   postInsights,
   postReplies,
   windowSince,
+  dailySeries,
   sumMetrics,
   rates,
 }

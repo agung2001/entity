@@ -45,7 +45,7 @@ import {
   studioUsable,
 } from '@/connectors/youtube-studio/useStudio'
 import { clockify, readState as readClockifyState } from '@/connectors/clockify/useClockify'
-import { readState as readThreadsState, threads } from '@/connectors/threads/useThreads'
+import { readState as readThreadsState, threads, usableAccounts as usableThreads } from '@/connectors/threads/useThreads'
 import { connectors, loadConnectors } from '@/stores/connectors'
 import { OPEN, OPEN_GATE, UNREAD, toGate } from '@/connectors/gate'
 
@@ -235,15 +235,16 @@ const DASHBOARDS = {
 
   threads: {
     hint: 'What the last 30 days of threads reached',
-    /* One lock: no token on this machine. The tab cannot read without it and there is
-       no second half to pick — one Threads account per install. */
+    /* One lock: no account on this machine. The tab reads one account at a time, and
+       the accounts card above is where one is added — by pasting its token, which is
+       the one thing this card's gate must not pretend to be able to do itself. */
     gate() {
       if (!threads.loaded) return UNREAD
-      if (!threads.configured) {
+      if (!usableThreads().length) {
         return {
           why: {
-            before: 'Connect Threads first — the tab needs a verified token.',
-            title: 'Needs a Threads access token on this machine',
+            before: 'Connect Threads first — the tab needs an account, and the accounts card adds one by pasting its token.',
+            title: 'Needs a Threads account on this machine',
           },
         }
       }
@@ -252,8 +253,8 @@ const DASHBOARDS = {
     answer({ force }) {
       if (force || !threads.loaded) return readThreadsState()
     },
-    /* The pane reads itself on mount: its band owns the window line, so a read here
-       would be a second read of the same thing. */
+    /* The pane reads itself on mount: its band owns the account and window lines, so a
+       read here would be a second read of the same thing. */
     read: null,
   },
 

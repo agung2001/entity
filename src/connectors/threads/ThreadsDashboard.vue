@@ -1,20 +1,27 @@
 <script setup>
 import { computed, onMounted } from 'vue'
+import EChart from '@/components/EChart.vue'
 import { ago } from '@/stores/hub'
-import { readReport, readState, threads } from '@/connectors/threads/useThreads'
+import { chartTheme, formatTokens } from '@/lib/chart-math'
+import { themeMode } from '@/lib/theme'
+import { readReport, readState, threads, usableAccounts } from '@/connectors/threads/useThreads'
 
 /**
  * The Threads connector's Dashboard tab: the last 30 days of one account, read from
  * the Graph API by the main process.
  *
- * Nothing here calls Threads and nothing here posts. The token never reaches this
- * file — `threads.dashboard` reads it in the main process, which is why a page that
- * is screenshotted or opened from disk cannot leak one — and every request behind
- * these numbers is a GET.
+ * **One account at a time, and the chips say which.** The tab is a screen, and a
+ * screen of two audiences added together answers nothing — the account is chosen here
+ * and named in the band, and `all` stays where it belongs, in the mention.
  *
- * **Nothing here invents a number.** A missing token, a refused read and a window with
- * no posts each print a sentence instead of the tiles: `0 views` would be a claim about
- * a month, and "nothing was read" is not one.
+ * Nothing here calls Threads and nothing here posts. The token never reaches this file
+ * — `threads.dashboard` mints one in the main process, which is why a page that is
+ * screenshotted or opened from disk cannot leak one — and every request behind these
+ * numbers is a GET.
+ *
+ * **Nothing here invents a number.** No account, a refused token and a window with no
+ * posts each print a sentence instead of the tiles: `0 views` would be a claim about a
+ * month, and "nothing was read" is not one.
  *
  * The pane reads itself on mount, like Clockify's and Fitbit's, which is why the table
  * entry declares `read: null` and why a locked body is absent rather than empty.
@@ -25,6 +32,7 @@ const num = (value) => (Number.isFinite(Number(value)) ? nFmt.format(Number(valu
    the API's own counts do not have. */
 const pct = (value) => `${(Number(value) * 100 || 0).toFixed(1)}%`
 
+const accounts = computed(() => usableAccounts())
 const totals = computed(() => threads.totals)
 const rates = computed(() => threads.rates)
 const posts = computed(() => (Array.isArray(threads.posts) ? threads.posts : []))
@@ -44,13 +52,74 @@ const windowText = computed(() => {
   const { since, until } = threads.window
   return since && until ? `${dayText(since)} – ${dayText(until)}` : ''
 })
+/* ── reach by publishing day ────────────────────────────────────────────
+   The one picture in this tab: a bar per day of the window, tall when the posts
+   published that day reached far. The numbers are the main process's own series —
+   zero-filled there, so a quiet day is a zero bar and not a missing column — and the
+   card's own line says what a bucket means, because a post's counts are its lifetime
+   and not that day's delta. */
+const growth = computed(() => (Array.isArray(threads.daily) ? threads.daily : []))
+const best = computed(() =>
+  growth.value.reduce((top, row) => (row.views > (top?.views || 0) ? row : top), null),
+)
+const growthLabel = computed(() => {
+  const days = growth.value.filter((row) => row.posts > 0).length
+  const peak = best.value
+  return `Views by publishing day over ${windowText.value || 'the window'}: ${days} day${days === 1 ? '' : 's'} with a post${peak ? `, best ${num(peak.views)} views on ${dayText(peak.date)}` : ''}`
+})
+const growthOption = computed(() => {
+  /* The palette is read from the live CSS variables, and reading it during a theme
+     change is what redraws the canvas in the new theme. */
+  void themeMode.value
+  const t = chartTheme()
+  const rows = growth.value
+  const step = Math.max(1, Math.ceil(rows.length / 8))
+  return {
+    backgroundColor: 'transparent',
+    animationDuration: 220,
+    grid: { left: 42, right: 8, top: 14, bottom: 22 },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: t.surface,
+      borderColor: t.border,
+      textStyle: { color: t.ink, fontSize: 11 },
+      formatter: (params) => {
+        const row = rows[params[0]?.dataIndex]
+        if (!row) return ''
+        return `<b>${dayText(row.date)}</b><br>${num(row.views)} views · ${num(row.likes)} likes · ${num(row.replies)} replies<br>${row.posts} post${row.posts === 1 ? '' : 's'} published`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: rows.map((row) => dayText(row.date)),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: t.border } },
+      axisLabel: { color: t.muted, fontSize: 9, interval: step - 1, hideOverlap: true },
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: t.border, type: 'dashed' } },
+      axisLabel: { color: t.muted, fontSize: 9, formatter: (value) => formatTokens(value) },
+    },
+    series: [
+      {
+        name: 'Views',
+        type: 'bar',
+        data: rows.map((row) => row.views),
+        barMaxWidth: 14,
+        itemStyle: { color: t.accent, borderRadius: [2, 2, 0, 0] },
+      },
+    ],
+  }
+})
+
 const stamp = computed(() =>
   threads.reading ? 'Reading…' : threads.readAt ? `read ${ago(threads.readAt)}` : 'not read yet',
 )
 
 onMounted(async () => {
   await readState()
-  await readReport()
+  if (threads.account) await readReport()
 })
 
 /* The one verb on the page. A read already in flight turns it into a no-op rather
@@ -59,13 +128,18 @@ onMounted(async () => {
 function refresh() {
   if (!threads.reading) readReport({ force: true })
 }
+
+/** A chip is a read, not a filter: the numbers on screen belong to one account. */
+function pick(account) {
+  if (threads.reading || account === threads.account) return
+  readReport({ account, force: true })
+}
 </script>
 
 <template>
   <div class="dsh-band">
-    <!-- A refusal, in the main process's own sentence: the code behind it is
-         `threads-no-token` or `threads-upstream`, and the fix for both is the same
-         card on Overview rather than a form in the middle of a report. -->
+    <!-- A refusal, in the main process's own sentence: the fix is the accounts card
+         on Overview, not a form in the middle of a report. -->
     <div v-if="threads.problem" class="dsh-err" role="alert">
       <b>Threads could not be read.</b>
       <p>{{ threads.problem }}</p>
@@ -74,9 +148,24 @@ function refresh() {
       </div>
     </div>
 
-    <div v-if="!threads.problem" class="dsh-bar">
+    <div v-else class="dsh-bar">
+      <!-- The account on screen. One row per account the machine holds, so a second
+           Threads account is a second chip rather than a second workspace. -->
+      <div v-if="accounts.length > 1" class="dsh-chips" role="group" aria-label="Which account to read">
+        <button
+          v-for="row in accounts"
+          :key="row.localpart"
+          type="button"
+          class="dsh-chip"
+          :aria-pressed="row.localpart === threads.account ? 'true' : 'false'"
+          :title="`Read @${row.localpart}`"
+          @click="pick(row.localpart)"
+        >@{{ row.localpart }}</button>
+      </div>
       <div class="dsh-when">
         <span>Last 30 days<template v-if="windowText"> · {{ windowText }}</template></span>
+        <span v-if="threads.account" class="sep" aria-hidden="true">·</span>
+        <span v-if="threads.account" class="mono">@{{ threads.account }}</span>
         <span class="sep" aria-hidden="true">·</span>
         <!-- One polite region for the one thing that changes on its own: the stamp. -->
         <span role="status" aria-live="polite">{{ stamp }}</span>
@@ -106,6 +195,23 @@ function refresh() {
           <span class="q">{{ tile.q }}</span>
         </div>
       </div>
+
+      <section class="dsh-card" aria-labelledby="dsh-growth-head">
+        <div class="hd">
+          <h3 id="dsh-growth-head">Reach by publishing day</h3>
+          <span class="spacer"></span>
+          <span class="hd-when">views of the posts published that day</span>
+        </div>
+        <EChart v-if="totals.posts" :option="growthOption" :height="170" :label="growthLabel" />
+        <p v-else class="dsh-none">No post in this window, so there is nothing to chart.</p>
+        <!-- The picture's own footnote: a bucket is a post's lifetime total, and the
+             best day is the one number a person takes away from a bar chart. -->
+        <p v-if="best && totals.posts" class="dsh-none">
+          Best day <b>{{ dayText(best.date) }}</b> — {{ num(best.views) }} views from
+          {{ best.posts }} post{{ best.posts === 1 ? '' : 's' }}. A post's counts are its
+          own lifetime, so a bar is every post published that day, not that day's delta.
+        </p>
+      </section>
 
       <section class="dsh-card dsh-tblcard" aria-labelledby="dsh-threads-head">
         <div class="hd">

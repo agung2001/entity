@@ -422,6 +422,9 @@ function createRpc({
     },
     'connector.account.test': (args) => accountStore.test(args),
     'connector.account.connect': (args) => accountStore.connect({ ...args, openExternal }),
+    /* The door a paste-once provider opens: a token minted in the service's own
+       dashboard, verified against its identity read before anything is written. */
+    'connector.account.adopt': (args) => accountStore.adopt(args),
     /* The access tiers a connector offers, and the one this workspace chose. A
        page reads this to draw the selector; changing it writes the connector's
        index row, so the choice travels with the workspace. */

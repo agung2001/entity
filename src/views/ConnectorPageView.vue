@@ -247,7 +247,7 @@ const credentialWhere = computed(() => {
   /* A feed is a URL and nothing else: there is no credential to hold, which is
      the whole reason `news-store` can fetch it without a secret. */
   if (entry.kind === 'rss') return 'nowhere — a feed URL needs no credential'
-  if (entry.oauth) return 'on this machine, as a consent you grant per account; never in the workspace'
+  if (entry.oauth) return 'on this machine, as a credential you grant per account; never in the workspace'
   if (entry.credential === 'token') return 'on this machine, as one API key you paste once; never in the workspace'
   return 'on this machine'
 })
@@ -1097,7 +1097,7 @@ useDialogDismiss({ active: () => confirming.value, close: () => (confirming.valu
                 <template v-if="row.kind === 'mcp'">an MCP server — a definition in this workspace's <code class="mono">mcp.json</code></template>
                 <template v-else-if="row.kind === 'cli'">a command-line tool already on this machine</template>
                 <template v-else-if="row.kind === 'rss'">a feed — one URL, read by News, stored nowhere</template>
-                <template v-else-if="row.oauth">a REST service you sign in to, one account at a time</template>
+                <template v-else-if="row.oauth">a REST service you add one account at a time</template>
                 <template v-else-if="row.credential === 'token'">a REST service reached with one API key you paste once</template>
                 <template v-else>a REST service</template>
               </dd>

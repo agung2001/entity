@@ -196,12 +196,14 @@ const CATALOG = {
 
   x: CONNECTORS.x,
 
-  /* ── the second paste-once credential ─────────────────────────────────────
-     Threads is `credential: 'token'` for the same reason Clockify is: one opaque
-     long-lived token, pasted once, that proves itself against `GET /me` before it is
-     written and never refreshes itself. There is no consent screen to run and no
-     per-account row to keep — one Threads account per install — so this entry carries
-     no `oauth` flag and no provider row, and the token verbs land it with no tier.
+  /* ── an account-bearing row whose credential is pasted ────────────────────
+     Threads is `oauth: true` with `provider: 'threads'`, so its accounts live in the
+     same two files Gmail's and X's do — one row per account, one token per row — and
+     the mention's first segment is the account. What makes it different is only how an
+     account gets there: `pasteToken` on the provider row, because Threads has no
+     per-install loopback redirect to register, so the card asks for the token a person
+     already holds instead of opening a browser. The token verbs are not used for it at
+     all, which is why this entry carries no `credential: 'token'`.
 
      It is read-only and it costs calls: one insight request per post in the window,
      which is why the dashboard holds its answer for ten minutes and the mention reads

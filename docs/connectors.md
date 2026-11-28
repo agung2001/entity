@@ -150,7 +150,7 @@ no resolver is context-only and says so rather than promising an `@` to silence.
 | `@youtube:<account\|all>:<query>` | videos, searched as that account's grant |
 | `@youtube-studio:<account>[:<channel>]:<what> [<days>]` | the channel's own analytics, comments and traffic |
 | `@x:<account\|all>:<query>` | recent posts, retweets excluded |
-| `@threads:[posts\|replies\|insights:]<query\|post-id>` | recent posts, the replies under them, and the 30-day numbers |
+| `@threads:<account\|all>:[posts\|replies\|insights:]<query\|post-id>` | recent posts, the replies under them, and the 30-day numbers |
 | `@habitify:[<habit>:]<date\|today\|yesterday>` | the habits a day was scheduled, and whether they were done |
 | `@maka:[<vault>:]<query>` | notes, in one vault or across every vault |
 | `@opendesign:<artifact\|file\|search>:<query>` | an artifact, one file, or a search across the design workspace |

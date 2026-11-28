@@ -27,6 +27,12 @@
  *                the card must not ask for one
  *   registry     the authorization server root a dynamic registration posts to
  *   resource     the RFC 8707 resource a token is bound to (an MCP server's URL)
+ *   pasteToken   the account is added by pasting a token, not by a consent screen:
+ *                there is no `authorize`/`token` to run, and the card asks for one
+ *   exchange     where a **short-lived** token becomes a long-lived one, with the
+ *                app secret (`{ url, grant }`) — used once, never stored
+ *   tokenRefresh where a long-lived token renews itself (`{ url, grant }`): a GET
+ *                with the token alone, no client and no secret
  */
 const catalog = require('./connector-catalog.cjs')
 
@@ -171,6 +177,45 @@ const PROVIDERS = {
     clientAuth: 'pkce',
     pkce: 'S256',
     fixedPort: 8790,
+  },
+
+  /* Threads is the one provider whose account is **added by a pasted token** rather
+     than by a consent screen. Meta's Threads API has no loopback redirect this app can
+     register per install, and a token minted in the app dashboard is what the cron
+     setup on this machine already holds — so the card asks for the token instead of
+     opening a browser, and this row carries no `authorize`/`token` at all.
+
+     Two endpoints do the work, and the difference between them is the whole reason
+     `oauth-accounts.cjs` grew a second refresh shape:
+
+       exchange      a **short-lived** token → 60 days, with the app secret. Optional:
+                     a token that is already long-lived skips this step.
+       tokenRefresh  a long-lived token → a fresh 60 days, **with the token alone**
+                     (`?grant_type=th_refresh_token`). No client, no secret.
+
+     There is no address to name the account by either, so the row is
+     `<username>@threads` — the same shape X uses for a handle. */
+  threads: {
+    label: 'Threads',
+    profile: 'https://graph.threads.net/v1.0/me?fields=id,username',
+    baseScope: 'threads_basic',
+    params: {},
+    /* `{ id, username }` — no mailbox anywhere in it. */
+    profileOf: (body) => {
+      const username = String(body?.username || '').trim()
+      return { email: username ? `${username}@threads` : '', name: username }
+    },
+    consoleUrl: 'https://developers.facebook.com/apps/',
+    clientHint:
+      'Nothing to create here: mint a Threads access token in the app dashboard and paste it.',
+    secretRequired: false,
+    /* The card draws a token field, not a Connect button. */
+    pasteToken: true,
+    exchange: { url: 'https://graph.threads.net/access_token', grant: 'th_exchange_token' },
+    tokenRefresh: {
+      url: 'https://graph.threads.net/refresh_access_token',
+      grant: 'th_refresh_token',
+    },
   },
 }
 

@@ -262,6 +262,18 @@ export async function connectAccount(connectorId) {
   return answer
 }
 
+/**
+ * Add an account by pasting its token — the door a paste-once provider opens
+ * (Threads). The main process verifies the token against the provider's identity
+ * read before it writes anything, exactly as the consent flow does, and it upgrades
+ * a short-lived token when an app secret is supplied.
+ */
+export async function adoptAccount({ connector, token, secret = '' }) {
+  const answer = await call('connector.account.adopt', { connector, token, secret })
+  if (answer?.ok) await loadAccounts(connector)
+  return answer
+}
+
 /** Is an OAuth client saved for this provider? Reports a hint, never the secret. */
 export async function oauthStatus(provider = 'google') {
   return call('connector.oauth.status', { provider })

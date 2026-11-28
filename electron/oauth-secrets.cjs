@@ -110,6 +110,9 @@ function status({ provider = 'google' } = {}) {
     /* The provider's own console page for creating one, so the form can link out. */
     consoleUrl: meta.consoleUrl,
     instruction: meta.clientHint || '',
+    /* A provider whose account is added by pasting a token has no consent screen
+       and no client to configure — the card draws a token field instead. */
+    pasteToken: Boolean(meta.pasteToken),
     /* Present only where the provider needs it registered (X). */
     callback: providers.callbackOf(name),
     /* True where the console hands out a downloadable client file (Google), so

@@ -1836,6 +1836,37 @@ be a special case in three of them.
   main-process release. Entity is where the copy lives, because a dashboard is a
   screen and `electron/` has no screens.
 
+### An account is added by a consent screen, or by a pasted token
+
+Multi-account is one path, not one path per provider. An account-bearing connector
+(`account: true`) reads its rows from `oauth-accounts.cjs`, its tokens from
+`oauth-secrets.cjs`, and its provider from the `oauth`/`provider` fields of its
+catalog entry. A mention's first segment is the account, `all` is every usable one,
+and the resolver never touches a token itself — `_shared.cjs`'s `accessToken()` and
+`accountScope()` are the only two entries.
+
+- **A provider that cannot run a consent screen declares it, and gets a token form.**
+  Threads has no per-install loopback redirect to register, so its provider row
+  carries `pasteToken: true` and no `authorize`/`token`; the accounts card draws a
+token field instead of a Connect button, and `oauth-accounts.adopt()` proves the token
+  against the provider's own identity read (`GET /me` for Threads) before it writes a
+  row. The username that comes back names the row — never what somebody typed — so a
+  mistyped name cannot point two rows at one account.
+- **A refresh shape belongs to the provider row, not to an `if` in the store.**
+  Google and X refresh with a POSTed `refresh_token` form; Threads renews its own
+  long-lived token with a **GET and the token alone** (`tokenRefresh: { url, grant }`).
+  `oauth-accounts.cjs` has one branch for that shape, declared by the row, and no
+  provider name in it. A second provider with the same shape is one row.
+- **A secret that is used once is not stored.** The Threads app secret only upgrades a
+  short-lived token to 60 days; the long-lived token renews itself, so keeping the
+  secret would be one more thing to leak for no gain. `putToken` gets the token, never
+  the secret.
+- **One read per account, and the tab says which.** A dashboard is a screen, so it
+  reads the account on screen (chips in the band); `all` belongs in the mention, where
+  the rows are a list. An insight read across accounts groups by **metric**, not by
+  account: eight lines with each account's figure, instead of twenty-four that spend
+  the row ceiling on the first account.
+
 ## Voice mode opens a microphone
 
 The microphone is the one control in the composer that reaches a device. It sits
