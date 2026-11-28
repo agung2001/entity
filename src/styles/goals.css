@@ -1058,7 +1058,8 @@
   color: var(--danger);
   font-weight: 400;
 }
-.goals-page .fld-solo input {
+.goals-page .fld-solo input,
+.goals-page .fld-solo select {
   width: 100%;
   height: 36px;
   padding: 0 10px;
@@ -1068,13 +1069,27 @@
   font-size: var(--fs-small);
   color: var(--ink);
 }
-.goals-page .fld-solo input:hover {
+.goals-page .fld-solo input:hover,
+.goals-page .fld-solo select:hover {
   border-color: var(--field-edge);
+}
+.goals-page .fld-solo select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 15px,
+    calc(100% - 10px) 15px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
 }
 .goals-page .fld-solo input::placeholder {
   color: var(--muted);
 }
-.goals-page .fld-solo input:focus-visible {
+.goals-page .fld-solo input:focus-visible,
+.goals-page .fld-solo select:focus-visible {
   outline: none;
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -1097,11 +1112,34 @@
   color: var(--danger);
 }
 .goals-page .cm {
+  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-strong);
   border-radius: var(--r);
   background: var(--bg);
+}
+/* The chat's composer is docked in `.cp-dock`; here it is docked in this card,
+   and the card's own foot is the one action row (Draft tasks lives below it), so
+   the composer's attach/send rail is not drawn again. */
+.goals-page .cm-composer {
+  padding: 8px 10px 6px;
+}
+.goals-page .cm-composer .slash-compose {
+  width: 100%;
+}
+.goals-page .cm-composer .slash-input {
+  min-height: 64px;
+  padding: 0;
+  font-size: var(--fs-small);
+}
+.goals-page .cm-composer .slash-actions {
+  display: none;
+}
+.goals-page .cm-composer .ask-cmdbox {
+  left: -4px;
+  right: -4px;
+  bottom: calc(100% + 4px);
 }
 .goals-page .cm:hover {
   border-color: var(--field-edge);
@@ -1112,25 +1150,6 @@
 }
 .goals-page .cm[data-state='error'] {
   border-color: var(--danger);
-}
-.goals-page .cm textarea {
-  width: 100%;
-  min-height: 72px;
-  max-height: min(46vh, 400px);
-  padding: 10px 12px;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: var(--fs-small);
-  line-height: 1.5;
-  resize: vertical;
-}
-.goals-page .cm textarea:focus {
-  outline: none;
-}
-.goals-page .cm textarea::placeholder {
-  color: var(--muted);
 }
 .goals-page .cm-acts {
   display: flex;
@@ -1146,6 +1165,15 @@
   font-size: var(--fs-micro);
   color: var(--muted);
   white-space: nowrap;
+}
+.goals-page .cm-hint kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-2);
 }
 .goals-page .cm-hint.danger {
   color: var(--danger);

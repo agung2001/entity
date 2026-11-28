@@ -16,10 +16,13 @@
  * a harness answer would have to arrive in, and the merge below is the rule that
  * answer must keep.
  */
-import { computed, ref } from 'vue'
-import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
-import { plural } from '@/lib/transfer'
+import { computed, nextTick, ref } from 'vue'
+import SlashComposer from '@/components/SlashComposer.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
+import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
+import { shortcutLabel } from '@/lib/shortcuts'
+import { plural } from '@/lib/transfer'
+import { hub } from '@/stores/hub'
 
 const props = defineProps({
   /** the write, owned by the view: a promise, so a refusal lands beside the button */
@@ -32,6 +35,15 @@ const emit = defineEmits(['cancel'])
 const step = ref(1)
 const title = ref(props.initialTitle)
 const sentence = ref(props.initialSentence)
+/* The entity that plans this goal. It is a real choice, not decoration: the
+   composer's `/` menu offers that entity's preferred skills, and the record
+   keeps the name so the goal page can say who it was planned by. */
+const entities = computed(() => hub.agents || [])
+const entity = ref(String(entities.value[0]?.name || ''))
+const agent = computed(
+  () => entities.value.find((entry) => entry.name === entity.value) || entities.value[0] || { name: 'Goal' },
+)
+const sendKey = shortcutLabel('send')
 const deadline = ref('')
 const privacy = ref('private')
 const touched = ref({ sentence: false, date: false })
@@ -100,6 +112,15 @@ function pick(value) {
   touched.value.date = true
 }
 
+/** The composer's send is this flow's `Draft tasks`: the sentence stays in the
+    box (a goal is written once and edited, not sent away). */
+function onSend(text) {
+  draft()
+  nextTick(() => {
+    sentence.value = text
+  })
+}
+
 /** One short delay, so the skeleton is never a bare spinner over empty space. */
 function draft() {
   touched.value.sentence = true
@@ -151,6 +172,7 @@ async function create() {
       sentence: sentence.value.trim(),
       deadline: deadline.value,
       privacy: privacy.value,
+      entity: entity.value,
       tasks: tasks.value.map((task) => ({ ...task, title: String(task.title).trim() })),
     })
   } catch (problem) {
@@ -201,19 +223,38 @@ async function create() {
       </div>
 
       <div class="fld-solo">
-        <label for="goal-sentence">Goal <b aria-hidden="true">·</b> required</label>
-        <div class="cm" :data-state="sentenceWhy ? 'error' : undefined">
-          <textarea
-            id="goal-sentence"
-            v-model="sentence"
-            rows="3"
-            placeholder="Describe the outcome you want by the deadline…"
-            @blur="touched.sentence = true"
-          ></textarea>
+        <label for="goal-entity">Entity</label>
+        <select id="goal-entity" v-model="entity">
+          <option value="">No entity — you plan the tasks</option>
+          <option v-for="entry in entities" :key="entry.name" :value="entry.name">
+            {{ entry.name }} · {{ entry.harnessLabel || entry.harness || 'harness' }}
+          </option>
+        </select>
+        <span class="hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers.</span>
+      </div>
+
+      <div class="fld-solo">
+        <label class="fld-head">Goal <b aria-hidden="true">·</b> required</label>
+        <!-- The thread composer, not a textarea: `/` inserts a skill and `@` a
+             mention, and a picked item becomes a token in the sentence — the same
+             box the chat uses, so a goal can be written the way a prompt is. -->
+        <div class="cm cm-composer" :data-state="sentenceWhy ? 'error' : undefined" @focusout="touched.sentence = true">
+          <SlashComposer
+            :agent="agent"
+            machine="local"
+            base-dir=""
+            placeholder="Describe the outcome you want by the deadline — / skills · @ mentions"
+            label="Goal sentence — / for a skill, @ to mention"
+            :draft="sentence"
+            @update:draft="sentence = $event"
+            @send="onSend"
+          />
           <div class="cm-acts">
             <span class="cm-hint" :class="{ danger: sentenceWhy }">
               {{ sentenceWhy || 'One sentence. The draft reasons from it and nothing else.' }}
             </span>
+            <span class="cm-grow"></span>
+            <span class="cm-hint"><kbd>{{ sendKey }}</kbd> drafts the tasks</span>
           </div>
         </div>
       </div>

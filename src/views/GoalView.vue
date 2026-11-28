@@ -132,6 +132,7 @@ async function archive() {
             <div class="board-eyebrow">
               Goal <b aria-hidden="true">·</b>
               {{ goal.privacy === 'workspace' ? 'shared with the workspace' : 'private to you' }}
+              <template v-if="goal.entity"><b aria-hidden="true">·</b> planned by {{ goal.entity }}</template>
               <b aria-hidden="true">·</b>
               {{ counts.done }} of {{ counts.total }} dated tasks
             </div>

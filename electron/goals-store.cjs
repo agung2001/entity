@@ -85,6 +85,10 @@ function goalOf(raw) {
     sentence: text(raw.sentence, 4000),
     deadline: day(raw.deadline),
     privacy: PRIVACY.includes(String(raw.privacy)) ? String(raw.privacy) : 'private',
+    /* Which entity plans this goal. A name, because an entity is a file in the
+       workspace and its name is the identity — renaming the agent is a rename of
+       the file, which a goal cannot follow. */
+    entity: text(raw.entity, 200),
     /* The identity, not a display name: the read-only rule compares this with the
        person opening the goal, and a renamed member must not lose their goals. */
     owner: text(raw.owner, 200),
@@ -185,6 +189,7 @@ function create({ workspace, goal } = {}) {
     sentence,
     deadline,
     privacy: PRIVACY.includes(String(goal?.privacy)) ? String(goal.privacy) : 'private',
+    entity: text(goal?.entity, 200),
     owner: text(goal?.owner, 200),
     createdAt: new Date().toISOString(),
     archivedAt: '',

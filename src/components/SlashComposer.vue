@@ -39,6 +39,9 @@ const props = defineProps({
      draft, never in the rail, so it can never be mistaken for something you
      type over. Dismissal belongs to this component (see `onKey`). */
   sendError: { type: String, default: '' },
+  /* What the box is, for a screen reader. The chat says "Message"; a page that
+     docks the same composer for another job says what that job is. */
+  label: { type: String, default: 'Message' },
 })
 const emit = defineEmits(['send', 'stop', 'enhance', 'dismiss', 'update:attachments', 'update:draft'])
 
@@ -974,7 +977,7 @@ defineExpose({ focus, addFiles, addDrop, restore })
         :placeholder="placeholder"
         autocomplete="off"
         spellcheck="false"
-        aria-label="Message"
+        :aria-label="label"
         :title="focusShortcut ? `Message (${focusShortcut} to focus)` : 'Message'"
         :disabled="disabled"
         @input="refresh"
