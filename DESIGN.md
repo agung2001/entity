@@ -889,6 +889,7 @@ read. The scope is the thing a person is paying for, so it is chosen first.
 | The model suggestions scroll inside a 280px box clipped by the dialog | The layer measures the viewport, not a fixed `max-height`; it grows to the room that exists and flips above when the field sits low | `ModelInput` |
 | A one-line title leaves an empty gap and the bar is taller than the top bar | A heading with a decorative icon is a flex row: the text is its own span and the icon never wraps to a second line. A block `h2` rule must not win over `.cp-title` | `.cp-head h2.cp-title` |
 | The first line of the thread slides under the glass bar | The measured header height is its border box, not `contentRect` (which excludes padding) | `ChatView.watchHead` |
+| After switching threads, the first and last message are both unreadable — one under the bar, one behind the composer — and a resize does not fix it | The observers follow the **elements**, not `thread`. A swap replaces the section, and a `ResizeObserver` bound to a removed node delivers `0 × 0` once and then goes quiet, so the reserve collapsed to `14px` / `28px`. Re-attach on the refs (`flush: 'post'`), and never write a non-positive measurement | `ChatView` — `watch([headRef, dockWrap])` |
 | Thread tags only exist on the open conversation | Tags are thread metadata: the header shows and edits them, the rail shows them on every row and filters by them | `ChatView`, `ChatHistoryRail`, `ThreadTagsDialog` |
 | Two counters take a header track from the title and search, or float over the answer | Conversation totals close the composer's context row, before voice and help | `.cp-stats` |
 | The shelf is a wall of file names, so finding "the mockup from yesterday" means remembering the png's name | A shelf is drawn as **works**: the folders that wrote a document or a batch of images, with a ranked cover shot, one card each — derived from the rows the store already returned, never a second store | `src/lib/artifact-works.js`, `npm test` (`artifacts-index`) |
@@ -1148,6 +1149,12 @@ text passes under it.
 - **Measure the border box.** The `ResizeObserver` reads `borderBoxSize`, not
   `contentRect`: the content box drops the bar's own padding and the transcript
   then reserves ~16px less than the glass actually covers.
+- **Observe the elements, not the thread.** Both the bar and the composer are
+  replaced with the thread's section — the skeleton is a different section — and
+  a `ResizeObserver` bound to a node that left the document reports `0 × 0` once
+  and is never heard from again. Re-attach on the refs and ignore a zero: a
+  reserve of `14px`/`28px` puts the first message under the glass and the last
+  behind the composer, and no later resize corrects it.
 - **One row, the top bar's height.** The bar is 56px, the same as `.topbar`. It
   grows only when a long title wraps to a second line. Nothing else in the bar
   may make it taller: tag chips clip, counters hide, the search stays 30px.

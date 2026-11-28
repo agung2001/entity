@@ -1243,8 +1243,9 @@ onBeforeUnmount(() => {
  * otherwise a wrapped title sits over the first message.
  */
 function watchHead() {
-  if (!headRef.value || typeof ResizeObserver !== 'function') return
   headObserver?.disconnect()
+  headObserver = null
+  if (!headRef.value || typeof ResizeObserver !== 'function') return
   headObserver = new ResizeObserver((entries) => {
     const entry = entries[0]
     /* contentRect excludes the bar's own padding, which made the reserve
@@ -1252,33 +1253,38 @@ function watchHead() {
        border box is what the transcript must clear. */
     const box = entry?.borderBoxSize?.[0]?.blockSize
     const height = Number.isFinite(box) ? box : entry?.target?.getBoundingClientRect().height
-    headSpace.value = Math.round(height || 0)
+    /* A node that is leaving the document is reported once at 0 x 0. Writing
+       that would reserve nothing and put the thread back under the glass. */
+    if (height > 0) headSpace.value = Math.round(height)
   })
   headObserver.observe(headRef.value)
 }
 
 function watchDock() {
-  if (!dockWrap.value) return
-  if (typeof ResizeObserver !== 'function') return
   dockObserver?.disconnect()
+  dockObserver = null
+  if (!dockWrap.value || typeof ResizeObserver !== 'function') return
   dockObserver = new ResizeObserver((entries) => {
     const height = entries[0]?.contentRect?.height || 0
     /* the wrapper is the full-width strip; the dock inside is the visible box */
-    dockSpace.value = Math.round(height) + 28
+    if (height > 0) dockSpace.value = Math.round(height) + 28
   })
   dockObserver.observe(dockWrap.value)
 }
 
-/* The dock only exists once a thread is open, so the observer is (re)attached
-   when one appears. */
+/* The bar and the dock belong to the thread's section, which is replaced with
+   it — the skeleton while a conversation is read, another section for another
+   workspace. Observing the elements rather than `thread` is what keeps the
+   reserve honest: a ResizeObserver bound to a removed node goes quiet, so the
+   transcript kept a 14px top and a 28px bottom to clear a 56px bar and a 105px
+   composer, and the first and last message were unreadable until a reload. */
 watch(
-  () => Boolean(thread.value),
-  async (has) => {
-    if (!has) return
-    await nextTick()
+  [headRef, dockWrap],
+  () => {
     watchHead()
     watchDock()
   },
+  { flush: 'post' },
 )
 
 watch(
