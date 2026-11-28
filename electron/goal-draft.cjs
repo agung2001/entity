@@ -15,9 +15,14 @@
  */
 const crypto = require('node:crypto')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const { spawnTracked, killTree } = require('./child-registry.cjs')
+const { createParser } = require('./chat-transcript.cjs')
+const harnesses = require('./harness-store.cjs')
 const mention = require('./mention-ref.cjs')
-const { runOneShot, lastJson } = require('./oneshot.cjs')
+const { lastJson } = require('./oneshot.cjs')
+const { chatInvocation } = require('./runner-local.cjs')
 const workspaces = require('./workspace-store.cjs')
 
 const TIMEOUT_MS = 120_000
@@ -120,6 +125,170 @@ async function digest(sentence, context) {
   return blocks.join('\n\n').slice(0, MAX_DIGEST)
 }
 
+/**
+ * What the streaming row says about one parser step: the tool and the one thing
+ * it is pointed at. Never a file's contents — the card is a progress line, not a
+ * transcript.
+ */
+function stepLabel(event) {
+  const step = event?.step || {}
+  const input = step.input && typeof step.input === 'object' ? step.input : {}
+  const detail = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 140)
+  if (step.type === 'tool_use') {
+    return {
+      type: 'tool',
+      tool: detail(step.tool || step.name || 'Tool'),
+      detail: detail(
+        input.file_path ||
+          input.path ||
+          input.pattern ||
+          input.query ||
+          input.command ||
+          input.url ||
+          input.description ||
+          '',
+      ),
+    }
+  }
+  if (step.type === 'thinking') return { type: 'thinking', tool: 'Thinking', detail: detail(step.content) }
+  if (step.type === 'text') return { type: 'text', tool: 'Writing the plan', detail: detail(step.content) }
+  if (step.type === 'error') return { type: 'error', tool: 'Error', detail: detail(step.content) }
+  return null
+}
+
+/**
+ * One harness turn, streamed: the parent gets `goal.draft` phases over `emit`
+ * (`start` / `step` / `end`), so the create page can show what is happening and
+ * how long it has been happening instead of a bare spinner. The final answer is
+ * the parser's own trailing text — the same reader the chat uses per harness.
+ */
+function runStreaming({ harness, model, instruction, prompt, workspace, draftId, emit }) {
+  const id = String(harness || '')
+  const meta = harnesses.META.find((item) => item.id === id)
+  if (!meta) throw new Error('Choose a local harness first.')
+  const spec = chatInvocation(id, instruction, prompt, model)
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-goaldraft-'))
+  const started = Date.now()
+  const send = (phase, data) => {
+    try {
+      emit({ kind: 'goal.draft', workspace, draftId, phase, at: new Date().toISOString(), data })
+    } catch {
+      /* a window that closed mid-plan must not break the plan */
+    }
+  }
+  const late = new Map()
+  const parser = createParser(id, {
+    onStep: (event) => {
+      if (event?.action === 'add') {
+        const label = stepLabel(event)
+        if (label) send('step', label)
+        return
+      }
+      /* text arrives block by block; keep one "Writing" row and refresh it,
+         at most a few times a second */
+      if (event?.action === 'update' && event.step?.type === 'text') {
+        const now = Date.now()
+        if (now - (late.get('text') || 0) < 350) return
+        late.set('text', now)
+        send('step', { type: 'text', tool: 'Writing the plan', detail: String(event.step.content || '').replace(/\s+/g, ' ').slice(-140) })
+      }
+    },
+  })
+
+  return new Promise((resolve, reject) => {
+    let child = null
+    let timedOut = false
+    let timer = null
+    let stderr = ''
+    const settle = (fn) => {
+      if (timer) clearTimeout(timer)
+      fs.rmSync(cwd, { recursive: true, force: true })
+      fn()
+    }
+    try {
+      child = spawnTracked(spec.cmd, spec.argv, {
+        cwd,
+        env: process.env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        kind: 'oneshot',
+        label: `goal draft (${id})`,
+      })
+    } catch (error) {
+      settle(() => {
+        send('end', { ok: false, ms: Date.now() - started })
+        reject(new Error(`The ${meta.label} CLI could not start: ${error?.message || error}`))
+      })
+      return
+    }
+    timer = setTimeout(() => {
+      timedOut = true
+      try {
+        killTree(child, 'SIGKILL')
+      } catch {
+        /* the close handler reports the failure */
+      }
+    }, TIMEOUT_MS)
+    if (typeof timer.unref === 'function') timer.unref()
+
+    let firstChunk = true
+    child.stdout?.on('data', (chunk) => {
+      if (firstChunk) {
+        firstChunk = false
+        send('step', { type: 'status', tool: 'Writing the plan', detail: '' })
+      }
+      parser.push(String(chunk))
+    })
+    child.stderr?.on('data', (chunk) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-4_000)
+    })
+    child.on('error', (error) => {
+      settle(() => {
+        send('end', { ok: false, ms: Date.now() - started })
+        reject(
+          new Error(
+            error?.code === 'ENOENT'
+              ? `${meta.label} is not installed on this machine, or not on PATH.`
+              : String(error?.message || error),
+          ),
+        )
+      })
+    })
+    child.on('close', (code) => {
+      const result = parser.finish()
+      const ms = Date.now() - started
+      if (timedOut) {
+        settle(() => {
+          send('end', { ok: false, ms })
+          reject(new Error(`The ${meta.label} CLI did not answer within ${Math.round(TIMEOUT_MS / 1000)}s.`))
+        })
+        return
+      }
+      if (code !== 0) {
+        const detail = stderr.trim().split('\n').slice(-3).join(' ').slice(0, 400)
+        settle(() => {
+          send('end', { ok: false, ms })
+          reject(
+            new Error(
+              `The ${meta.label} CLI exited with code ${code}${detail ? `: ${detail}` : '.'}`,
+            ),
+          )
+        })
+        return
+      }
+      settle(() => {
+        send('end', { ok: true, ms })
+        resolve({ text: result.answer || '', harness: id, model: String(model || ''), steps: result.steps })
+      })
+    })
+    try {
+      if (spec.stdin) child.stdin.write(spec.stdin)
+      child.stdin.end()
+    } catch {
+      /* close/error reports a dead child */
+    }
+  })
+}
+
 const INSTRUCTION = [
   'You plan a dated goal. Turn the person’s sentence into the smallest list of',
   'concrete tasks that would make it true by its deadline.',
@@ -167,7 +336,17 @@ function cleanTasks(list, { today, deadline }) {
   return tasks
 }
 
-async function draft({ workspace, entity, harness, model, sentence, deadline, context } = {}) {
+async function draft({
+  workspace,
+  entity,
+  harness,
+  model,
+  sentence,
+  deadline,
+  context,
+  draftId = '',
+  emit = () => {},
+} = {}) {
   workspaces.open(workspace)
   const text = trim(sentence, 8_000)
   if (!text) throw new Error('Write the sentence first. Nothing was planned.')
@@ -176,7 +355,30 @@ async function draft({ workspace, entity, harness, model, sentence, deadline, co
   const due = dayOf(deadline)
   const today = localDay()
 
+  const send = (phase, data) => {
+    try {
+      emit({ kind: 'goal.draft', workspace, draftId, phase, at: new Date().toISOString(), data })
+    } catch {
+      /* a window that closed mid-plan must not break the plan */
+    }
+  }
+  const named = [
+    ...new Set([...text.matchAll(/@orca:([A-Za-z0-9._-]+)/g)].map((hit) => hit[1])),
+  ]
+  send('start', { harness: id })
+  send('step', {
+    type: 'status',
+    tool: named.length ? 'Reading the context' : 'Reading the goal',
+    detail: named.map((name) => `@orca:${name}`).join(', '),
+  })
   const contextBlock = await digest(text, context)
+  if (named.length) {
+    send('step', {
+      type: 'status',
+      tool: 'Context read',
+      detail: `${named.length} ${named.length === 1 ? 'project' : 'projects'} · ${Math.round(contextBlock.length / 1024)} kB`,
+    })
+  }
   const prompt = [
     `Entity: ${trim(entity, 200) || '(none)'}`,
     `Today: ${today}`,
@@ -193,13 +395,14 @@ async function draft({ workspace, entity, harness, model, sentence, deadline, co
 
   let answer
   try {
-    answer = await runOneShot({
+    answer = await runStreaming({
       harness: id,
       model: String(model || ''),
       instruction: INSTRUCTION,
       prompt,
-      timeoutMs: TIMEOUT_MS,
-      label: 'goal draft',
+      workspace,
+      draftId,
+      emit,
     })
   } catch (error) {
     throw new Error(`${String(error?.message || error)} Nothing was created.`)
@@ -215,4 +418,4 @@ async function draft({ workspace, entity, harness, model, sentence, deadline, co
   return { tasks, harness: answer.harness, model: answer.model }
 }
 
-module.exports = { draft, cleanTasks, digest }
+module.exports = { draft, runStreaming, cleanTasks, digest, stepLabel }

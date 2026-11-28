@@ -894,6 +894,18 @@ test("a goal's selector and its mark come from the shared components", () => {
   assert.deepEqual(redrawn, [], `the goal mark belongs to NavIcon, not ${redrawn.join(', ')}`)
   const blank = fs.readFileSync(path.join(SRC, 'views', 'GoalsView.vue'), 'utf8')
   assert.match(blank, /<NavIcon name="goal"\s*\/>/, "the empty state wears the rail's glyph")
+
+  /* The planning turn is long enough to narrate: the call streams its phases and
+     the page draws them with a clock, instead of a spinner that says nothing. */
+  const rpc = fs.readFileSync(path.join(ROOT, 'electron', 'rpc.cjs'), 'utf8')
+  assert.match(
+    rpc,
+    /'goals\.draft': \(args\) => goalDraft\.draft\(\{ \.\.\.args, emit \}\)/,
+    'the planning turn is streamed',
+  )
+  assert.match(create, /onRunEvent\(/, 'the page listens to its own stream')
+  assert.match(create, /draft-live-clock/, 'the planning turn shows elapsed time')
+  assert.match(create, /draft-steps/, 'the planning turn shows what it is doing')
 })
 
 test('a page draft is per-tab and expires', () => {

@@ -918,6 +918,61 @@
   text-decoration: underline;
   cursor: pointer;
 }
+.goals-page .draft-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+.goals-page .draft-live-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goals-page .draft-live-clock {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.goals-page .draft-steps {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.goals-page .draft-steps li {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.goals-page .draft-steps li b {
+  flex: none;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.goals-page .draft-steps li span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goals-page .draft-steps li[data-type='error'] b,
+.goals-page .draft-steps li[data-type='error'] span {
+  color: var(--danger);
+}
 .goals-page .draft-note {
   margin: 2px 4px 8px;
 }

@@ -16,7 +16,7 @@
  * creatable offline.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { call } from '@/composables/localBridge'
+import { call, onRunEvent } from '@/composables/localBridge'
 import PickMenu from '@/components/PickMenu.vue'
 import PromptEnhanceDialog from '@/components/PromptEnhanceDialog.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
@@ -74,6 +74,45 @@ const keys = {
   privacy: shortcutLabel('goal-privacy'),
 }
 const draftKey = shortcutLabel('goal-draft')
+const elapsedLabel = computed(() => {
+  const seconds = Math.max(0, Math.round(draftElapsed.value / 1000))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+})
+
+function startClock() {
+  stopClock()
+  draftStartedAt.value = Date.now()
+  draftElapsed.value = 0
+  elapsedTimer = setInterval(() => {
+    draftElapsed.value = Date.now() - draftStartedAt.value
+  }, 250)
+}
+
+function stopClock() {
+  if (!elapsedTimer) return
+  clearInterval(elapsedTimer)
+  elapsedTimer = null
+}
+
+/* The planning turn streams the same way a thread does: the main process emits
+   `goal.draft` phases, and this page draws the steps and the clock it owns. */
+function onDraftEvent(event) {
+  if (!event || event.kind !== 'goal.draft' || !draftId.value || event.draftId !== draftId.value) return
+  if (event.phase === 'start') {
+    draftSteps.value = []
+    return
+  }
+  if (event.phase !== 'step' || !event.data) return
+  const step = event.data
+  const list = draftSteps.value
+  const last = list[list.length - 1]
+  /* a text block grows; refresh its row instead of stacking a row per chunk */
+  if (step.type === 'text' && last && last.type === 'text') {
+    draftSteps.value = [...list.slice(0, -1), step]
+    return
+  }
+  draftSteps.value = [...list.slice(-9), step]
+}
 const attachments = ref([])
 const harness = ref(String(entities.value[0]?.harness || ''))
 const harnessOptions = computed(() =>
@@ -85,6 +124,12 @@ const harnessOptions = computed(() =>
 )
 const enhanceOpen = ref(false)
 const restoredAt = ref(0)
+const draftId = ref('')
+const draftSteps = ref([])
+const draftStartedAt = ref(0)
+const draftElapsed = ref(0)
+let elapsedTimer = null
+let stopDraftEvents = null
 const CACHE_KEY = `goals-new:${hub.workspace}`
 let saveTimer = null
 const titleField = ref(null)
@@ -215,8 +260,16 @@ async function runStep() {
   else await create()
 }
 
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  stopDraftEvents = onRunEvent(onDraftEvent)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  stopClock()
+  stopDraftEvents?.()
+  stopDraftEvents = null
+})
 
 function openEnhance() {
   if (!sentence.value.trim()) return
@@ -267,9 +320,13 @@ async function draft() {
   if (!canDraft.value || drafting.value) return
   drafting.value = true
   draftError.value = ''
+  draftId.value = crypto.randomUUID()
+  draftSteps.value = []
+  startClock()
   try {
     const answer = await call('goals.draft', {
       workspace: hub.workspace,
+      draftId: draftId.value,
       entity: entity.value,
       harness: harness.value,
       sentence: sentence.value,
@@ -282,6 +339,7 @@ async function draft() {
   } catch (problem) {
     draftError.value = problem?.message || 'The draft did not answer.'
   } finally {
+    stopClock()
     drafting.value = false
   }
 }
@@ -488,8 +546,18 @@ async function create() {
     <!-- ── step 1 ─────────────────────────────────────────────────────── -->
     <div v-if="step === 1" class="wiz">
       <div v-if="drafting" class="skel-list" aria-busy="true" aria-label="Planning the tasks">
-        <div v-for="n in 6" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${74 - n * 6}%`, height: '10px' }"></span></div>
-        <p class="ctx-note draft-note">Planning with {{ entity || 'the entity' }} — reading the sentence and the context it names…</p>
+        <div class="draft-live" role="status">
+          <span class="model-spin" aria-hidden="true"></span>
+          <span class="draft-live-t">Planning with {{ entity || 'the entity' }}</span>
+          <b class="draft-live-clock">{{ elapsedLabel }}</b>
+        </div>
+        <ol v-if="draftSteps.length" class="draft-steps" aria-live="polite">
+          <li v-for="(step, index) in draftSteps" :key="`${index}-${step.tool}`" :data-type="step.type">
+            <b>{{ step.tool }}</b><span v-if="step.detail">{{ step.detail }}</span>
+          </li>
+        </ol>
+        <p v-else class="ctx-note draft-note">Reading the sentence and the context it names…</p>
+        <div v-for="n in 4" :key="n" class="task skel-task"><span class="skel" :style="{ width: `${70 - n * 7}%`, height: '10px' }"></span></div>
       </div>
 
       <template v-if="!drafting">
@@ -605,7 +673,7 @@ async function create() {
         <span class="why">{{ required }} of 2 required</span>
         <button class="btn" type="button" :disabled="drafting" @click="cancel()">Cancel</button>
         <button class="btn btn-primary" type="button" :disabled="!canDraft || drafting" @click="draft">
-          {{ drafting ? 'Drafting…' : 'Draft tasks' }}<span class="btn-kbd">{{ draftKey }}</span>
+          {{ drafting ? `Drafting… ${elapsedLabel}` : 'Draft tasks' }}<span class="btn-kbd">{{ draftKey }}</span>
         </button>
       </div>
     </div>
