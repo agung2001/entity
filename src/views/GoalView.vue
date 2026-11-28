@@ -16,6 +16,7 @@ import { useRoute, useRouter } from 'vue-router'
 import GoalBar from '@/components/goal/GoalBar.vue'
 import GoalNext from '@/components/goal/GoalNext.vue'
 import GoalSources from '@/components/goal/GoalSources.vue'
+import NavIcon from '@/components/NavIcon.vue'
 import GoalsSubnav from '@/components/goal/GoalsSubnav.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import UiIcon from '@/components/UiIcon.vue'
@@ -232,9 +233,7 @@ async function archive() {
             <GoalSources :goal="goal" />
             <GoalNext :goal="goal" />
             <div class="notebar">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-                <circle cx="8" cy="8" r="5.4" /><circle cx="8" cy="8" r="2.2" />
-              </svg>
+              <NavIcon name="goal" />
               <p>
                 <b>{{ bar.percent === null ? '—' : `${bar.percent}%` }} is a count, not a judgement.</b>
                 {{ counts.done }} of {{ counts.total }} closed. A tick moves the count at once; the bar waits for

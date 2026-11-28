@@ -13,6 +13,7 @@
  */
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import NavIcon from '@/components/NavIcon.vue'
 import GoalsSubnav from '@/components/goal/GoalsSubnav.vue'
 import { barOf, countsOf, day, indexOrder, paceOf } from '@/lib/goals'
 import { plural } from '@/lib/transfer'
@@ -94,9 +95,7 @@ const counts = (row) => `${row.counts.done} of ${row.counts.total}`
 
       <template v-else-if="!rows.length">
         <div class="blank">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
-            <path d="M8 2.4v11.2M4.6 13.6L8 10.2l3.4 3.4" /><circle cx="8" cy="5.4" r="3" />
-          </svg>
+          <NavIcon name="goal" />
           <h3>No goals yet</h3>
           <p>
             A goal is one sentence and one date. The agent drafts the tasks, you change them, and the

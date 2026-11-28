@@ -17,9 +17,11 @@
  * answer must keep.
  */
 import { computed, nextTick, ref } from 'vue'
+import PickMenu from '@/components/PickMenu.vue'
 import SlashComposer from '@/components/SlashComposer.vue'
 import TaskRow from '@/components/goal/TaskRow.vue'
 import { today, PRIORITY_ORDER, draftFrom, blankTask, priorityWord } from '@/lib/goals'
+import { markFor, moodGlyph } from '@/composables/entityMark'
 import { shortcutLabel } from '@/lib/shortcuts'
 import { plural } from '@/lib/transfer'
 import { hub } from '@/stores/hub'
@@ -39,9 +41,18 @@ const sentence = ref(props.initialSentence)
    composer's `/` menu offers that entity's preferred skills, and the record
    keeps the name so the goal page can say who it was planned by. */
 const entities = computed(() => hub.agents || [])
-const entity = ref(String(entities.value[0]?.name || ''))
+/* The chat's own entity picker: the same mark, the same rows, the same search. */
+const entityOptions = computed(() =>
+  entities.value.map((entry) => ({
+    id: entry.id || entry.name,
+    label: entry.name,
+    meta: entry.harnessLabel,
+    glyph: moodGlyph(markFor(hub.workspace, entry.id || entry.name, entry.mark).mood),
+  })),
+)
+const entity = ref(String(entities.value[0]?.id || entities.value[0]?.name || ''))
 const agent = computed(
-  () => entities.value.find((entry) => entry.name === entity.value) || entities.value[0] || { name: 'Goal' },
+  () => entities.value.find((entry) => (entry.id || entry.name) === entity.value) || entities.value[0] || { name: 'Goal' },
 )
 const sendKey = shortcutLabel('send')
 const deadline = ref('')
@@ -223,13 +234,15 @@ async function create() {
       </div>
 
       <div class="fld-solo">
-        <label for="goal-entity">Entity</label>
-        <select id="goal-entity" v-model="entity">
-          <option value="">No entity — you plan the tasks</option>
-          <option v-for="entry in entities" :key="entry.name" :value="entry.name">
-            {{ entry.name }} · {{ entry.harnessLabel || entry.harness || 'harness' }}
-          </option>
-        </select>
+        <label class="fld-head">Entity</label>
+        <PickMenu
+          class="field-select"
+          head="Entity"
+          icons="entity"
+          :options="entityOptions"
+          :model-value="entity"
+          @update:model-value="entity = $event"
+        />
         <span class="hint">Planning runs on this machine — there is no machine to pick. The entity supplies the skills and the mentions the composer offers.</span>
       </div>
 
