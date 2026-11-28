@@ -266,6 +266,9 @@ async function runStep() {
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   stopDraftEvents = onRunEvent(onDraftEvent)
+  /* a restored draft can already be on step 2; the listener is bound by now, so
+     the page can widen before the first paint of the list */
+  emit('update:step', step.value)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
