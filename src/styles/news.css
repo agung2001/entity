@@ -596,6 +596,72 @@
   margin: 8px 0 2px;
   border-radius: var(--r-xs);
 }
+/* The stories Google attached to the trend: the one list on this page that
+   leaves the app, so each row is a link and the publisher sits beside it in the
+   muted mono the rest of the page keeps for citations. */
+.nvi-news {
+  margin: 22px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--border);
+}
+.nvi-news h2 {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nvi-news h2 .n {
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+.nvi-news ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nvi-news li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.nvi-news li:last-child {
+  border-bottom: 0;
+}
+.nvi-news a {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.nvi-news a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.nvi-news .s {
+  flex: none;
+  max-width: 32%;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nvi-old {
+  margin: 18px 0 0;
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
 .nvi-foot {
   margin: 16px 0 0;
 }

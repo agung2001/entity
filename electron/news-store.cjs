@@ -64,6 +64,27 @@ const tagOf = (chunk, name) => {
   return hit ? decode(hit[1]) : ''
 }
 
+/**
+ * The stories Google attaches to a trend: up to three `<ht:news_item>` blocks of
+ * its own, each with a headline, a link and a publisher.
+ *
+ * Only `http(s)` links survive: this is somebody else's markup, and an `href` out
+ * of it is a link this app hands to a browser. A block with no headline or no
+ * usable URL is dropped rather than printed as an empty row. `snippet` is not
+ * read because this feed leaves it empty.
+ */
+function newsOf(chunk) {
+  return chunk
+    .split(/<ht:news_item[\s>]/i)
+    .slice(1)
+    .map((block) => ({
+      title: tagOf(block, 'ht:news_item_title'),
+      url: tagOf(block, 'ht:news_item_url'),
+      source: tagOf(block, 'ht:news_item_source'),
+    }))
+    .filter((story) => story.title && /^https?:\/\//i.test(story.url))
+}
+
 const linkOf = (chunk) => {
   const alternate = chunk.match(/<link\b[^>]*\brel="alternate"[^>]*\bhref="([^"]+)"/i)
   if (alternate) return decode(alternate[1])
@@ -123,6 +144,10 @@ function parseFeed(body, feed) {
        `explore → google trends · indonesia`; the URL's own code is not a name, so
        the subline stops at the source until a table is worth its lines. */
     provenance: trend ? 'explore → google trends' : feed.label,
+    /* A trend's own page has one thing to add: the articles behind the search.
+       The list prints four facts and stays quiet; the page a row opens prints
+       these, because a reader who clicked a trend is asking what happened. */
+    news: trend ? newsOf(chunk) : [],
   }))
 }
 

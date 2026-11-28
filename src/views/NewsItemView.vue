@@ -22,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 
 const reading = ref(true)
+const busy = ref(false)
 const failed = ref(false)
 const readAt = ref('')
 const feeds = ref([])
@@ -77,9 +78,10 @@ const absolute = (iso) => {
   })
 }
 
-async function load() {
+async function load(again = false) {
+  busy.value = true
   try {
-    const answer = await call('news.read', { workspace: workspace.value })
+    const answer = await call('news.read', { workspace: workspace.value, refresh: again })
     readAt.value = String(answer?.readAt || '')
     feeds.value = Array.isArray(answer?.feeds) ? answer.feeds : []
     items.value = Array.isArray(answer?.items) ? answer.items : []
@@ -87,6 +89,7 @@ async function load() {
     failed.value = true
   } finally {
     reading.value = false
+    busy.value = false
   }
 }
 
@@ -177,6 +180,30 @@ onMounted(load)
               <span class="s">{{ readAt ? `read ${ago(readAt)}` : 'not read yet' }}</span>
             </div>
           </div>
+
+          <!-- The stories behind the search. Google attaches up to three to every
+               trend, and they are the one thing a trend cannot say about itself:
+               the figures say how many looked, these say what happened. -->
+          <section v-if="item.news?.length" class="nvi-news">
+            <h2>
+              What happened · <span class="n">{{ item.news.length }}</span>
+            </h2>
+            <ul>
+              <li v-for="story in item.news" :key="story.url">
+                <a :href="story.url" target="_blank" rel="noopener noreferrer">{{ story.title }}</a>
+                <span v-if="story.source" class="s">{{ story.source }}</span>
+              </li>
+            </ul>
+          </section>
+
+          <!-- The snapshot predates this page's own field. One read brings the
+               stories with it; the verb is the shipped one. -->
+          <p v-else-if="!Array.isArray(item.news)" class="nvi-old">
+            This trend was read before its stories were.
+            <button class="dsh-jump" type="button" :disabled="busy" @click="load(true)">
+              {{ busy ? 'Reading the feeds…' : 'Read the feeds again' }}
+            </button>
+          </p>
         </div>
 
         <p class="dsh-foot nvi-foot">
